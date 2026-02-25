@@ -4,17 +4,17 @@ class Agent<IN, OUT>(
     val name: String,
     val outType: kotlin.reflect.KClass<*>,
 ) {
-    val skills = mutableListOf<Skill<*, *>>()
+    val skills = mutableMapOf<String, Skill<*, *>>()
 
     fun skills(block: SkillsBuilder.() -> Unit) {
         val builder = SkillsBuilder()
         builder.block()
-        skills.addAll(builder.skills)
+        builder.skills.forEach { skills[it.name] = it }
     }
 
     fun validate() {
         if (skills.isNotEmpty()) {
-            require(skills.any { it.outType == outType }) {
+            require(skills.values.any { it.outType == outType }) {
                 "Agent \"$name\" has no skill producing ${outType.simpleName}. " +
                     "At least one skill must return the agent's OUT type."
             }
