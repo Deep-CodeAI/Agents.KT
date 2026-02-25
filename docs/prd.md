@@ -171,6 +171,29 @@ A skill is an independently typed function `Skill<IN, OUT>` — it is **not** lo
 
 This enables agents to have utility skills (e.g., `Skill<String, String>` for spell-checking) alongside their primary skills. Convention Over Configuration: skills are free, the agent's contract is the guardrail.
 
+Skills can be defined **outside the agent** as top-level typed values and added with `+`, or **inline** inside the `skills { }` block. Top-level skills give the developer a fully typed reference — no casts needed when calling `execute()`.
+
+```kotlin
+// Top-level: developer holds a typed reference
+val printer = skill<TaskRequest, String>("printer") {
+    implementedBy { input -> "Printed '${input.content}'" }
+}
+
+val agent = agent<TaskRequest, Result>("HelloWorldAgentPrinter") {
+    skills {
+        +printer                                    // add pre-defined skill
+        skill<String, Result>("answerer") { }       // define inline
+    }
+}
+
+// Developer is admin — call any skill directly with custom values
+val output = printer.execute(TaskRequest("hello"))  // fully typed, no cast
+
+// Or introspect via hashmap
+agent.skills["printer"]                             // Map<String, Skill<*, *>>
+agent.skills.keys                                   // ["printer", "answerer"]
+```
+
 ### 6.1 Three Dimensions of a Skill
 
 ```
@@ -200,34 +223,39 @@ This enables agents to have utility skills (e.g., `Skill<String, String>` for sp
 ### 6.2 Multiple Skills — Independent Types, At Least One Produces OUT
 
 ```kotlin
+// Top-level skills: typed references the developer can call directly
+val writeFromScratch = skill<Specification, CodeBundle>("write-from-scratch") {
+    tags("generation", "greenfield")
+    knowledge { skill("code/write-from-scratch.md") }
+    implementedBy { tools("write_file", "compile") }
+}
+
+val modifyExisting = skill<ExistingCode, CodeBundle>("modify-existing") {
+    tags("modification", "refactor")
+    knowledge { skill("code/modify-existing.md") }
+    implementedBy { tools("read_file", "edit_file", "compile") }
+}
+
+val checkSpelling = skill<String, String>("check-spelling") {
+    tags("quality", "text")
+    implementedBy { tools("spellcheck") }
+}
+
 val coder = agent<Specification, CodeBundle>("coder") {
-
     skills {
-        // Primary skill: matches agent's contract
-        skill<Specification, CodeBundle>("write-from-scratch") {
-            tags("generation", "greenfield")
-            knowledge { skill("code/write-from-scratch.md") }
-            implementedBy { tools("write_file", "compile") }
-        }
-
-        // Another primary: different input, same OUT
-        skill<ExistingCode, CodeBundle>("modify-existing") {
-            tags("modification", "refactor")
-            knowledge { skill("code/modify-existing.md") }
-            implementedBy { tools("read_file", "edit_file", "compile") }
-        }
-
-        // Utility skill: completely independent types
-        skill<String, String>("check-spelling") {
-            tags("quality", "text")
-            knowledge { skill("code/spelling-rules.md") }
-            implementedBy { tools("spellcheck") }
-        }
+        +writeFromScratch                           // add pre-defined
+        +modifyExisting                             // add pre-defined
+        +checkSpelling                              // utility skill, different types
+        skill<String, String>("format-code") { }    // or define inline
     }
 
     // ✅ At least one skill produces CodeBundle (agent's OUT) — validated at construction
     // ❌ If no skill returns CodeBundle → IllegalArgumentException
 }
+
+// Developer is admin: call any skill with custom input
+writeFromScratch.execute(mySpec)       // fully typed: Specification → CodeBundle
+checkSpelling.execute("some text")     // fully typed: String → String
 ```
 
 ### 6.3 Skill Routing
