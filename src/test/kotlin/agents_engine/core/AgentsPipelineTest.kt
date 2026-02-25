@@ -17,7 +17,7 @@ class AgentsPipelineTest {
     fun pipelineCanBeCreatedV2() {
         val first = agent<SomeAgentAsk, SomeIntermediate>("first") {}
         val second = agent<SomeIntermediate, SomeAgentResult>("second") {}
-        val pipeline: Pipeline<SomeAgentAsk, SomeAgentResult> = first + second
+        val pipeline: Pipeline<SomeAgentAsk, SomeAgentResult> = first then second
     }
 
     @Test
@@ -27,6 +27,6 @@ class AgentsPipelineTest {
         val reviewMaster = agent<SomeCode, SomeReview>("reviewMaster") {}
         val productionMaster = agent<SomeReview, SomeProduction>("reviewMaster") {}
 
-        val pipeline: Pipeline<SomeSpecAsk, SomeProduction> = specMaster + coderMaster + reviewMaster + productionMaster
+        val pipeline: Pipeline<SomeSpecAsk, SomeProduction> = specMaster then coderMaster then reviewMaster then productionMaster
     }
 }

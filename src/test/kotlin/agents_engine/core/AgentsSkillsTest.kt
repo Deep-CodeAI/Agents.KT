@@ -43,7 +43,7 @@ class AgentsSkillsTest {
         assertThrows<IllegalArgumentException> {
             agent<String, CodeBundle>("badAgentWithWrongSkills") {
                 skills {
-                    skill<String, String>("spell-check") {}  // no CodeBundle skill
+                    skill<String, String>("spell-check") {}
                 }
             }
         }

@@ -26,7 +26,7 @@ The framework separates **agent definitions** (Layer 1 — what agents can do, w
 >
 > **Layer 2 — Structure DSL:** `structure("name") { root(agent) { delegates(child) { grants { } } } }`
 >
-> **Composition:** `val pipeline = specMaster + coder + reviewer` — compiler checks every `+`
+> **Composition:** `val pipeline = specMaster then coder then reviewer` — compiler checks every `then`
 
 Agents are **A2A-compatible by design** (auto-generated AgentCards), **distributable as JARs** (drop into a folder to assemble a team), **testable via AgentUnit** (from deterministic unit tests to semantic LLM-as-judge), built with a **Gradle plugin + standalone CLI**, and **installable without JRE** via native binaries through brew, npm, pip, curl, or apt.
 
@@ -61,11 +61,11 @@ Agents are **A2A-compatible by design** (auto-generated AgentCards), **distribut
 
 1. **`Agent<IN, OUT>` is the atom.** Every agent is a typed function. One input type, one output type, one responsibility. The compiler enforces this — `Any` is forbidden.
 
-2. **Skills are strategies, not functions.** An agent's skills are different ways to achieve the same `OUT` type: via tools, via delegation to other agents, via pipelines, or via parallel consensus. Same destination, different routes.
+2. **Skills are independently typed functions.** An agent's skills each have their own `<IN, OUT>`. At least one must produce the agent's `OUT` type. Utility skills (like spell-checking) are welcome.
 
 3. **Define Freely, Compose Strictly.** Agent definitions are unconstrained. Structure assembly is compiler-validated. Separation prevents both over-engineering and runtime surprises.
 
-4. **Fractal composition.** Skills can be implemented by tools, agents, pipelines of agents, parallel agents, or branches — recursively. It's agents all the way down.
+4. **Fractal composition.** Skills can be implemented by tools, agents, pipelines of agents, forums, or branches — recursively. It's agents all the way down.
 
 5. **Convention over Configuration.** File location determines role. Sensible defaults for everything. Zero-config to start.
 
@@ -119,19 +119,19 @@ Agents compose only when types align:
 
 ```kotlin
 // ✅ Types chain: Request→Spec, Spec→Code, Code→Review
-val pipeline = specMaster + coder + reviewer
+val pipeline = specMaster then coder then reviewer
 // Result type: Pipeline<TaskRequest, ReviewResult>
 
 // ❌ COMPILE ERROR: Type mismatch
 // specMaster.produces = Specification, reviewer.consumes = CodeBundle
-val broken = specMaster + reviewer
+val broken = specMaster then reviewer
 ```
 
-The `+` operator enforces:
+The `then` infix function enforces:
 
 ```kotlin
-operator fun <A, B, C> Agent<A, B>.plus(other: Agent<B, C>): Pipeline<A, C>
-//                              ↑ B must equal B ↑
+infix fun <A, B, C> Agent<A, B>.then(other: Agent<B, C>): Pipeline<A, C>
+//                                    ↑ B must equal B ↑
 ```
 
 ### 5.3 Sealed Types for Rich Domain Modeling
@@ -156,17 +156,20 @@ Sealed types enable exhaustive branching (Section 7.5).
 
 ```
 Agent<A, B>     : A → B          (typed function)
-A + B           : Agent<X,Y> + Agent<Y,Z> → Pipeline<X,Z>
-A / B           : Agent<X,Y> / Agent<X,Y> → Parallel<X, List<Y>>
+A then B        : Agent<X,Y> then Agent<Y,Z> → Pipeline<X,Z>
+A * B           : Agent<X,Y> * Agent<*,Z> → Forum<X, Z>  (first's IN, last answers)
+A + B           : Agent<X,Y> + Agent<X,Y> → Brainstorm<X, List<Y>>  (additive, accumulate)
 A.branch { }    : Agent<X, Sealed<Y>> → Branch<X, Z>
                   (each variant of Y routes to a sub-pipeline ending at Z)
 ```
 
 ---
 
-## 6. Skill Model: Strategies to Achieve OUT
+## 6. Skill Model: Independent Typed Functions
 
-A skill is not "what an agent can do." A skill is "one strategy to achieve the agent's OUT type from its IN type." All skills of an agent operate within its `<IN, OUT>` contract.
+A skill is an independently typed function `Skill<IN, OUT>` — it is **not** locked to the agent's type contract. An agent is a container of skills, each with its own `<IN, OUT>`. The only constraint: **at least one skill must produce the agent's `OUT` type.** This is validated at agent construction time.
+
+This enables agents to have utility skills (e.g., `Skill<String, String>` for spell-checking) alongside their primary skills. Convention Over Configuration: skills are free, the agent's contract is the guardrail.
 
 ### 6.1 Three Dimensions of a Skill
 
@@ -189,41 +192,41 @@ A skill is not "what an agent can do." A skill is "one strategy to achieve the a
 │  ├── tools()     — direct execution        │
 │  ├── agent()     — delegate to one agent   │
 │  ├── pipeline {} — sequential chain        │
-│  ├── parallel {} — fan-out + merge         │
+│  ├── forum {}    — agents discuss + converge │
 │  └── branch {}   — conditional routing     │
 └───────────────────────────────────────────┘
 ```
 
-### 6.2 Multiple Skills = Multiple Strategies, Same OUT
+### 6.2 Multiple Skills — Independent Types, At Least One Produces OUT
 
 ```kotlin
 val coder = agent<Specification, CodeBundle>("coder") {
 
     skills {
-        // Strategy 1: write from scratch
-        skill("write-from-scratch") {
+        // Primary skill: matches agent's contract
+        skill<Specification, CodeBundle>("write-from-scratch") {
             tags("generation", "greenfield")
             knowledge { skill("code/write-from-scratch.md") }
             implementedBy { tools("write_file", "compile") }
         }
 
-        // Strategy 2: modify existing code
-        skill("modify-existing") {
+        // Another primary: different input, same OUT
+        skill<ExistingCode, CodeBundle>("modify-existing") {
             tags("modification", "refactor")
             knowledge { skill("code/modify-existing.md") }
             implementedBy { tools("read_file", "edit_file", "compile") }
         }
 
-        // Strategy 3: generate from template
-        skill("generate-from-template") {
-            tags("generation", "template")
-            knowledge { skill("code/generate-from-template.md") }
-            implementedBy { tools("find_template", "apply_template", "compile") }
+        // Utility skill: completely independent types
+        skill<String, String>("check-spelling") {
+            tags("quality", "text")
+            knowledge { skill("code/spelling-rules.md") }
+            implementedBy { tools("spellcheck") }
         }
     }
 
-    // All three strategies: Specification → CodeBundle
-    // Agent CHOOSES strategy but GUARANTEES CodeBundle
+    // ✅ At least one skill produces CodeBundle (agent's OUT) — validated at construction
+    // ❌ If no skill returns CodeBundle → IllegalArgumentException
 }
 ```
 
@@ -246,7 +249,7 @@ routing { strategy = RoutingStrategy.LLM_DECISION }
 
 ## 7. implementedBy: Fractal Composition
 
-A skill can be implemented by **anything that transforms IN to OUT**: tools, agents, pipelines, parallel consensus, conditional branches, or any combination.
+A skill can be implemented by **anything that transforms IN to OUT**: tools, agents, pipelines, forums (multi-agent discussion), conditional branches, or any combination.
 
 ### 7.1 Tools (Leaf Execution)
 
@@ -274,7 +277,7 @@ skill("expert-write") {
 ```kotlin
 skill("write-and-test") {
     implementedBy {
-        pipeline { writer + compiler + tester }
+        pipeline { writer then compiler then tester }
         // writer:   Specification → RawCode
         // compiler: RawCode → CompiledCode
         // tester:   CompiledCode → CodeBundle
@@ -283,17 +286,31 @@ skill("write-and-test") {
 }
 ```
 
-### 7.4 Parallel (Fan-Out + Merge)
+### 7.4 Forum (Multi-Agent Discussion)
+
+Think **"Что? Где? Когда?"** — the question (IN) is dropped on the table, team members discuss and see each other's reasoning across rounds, and the captain (last agent in the `*` chain) gives the final answer (OUT).
+
+Forum typing: **first agent's IN** determines the input, **last agent's OUT** (captain) determines the output. Agents in between can have any types — they're participants in a discussion, not a pipeline.
 
 ```kotlin
+// Forum: first's IN = Specs, captain's OUT = Result
+val codeDiscussion = opinionsArbitrageMaster * crazyGenerator * passiveGenerator * answerMaster
+// Forum<Specs, Result>
+
+// Compose with pipeline: converter feeds the forum
+val pipeline = inputToSpecsConverter then (opinionsArbitrageMaster * crazyGenerator * passiveGenerator * answerMaster)
+// Pipeline<Input, Result>
+
 skill("reliable-write") {
     implementedBy {
-        parallel(merge = MergeStrategy.BEST_SCORE) {
-            agent(kotlinExpert)    // Specification → CodeBundle
-            agent(javaConverter)   // Specification → CodeBundle
-            agent(templateGen)     // Specification → CodeBundle
+        forum(maxRounds = 3) {
+            agent(kotlinExpert)          // Specification → Opinion
+            agent(javaConverter)         // Specification → Opinion
+            agent(arbiter)              // Opinions → FinalCode  ← captain
         }
-        // All must share same IN and OUT types
+        // Agents see each other's outputs, discuss across rounds
+        // Last agent is the captain — delivers the final answer
+        // Forum<Specification, FinalCode>
     }
 }
 ```
@@ -307,8 +324,8 @@ val reviewer = agent<CodeBundle, ReviewResult>("reviewer") { ... }
 // Branch handles all variants of sealed type
 val afterReview = reviewer.branch {
     on<ReviewResult.Passed>()        then deployer          // → DeployResult
-    on<ReviewResult.Failed>()        then coder + reviewer  // retry loop
-    on<ReviewResult.NeedsRevision>() then coder + reviewer  // fix + re-review
+    on<ReviewResult.Failed>()        then coder then reviewer  // retry loop
+    on<ReviewResult.NeedsRevision>() then coder then reviewer  // fix + re-review
 }
 // Compiler forces exhaustive handling of all sealed variants
 ```
@@ -320,12 +337,12 @@ skill("supervised-write") {
     implementedBy {
         pipeline {
             tools("analyze_spec")         // my tool
-            + agent(kotlinExpert)          // delegate to agent
-            + parallel(merge = BEST) {     // fan-out reviews
+            then agent(kotlinExpert)        // delegate to agent
+            then forum(maxRounds = 2) {    // reviewers discuss
                 agent(reviewer1)
                 agent(reviewer2)
             }
-            + tools("finalize")           // my tool again
+            then tools("finalize")         // my tool again
         }
         .withRetry(maxAttempts = 3)
         .withTimeout(30.seconds)
@@ -345,8 +362,8 @@ skill("external-review") {
     implementedBy {
         pipeline {
             tools("prepare_code")            // local
-            + agent(externalReviewer)         // A2A remote
-            + tools("apply_fixes")           // local
+            then agent(externalReviewer)      // A2A remote
+            then tools("apply_fixes")        // local
         }
     }
 }
@@ -354,25 +371,33 @@ skill("external-review") {
 
 ### 7.8 Type Checking Rules
 
-The compiler validates every `implementedBy` against the agent's `<IN, OUT>`:
+Skills are independently typed — each skill has its own `<IN, OUT>`. The agent-level constraint is:
 
 ```
-implementedBy MUST produce: Agent's IN → Agent's OUT
+Agent<X, Y> with skills:
+  At least one skill must have OUT == Y  (validated at construction)
+  Other skills may have any <IN, OUT>    (utility skills)
+
+implementedBy within a skill:
+  MUST produce: Skill's IN → Skill's OUT (not agent's)
 
 tools("t1", "t2"):
-  Collectively transform IN → OUT
+  Collectively transform Skill's IN → Skill's OUT
 
 agent(x):
-  x must be Agent<IN, OUT>  (or compatible variance)
+  x must be Agent<Skill's IN, Skill's OUT>  (or compatible variance)
 
-pipeline { a + b + c }:
-  a.in == Agent's IN, c.out == Agent's OUT, chain links
+pipeline { a then b then c }:
+  a.in == Skill's IN, c.out == Skill's OUT, chain links
 
-parallel { agents }:
-  All agents: Agent<IN, OUT>  (same types)
+forum { a * b * c }:
+  Forum IN = a.IN, Forum OUT = c.OUT (captain), middle agents any types
+
+brainstorm { a + b + c }:
+  All agents share same IN and OUT, results accumulated
 
 branch { on<X> then ... }:
-  All branches must end at Agent's OUT
+  All branches must end at same type
 ```
 
 Violations are compile errors with actionable messages:
@@ -380,7 +405,7 @@ Violations are compile errors with actionable messages:
 ```
 ❌ ERROR: Skill "write-and-test" pipeline produces CompiledCode
    but agent "coder" promises CodeBundle.
-   Pipeline: writer(Spec→Raw) + compiler(Raw→Compiled)
+   Pipeline: writer(Spec→Raw) then compiler(Raw→Compiled)
    Missing final stage: Compiled → CodeBundle
 ```
 
@@ -388,9 +413,9 @@ Violations are compile errors with actionable messages:
 
 ```
 project.skill["deliver-feature"]
-  → pipeline { specMaster + codeMaster + deployer }
+  → pipeline { specMaster then codeMaster then deployer }
     → codeMaster.skill["produce-reviewed-code"]
-      → pipeline { coder + reviewer.branch { ... } }
+      → pipeline { coder then reviewer.branch { ... } }
         → coder.skill["write-code"]
           → tools("write_file", "compile")
 
@@ -460,7 +485,7 @@ val codeMaster = agent<Specification, ReviewedCode>("code-master") {
                 checklist("management/delivery-checklist.md")
             }
             implementedBy {
-                pipeline { coder + reviewer }
+                pipeline { coder then reviewer }
             }
         }
     }
@@ -567,9 +592,10 @@ structure("deep-code") {
 
 | Operator | Semantics | Type Constraint | Result Type |
 |----------|-----------|----------------|-------------|
-| `+` | Sequential pipeline | `A.OUT == B.IN` | `Pipeline<A.IN, B.OUT>` |
-| `/` | Parallel fan-out | All share `IN` and `OUT` | `Parallel<IN, List<OUT>>` |
-| `*` | Security wrap | `Guard<IN,IN> * Pipeline<IN,OUT>` | `Pipeline<IN, OUT>` |
+| `then` | Sequential pipeline | `A.OUT == B.IN` | `Pipeline<A.IN, B.OUT>` |
+| `*` | Forum (discuss + converge) | First's `IN`, last's `OUT` (captain) | `Forum<first.IN, last.OUT>` |
+| `+` | Brainstorm (accumulate ideas) | All share `IN` and `OUT` | `Brainstorm<IN, List<OUT>>` |
+| `>>` | Security wrap | `Guard<IN,IN> >> Pipeline<IN,OUT>` | `Pipeline<IN, OUT>` |
 | `>>` | Educate-then-execute | Educator injects knowledge | `Pipeline<IN, OUT>` |
 | `.branch {}` | Conditional on sealed OUT | Exhaustive + all end at same type | `Branch<IN, FINAL>` |
 | `.with {}` | Config override | Same types | `Agent<IN, OUT>` |
@@ -583,11 +609,11 @@ structure("deep-code") {
 | # | Category | Check | Severity |
 |---|----------|-------|----------|
 | 1 | **Types** | `Agent<Any, Any>` forbidden — SRP enforcement | Error |
-| 2 | **Types** | Pipeline `+` requires `A.OUT == B.IN` | Error |
-| 3 | **Types** | Parallel `/` requires same `IN` and `OUT` | Error |
+| 2 | **Types** | Pipeline `then` requires `A.OUT == B.IN` | Error |
+| 3 | **Types** | Forum `*` first's IN and last's OUT must match composition context | Error |
 | 4 | **Types** | Branch must be exhaustive over sealed type | Error |
-| 5 | **Types** | `implementedBy` pipeline must end at agent's `OUT` | Error |
-| 6 | **Types** | `implementedBy` agent must match parent's `<IN, OUT>` | Error |
+| 5 | **Types** | At least one skill must produce agent's `OUT` type | Error |
+| 6 | **Types** | `implementedBy` must match skill's `<IN, OUT>` (not agent's) | Error |
 | 7 | **Types** | Routing covers all declared input types | Error |
 | 8 | **Permissions** | `requires ⊆ grants` (subset check) | Error |
 | 9 | **Permissions** | Tool permissions ⊆ granted permissions | Error |
@@ -604,7 +630,7 @@ structure("deep-code") {
 | 20 | **Knowledge** | Orphan knowledge files not referenced by any skill | Warning |
 | 21 | **Knowledge** | Knowledge packs defined but never included | Warning |
 | 22 | **Resources** | Child budgets ≤ parent budget | Warning |
-| 23 | **Resources** | Parallel branches ≤ concurrency limit | Warning |
+| 23 | **Resources** | Forum participants ≤ concurrency limit | Warning |
 
 ### 11.2 Error Message Examples
 
@@ -615,7 +641,7 @@ structure("deep-code") {
 
 ❌ ERROR [Type:5]: Skill "write-and-test" pipeline produces CompiledCode
    but agent "coder" promises CodeBundle.
-   Pipeline: writer(Spec→Raw) + compiler(Raw→Compiled)
+   Pipeline: writer(Spec→Raw) then compiler(Raw→Compiled)
    Missing final stage: Compiled → CodeBundle
 
 ❌ ERROR [Permission:8]: Agent "coder" requires [code.write, fs.write]
@@ -770,7 +796,7 @@ structure("review-team") {
         grants { permission("*") }
         delegates(coder) { grants { permission("code.write") } }
         delegates(reviewer) { grants { permission("code.read") } }
-        workflow { coder + reviewer }
+        workflow { coder then reviewer }
     }
 }
 ```
@@ -1331,7 +1357,7 @@ pipelineTest("full", tags = setOf(PIPELINE)) {
     withAgents(specMaster, coder, reviewer)
 
     test("produces reviewed code") {
-        val output = pipeline(specMaster + coder + reviewer)
+        val output = pipeline(specMaster then coder then reviewer)
             .execute(Request("Build user registration"))
         expect {
             stage(specMaster) { output.hasJsonField("$.paths") }
@@ -1664,14 +1690,14 @@ val deployer = agent<CodeBundle, DeployResult>("deployer") {
 // ─── Type-Safe Composition ───
 
 // Simple pipeline
-val review = specMaster + coder + reviewer
+val review = specMaster then coder then reviewer
 // Pipeline<TaskRequest, ReviewResult>
 
 // With branching on review result
-val fullPipeline = specMaster + coder + reviewer.branch {
+val fullPipeline = specMaster then coder then reviewer.branch {
     on<ReviewResult.Passed>()        then deployer
-    on<ReviewResult.Failed>()        then coder + reviewer  // retry
-    on<ReviewResult.NeedsRevision>() then coder + reviewer  // fix
+    on<ReviewResult.Failed>()        then coder then reviewer  // retry
+    on<ReviewResult.NeedsRevision>() then coder then reviewer  // fix
 }
 // Pipeline<TaskRequest, DeployResult>
 
@@ -1754,11 +1780,11 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 ### Phase 1: Core DSL (Q1 2026)
 
 - `Agent<IN, OUT>` typed definitions with SRP enforcement
-- Skill model: contract + knowledge + implementedBy (tools, agents, pipelines, parallel, branch)
+- Skill model: contract + knowledge + implementedBy (tools, agents, pipelines, forum, branch)
 - Layer 2: Structure DSL with delegates, grants, authority, routing, escalation
 - All 23 compile-time validations
 - Sealed type support with exhaustive branching
-- Composition operators: `+`, `/`, `*`, `>>`, `.branch {}`
+- Composition operators: `then`, `*` (forum), `+` (brainstorm), `>>`, `.branch {}`
 - Knowledge system: skill.md, reference, examples, checklist, packs
 - CLI: `agents new`, `generate`, `validate`
 - Project structure conventions
