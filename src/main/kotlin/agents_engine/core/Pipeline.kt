@@ -19,3 +19,7 @@ infix fun <A, B, C> Agent<A, B>.then(other: Forum<B, C>): Pipeline<A, C> {
 infix fun <A, B, C> Pipeline<A, B>.then(other: Forum<B, C>): Pipeline<A, C> {
     return Pipeline(agents + other.agents)
 }
+
+infix fun <A, B, C> Pipeline<A, B>.then(other: Pipeline<B, C>): Pipeline<A, C> {
+    return Pipeline(agents + other.agents)
+}
