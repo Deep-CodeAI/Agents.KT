@@ -6,8 +6,8 @@
 
 ---
 
-**Product Requirements Document — Version 0.5**  
-**February 2026 · CONFIDENTIAL**
+**Product Requirements Document — Version 0.6**
+**March 2026 · CONFIDENTIAL**
 
 K.Skobeltsyn Studio  
 Konstantin Skobeltsyn, CEO
@@ -133,6 +133,37 @@ The `then` infix function enforces:
 infix fun <A, B, C> Agent<A, B>.then(other: Agent<B, C>): Pipeline<A, C>
 //                                    ↑ B must equal B ↑
 ```
+
+### 5.2.1 Single-Placement Rule
+
+Each `agent<>()` call creates a **single-placement instance** — it can participate in at most one structure (Pipeline or Forum), ever. This is enforced at construction time:
+
+```kotlin
+val a = agent<A, B>("a") {}
+val b = agent<B, C>("b") {}
+val c = agent<B, C>("c") {}
+
+a then b   // ✅ "a" placed in pipeline
+
+a then c   // ❌ IllegalArgumentException:
+           //    Agent "a" is already placed in pipeline.
+           //    Each agent instance can only participate once.
+           //    Create a new instance for "pipeline".
+```
+
+Cross-structure reuse is also prohibited — an agent placed in a Pipeline cannot be added to a Forum, and vice versa:
+
+```kotlin
+val a = agent<A, B>("a") {}
+val b = agent<B, C>("b") {}
+val c = agent<A, C>("c") {}
+
+a then b   // ✅ "a" placed in pipeline
+
+a * c      // ❌ IllegalArgumentException: Agent "a" is already placed in pipeline.
+```
+
+To reuse the same agent logic in multiple structures, create new instances: `agent<A, B>("a") {}`.
 
 ### 5.3 Sealed Types for Rich Domain Modeling
 
@@ -659,6 +690,7 @@ structure("deep-code") {
 | 21 | **Knowledge** | Knowledge packs defined but never included | Warning |
 | 22 | **Resources** | Child budgets ≤ parent budget | Warning |
 | 23 | **Resources** | Forum participants ≤ concurrency limit | Warning |
+| 24 | **Topology** | Agent instance placed in at most one structure (Pipeline or Forum) — cross-structure and duplicate reuse requires a new instance | Error |
 
 ### 11.2 Error Message Examples
 
@@ -1001,7 +1033,7 @@ agentsOnRails {
 
 | Task | Description |
 |------|-------------|
-| `agentsValidate` | Run all 23 compile-time checks |
+| `agentsValidate` | Run all 24 compile-time checks |
 | `agentsBuild` | Compile + validate + bundle |
 | `agentsBundle -Pagent=X` | Bundle single agent JAR |
 | `agentsBundleTeam` | Bundle team JAR (all agents + structure) |
@@ -1565,7 +1597,7 @@ agents/
 | A2A | Plugin | N/A | N/A | N/A | **Built-in auto-generated** |
 | MCP | Plugin | N/A | Yes | Yes | **Planned (Phase 3)** |
 | CLI | No | No | No | Yes | **Full CLI + Gradle plugin** |
-| Structural validation | None | None | None | None | **23 compile-time checks** |
+| Structural validation | None | None | None | None | **24 compile-time checks** |
 
 ---
 

@@ -5,10 +5,13 @@ class Pipeline<IN, OUT>(
 )
 
 infix fun <A, B, C> Agent<A, B>.then(other: Agent<B, C>): Pipeline<A, C> {
+    this.markPlaced("pipeline")
+    other.markPlaced("pipeline")
     return Pipeline(listOf(this, other))
 }
 
 infix fun <A, B, C> Pipeline<A, B>.then(other: Agent<B, C>): Pipeline<A, C> {
+    other.markPlaced("pipeline")
     return Pipeline(agents + other)
 }
 

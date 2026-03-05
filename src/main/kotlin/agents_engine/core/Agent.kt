@@ -5,6 +5,15 @@ class Agent<IN, OUT>(
     val outType: kotlin.reflect.KClass<*>,
 ) {
     val skills = mutableMapOf<String, Skill<*, *>>()
+    private var placedIn: String? = null
+
+    fun markPlaced(context: String) {
+        require(placedIn == null) {
+            "Agent \"$name\" is already placed in $placedIn. " +
+                "Each agent instance can only participate once. Create a new instance for \"$context\"."
+        }
+        placedIn = context
+    }
 
     fun skills(block: SkillsBuilder.() -> Unit) {
         val builder = SkillsBuilder()
