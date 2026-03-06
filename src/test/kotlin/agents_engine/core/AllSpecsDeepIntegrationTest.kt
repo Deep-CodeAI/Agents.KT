@@ -1,6 +1,8 @@
 package agents_engine.core
 
 import org.junit.jupiter.api.Test
+import kotlin.random.Random
+import kotlin.test.assertEquals
 
 class AllSpecsDeepIntegrationTest {
 
@@ -78,5 +80,71 @@ class AllSpecsDeepIntegrationTest {
         assert(currentState.glossaryTerms.isNotEmpty())
         assert(currentState.systemActors.isNotEmpty())
 
+    }
+
+    @Test
+    fun specTypesAndCountsArePreservedThroughPipeline() {
+        open class Spec()
+        class UseCase : Spec()
+        class GlossaryTerm : Spec()
+        class OuterReference : Spec()
+        class SystemActor : Spec()
+        class Feature : Spec()
+        class Requirement : Spec()
+
+        data class SpecsParcel(
+            val description: String,
+            val useCases: List<UseCase> = emptyList(),
+            val glossaryTerms: List<GlossaryTerm> = emptyList(),
+            val outerReferences: List<OuterReference> = emptyList(),
+            val systemActors: List<SystemActor> = emptyList(),
+            val features: List<Feature> = emptyList(),
+            val requirements: List<Requirement> = emptyList(),
+        )
+
+        val rng = Random(System.currentTimeMillis())
+        val useCaseCount     = rng.nextInt(1, 20)
+        val glossaryCount    = rng.nextInt(1, 20)
+        val outerRefCount    = rng.nextInt(1, 20)
+        val actorCount       = rng.nextInt(1, 20)
+        val featureCount     = rng.nextInt(1, 20)
+        val requirementCount = rng.nextInt(1, 20)
+
+        // Each agent produces a random-sized list of its own spec type
+        val useCasesMaster     = agent<SpecsParcel, List<Spec>>("uc_master")   { execute { List(useCaseCount)     { UseCase() } } }
+        val glossaryMaster     = agent<SpecsParcel, List<Spec>>("gl_master")   { execute { List(glossaryCount)    { GlossaryTerm() } } }
+        val outerRefsMaster    = agent<SpecsParcel, List<Spec>>("or_master")   { execute { List(outerRefCount)    { OuterReference() } } }
+        val systemActorsMaster = agent<SpecsParcel, List<Spec>>("sa_master")   { execute { List(actorCount)       { SystemActor() } } }
+        val featuresMaster     = agent<SpecsParcel, List<Spec>>("ft_master")   { execute { List(featureCount)     { Feature() } } }
+        val requirementsMaster = agent<SpecsParcel, List<Spec>>("req_master")  { execute { List(requirementCount) { Requirement() } } }
+
+        val parallel = (useCasesMaster / glossaryMaster / outerRefsMaster /
+                systemActorsMaster / featuresMaster / requirementsMaster)
+
+        // Gathering master receives List<List<Spec>> — one list per parallel agent
+        val gatheringMaster = agent<List<List<Spec>>, SpecsParcel>("gathering_master") {
+            execute { specLists ->
+                val all = specLists.flatten()
+                SpecsParcel(
+                    description     = "assembled",
+                    useCases        = all.filterIsInstance<UseCase>(),
+                    glossaryTerms   = all.filterIsInstance<GlossaryTerm>(),
+                    outerReferences = all.filterIsInstance<OuterReference>(),
+                    systemActors    = all.filterIsInstance<SystemActor>(),
+                    features        = all.filterIsInstance<Feature>(),
+                    requirements    = all.filterIsInstance<Requirement>(),
+                )
+            }
+        }
+
+        val pipeline = parallel then gatheringMaster
+        val result = pipeline(SpecsParcel("input"))
+
+        assertEquals(useCaseCount,     result.useCases.size)
+        assertEquals(glossaryCount,    result.glossaryTerms.size)
+        assertEquals(outerRefCount,    result.outerReferences.size)
+        assertEquals(actorCount,       result.systemActors.size)
+        assertEquals(featureCount,     result.features.size)
+        assertEquals(requirementCount, result.requirements.size)
     }
 }
