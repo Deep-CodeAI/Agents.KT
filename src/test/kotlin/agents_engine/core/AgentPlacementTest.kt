@@ -107,4 +107,140 @@ class AgentPlacementTest {
             a then c
         }
     }
+
+    // ─── Parallel ───
+
+    @Test
+    fun agentCanBePlacedInParallelOnce() {
+        val a = agent<A, B>("a") {}
+        val b = agent<A, B>("b") {}
+        val parallel = a / b
+        assert(parallel.agents.size == 2)
+    }
+
+    @Test
+    fun agentCannotBePlacedInTwoParallels() {
+        val a = agent<A, B>("a") {}
+        val b = agent<A, B>("b") {}
+        val c = agent<A, B>("c") {}
+
+        a / b
+
+        assertThrows<IllegalArgumentException> {
+            a / c
+        }
+    }
+
+    @Test
+    fun agentCannotAppearTwiceInSameParallel() {
+        val a = agent<A, B>("a") {}
+        val b = agent<A, B>("b") {}
+
+        val parallel = a / b
+
+        assertThrows<IllegalArgumentException> {
+            parallel / a
+        }
+    }
+
+    // ─── Cross: Parallel + Pipeline ───
+
+    @Test
+    fun agentInParallelCannotBeReusedInPipeline() {
+        val a = agent<A, B>("a") {}
+        val b = agent<A, B>("b") {}
+        val c = agent<B, C>("c") {}
+
+        a / b
+
+        assertThrows<IllegalArgumentException> {
+            a then c
+        }
+    }
+
+    @Test
+    fun agentInPipelineCannotBeReusedInParallel() {
+        val a = agent<A, B>("a") {}
+        val b = agent<B, C>("b") {}
+        val c = agent<A, B>("c") {}
+
+        a then b
+
+        assertThrows<IllegalArgumentException> {
+            a / c
+        }
+    }
+
+    // ─── Cross: Parallel + Forum ───
+
+    @Test
+    fun agentInParallelCannotBeReusedInForum() {
+        val a = agent<A, B>("a") {}
+        val b = agent<A, B>("b") {}
+        val c = agent<A, C>("c") {}
+
+        a / b
+
+        assertThrows<IllegalArgumentException> {
+            a * c
+        }
+    }
+
+    @Test
+    fun agentInForumCannotBeReusedInParallel() {
+        val a = agent<A, B>("a") {}
+        val b = agent<A, C>("b") {}
+        val c = agent<A, B>("c") {}
+
+        a * b
+
+        assertThrows<IllegalArgumentException> {
+            a / c
+        }
+    }
+
+    // ─── Connector agents (boundary between structure types) ───
+
+    @Test
+    fun agentLeadingIntoForumIsTracked() {
+        val a = agent<A, B>("a") {}
+        val b = agent<B, C>("b") {}
+        val c = agent<B, D>("c") {}
+        val d = agent<A, B>("d") {}
+
+        a then (b * c)  // a is a connector: leads pipeline into forum
+
+        assertThrows<IllegalArgumentException> {
+            a / d  // a was already placed — must throw
+        }
+    }
+
+    @Test
+    fun agentLeadingIntoParallelIsTracked() {
+        val a = agent<A, B>("a") {}
+        val b = agent<B, C>("b") {}
+        val c = agent<B, C>("c") {}
+        val d = agent<A, B>("d") {}
+
+        a then (b / c)  // a is a connector: leads pipeline into parallel
+
+        assertThrows<IllegalArgumentException> {
+            a / d  // a was already placed — must throw
+        }
+    }
+
+    @Test
+    fun aggregatorAfterParallelIsTracked() {
+        val a = agent<A, B>("a") {}
+        val b = agent<A, B>("b") {}
+        val agg = agent<List<B>, C>("agg") {}
+
+        (a / b) then agg  // agg is a connector: trails parallel into pipeline
+
+        val c = agent<A, B>("c") {}
+        val d = agent<A, B>("d") {}
+        assertThrows<IllegalArgumentException> {
+            (c / d) then agg  // agg was already placed — must throw
+        }
+    }
 }

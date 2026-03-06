@@ -1,4 +1,4 @@
-# AgentsOnRails
+# Agents.KT
 
 ## Typed Kotlin DSL Framework for AI Agent Systems
 
@@ -189,7 +189,8 @@ Sealed types enable exhaustive branching (Section 7.5).
 Agent<A, B>     : A → B          (typed function)
 A then B        : Agent<X,Y> then Agent<Y,Z> → Pipeline<X,Z>
 A * B           : Agent<X,Y> * Agent<*,Z> → Forum<X, Z>  (first's IN, last answers)
-A + B           : Agent<X,Y> + Agent<X,Y> → Brainstorm<X, List<Y>>  (additive, accumulate)
+A / B           : Agent<X,Y> / Agent<X,Y> → Parallel<X,Y>  (fan-out; all run independently; List<Y> to next stage)
+                  Liskov: declare agents as Agent<X, CommonSupertype> — implementations may return subtypes.
 A.branch { }    : Agent<X, Sealed<Y>> → Branch<X, Z>
                   (each variant of Y routes to a sub-pipeline ending at Z)
 ```
@@ -374,7 +375,42 @@ skill("reliable-write") {
 }
 ```
 
-### 7.5 Branch (Conditional + Exhaustive)
+### 7.5 Parallel (Fan-Out)
+
+All agents receive the same input, run independently, and the next pipeline stage receives `List<OUT>`.
+
+```kotlin
+// Same OUT type
+val parallel = reviewerA / reviewerB / reviewerC
+// Parallel<Code, Review>
+
+// Compose in a pipeline — next stage receives List<Review>
+val pipeline = coder then parallel then synthesizer
+// synthesizer: Agent<List<Review>, FinalResult>
+// Pipeline<Spec, FinalResult>
+```
+
+**Liskov:** Declare agents as the common supertype — implementations may return subtypes.
+
+```kotlin
+sealed interface Review
+data class QuickReview(val summary: String) : Review
+data class DeepReview(val issues: List<String>, val score: Double) : Review
+
+// Both declared as Agent<Code, Review>; implementations return concrete subtypes
+val quick = agent<Code, Review>("quick-reviewer") { ... }   // returns QuickReview
+val deep  = agent<Code, Review>("deep-reviewer")  { ... }   // returns DeepReview
+
+val parallel = quick / deep
+// Parallel<Code, Review>  ✅ — compiler sees Review throughout
+
+val pipeline = coder then parallel then synthesizer
+// synthesizer: Agent<List<Review>, FinalResult>
+```
+
+The distinction from Forum: parallel agents do **not** see each other's outputs — each runs in isolation on the same input. Forum agents collaborate across rounds.
+
+### 7.6 Branch (Conditional + Exhaustive)
 
 ```kotlin
 // reviewer produces sealed ReviewResult
@@ -389,7 +425,7 @@ val afterReview = reviewer.branch {
 // Compiler forces exhaustive handling of all sealed variants
 ```
 
-### 7.6 Hybrid (Mix Everything)
+### 7.7 Hybrid (Mix Everything)
 
 ```kotlin
 skill("supervised-write") {
@@ -410,7 +446,7 @@ skill("supervised-write") {
 }
 ```
 
-### 7.7 A2A Remote Agent as Implementation
+### 7.8 A2A Remote Agent as Implementation
 
 ```kotlin
 val externalReviewer = Agent.fromA2A<CodeBundle, ReviewResult>(
@@ -428,7 +464,7 @@ skill("external-review") {
 }
 ```
 
-### 7.8 Type Checking Rules
+### 7.9 Type Checking Rules
 
 Skills are independently typed — each skill has its own `<IN, OUT>`. The agent-level constraint is:
 
@@ -452,8 +488,9 @@ pipeline { a then b then c }:
 forum { a * b * c }:
   Forum IN = a.IN, Forum OUT = c.OUT (captain), middle agents any types
 
-brainstorm { a + b + c }:
-  All agents share same IN and OUT, results accumulated
+parallel { a / b / c }:
+  All agents share same IN and OUT (declare as common supertype for Liskov)
+  Next stage receives List<OUT>
 
 branch { on<X> then ... }:
   All branches must end at same type
@@ -468,7 +505,7 @@ Violations are compile errors with actionable messages:
    Missing final stage: Compiled → CodeBundle
 ```
 
-### 7.9 Fractal Depth
+### 7.10 Fractal Depth
 
 ```
 project.skill["deliver-feature"]
@@ -653,7 +690,7 @@ structure("deep-code") {
 |----------|-----------|----------------|-------------|
 | `then` | Sequential pipeline | `A.OUT == B.IN` | `Pipeline<A.IN, B.OUT>` |
 | `*` | Forum (discuss + converge) | First's `IN`, last's `OUT` (captain) | `Forum<first.IN, last.OUT>` |
-| `+` | Brainstorm (accumulate ideas) | All share `IN` and `OUT` | `Brainstorm<IN, List<OUT>>` |
+| `/` | Parallel (fan-out) | All share `IN` and `OUT` (or common supertype via Liskov) | `Parallel<IN, OUT>` — next stage receives `List<OUT>` |
 | `>>` | Security wrap | `Guard<IN,IN> >> Pipeline<IN,OUT>` | `Pipeline<IN, OUT>` |
 | `>>` | Educate-then-execute | Educator injects knowledge | `Pipeline<IN, OUT>` |
 | `.branch {}` | Conditional on sealed OUT | Exhaustive + all end at same type | `Branch<IN, FINAL>` |
@@ -1844,7 +1881,7 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 - Layer 2: Structure DSL with delegates, grants, authority, routing, escalation
 - All 23 compile-time validations
 - Sealed type support with exhaustive branching
-- Composition operators: `then`, `*` (forum), `+` (brainstorm), `>>`, `.branch {}`
+- Composition operators: `then`, `*` (forum), `/` (parallel), `>>`, `.branch {}`
 - Knowledge system: skill.md, reference, examples, checklist, packs
 - CLI: `agents new`, `generate`, `validate`
 - Project structure conventions
