@@ -165,6 +165,42 @@ a * c      // ❌ IllegalArgumentException: Agent "a" is already placed in pipel
 
 To reuse the same agent logic in multiple structures, create new instances: `agent<A, B>("a") {}`.
 
+### 5.2.2 Two Execution Paths
+
+An agent has two mutually exclusive execution modes — validated at construction, both composable identically in pipelines:
+
+**Code path** — `execute { }` block, plain Kotlin, no LLM:
+
+```kotlin
+val parser = agent<RawText, Specification>("parser") {
+    execute { input -> Specification(parse(input.text)) }
+}
+```
+
+**LLM path** — `model { }` + `skills { }`, inference-based:
+
+```kotlin
+val coder = agent<Specification, CodeBundle>("coder") {
+    model { claude("claude-sonnet-4-6"); temperature = 0.1 }
+    skills {
+        skill<Specification, CodeBundle>("write-code") { ... }
+    }
+}
+```
+
+Having both in the same agent throws `IllegalArgumentException` at construction. An agent with neither throws `IllegalStateException` when invoked.
+
+### 5.2.3 Pipeline Execution
+
+`Pipeline` composes execution functions at construction time — each `then` chains the typed lambdas. No runtime casts, no reflection:
+
+```kotlin
+val pipeline = parser then formatter then validator
+// pipeline.execution: (RawText) -> ValidationResult — composed at build time
+
+val result = pipeline(input)  // fully type-safe invoke
+```
+
 ### 5.3 Sealed Types for Rich Domain Modeling
 
 ```kotlin
@@ -728,6 +764,8 @@ structure("deep-code") {
 | 22 | **Resources** | Child budgets ≤ parent budget | Warning |
 | 23 | **Resources** | Forum participants ≤ concurrency limit | Warning |
 | 24 | **Topology** | Agent instance placed in at most one structure (Pipeline or Forum) — cross-structure and duplicate reuse requires a new instance | Error |
+| 25 | **Execution** | Agent has both `execute { }` and `skills { }` — mutually exclusive | Error |
+| 26 | **Execution** | Agent invoked with neither `execute { }` nor `skills { }` configured | Error |
 
 ### 11.2 Error Message Examples
 
@@ -1070,7 +1108,7 @@ agentsKt {
 
 | Task | Description |
 |------|-------------|
-| `agentsValidate` | Run all 24 compile-time checks |
+| `agentsValidate` | Run all 26 compile-time checks |
 | `agentsBuild` | Compile + validate + bundle |
 | `agentsBundle -Pagent=X` | Bundle single agent JAR |
 | `agentsBundleTeam` | Bundle team JAR (all agents + structure) |
@@ -1634,7 +1672,7 @@ agents/
 | A2A | Plugin | N/A | N/A | N/A | **Built-in auto-generated** |
 | MCP | Plugin | N/A | Yes | Yes | **Planned (Phase 3)** |
 | CLI | No | No | No | Yes | **Full CLI + Gradle plugin** |
-| Structural validation | None | None | None | None | **24 compile-time checks** |
+| Structural validation | None | None | None | None | **26 compile-time checks** |
 
 ---
 
@@ -1877,17 +1915,21 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 ### Phase 1: Core DSL (Q1 2026)
 
 - `Agent<IN, OUT>` typed definitions with SRP enforcement
+- `execute { }` — code agent path (plain Kotlin, no LLM)
+- `Pipeline` execution via composed functions — no runtime casts
+- `model { }` — LLM inference path
 - Skill model: contract + knowledge + implementedBy (tools, agents, pipelines, forum, branch)
 - Layer 2: Structure DSL with delegates, grants, authority, routing, escalation
-- All 23 compile-time validations
+- All 26 compile-time validations
 - Sealed type support with exhaustive branching
-- Composition operators: `then`, `*` (forum), `/` (parallel), `>>`, `.branch {}`
+- Composition operators: `then`, `*` (forum), `/` (parallel), `.loop {}`, `>>`, `.branch {}`
 - Knowledge system: skill.md, reference, examples, checklist, packs
 - CLI: `agents new`, `generate`, `validate`
 - Project structure conventions
 
 ### Phase 2: Runtime + Distribution (Q2 2026)
 
+- Forum discussion rounds and Parallel coroutine execution
 - Execution engine: coroutines-based delegation, workflow, and branch execution
 - Knowledge loading pipeline: system prompt, RAG, few-shot injection
 - Serialization: agent.json, structure.json, a2a-card.json

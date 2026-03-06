@@ -9,20 +9,21 @@
 Every agent is `Agent<IN, OUT>`. One input type, one output type, one job. Type mismatches and wrong compositions are caught by the compiler. Reused agent instances are caught at construction time — a Detekt rule or compiler plugin for static detection is on the roadmap.
 
 ```kotlin
-val specMaster = agent<TaskRequest, Specification>("spec-master") {
-    skills {
-        skill<TaskRequest, Specification>("create-spec") {
-            implementedBy { input -> Specification(parse(input.text)) }
-        }
-    }
+// Code agent — plain Kotlin, no LLM
+val parser = agent<RawText, Specification>("parser") {
+    execute { input -> Specification(parse(input.text)) }
 }
 
+// LLM agent — inference via model + skills (planned)
 val coder    = agent<Specification, CodeBundle>("coder") { ... }
 val reviewer = agent<CodeBundle, ReviewResult>("reviewer") { ... }
 
 // Compiler checks every boundary
-val pipeline = specMaster then coder then reviewer
-// Pipeline<TaskRequest, ReviewResult>
+val pipeline = parser then coder then reviewer
+// Pipeline<RawText, ReviewResult>
+
+// Run it
+val result = pipeline(RawText("build a user API"))
 ```
 
 ---
@@ -129,6 +130,44 @@ a * forum     // IllegalArgumentException — same instance, different structure
 
 ---
 
+## Agent Execution
+
+Agents have two execution paths — mutually exclusive, validated at construction.
+
+### Code agents — `execute { }`
+
+Plain Kotlin. No LLM, no skills. Use for deterministic steps: parsing, formatting, validation, transformation.
+
+```kotlin
+val formatter = agent<CodeBundle, FormattedCode>("formatter") {
+    execute { input -> FormattedCode(ktlint(input.source)) }
+}
+```
+
+### LLM agents — `model { }` + `skills { }` *(planned)*
+
+```kotlin
+val coder = agent<Specification, CodeBundle>("coder") {
+    model { claude("claude-sonnet-4-6"); temperature = 0.1 }
+    skills {
+        skill<Specification, CodeBundle>("write-code") { ... }
+    }
+}
+```
+
+Both types are `Agent<IN, OUT>` and compose identically in pipelines.
+
+### Running a pipeline
+
+`Pipeline` composes execution functions at construction time — no runtime casts, fully type-safe:
+
+```kotlin
+val pipeline = parser then formatter then validator
+val result = pipeline(input)  // Pipeline<Input, ValidationResult>
+```
+
+---
+
 ## Skills
 
 An agent is a container of typed skills. Each skill has its own `<IN, OUT>`. At least one must produce the agent's `OUT` type — validated at construction.
@@ -192,17 +231,19 @@ cd agents-kt
 
 **Phase 1 — Core DSL** *(in progress)*
 - [x] `Agent<IN, OUT>` with SRP enforcement
+- [x] `execute { }` — code agent execution (plain Kotlin)
 - [x] Skill model — `implementedBy`, typed `execute`
-- [x] `then` — sequential pipeline
+- [x] `then` — sequential pipeline with composed execution (no runtime casts)
 - [x] `/` — parallel fan-out
 - [x] `*` — forum (multi-agent discussion)
 - [x] Single-placement enforcement across all structure types
+- [ ] `model { }` — LLM inference path
 - [ ] `.branch {}` — conditional routing on sealed types
+- [ ] `.loop {}` — iterative execution
 - [ ] `>>` — security/education wrap
 
 **Phase 2 — Runtime** *(Q2 2026)*
 - [ ] Detekt custom rule — static detection of reused agent instances
-- [ ] Execution engine — `pipeline.execute(input)`
 - [ ] Forum discussion rounds
 - [ ] Parallel coroutine execution
 - [ ] Serialization — `agent.json`, A2A AgentCard
