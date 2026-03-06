@@ -9,21 +9,23 @@
 Every agent is `Agent<IN, OUT>`. One input type, one output type, one job. Type mismatches and wrong compositions are caught by the compiler. Reused agent instances are caught at construction time — a Detekt rule or compiler plugin for static detection is on the roadmap.
 
 ```kotlin
-// Code agent — plain Kotlin, no LLM
-val parser = agent<RawText, Specification>("parser") {
-    execute { input -> Specification(parse(input.text)) }
+val parse = agent<RawText, Specification>("parse") {
+    execute { input -> Specification(input.text.split(",").map { it.trim() }) }
+}
+val generate = agent<Specification, CodeBundle>("generate") {
+    execute { spec -> CodeBundle(spec.endpoints.joinToString("\n") { "fun $it() {}" }) }
+}
+val review = agent<CodeBundle, ReviewResult>("review") {
+    execute { code -> ReviewResult(approved = code.source.isNotBlank()) }
 }
 
-// LLM agent — inference via model + skills (planned)
-val coder    = agent<Specification, CodeBundle>("coder") { ... }
-val reviewer = agent<CodeBundle, ReviewResult>("reviewer") { ... }
-
 // Compiler checks every boundary
-val pipeline = parser then coder then reviewer
+val pipeline = parse then generate then review
 // Pipeline<RawText, ReviewResult>
 
 // Run it
-val result = pipeline(RawText("build a user API"))
+val result = pipeline(RawText("getUsers, createUser, deleteUser"))
+// ReviewResult(approved=true)
 ```
 
 ---
@@ -57,27 +59,48 @@ val full = (specMaster then coder) then (reviewer then deployer)
 
 ### `/` — Parallel Fan-Out
 
-All agents receive the same input independently. The next stage receives `List<OUT>`.
+All agents receive the same input independently. The next stage receives `List<OUT>` — one result per agent.
 
 ```kotlin
-val parallel = reviewerA / reviewerB / reviewerC
+val securityReview  = agent<CodeBundle, Review>("security")  { execute { reviewSecurity(it) } }
+val styleReview     = agent<CodeBundle, Review>("style")     { execute { reviewStyle(it) } }
+val performanceReview = agent<CodeBundle, Review>("perf")    { execute { reviewPerf(it) } }
+
+val parallel = securityReview / styleReview / performanceReview
 // Parallel<CodeBundle, Review>
 
+// The gathering agent receives List<Review> — one entry per parallel agent
+val synthesizer = agent<List<Review>, Report>("synthesizer") {
+    execute { reviews ->
+        Report(
+            passed  = reviews.all { it.passed },
+            summary = reviews.joinToString("\n") { it.summary },
+        )
+    }
+}
+
 val pipeline = coder then parallel then synthesizer
-// synthesizer: Agent<List<Review>, FinalResult>
+// Pipeline<Specification, Report>
+
+val report = pipeline(spec)
+// Every reviewer ran; synthesizer received all three results
 ```
 
-**Liskov:** declare agents as the common supertype — implementations may return subtypes.
+**Liskov:** declare agents as the common supertype — subtypes flow through transparently.
 
 ```kotlin
 sealed interface Review
-data class QuickReview(val summary: String) : Review
+data class QuickReview(val summary: String)                      : Review
 data class DeepReview(val issues: List<String>, val score: Double) : Review
 
-val quick = agent<CodeBundle, Review>("quick") { ... }  // returns QuickReview
-val deep  = agent<CodeBundle, Review>("deep")  { ... }  // returns DeepReview
+val quick = agent<CodeBundle, Review>("quick") { execute { QuickReview(briefScan(it)) } }
+val deep  = agent<CodeBundle, Review>("deep")  { execute { DeepReview(fullScan(it), score(it)) } }
 
-val parallel = quick / deep  // Parallel<CodeBundle, Review>
+val parallel    = quick / deep          // Parallel<CodeBundle, Review>
+val synthesizer = agent<List<Review>, Report>("synth") { execute { merge(it) } }
+
+val pipeline = parallel then synthesizer
+// Pipeline<CodeBundle, Report>
 ```
 
 ### `*` — Forum (Multi-Agent Discussion)
@@ -97,31 +120,41 @@ val pipeline = inputConverter then forum then formatter
 The block receives the output and returns the next input to continue, or `null` to stop. Fully composable in pipelines.
 
 ```kotlin
-// while (result < 10) { result = refine(result) }
-val loop = refine.loop { result -> if (result >= 10) null else result }
+// Refine a value until it meets a threshold
+val refineLoop = refine.loop { result -> if (result.score >= 90) null else result }
 
-// loop over a multi-step pipeline
-val loop = (normalize then amplify).loop { result -> if (result.done) null else result }
+// Loop over a multi-step pipeline
+val generateAndEvaluate = generate then evaluate
+val qualityLoop = generateAndEvaluate.loop { result ->
+    if (result.quality >= 90f) null else result.spec   // null = done, spec = continue
+}
 
-// compose in a pipeline
-val pipeline = prepare then loop then finalize
-val result = pipeline(input)
+// Compose in a larger pipeline
+val pipeline = prepare then qualityLoop then publish
+val output = pipeline(input)
 ```
 
-The `next` block is plain Kotlin — call other agents, check external state, anything:
+**Quality gate pattern** — run parallel spec generation in a loop until the evaluator is satisfied:
+
+```kotlin
+val specPipeline   = (useCases / glossary / actors / features) then gather
+val specsEvaluator = agent<SpecsParcel, Float>("eval") { execute { score(it) } }
+
+var specs   = SpecsParcel(description = "build a user API")
+var quality = 0f
+while (quality < 90f) {
+    specs   = specPipeline(specs)
+    quality = specsEvaluator(specs)
+}
+// specs now meets quality threshold
+```
+
+The `next` block is plain Kotlin — call other agents, read external state, anything goes:
 
 ```kotlin
 val loop = body.loop { result ->
-    if (validator(result)) null else transform(result)  // validator is just a function call
-}
-```
-
-Agents and pipelines are also plain callable functions — standard Kotlin `while` works naturally without any DSL:
-
-```kotlin
-var result = initial
-while (!isDone(result)) {
-    result = pipeline(result)   // pipeline called repeatedly, no restrictions
+    if (validator(result)) null   // validator is just a function call — stop
+    else transform(result)        // or produce the next input to continue
 }
 ```
 
@@ -188,9 +221,23 @@ Agents have two execution paths — mutually exclusive, validated at constructio
 Plain Kotlin. No LLM, no skills. Use for deterministic steps: parsing, formatting, validation, transformation.
 
 ```kotlin
+val tokenizer = agent<RawText, Tokens>("tokenizer") {
+    execute { input -> Tokens(input.text.split(" ")) }
+}
+
 val formatter = agent<CodeBundle, FormattedCode>("formatter") {
     execute { input -> FormattedCode(ktlint(input.source)) }
 }
+
+val gate = agent<SpecsParcel, Float>("quality-gate") {
+    execute { specs ->
+        (specs.useCases.size + specs.features.size + specs.requirements.size) / 30f * 100f
+    }
+}
+
+// Invoked directly or as part of a pipeline
+val score = gate(specs)           // Agent<SpecsParcel, Float> is callable
+val tokens = tokenizer(rawText)   // same call syntax everywhere
 ```
 
 ### LLM agents — `model { }` + `skills { }` *(planned)*
