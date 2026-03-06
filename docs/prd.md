@@ -227,6 +227,8 @@ A then B        : Agent<X,Y> then Agent<Y,Z> → Pipeline<X,Z>
 A * B           : Agent<X,Y> * Agent<*,Z> → Forum<X, Z>  (first's IN, last answers)
 A / B           : Agent<X,Y> / Agent<X,Y> → Parallel<X,Y>  (fan-out; all run independently; List<Y> to next stage)
                   Liskov: declare agents as Agent<X, CommonSupertype> — implementations may return subtypes.
+A.loop { }      : (Agent<X,Y> | Pipeline<X,Y>).loop { (Y) -> X? } → Loop<X,Y>
+                  null = stop and return Y; non-null = feed back as next X
 A.branch { }    : Agent<X, Sealed<Y>> → Branch<X, Z>
                   (each variant of Y routes to a sub-pipeline ending at Z)
 ```
@@ -446,7 +448,48 @@ val pipeline = coder then parallel then synthesizer
 
 The distinction from Forum: parallel agents do **not** see each other's outputs — each runs in isolation on the same input. Forum agents collaborate across rounds.
 
-### 7.6 Branch (Conditional + Exhaustive)
+### 7.6 Loop (Iterative Execution)
+
+The `next` block receives the output and returns the next input to continue, or `null` to stop. Works on both agents and pipelines. Fully composable with `then`.
+
+```kotlin
+// Agent loop — while (result < 10) { result = refine(result) }
+val loop = refine.loop { result -> if (result >= 10) null else result }
+
+// Pipeline loop — iterate over a multi-step body
+val loop = (normalize then amplify).loop { result ->
+    if (result.score >= 0.9) null else result   // keep refining until quality threshold
+}
+
+// Compose in a pipeline — Loop<A,B> is a first-class pipeline citizen
+val pipeline = prepare then loop then finalize
+val result = pipeline(input)
+```
+
+The `next` block is plain Kotlin — call other agents, inspect external state, transform the output into a different input type:
+
+```kotlin
+val loop = body.loop { result ->
+    when {
+        result.done      -> null                       // stop
+        result.needsHelp -> escalate(result)           // call another agent inline
+        else             -> result.retry()             // feed back transformed
+    }
+}
+```
+
+**Plain `while` is also valid.** Agents and pipelines are callable functions — standard Kotlin control flow requires no DSL:
+
+```kotlin
+var result = initial
+while (!isDone(result)) {
+    result = pipeline(result)   // pipeline called repeatedly, no restrictions
+}
+```
+
+Both patterns — `.loop {}` and `while` — coexist. Use `.loop {}` when the loop is a structural part of a larger pipeline; use `while` for ad-hoc orchestration in application code.
+
+### 7.7 Branch (Conditional + Exhaustive)
 
 ```kotlin
 // reviewer produces sealed ReviewResult
@@ -461,7 +504,7 @@ val afterReview = reviewer.branch {
 // Compiler forces exhaustive handling of all sealed variants
 ```
 
-### 7.7 Hybrid (Mix Everything)
+### 7.8 Hybrid (Mix Everything)
 
 ```kotlin
 skill("supervised-write") {
@@ -482,7 +525,7 @@ skill("supervised-write") {
 }
 ```
 
-### 7.8 A2A Remote Agent as Implementation
+### 7.9 A2A Remote Agent as Implementation
 
 ```kotlin
 val externalReviewer = Agent.fromA2A<CodeBundle, ReviewResult>(
@@ -500,7 +543,7 @@ skill("external-review") {
 }
 ```
 
-### 7.9 Type Checking Rules
+### 7.10 Type Checking Rules
 
 Skills are independently typed — each skill has its own `<IN, OUT>`. The agent-level constraint is:
 
@@ -541,7 +584,7 @@ Violations are compile errors with actionable messages:
    Missing final stage: Compiled → CodeBundle
 ```
 
-### 7.10 Fractal Depth
+### 7.11 Fractal Depth
 
 ```
 project.skill["deliver-feature"]
@@ -727,6 +770,7 @@ structure("deep-code") {
 | `then` | Sequential pipeline | `A.OUT == B.IN` | `Pipeline<A.IN, B.OUT>` |
 | `*` | Forum (discuss + converge) | First's `IN`, last's `OUT` (captain) | `Forum<first.IN, last.OUT>` |
 | `/` | Parallel (fan-out) | All share `IN` and `OUT` (or common supertype via Liskov) | `Parallel<IN, OUT>` — next stage receives `List<OUT>` |
+| `.loop {}` | Iterative — `null` stops, `IN` continues | `(OUT) -> IN?` feedback block | `Loop<IN, OUT>` — composable with `then` |
 | `>>` | Security wrap | `Guard<IN,IN> >> Pipeline<IN,OUT>` | `Pipeline<IN, OUT>` |
 | `>>` | Educate-then-execute | Educator injects knowledge | `Pipeline<IN, OUT>` |
 | `.branch {}` | Conditional on sealed OUT | Exhaustive + all end at same type | `Branch<IN, FINAL>` |
@@ -1922,7 +1966,7 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 - Layer 2: Structure DSL with delegates, grants, authority, routing, escalation
 - All 26 compile-time validations
 - Sealed type support with exhaustive branching
-- Composition operators: `then`, `*` (forum), `/` (parallel), `.loop {}`, `>>`, `.branch {}`
+- Composition operators: `then`, `*` (forum), `/` (parallel), `.loop {}` (iterative + plain `while`), `>>`, `.branch {}`
 - Knowledge system: skill.md, reference, examples, checklist, packs
 - CLI: `agents new`, `generate`, `validate`
 - Project structure conventions

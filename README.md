@@ -92,6 +92,39 @@ val pipeline = inputConverter then forum then formatter
 // Pipeline<Input, FormattedDecision>
 ```
 
+### `.loop {}` — Iterative Execution
+
+The block receives the output and returns the next input to continue, or `null` to stop. Fully composable in pipelines.
+
+```kotlin
+// while (result < 10) { result = refine(result) }
+val loop = refine.loop { result -> if (result >= 10) null else result }
+
+// loop over a multi-step pipeline
+val loop = (normalize then amplify).loop { result -> if (result.done) null else result }
+
+// compose in a pipeline
+val pipeline = prepare then loop then finalize
+val result = pipeline(input)
+```
+
+The `next` block is plain Kotlin — call other agents, check external state, anything:
+
+```kotlin
+val loop = body.loop { result ->
+    if (validator(result)) null else transform(result)  // validator is just a function call
+}
+```
+
+Agents and pipelines are also plain callable functions — standard Kotlin `while` works naturally without any DSL:
+
+```kotlin
+var result = initial
+while (!isDone(result)) {
+    result = pipeline(result)   // pipeline called repeatedly, no restrictions
+}
+```
+
 ### `.branch {}` — Conditional Routing on Sealed Types *(planned)*
 
 ```kotlin
@@ -195,11 +228,12 @@ analyze.execute(TaskRequest("getUsers, createUser"))
 ## Type Algebra
 
 ```
-Agent<A, B>   : A → B
-A then B      : Agent<X,Y> then Agent<Y,Z>     → Pipeline<X,Z>
-A / B         : Agent<X,Y> / Agent<X,Y>        → Parallel<X,Y>  →  List<Y> to next
-A * B         : Agent<X,Y> * Agent<*,Z>        → Forum<X,Z>
-A.branch {}   : Agent<X, Sealed<Y>>            → Branch<X,Z>
+Agent<A, B>    : A → B
+A then B       : Agent<X,Y> then Agent<Y,Z>    → Pipeline<X,Z>
+A / B          : Agent<X,Y> / Agent<X,Y>       → Parallel<X,Y>  →  List<Y> to next
+A * B          : Agent<X,Y> * Agent<*,Z>       → Forum<X,Z>
+A.loop { }     : (Pipeline<X,Y> | Agent<X,Y>)  → Loop<X,Y>  (null = stop, A = continue)
+A.branch {}    : Agent<X, Sealed<Y>>           → Branch<X,Z>
 ```
 
 ---
@@ -237,9 +271,9 @@ cd agents-kt
 - [x] `/` — parallel fan-out
 - [x] `*` — forum (multi-agent discussion)
 - [x] Single-placement enforcement across all structure types
+- [x] `.loop {}` — iterative execution with `(OUT) -> IN?` feedback block
 - [ ] `model { }` — LLM inference path
 - [ ] `.branch {}` — conditional routing on sealed types
-- [ ] `.loop {}` — iterative execution
 - [ ] `>>` — security/education wrap
 
 **Phase 2 — Runtime** *(Q2 2026)*
