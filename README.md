@@ -125,16 +125,32 @@ while (!isDone(result)) {
 }
 ```
 
-### `.branch {}` — Conditional Routing on Sealed Types *(planned)*
+### `.branch {}` — Conditional Routing on Sealed Types
+
+Routes the output of an agent to a different handler per sealed variant. All branches must produce the same `OUT` type. Unhandled variants throw at invocation.
 
 ```kotlin
+sealed interface ReviewResult
+data class Passed(val score: Double)        : ReviewResult
+data class Failed(val issues: List<String>) : ReviewResult
+data class NeedsRevision(val feedback: String) : ReviewResult
+
 val afterReview = reviewer.branch {
-    on<ReviewResult.Passed>()        then deployer
-    on<ReviewResult.Failed>()        then coder then reviewer  // retry
-    on<ReviewResult.NeedsRevision>() then coder then reviewer  // fix
+    on<Passed>()        then deployer
+    on<Failed>()        then agent<Failed, Report>("fail-report")  { execute { ... } }
+    on<NeedsRevision>() then (reviser then reviewer)  // pipeline on a variant
 }
-// Compiler forces exhaustive handling of all sealed variants
+// Branch<CodeBundle, Report>
 ```
+
+Fully composable with `then`:
+
+```kotlin
+val pipeline = coder then afterReview then notifier
+// Pipeline<Specification, Notification>
+```
+
+Agents inside the branch are placement-tracked — they cannot be reused elsewhere.
 
 ---
 
@@ -232,8 +248,8 @@ Agent<A, B>    : A → B
 A then B       : Agent<X,Y> then Agent<Y,Z>    → Pipeline<X,Z>
 A / B          : Agent<X,Y> / Agent<X,Y>       → Parallel<X,Y>  →  List<Y> to next
 A * B          : Agent<X,Y> * Agent<*,Z>       → Forum<X,Z>
-A.loop { }     : (Pipeline<X,Y> | Agent<X,Y>)  → Loop<X,Y>  (null = stop, A = continue)
-A.branch {}    : Agent<X, Sealed<Y>>           → Branch<X,Z>
+A.loop { }     : (Pipeline<X,Y> | Agent<X,Y>)  → Loop<X,Y>   (null = stop, X = continue)
+A.branch { }   : Agent<X, Sealed<Y>)           → Branch<X,Z>  (all variants → same Z)
 ```
 
 ---
@@ -272,8 +288,8 @@ cd agents-kt
 - [x] `*` — forum (multi-agent discussion)
 - [x] Single-placement enforcement across all structure types
 - [x] `.loop {}` — iterative execution with `(OUT) -> IN?` feedback block
+- [x] `.branch {}` — conditional routing on sealed types, composable with `then`
 - [ ] `model { }` — LLM inference path
-- [ ] `.branch {}` — conditional routing on sealed types
 - [ ] `>>` — security/education wrap
 
 **Phase 2 — Runtime** *(Q2 2026)*

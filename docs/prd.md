@@ -489,20 +489,29 @@ while (!isDone(result)) {
 
 Both patterns — `.loop {}` and `while` — coexist. Use `.loop {}` when the loop is a structural part of a larger pipeline; use `while` for ad-hoc orchestration in application code.
 
-### 7.7 Branch (Conditional + Exhaustive)
+### 7.7 Branch (Conditional Routing on Sealed Types)
+
+Routes the output of an agent to a different handler per sealed variant. All branches must converge to the same `OUT` type — enforced by the `BranchBuilder<OUT>` type parameter. Unhandled variants throw `IllegalStateException` at invocation.
 
 ```kotlin
-// reviewer produces sealed ReviewResult
-val reviewer = agent<CodeBundle, ReviewResult>("reviewer") { ... }
+sealed interface ReviewResult
+data class Passed(val score: Double)           : ReviewResult
+data class Failed(val issues: List<String>)    : ReviewResult
+data class NeedsRevision(val feedback: String) : ReviewResult
 
-// Branch handles all variants of sealed type
 val afterReview = reviewer.branch {
-    on<ReviewResult.Passed>()        then deployer          // → DeployResult
-    on<ReviewResult.Failed>()        then coder then reviewer  // retry loop
-    on<ReviewResult.NeedsRevision>() then coder then reviewer  // fix + re-review
+    on<Passed>()        then deployer                    // Agent<Passed, DeployResult>
+    on<Failed>()        then failReporter                // Agent<Failed, DeployResult>
+    on<NeedsRevision>() then (reviser then reviewer)     // Pipeline on a variant
 }
-// Compiler forces exhaustive handling of all sealed variants
+// Branch<CodeBundle, DeployResult>
+
+// Fully composable with then
+val pipeline = coder then afterReview then notifier
+// Pipeline<Specification, Notification>
 ```
+
+Agents inside the branch receive `markPlaced("branch")` — they cannot be reused in other structures. A pipeline used as a branch handler has its agents already tracked from pipeline construction.
 
 ### 7.8 Hybrid (Mix Everything)
 
@@ -773,7 +782,7 @@ structure("deep-code") {
 | `.loop {}` | Iterative — `null` stops, `IN` continues | `(OUT) -> IN?` feedback block | `Loop<IN, OUT>` — composable with `then` |
 | `>>` | Security wrap | `Guard<IN,IN> >> Pipeline<IN,OUT>` | `Pipeline<IN, OUT>` |
 | `>>` | Educate-then-execute | Educator injects knowledge | `Pipeline<IN, OUT>` |
-| `.branch {}` | Conditional on sealed OUT | Exhaustive + all end at same type | `Branch<IN, FINAL>` |
+| `.branch {}` | Conditional routing on sealed OUT | All variants → same `OUT` type; unhandled variant throws at invocation | `Branch<IN, OUT>` — composable with `then` |
 | `.with {}` | Config override | Same types | `Agent<IN, OUT>` |
 
 ---
@@ -1966,7 +1975,7 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 - Layer 2: Structure DSL with delegates, grants, authority, routing, escalation
 - All 26 compile-time validations
 - Sealed type support with exhaustive branching
-- Composition operators: `then`, `*` (forum), `/` (parallel), `.loop {}` (iterative + plain `while`), `>>`, `.branch {}`
+- Composition operators: `then`, `*` (forum), `/` (parallel), `.loop {}` (iterative + plain `while`), `.branch {}` (sealed type routing), `>>`
 - Knowledge system: skill.md, reference, examples, checklist, packs
 - CLI: `agents new`, `generate`, `validate`
 - Project structure conventions
