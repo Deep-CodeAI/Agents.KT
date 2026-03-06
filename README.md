@@ -81,7 +81,7 @@ val parallel = quick / deep  // Parallel<CodeBundle, Review>
 
 ### `*` — Forum (Multi-Agent Discussion)
 
-Think *"Что? Где? Когда?"* — the question lands on the table, agents discuss across rounds, the captain answers. Agents see each other's reasoning; parallel agents do not.
+Think *jury deliberation* — the case lands on the table, jurors discuss across rounds, one agent delivers the verdict. By convention, the last agent in the `*` chain is the foreperson. Agents see each other's reasoning; parallel agents do not.
 
 ```kotlin
 val forum = initiator * analyst * critic * captain

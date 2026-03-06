@@ -16,7 +16,7 @@ Konstantin Skobeltsyn, CEO
 
 ## 1. Executive Summary
 
-**AgentsOnRails** is a typed, two-layer Kotlin DSL framework for building AI agent systems with compile-time safety guarantees. Every agent is a generic function `Agent<IN, OUT>` — it consumes a typed input and **must** produce a typed output. This single constraint enforces Single Responsibility Principle through the compiler: one agent, one output type, one job.
+**Agents.KT** is a typed, two-layer Kotlin DSL framework for building AI agent systems with compile-time safety guarantees. Every agent is a generic function `Agent<IN, OUT>` — it consumes a typed input and **must** produce a typed output. This single constraint enforces Single Responsibility Principle through the compiler: one agent, one output type, one job.
 
 The framework separates **agent definitions** (Layer 1 — what agents can do, what they know) from **organizational structure** (Layer 2 — who manages whom, with what authority). The Kotlin compiler validates the assembly at every boundary: types must chain, permissions must satisfy, delegation must be acyclic, routing must be exhaustive.
 
@@ -81,15 +81,15 @@ Agents are **A2A-compatible by design** (auto-generated AgentCards), **distribut
 
 ## 4. Protocol Stack
 
-AgentsOnRails occupies the **application layer** in a three-layer protocol stack:
+Agents.KT occupies the **application layer** in a three-layer protocol stack:
 
 | Layer | Protocol | Responsibility |
 |-------|----------|---------------|
-| Application | **AgentsOnRails** | Build, validate, compose, test, distribute agents |
+| Application | **Agents.KT** | Build, validate, compose, test, distribute agents |
 | Agent-to-Agent | **A2A** (Google/Linux Foundation) | Cross-system discovery and communication |
 | Tool Access | **MCP** (Anthropic) | Connect agents to external tools and data |
 
-AgentsOnRails agents can be **A2A servers** (exposing skills via AgentCard) and **MCP clients** (consuming external tools).
+Agents.KT agents can be **A2A servers** (exposing skills via AgentCard) and **MCP clients** (consuming external tools).
 
 ---
 
@@ -348,7 +348,7 @@ skill("write-and-test") {
 
 ### 7.4 Forum (Multi-Agent Discussion)
 
-Think **"Что? Где? Когда?"** — the question (IN) is dropped on the table, team members discuss and see each other's reasoning across rounds, and the captain (last agent in the `*` chain) gives the final answer (OUT).
+Think **jury deliberation** — the case (IN) is dropped on the table, jurors discuss and see each other's reasoning across rounds, and one agent delivers the verdict (OUT). Convention: the last agent in the `*` chain is the foreperson.
 
 Forum typing: **first agent's IN** determines the input, **last agent's OUT** (captain) determines the output. Agents in between can have any types — they're participants in a discussion, not a pipeline.
 
@@ -775,8 +775,8 @@ Kotlin DSL (source of truth)
 
 ```json
 {
-  "$schema": "https://agentsonrails.dev/schema/agent/v0.5.json",
-  "apiVersion": "agentsonrails/v0.5",
+  "$schema": "https://agentskt.dev/schema/agent/v0.5.json",
+  "apiVersion": "agentskt/v0.5",
   "kind": "Agent",
   "metadata": {
     "name": "coder",
@@ -947,7 +947,7 @@ $ agents serve deploy/ --watch
 
 Each agent JAR gets its own ClassLoader:
 
-- Agents see their own classes + AgentsOnRails API + shared types
+- Agents see their own classes + Agents.KT API + shared types
 - Cannot access other agents' classes or tools
 - Different agents can use different library versions
 - Communication only through typed pipeline contracts
@@ -994,7 +994,7 @@ Breaking changes are caught:
 │  Parser · Validator · Assembler            │
 │  Serializer · A2A Generator                │
 │  TypeResolver · PermissionChecker          │
-│  → Maven: dev.agentsonrails:agents-core    │
+│  → Maven: dev.agentskt:agents-core    │
 └──────────┬──────────────────┬─────────────┘
            │                  │
     ┌──────▼──────┐   ┌──────▼──────────┐
@@ -1010,17 +1010,17 @@ Breaking changes are caught:
 // build.gradle.kts
 plugins {
     kotlin("jvm") version "2.1.0"
-    id("dev.agentsonrails") version "0.5.0"
+    id("dev.agentskt") version "0.5.0"
 }
 
 dependencies {
     agent("com.deepcode:spec-master:1.0.0")
     agent("com.deepcode:coder:2.1.0")
-    knowledgepack("dev.agentsonrails.packs:kotlin-bp:1.0.0")
+    knowledgepack("dev.agentskt.packs:kotlin-bp:1.0.0")
     agentTypes("com.deepcode:deep-code-types:1.0.0")
 }
 
-agentsOnRails {
+agentsKt {
     agents {
         sourceDir = "agents/definitions"
         knowledgeDir = "agents/knowledge"
@@ -1087,8 +1087,8 @@ agentsOnRails {
 
 ```bash
 # Installation
-brew install agentsonrails
-# or: curl -sL https://get.agentsonrails.dev | bash
+brew install agentskt
+# or: curl -sL https://get.agentskt.dev | bash
 
 # ═══ SCAFFOLDING ═══
 agents new my-team                            # Full project with Gradle
@@ -1133,7 +1133,7 @@ agents console deploy/
 
 ### 15.1 The JRE Problem
 
-AgentsOnRails is built in Kotlin/JVM, but requiring Java installation kills adoption. Nobody installs a 300MB JDK for a CLI tool. Solution: **two artifacts, two strategies**.
+Agents.KT is built in Kotlin/JVM, but requiring Java installation kills adoption. Nobody installs a 300MB JDK for a CLI tool. Solution: **two artifacts, two strategies**.
 
 ```
 agents CLI     → GraalVM Native Image → single binary, zero deps
@@ -1157,7 +1157,7 @@ $ agents serve deploy/
 Runtime not found. Downloading agents-runtime-0.5.0...
   Platform: linux-x64
   Size: 48MB (includes minimal JRE)
-  Location: ~/.agentsonrails/runtime/0.5.0/
+  Location: ~/.agentskt/runtime/0.5.0/
 Downloading... ████████████████████ 100%
 Installed. ✓
 
@@ -1169,17 +1169,17 @@ Starting server...
 **Homebrew (macOS / Linux):**
 
 ```bash
-brew tap agentsonrails/tap
-brew install agentsonrails
+brew tap agentskt/tap
+brew install agentskt
 # Installs native binary. No Java.
 ```
 
 **npm (cross-platform, JS/TS ecosystem):**
 
 ```bash
-npm install -g @agentsonrails/cli
+npm install -g @agentskt/cli
 # or without installing:
-npx @agentsonrails/cli new my-team
+npx @agentskt/cli new my-team
 ```
 
 Platform-specific native binary downloaded via `optionalDependencies` — same pattern as esbuild, turbo, prisma.
@@ -1187,7 +1187,7 @@ Platform-specific native binary downloaded via `optionalDependencies` — same p
 **pip (Python ecosystem, LangChain migrants):**
 
 ```bash
-pip install agentsonrails
+pip install agentskt
 agents new my-team
 ```
 
@@ -1196,37 +1196,37 @@ Python wrapper downloads native binary on install — same pattern as ruff, blac
 **curl | bash (universal):**
 
 ```bash
-curl -sL https://get.agentsonrails.dev | bash
+curl -sL https://get.agentskt.dev | bash
 # Detects OS + arch, downloads binary, adds to PATH
 ```
 
 **SDKMAN! (JVM ecosystem):**
 
 ```bash
-sdk install agentsonrails
+sdk install agentskt
 ```
 
 **apt / yum (Linux servers):**
 
 ```bash
 # Debian/Ubuntu
-curl -sL https://packages.agentsonrails.dev/gpg | sudo apt-key add -
-echo "deb https://packages.agentsonrails.dev/apt stable main" | \
-  sudo tee /etc/apt/sources.list.d/agentsonrails.list
-sudo apt update && sudo apt install agentsonrails
+curl -sL https://packages.agentskt.dev/gpg | sudo apt-key add -
+echo "deb https://packages.agentskt.dev/apt stable main" | \
+  sudo tee /etc/apt/sources.list.d/agentskt.list
+sudo apt update && sudo apt install agentskt
 ```
 
 **Docker (production runtime):**
 
 ```bash
-docker run -v ./deploy:/app ghcr.io/agentsonrails/runtime:0.5
+docker run -v ./deploy:/app ghcr.io/agentskt/runtime:0.5
 # Contains: jlink JRE + runtime. Just works.
 ```
 
 **Gradle plugin (dev projects):**
 
 ```kotlin
-plugins { id("dev.agentsonrails") version "0.5.0" }
+plugins { id("dev.agentskt") version "0.5.0" }
 // No separate install. Gradle downloads everything.
 ```
 
@@ -1249,7 +1249,7 @@ plugins { id("dev.agentsonrails") version "0.5.0" }
 The runtime is a self-contained package with a minimal JRE produced by jlink:
 
 ```
-~/.agentsonrails/
+~/.agentskt/
 ├── bin/
 │   └── agents                  # native CLI binary
 ├── runtime/
@@ -1273,7 +1273,7 @@ jlink includes only required JVM modules: `java.base`, `java.net.http`, `java.sq
 **Python dev migrating from LangChain:**
 
 ```bash
-pip install agentsonrails                  # native binary, instant
+pip install agentskt                  # native binary, instant
 agents new my-team                          # scaffold
 # ... writes agents in Kotlin DSL ...
 agents validate                             # native, instant
@@ -1284,16 +1284,16 @@ agents serve deploy/                        # first time: downloads runtime
 **Frontend dev exploring agents:**
 
 ```bash
-npx @agentsonrails/cli new my-team         # no install needed
-npx @agentsonrails/cli validate            # runs immediately
-# For serve: docker run -v ./deploy:/app ghcr.io/agentsonrails/runtime:0.5
+npx @agentskt/cli new my-team         # no install needed
+npx @agentskt/cli validate            # runs immediately
+# For serve: docker run -v ./deploy:/app ghcr.io/agentskt/runtime:0.5
 ```
 
 **Kotlin dev (primary audience):**
 
 ```kotlin
 // build.gradle.kts — Gradle handles everything
-plugins { id("dev.agentsonrails") version "0.5.0" }
+plugins { id("dev.agentskt") version "0.5.0" }
 ```
 
 ```bash
@@ -1304,10 +1304,10 @@ plugins { id("dev.agentsonrails") version "0.5.0" }
 **DevOps deploying to production:**
 
 ```bash
-sudo apt install agentsonrails              # CLI + runtime
+sudo apt install agentskt              # CLI + runtime
 agents serve /opt/agents/ --watch --port 8080 --daemon
 # or
-docker run -d -v /opt/agents:/app -p 8080:8080 ghcr.io/agentsonrails/runtime:0.5
+docker run -d -v /opt/agents:/app -p 8080:8080 ghcr.io/agentskt/runtime:0.5
 ```
 
 ### 15.7 Build Pipeline
@@ -1333,7 +1333,7 @@ Kotlin Source
     │           ├→ Auto-download by CLI on first `serve`
     │           └→ apt/yum packages
     │
-    └─→ Docker ─→ ghcr.io/agentsonrails/runtime:0.5
+    └─→ Docker ─→ ghcr.io/agentskt/runtime:0.5
           └→ Contains: jlink JRE + runtime.jar + agents CLI
 ```
 
@@ -1617,7 +1617,7 @@ agents/
 
 ## 18. Competitive Landscape
 
-| Feature | LangChain | CrewAI | Koog | Mastra | **AgentsOnRails** |
+| Feature | LangChain | CrewAI | Koog | Mastra | **Agents.KT** |
 |---------|-----------|--------|------|--------|-------------------|
 | Language | Python | Python | Kotlin | TypeScript | **Kotlin** |
 | Install | pip | pip | Gradle | npm | **brew/npm/pip/curl/apt** |
@@ -1938,7 +1938,7 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 
 4. **Cross-structure communication:** A2A protocol, shared message bus, or explicit bridge agents?
 
-5. **Koog interoperability:** Can an AgentsOnRails agent use Koog internally for behavior graphs within `implementedBy`?
+5. **Koog interoperability:** Can an Agents.KT agent use Koog internally for behavior graphs within `implementedBy`?
 
 6. **Structure inheritance:** Can one structure extend another with overrides?
 
@@ -1969,4 +1969,4 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 
 ---
 
-*AgentsOnRails — Define Freely. Compose Strictly. Ship Reliably.*
+*Agents.KT — Define Freely. Compose Strictly. Ship Reliably.*
