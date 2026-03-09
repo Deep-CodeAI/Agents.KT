@@ -64,9 +64,9 @@ class KnowledgeToolDescriptionTest {
             implementedBy { it }
         }
         val ctx = s.toLlmContext()
-        println("Description")
         val description = s.toLlmDescription()
         println(ctx)
+        println("Description")
         println(description)
         assertTrue("Voice and tone guidelines" in ctx)
         assertTrue("Active voice only" in ctx)

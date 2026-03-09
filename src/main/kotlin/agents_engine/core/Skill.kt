@@ -15,11 +15,14 @@ class Skill<IN, OUT>(
     val outType: kotlin.reflect.KClass<*>,
 ) {
     var implementation: ((IN) -> OUT)? = null
+    private var _llmDescription: String? = null
     private val _knowledge = mutableMapOf<String, KnowledgeEntry>()
 
     // backward-compat: callable by key — skill.knowledge["key"]!!()
     val knowledge: Map<String, () -> String>
         get() = _knowledge.mapValues { it.value.provider }
+
+    fun llmDescription(text: String) { _llmDescription = text }
 
     fun knowledge(key: String, description: String = "", provider: () -> String) {
         _knowledge[key] = KnowledgeEntry(description, provider)
@@ -38,8 +41,27 @@ class Skill<IN, OUT>(
 
     operator fun invoke(input: IN): OUT = execute(input)
 
-    fun toLlmDescription(): String =
-        "Skill: $name | ${inType.simpleName} → ${outType.simpleName}\n$description"
+    fun toLlmDescription(): String {
+        _llmDescription?.let { return it }
+        return buildString {
+            appendLine("## Skill: $name")
+            appendLine()
+            appendLine("**Input:** ${inType.simpleName}")
+            appendLine("**Output:** ${outType.simpleName}")
+            appendLine()
+            appendLine(description)
+            if (_knowledge.isNotEmpty()) {
+                appendLine()
+                appendLine("**Knowledge:**")
+                _knowledge.entries.forEach { (key, entry) ->
+                    if (entry.description.isNotEmpty())
+                        appendLine("- $key — ${entry.description}")
+                    else
+                        appendLine("- $key")
+                }
+            }
+        }.trimEnd()
+    }
 
     fun toLlmContext(): String = buildString {
         append(toLlmDescription())

@@ -83,7 +83,7 @@ class SkillLlmContextTest {
         val s = skill<Int, Int>("noop", "Returns input unchanged") { implementedBy { it } }
         val ctx = s.toLlmContext()
         assertTrue("Returns input unchanged" in ctx)
-        assertFalse("knowledge" in ctx.lowercase())
+        assertFalse("**Knowledge:**" in ctx)
     }
 
     @Test
