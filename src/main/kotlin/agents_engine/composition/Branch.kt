@@ -1,5 +1,6 @@
-package agents_engine.core
+package agents_engine.composition
 
+import agents_engine.core.*
 import kotlin.reflect.KClass
 
 class Branch<IN, OUT>(

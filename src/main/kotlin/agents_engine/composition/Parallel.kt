@@ -1,4 +1,6 @@
-package agents_engine.core
+package agents_engine.composition
+
+import agents_engine.core.*
 
 class Parallel<IN, OUT>(
     val agents: List<Agent<*, *>>,

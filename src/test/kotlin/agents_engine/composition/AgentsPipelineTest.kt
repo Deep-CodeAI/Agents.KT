@@ -1,5 +1,6 @@
-package agents_engine.core
+package agents_engine.composition
 
+import agents_engine.core.*
 import agents_engine.core.AgentEntityDSLTest.SomeAgentAsk
 import agents_engine.core.AgentEntityDSLTest.SomeAgentResult
 import agents_engine.core.AgentEntityDSLTest.SomeIntermediate

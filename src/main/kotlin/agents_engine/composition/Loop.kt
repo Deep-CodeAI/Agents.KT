@@ -1,4 +1,6 @@
-package agents_engine.core
+package agents_engine.composition
+
+import agents_engine.core.*
 
 class Loop<IN, OUT>(
     private val execution: (IN) -> OUT,
