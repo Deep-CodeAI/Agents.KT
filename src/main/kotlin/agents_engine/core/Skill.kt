@@ -2,10 +2,16 @@ package agents_engine.core
 
 class Skill<IN, OUT>(
     val name: String,
+    val description: String,
     val inType: kotlin.reflect.KClass<*>,
     val outType: kotlin.reflect.KClass<*>,
 ) {
     var implementation: ((IN) -> OUT)? = null
+    val knowledge = mutableMapOf<String, () -> String>()
+
+    fun knowledge(key: String, provider: () -> String) {
+        knowledge[key] = provider
+    }
 
     fun implementedBy(block: (IN) -> OUT) {
         implementation = block
@@ -21,8 +27,8 @@ class Skill<IN, OUT>(
     operator fun invoke(input: IN): OUT = execute(input)
 }
 
-inline fun <reified IN : Any, reified OUT : Any> skill(name: String, block: Skill<IN, OUT>.() -> Unit = {}): Skill<IN, OUT> {
-    val skill = Skill<IN, OUT>(name, IN::class, OUT::class)
+inline fun <reified IN : Any, reified OUT : Any> skill(name: String, description: String = "", block: Skill<IN, OUT>.() -> Unit = {}): Skill<IN, OUT> {
+    val skill = Skill<IN, OUT>(name, description, IN::class, OUT::class)
     skill.block()
     return skill
 }
@@ -36,8 +42,8 @@ class SkillsBuilder {
         entries.add(Entry(s) { input -> s(input as IN) })
     }
 
-    inline fun <reified IN : Any, reified OUT : Any> skill(name: String, block: Skill<IN, OUT>.() -> Unit = {}): Skill<IN, OUT> {
-        val s = Skill<IN, OUT>(name, IN::class, OUT::class)
+    inline fun <reified IN : Any, reified OUT : Any> skill(name: String, description: String = "", block: Skill<IN, OUT>.() -> Unit = {}): Skill<IN, OUT> {
+        val s = Skill<IN, OUT>(name, description, IN::class, OUT::class)
         s.block()
         entries.add(Entry(s) { input -> s(input as IN) })
         return s
