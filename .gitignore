@@ -40,4 +40,4 @@ bin/
 .DS_Store
 
 ### Project ###
-docs/
+#docs/
