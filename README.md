@@ -53,7 +53,7 @@ Most agent frameworks let you wire anything to anything. Agents.KT says no.
 | LLM doesn't know which skill to use | Every skill has a mandatory `description` — the LLM reads it to choose |
 | LLM doesn't know what context to load | `knowledge("key", "description") { }` entries — LLM reads descriptions before deciding to call |
 | Flat pipelines only | Five composition operators covering sequential, parallel, iterative, branching, and multi-agent patterns |
-| LLM output is an untyped string | `@Generable` + `@Guide` — JSON Schema, lenient deserializer, and prompt fragment generated at compile time *(planned)* |
+| LLM output is an untyped string | `@Generable` + `@Guide` — `toLlmDescription()`, JSON Schema, prompt fragment, lenient deserializer, and `PartiallyGenerated<T>` via runtime reflection; KSP compile-time generation planned Phase 2 |
 | No testing story | AgentUnit — deterministic through semantic assertions *(planned)* |
 | JVM frameworks require Java installed | Native CLI binary via GraalVM *(planned)* |
 
@@ -95,13 +95,15 @@ skill.toLlmContext()        // full context: description + all knowledge content
 skill.knowledgeTools()      // tools model: knowledge as callable list the LLM pulls on demand
 ```
 
-**`toLlmDescription()`** — convention-over-configuration. Auto-generated from what's already on the skill — name, types, description, and knowledge index. No `input()`, `output()`, or `rule()` calls needed:
+**`toLlmDescription()`** — convention-over-configuration. Auto-generated from what's already on the skill — name, types, description, and knowledge index. No `input()`, `output()`, or `rule()` calls needed. When `IN`/`OUT` types carry `@Generable`, their description and field list (with `@Guide` texts) are embedded inline:
 
 ```markdown
 ## Skill: write-code
 
-**Input:** Specification
-**Output:** CodeBundle
+**Input:** Specification — A structured API specification
+  - endpoints (List<String>): List of endpoint paths to implement
+**Output:** CodeBundle — A bundle of generated Kotlin source files
+  - source (String): The generated Kotlin source code
 
 Writes production Kotlin code from scratch.
 
@@ -123,8 +125,10 @@ skill<Specification, CodeBundle>("write-code", "...") {
 ```markdown
 ## Skill: write-code
 
-**Input:** Specification
-**Output:** CodeBundle
+**Input:** Specification — A structured API specification
+  - endpoints (List<String>): List of endpoint paths to implement
+**Output:** CodeBundle — A bundle of generated Kotlin source files
+  - source (String): The generated Kotlin source code
 
 Writes production Kotlin code from scratch.
 
@@ -132,9 +136,10 @@ Writes production Kotlin code from scratch.
 - style-guide — Preferred coding style — immutability, naming, formatting
 - examples — Concrete input/output pairs for few-shot prompting
 
---- style-guide: Preferred coding style... ---
+Knowledge:
+--- style-guide ---
 Prefer val over var. Use data classes for DTOs.
---- examples: Concrete input/output pairs... ---
+--- examples ---
 ...
 ```
 
@@ -164,10 +169,10 @@ tools.find { it.name == "style-guide" }?.call()
 
 ## Guided Generation
 
-Agent inputs and outputs are data classes. `@Generable` + `@Guide` make them LLM-parseable at compile time — no manual schema authoring, no runtime boilerplate.
+Agent inputs and outputs are data classes. `@Generable` + `@Guide` make them LLM-parseable — no manual schema authoring, no runtime boilerplate.
 
 ```kotlin
-@Generable
+@Generable("Overall quality assessment of a code review")
 data class ReviewResult(
     @Guide("Overall score from 0.0 to 1.0. Strict: < 0.6 means fail.")
     val score: Double,
@@ -178,14 +183,35 @@ data class ReviewResult(
 )
 ```
 
-The KSP annotation processor generates four artifacts at compile time:
+**Three annotations:**
+
+- **`@Generable("description")`** — marks the class as an LLM generation target. The optional description appears in auto-generated skill and type documentation.
+- **`@Guide("description")`** — per-field (or per sealed variant) guidance for the LLM: range, format, constraints.
+- **`@LlmDescription("...")`** — overrides the auto-generated `toLlmDescription()` verbatim for the rare case where the generated text doesn't fit.
+
+Five artifacts are available at runtime via reflection:
 
 | Artifact | API | Use |
 |----------|-----|-----|
-| JSON Schema | `ReviewResult.jsonSchema()` | Constrained decoding (Ollama) or JSON mode (Anthropic) |
-| Prompt fragment | `ReviewResult.promptFragment()` | Injected into system prompt automatically |
-| Lenient deserializer | `ReviewResult.fromLlmOutput(String)` | Parses partial / malformed LLM output gracefully |
-| Streaming variant | `PartiallyGenerated<ReviewResult>` | All fields nullable; fill in as tokens arrive |
+| LLM description | `ReviewResult::class.toLlmDescription()` | Convention-over-configuration markdown: class name, description, fields, types, `@Guide` texts |
+| JSON Schema | `ReviewResult::class.jsonSchema()` | Constrained decoding (Ollama) or JSON mode (Anthropic) |
+| Prompt fragment | `ReviewResult::class.promptFragment()` | Injected into system prompt automatically |
+| Lenient deserializer | `fromLlmOutput<ReviewResult>(String)` | Parses partial/malformed LLM output; `null` on unrecoverable input |
+| Streaming variant | `PartiallyGenerated<ReviewResult>` | Immutable accumulator; `withField()` returns a new copy as tokens arrive |
+
+**`toLlmDescription()`** — auto-generated markdown, no extra work needed:
+
+```markdown
+## ReviewResult
+
+Overall quality assessment of a code review
+
+- **score** (Double): Overall score from 0.0 to 1.0. Strict: < 0.6 means fail.
+- **verdict** (String): One-sentence verdict: 'approved', 'needs revision', or 'rejected'.
+- **issues** (List<String>): Ordered list of specific issues found, or empty if approved.
+```
+
+When a skill's `IN`/`OUT` type carries `@Generable`, `Skill.toLlmDescription()` embeds the type shape inline — the LLM sees field names, types, and `@Guide` texts without any extra configuration.
 
 **Two enforcement tiers — chosen at runtime based on the configured model:**
 
@@ -213,7 +239,7 @@ sealed interface ReviewDecision {
 }
 ```
 
-The generated lenient deserializer routes to the correct subtype via discriminator. `.branch {}` receives exhaustively matched variants — no boilerplate.
+The lenient deserializer routes to the correct subtype via the `"type"` discriminator. `.branch {}` receives exhaustively matched variants — no boilerplate.
 
 **Streaming:**
 
@@ -407,7 +433,7 @@ cd agents-kt
 - [x] `.loop {}` — iterative execution with `(OUT) -> IN?` feedback block
 - [x] `.branch {}` — conditional routing on sealed types, composable with `then`
 - [ ] `model { }` — LLM inference path with tool-calling
-- [ ] `@Generable` / `@Guide` — KSP annotation processor: JSON Schema, prompt fragment, lenient deserializer, `PartiallyGenerated<T>`; constrained decoding (Ollama) + guided JSON mode (Anthropic/OpenAI)
+- [x] `@Generable("desc")` / `@Guide` / `@LlmDescription` — runtime reflection: `toLlmDescription()`, `jsonSchema()`, `promptFragment()`, `fromLlmOutput<T>()`, `PartiallyGenerated<T>`; KSP compile-time generation + constrained decoding (Ollama) planned Phase 2
 - [ ] Skill routing strategy (predefined rules + `LLM_DECISION`)
 - [ ] `>>` — security/education wrap
 
