@@ -1,8 +1,20 @@
 package agents_engine.core
 
+import agents_engine.generation.Generable
+import agents_engine.generation.Guide
 import org.junit.jupiter.api.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+
+@Generable("Raw text document submitted for processing")
+data class Document(
+    @Guide("The full text content") val text: String,
+)
+
+@Generable("A concise single-sentence summary")
+data class Summary(
+    @Guide("The summary sentence") val sentence: String,
+)
 
 /**
  * Convention-over-configuration: toLlmDescription() auto-generates a fully
@@ -116,5 +128,79 @@ class SkillLlmDescriptionTest {
         }
         val desc = s.toLlmDescription()
         assertTrue("rules" in desc)
+    }
+
+    @Test
+    fun `toLlmDescription includes @Generable description for input type`() {
+        val s = skill<Document, Summary>("summarize", "Summarizes text to one sentence") {
+            knowledge("style", "Voice and tone guidelines") { "Active voice only" }
+            implementedBy { Summary(it.text) }
+        }
+        val desc = s.toLlmDescription()
+        println(desc)
+        assertTrue("Raw text document submitted for processing" in desc)
+    }
+
+    @Test
+    fun `toLlmDescription includes field names of @Generable input type`() {
+        val s = skill<Document, Summary>("summarize", "Summarizes text to one sentence") {
+            implementedBy { Summary(it.text) }
+        }
+        val desc = s.toLlmDescription()
+        assertTrue("text" in desc)
+    }
+
+    @Test
+    fun `toLlmDescription includes field Guide descriptions of @Generable input type`() {
+        val s = skill<Document, Summary>("summarize", "Summarizes text to one sentence") {
+            implementedBy { Summary(it.text) }
+        }
+        val desc = s.toLlmDescription()
+        assertTrue("The full text content" in desc)
+    }
+
+    @Test
+    fun `toLlmDescription includes @Generable description for output type`() {
+        val s = skill<Document, Summary>("summarize", "Summarizes text to one sentence") {
+            implementedBy { Summary(it.text) }
+        }
+        val desc = s.toLlmDescription()
+        assertTrue("A concise single-sentence summary" in desc)
+    }
+
+    @Test
+    fun `toLlmDescription includes field names of @Generable output type`() {
+        val s = skill<Document, Summary>("summarize", "Summarizes text to one sentence") {
+            implementedBy { Summary(it.text) }
+        }
+        val desc = s.toLlmDescription()
+        assertTrue("sentence" in desc)
+    }
+
+    @Test
+    fun `toLlmDescription includes field Guide descriptions of @Generable output type`() {
+        val s = skill<Document, Summary>("summarize", "Summarizes text to one sentence") {
+            implementedBy { Summary(it.text) }
+        }
+        val desc = s.toLlmDescription()
+        assertTrue("The summary sentence" in desc)
+    }
+
+    @Test
+    fun `toLlmContext includes @Generable type shapes alongside knowledge`() {
+        val s = skill<Document, Summary>("summarize", "Summarizes text to one sentence") {
+            knowledge("style", "Voice and tone guidelines") { "Active voice only" }
+            implementedBy { Summary(it.text) }
+        }
+        val ctx = s.toLlmContext()
+        println("<<<<")
+        println(ctx)
+        println(">>>>>")
+        assertTrue("Raw text document submitted for processing" in ctx)
+        assertTrue("The full text content" in ctx)
+        assertTrue("A concise single-sentence summary" in ctx)
+        assertTrue("The summary sentence" in ctx)
+        assertTrue("Voice and tone guidelines" in ctx)
+        assertTrue("Active voice only" in ctx)
     }
 }

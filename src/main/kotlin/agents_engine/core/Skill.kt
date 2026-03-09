@@ -1,5 +1,11 @@
 package agents_engine.core
 
+import agents_engine.generation.Generable
+import agents_engine.generation.Guide
+import kotlin.reflect.KClass
+import kotlin.reflect.full.findAnnotation
+import kotlin.reflect.full.primaryConstructor
+
 data class KnowledgeTool(
     val name: String,
     val description: String,
@@ -46,8 +52,8 @@ class Skill<IN, OUT>(
         return buildString {
             appendLine("## Skill: $name")
             appendLine()
-            appendLine("**Input:** ${inType.simpleName}")
-            appendLine("**Output:** ${outType.simpleName}")
+            appendLine("**Input:** ${inType.simpleName}${inType.generableDescription()}")
+            appendLine("**Output:** ${outType.simpleName}${outType.generableDescription()}")
             appendLine()
             appendLine(description)
             if (_knowledge.isNotEmpty()) {
@@ -68,9 +74,7 @@ class Skill<IN, OUT>(
         if (_knowledge.isNotEmpty()) {
             append("\n\nKnowledge:")
             _knowledge.forEach { (key, entry) ->
-                append("\n--- $key")
-                if (entry.description.isNotEmpty()) append(": ${entry.description}")
-                append(" ---\n")
+                append("\n--- $key ---\n")
                 append(entry.provider())
             }
         }
@@ -100,5 +104,22 @@ class SkillsBuilder {
         s.block()
         entries.add(Entry(s) { input -> s(input as IN) })
         return s
+    }
+}
+
+private fun KClass<*>.generableDescription(): String {
+    val annotation = findAnnotation<Generable>() ?: return ""
+    return buildString {
+        val desc = annotation.description
+        if (desc.isNotEmpty()) append(" — $desc")
+        val ctor = primaryConstructor
+        if (ctor != null && ctor.parameters.isNotEmpty()) {
+            ctor.parameters.forEach { param ->
+                val typeName = (param.type.classifier as? KClass<*>)?.simpleName ?: "Any"
+                val guide = param.findAnnotation<Guide>()
+                append("\n  - ${param.name} ($typeName)")
+                if (guide != null) append(": ${guide.description}")
+            }
+        }
     }
 }

@@ -53,6 +53,7 @@ Most agent frameworks let you wire anything to anything. Agents.KT says no.
 | LLM doesn't know which skill to use | Every skill has a mandatory `description` — the LLM reads it to choose |
 | LLM doesn't know what context to load | `knowledge("key", "description") { }` entries — LLM reads descriptions before deciding to call |
 | Flat pipelines only | Five composition operators covering sequential, parallel, iterative, branching, and multi-agent patterns |
+| LLM output is an untyped string | `@Generable` + `@Guide` — JSON Schema, lenient deserializer, and prompt fragment generated at compile time *(planned)* |
 | No testing story | AgentUnit — deterministic through semantic assertions *(planned)* |
 | JVM frameworks require Java installed | Native CLI binary via GraalVM *(planned)* |
 
@@ -158,6 +159,71 @@ tools.find { it.name == "style-guide" }?.call()
 |-------|-----|-------------|
 | All-at-once | `toLlmContext()` | Small knowledge, any LLM |
 | Tools | `knowledgeTools()` | Large knowledge, LLM with tool-calling support |
+
+---
+
+## Guided Generation
+
+Agent inputs and outputs are data classes. `@Generable` + `@Guide` make them LLM-parseable at compile time — no manual schema authoring, no runtime boilerplate.
+
+```kotlin
+@Generable
+data class ReviewResult(
+    @Guide("Overall score from 0.0 to 1.0. Strict: < 0.6 means fail.")
+    val score: Double,
+    @Guide("One-sentence verdict: 'approved', 'needs revision', or 'rejected'.")
+    val verdict: String,
+    @Guide("Ordered list of specific issues found, or empty if approved.")
+    val issues: List<String>,
+)
+```
+
+The KSP annotation processor generates four artifacts at compile time:
+
+| Artifact | API | Use |
+|----------|-----|-----|
+| JSON Schema | `ReviewResult.jsonSchema()` | Constrained decoding (Ollama) or JSON mode (Anthropic) |
+| Prompt fragment | `ReviewResult.promptFragment()` | Injected into system prompt automatically |
+| Lenient deserializer | `ReviewResult.fromLlmOutput(String)` | Parses partial / malformed LLM output gracefully |
+| Streaming variant | `PartiallyGenerated<ReviewResult>` | All fields nullable; fill in as tokens arrive |
+
+**Two enforcement tiers — chosen at runtime based on the configured model:**
+
+| Tier | Models | How |
+|------|--------|-----|
+| **Constrained** | Ollama, llama.cpp, vLLM | Grammar-constrained decoding — always valid JSON |
+| **Guided** | Anthropic, OpenAI, Gemini | JSON mode + prompt fragment + lenient parse + fallback |
+
+**Sealed types** — `@Guide` on each variant tells the LLM when to use it:
+
+```kotlin
+@Generable
+sealed interface ReviewDecision {
+    @Guide("Use when code passes all checks")
+    data class Approved(val score: Double) : ReviewDecision
+
+    @Guide("Use when code has fixable issues — list them in order of severity")
+    data class NeedsRevision(
+        @Guide("Specific issues, most critical first")
+        val issues: List<String>
+    ) : ReviewDecision
+
+    @Guide("Use when fundamental design must change before any fix applies")
+    data class Rejected(val reason: String) : ReviewDecision
+}
+```
+
+The generated lenient deserializer routes to the correct subtype via discriminator. `.branch {}` receives exhaustively matched variants — no boilerplate.
+
+**Streaming:**
+
+```kotlin
+val stream: Flow<PartiallyGenerated<ReviewResult>> = reviewer.stream(code)
+stream.collect { partial ->
+    partial.verdict?.let { showVerdict(it) }   // non-null = field has arrived
+    partial.score?.let   { updateScore(it) }
+}
+```
 
 ---
 
@@ -341,6 +407,7 @@ cd agents-kt
 - [x] `.loop {}` — iterative execution with `(OUT) -> IN?` feedback block
 - [x] `.branch {}` — conditional routing on sealed types, composable with `then`
 - [ ] `model { }` — LLM inference path with tool-calling
+- [ ] `@Generable` / `@Guide` — KSP annotation processor: JSON Schema, prompt fragment, lenient deserializer, `PartiallyGenerated<T>`; constrained decoding (Ollama) + guided JSON mode (Anthropic/OpenAI)
 - [ ] Skill routing strategy (predefined rules + `LLM_DECISION`)
 - [ ] `>>` — security/education wrap
 
