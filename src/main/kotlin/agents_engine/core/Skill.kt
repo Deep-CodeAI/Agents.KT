@@ -12,11 +12,13 @@ class Skill<IN, OUT>(
     }
 
     fun execute(input: IN): OUT {
-        val impl = requireNotNull(implementation) {
+        val impl = checkNotNull(implementation) {
             "Skill \"$name\" has no implementation. Add implementedBy { } block."
         }
         return impl(input)
     }
+
+    operator fun invoke(input: IN): OUT = execute(input)
 }
 
 inline fun <reified IN : Any, reified OUT : Any> skill(name: String, block: Skill<IN, OUT>.() -> Unit = {}): Skill<IN, OUT> {
@@ -26,16 +28,18 @@ inline fun <reified IN : Any, reified OUT : Any> skill(name: String, block: Skil
 }
 
 class SkillsBuilder {
-    val skills = mutableListOf<Skill<*, *>>()
+    @PublishedApi internal data class Entry(val skill: Skill<*, *>, val exec: (Any?) -> Any)
+    @PublishedApi internal val entries = mutableListOf<Entry>()
 
-    operator fun <IN, OUT> Skill<IN, OUT>.unaryPlus() {
-        skills.add(this)
+    inline operator fun <reified IN : Any, reified OUT : Any> Skill<IN, OUT>.unaryPlus() {
+        val s = this
+        entries.add(Entry(s) { input -> s(input as IN) })
     }
 
     inline fun <reified IN : Any, reified OUT : Any> skill(name: String, block: Skill<IN, OUT>.() -> Unit = {}): Skill<IN, OUT> {
         val s = Skill<IN, OUT>(name, IN::class, OUT::class)
         s.block()
-        skills.add(s)
+        entries.add(Entry(s) { input -> s(input as IN) })
         return s
     }
 }

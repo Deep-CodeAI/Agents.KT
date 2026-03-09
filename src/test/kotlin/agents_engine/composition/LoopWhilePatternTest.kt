@@ -24,10 +24,10 @@ class LoopWhilePatternTest {
     fun `while not done run pipeline`() {
         // while (!item.done) { item = process(item) }
         val process = agent<WorkItem, WorkItem>("process") {
-            execute { item ->
+            skills { skill<WorkItem, WorkItem>("process") { implementedBy { item ->
                 val next = item.value + 1
                 WorkItem(next, next >= 5)
-            }
+            } } }
         }
 
         val loop = process.loop { result -> if (result.done) null else result }
@@ -43,7 +43,7 @@ class LoopWhilePatternTest {
     fun `while remaining run accumulating pipeline`() {
         // while (state.remaining > 0) { state = step(state) }
         val step = agent<State, State>("step") {
-            execute { s -> State(s.remaining - 1, s.total + s.remaining) }
+            skills { skill<State, State>("step") { implementedBy { s -> State(s.remaining - 1, s.total + s.remaining) } } }
         }
 
         val loop = step.loop { result -> if (result.remaining <= 0) null else result }
@@ -57,8 +57,8 @@ class LoopWhilePatternTest {
     @Test
     fun `while checker agent says keep going run pipeline`() {
         // The next block is plain Kotlin — can call any agent or function inline
-        val checker = agent<Int, Boolean>("checker") { execute { it < 10 } }
-        val body    = agent<Int, Int>("body")        { execute { it * 2 } }
+        val checker = agent<Int, Boolean>("checker") { skills { skill<Int, Boolean>("checker") { implementedBy { it < 10 } } } }
+        val body    = agent<Int, Int>("body")        { skills { skill<Int, Int>("body")        { implementedBy { it * 2 } } } }
 
         val loop = body.loop { result ->
             if (checker(result)) result else null   // checker is invoked as a function
@@ -75,8 +75,8 @@ class LoopWhilePatternTest {
         // while (result < 100) { result = (normalize then amplify)(result) }
         data class Signal(val value: Double)
 
-        val normalize = agent<Signal, Signal>("normalize") { execute { Signal(it.value + 1.0) } }
-        val amplify   = agent<Signal, Signal>("amplify")   { execute { Signal(it.value * 1.5) } }
+        val normalize = agent<Signal, Signal>("normalize") { skills { skill<Signal, Signal>("normalize") { implementedBy { Signal(it.value + 1.0) } } } }
+        val amplify   = agent<Signal, Signal>("amplify")   { skills { skill<Signal, Signal>("amplify")   { implementedBy { Signal(it.value * 1.5) } } } }
 
         val pipeline = normalize then amplify
         val loop = pipeline.loop { result -> if (result.value >= 10.0) null else result }
@@ -91,7 +91,7 @@ class LoopWhilePatternTest {
     fun `retry pipeline until result is acceptable`() {
         var attempts = 0
         val attempt = agent<String, Int>("attempt") {
-            execute { _ -> attempts++; attempts }   // returns attempt number
+            skills { skill<String, Int>("attempt") { implementedBy { _ -> attempts++; attempts } } }
         }
 
         // retry until attempt 3
@@ -109,10 +109,10 @@ class LoopWhilePatternTest {
         data class Processed(val words: List<String>, val needsMore: Boolean)
 
         val process = agent<Raw, Processed>("process") {
-            execute { raw ->
+            skills { skill<Raw, Processed>("process") { implementedBy { raw ->
                 val words = raw.text.split(" ")
                 Processed(words, words.size < 4)
-            }
+            } } }
         }
 
         val loop = process.loop { result ->

@@ -14,7 +14,7 @@ class WhileLoopTest {
 
     @Test
     fun `agent can be called repeatedly in a while loop`() {
-        val increment = agent<Int, Int>("inc") { execute { it + 1 } }
+        val increment = agent<Int, Int>("inc") { skills { skill<Int, Int>("inc") { implementedBy { it + 1 } } } }
 
         var result = 0
         while (result < 5) {
@@ -26,8 +26,8 @@ class WhileLoopTest {
 
     @Test
     fun `pipeline can be called repeatedly in a while loop`() {
-        val addOne  = agent<Int, Int>("addOne")  { execute { it + 1 } }
-        val doubled = agent<Int, Int>("doubled") { execute { it * 2 } }
+        val addOne  = agent<Int, Int>("addOne")  { skills { skill<Int, Int>("addOne")  { implementedBy { it + 1 } } } }
+        val doubled = agent<Int, Int>("doubled") { skills { skill<Int, Int>("doubled") { implementedBy { it * 2 } } } }
         val pipeline = addOne then doubled
 
         var result = 1
@@ -41,8 +41,8 @@ class WhileLoopTest {
 
     @Test
     fun `while loop with external condition agent`() {
-        val process   = agent<Int, Int>("process")   { execute { it + 3 } }
-        val isDone    = agent<Int, Boolean>("isDone") { execute { it >= 15 } }
+        val process = agent<Int, Int>("process")     { skills { skill<Int, Int>("process")     { implementedBy { it + 3 } } } }
+        val isDone  = agent<Int, Boolean>("isDone")  { skills { skill<Int, Boolean>("isDone")  { implementedBy { it >= 15 } } } }
 
         var result = 0
         while (!isDone(result)) {
@@ -58,7 +58,7 @@ class WhileLoopTest {
         data class State(val value: Int, val log: List<Int>)
 
         val step = agent<State, State>("step") {
-            execute { s -> State(s.value - 1, s.log + s.value) }
+            skills { skill<State, State>("step") { implementedBy { s -> State(s.value - 1, s.log + s.value) } } }
         }
 
         var state = State(5, emptyList())
@@ -71,7 +71,7 @@ class WhileLoopTest {
 
     @Test
     fun `do-while equivalent — pipeline runs at least once`() {
-        val process = agent<Int, Int>("process") { execute { it + 10 } }
+        val process = agent<Int, Int>("process") { skills { skill<Int, Int>("process") { implementedBy { it + 10 } } } }
 
         var result: Int
         var first = true
@@ -89,8 +89,8 @@ class WhileLoopTest {
     fun `while loop with multi-stage pipeline body and complex exit condition`() {
         data class Document(val text: String, val revisions: Int)
 
-        val trim    = agent<Document, Document>("trim")    { execute { Document(it.text.trim(), it.revisions) } }
-        val revise  = agent<Document, Document>("revise")  { execute { Document(it.text + ".", it.revisions + 1) } }
+        val trim   = agent<Document, Document>("trim")   { skills { skill<Document, Document>("trim")   { implementedBy { Document(it.text.trim(), it.revisions) } } } }
+        val revise = agent<Document, Document>("revise") { skills { skill<Document, Document>("revise") { implementedBy { Document(it.text + ".", it.revisions + 1) } } } }
         val pipeline = trim then revise
 
         var doc = Document("  hello  ", 0)

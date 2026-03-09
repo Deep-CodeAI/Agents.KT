@@ -33,18 +33,18 @@ class AllSpecsDeepIntegrationTest {
         var currentState = SpecsParcel(description = input)
         var iteration = 0
 
-        val useCasesMaster     = agent<SpecsParcel, Spec>("use_case_master")      { execute { UseCase() } }
-        val glossaryMaster     = agent<SpecsParcel, Spec>("glossary_master")      { execute { GlossaryTerm() } }
-        val outerRefsMaster    = agent<SpecsParcel, Spec>("outer_refs_master")    { execute { OuterReference() } }
-        val systemActorsMaster = agent<SpecsParcel, Spec>("system_actors_master") { execute { SystemActor() } }
-        val featuresMaster     = agent<SpecsParcel, Spec>("features_master")      { execute { Feature() } }
-        val requirementsMaster = agent<SpecsParcel, Spec>("requirements_master")  { execute { Requirement() } }
+        val useCasesMaster     = agent<SpecsParcel, Spec>("use_case_master")      { skills { skill<SpecsParcel, Spec>("use_case_master")      { implementedBy { UseCase() } } } }
+        val glossaryMaster     = agent<SpecsParcel, Spec>("glossary_master")      { skills { skill<SpecsParcel, Spec>("glossary_master")      { implementedBy { GlossaryTerm() } } } }
+        val outerRefsMaster    = agent<SpecsParcel, Spec>("outer_refs_master")    { skills { skill<SpecsParcel, Spec>("outer_refs_master")    { implementedBy { OuterReference() } } } }
+        val systemActorsMaster = agent<SpecsParcel, Spec>("system_actors_master") { skills { skill<SpecsParcel, Spec>("system_actors_master") { implementedBy { SystemActor() } } } }
+        val featuresMaster     = agent<SpecsParcel, Spec>("features_master")      { skills { skill<SpecsParcel, Spec>("features_master")      { implementedBy { Feature() } } } }
+        val requirementsMaster = agent<SpecsParcel, Spec>("requirements_master")  { skills { skill<SpecsParcel, Spec>("requirements_master")  { implementedBy { Requirement() } } } }
 
         val specsGenerationPipeline = (useCasesMaster / glossaryMaster / outerRefsMaster /
                 systemActorsMaster / featuresMaster / requirementsMaster)
 
         val specsGatheringMaster = agent<List<Spec>, SpecsParcel>("specsGathering_master") {
-            execute { specs ->
+            skills { skill<List<Spec>, SpecsParcel>("specsGathering_master") { implementedBy { specs ->
                 SpecsParcel(
                     description    = currentState.description,
                     useCases       = specs.filterIsInstance<UseCase>(),
@@ -54,19 +54,19 @@ class AllSpecsDeepIntegrationTest {
                     features       = specs.filterIsInstance<Feature>(),
                     requirements   = specs.filterIsInstance<Requirement>(),
                 )
-            }
+            } } }
         }
 
         val total = specsGenerationPipeline then specsGatheringMaster
 
         val specsEvaluator = agent<SpecsParcel, Float>("specsEvaluator") {
-            execute { specs ->
+            skills { skill<SpecsParcel, Float>("specsEvaluator") { implementedBy { specs ->
                 // Score improves with each iteration; reaches 90+ after 3 rounds
                 val completeness = (specs.useCases.size + specs.glossaryTerms.size +
                         specs.outerReferences.size + specs.systemActors.size +
                         specs.features.size + specs.requirements.size).toFloat()
                 minOf(completeness * 15f * (iteration + 1), 100f)
-            }
+            } } }
         }
 
         while (specsGoodness < 90.0f) {
@@ -80,7 +80,6 @@ class AllSpecsDeepIntegrationTest {
         assert(currentState.useCases.isNotEmpty())
         assert(currentState.glossaryTerms.isNotEmpty())
         assert(currentState.systemActors.isNotEmpty())
-
     }
 
     @Test
@@ -112,19 +111,19 @@ class AllSpecsDeepIntegrationTest {
         val requirementCount = rng.nextInt(1, 20)
 
         // Each agent produces a random-sized list of its own spec type
-        val useCasesMaster     = agent<SpecsParcel, List<Spec>>("uc_master")   { execute { List(useCaseCount)     { UseCase() } } }
-        val glossaryMaster     = agent<SpecsParcel, List<Spec>>("gl_master")   { execute { List(glossaryCount)    { GlossaryTerm() } } }
-        val outerRefsMaster    = agent<SpecsParcel, List<Spec>>("or_master")   { execute { List(outerRefCount)    { OuterReference() } } }
-        val systemActorsMaster = agent<SpecsParcel, List<Spec>>("sa_master")   { execute { List(actorCount)       { SystemActor() } } }
-        val featuresMaster     = agent<SpecsParcel, List<Spec>>("ft_master")   { execute { List(featureCount)     { Feature() } } }
-        val requirementsMaster = agent<SpecsParcel, List<Spec>>("req_master")  { execute { List(requirementCount) { Requirement() } } }
+        val useCasesMaster     = agent<SpecsParcel, List<Spec>>("uc_master")  { skills { skill<SpecsParcel, List<Spec>>("uc_master")  { implementedBy { List(useCaseCount)     { UseCase() } } } } }
+        val glossaryMaster     = agent<SpecsParcel, List<Spec>>("gl_master")  { skills { skill<SpecsParcel, List<Spec>>("gl_master")  { implementedBy { List(glossaryCount)    { GlossaryTerm() } } } } }
+        val outerRefsMaster    = agent<SpecsParcel, List<Spec>>("or_master")  { skills { skill<SpecsParcel, List<Spec>>("or_master")  { implementedBy { List(outerRefCount)    { OuterReference() } } } } }
+        val systemActorsMaster = agent<SpecsParcel, List<Spec>>("sa_master")  { skills { skill<SpecsParcel, List<Spec>>("sa_master")  { implementedBy { List(actorCount)       { SystemActor() } } } } }
+        val featuresMaster     = agent<SpecsParcel, List<Spec>>("ft_master")  { skills { skill<SpecsParcel, List<Spec>>("ft_master")  { implementedBy { List(featureCount)     { Feature() } } } } }
+        val requirementsMaster = agent<SpecsParcel, List<Spec>>("req_master") { skills { skill<SpecsParcel, List<Spec>>("req_master") { implementedBy { List(requirementCount) { Requirement() } } } } }
 
         val parallel = (useCasesMaster / glossaryMaster / outerRefsMaster /
                 systemActorsMaster / featuresMaster / requirementsMaster)
 
         // Gathering master receives List<List<Spec>> — one list per parallel agent
         val gatheringMaster = agent<List<List<Spec>>, SpecsParcel>("gathering_master") {
-            execute { specLists ->
+            skills { skill<List<List<Spec>>, SpecsParcel>("gathering_master") { implementedBy { specLists ->
                 val all = specLists.flatten()
                 SpecsParcel(
                     description     = "assembled",
@@ -135,7 +134,7 @@ class AllSpecsDeepIntegrationTest {
                     features        = all.filterIsInstance<Feature>(),
                     requirements    = all.filterIsInstance<Requirement>(),
                 )
-            }
+            } } }
         }
 
         val pipeline = parallel then gatheringMaster

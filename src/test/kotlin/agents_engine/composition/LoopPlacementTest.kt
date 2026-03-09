@@ -15,8 +15,8 @@ class LoopPlacementTest {
 
     @Test
     fun agentInLoopCannotBeReusedInPipeline() {
-        val a = agent<A, A>("a") { execute { it } }
-        val b = agent<A, B>("b") { execute { B(it.v) } }
+        val a = agent<A, A>("a") {}
+        val b = agent<A, B>("b") {}
 
         a.loop { null }
 
@@ -27,7 +27,7 @@ class LoopPlacementTest {
 
     @Test
     fun agentInLoopCannotBeReusedInAnotherLoop() {
-        val a = agent<A, A>("a") { execute { it } }
+        val a = agent<A, A>("a") {}
 
         a.loop { null }
 
@@ -38,8 +38,8 @@ class LoopPlacementTest {
 
     @Test
     fun agentInLoopCannotBeReusedInForum() {
-        val a = agent<A, A>("a") { execute { it } }
-        val b = agent<A, B>("b") { execute { B(it.v) } }
+        val a = agent<A, A>("a") {}
+        val b = agent<A, B>("b") {}
 
         a.loop { null }
 
@@ -50,8 +50,8 @@ class LoopPlacementTest {
 
     @Test
     fun agentInLoopCannotBeReusedInParallel() {
-        val a = agent<A, A>("a") { execute { it } }
-        val b = agent<A, A>("b") { execute { it } }
+        val a = agent<A, A>("a") {}
+        val b = agent<A, A>("b") {}
 
         a.loop { null }
 
@@ -64,8 +64,8 @@ class LoopPlacementTest {
 
     @Test
     fun agentInPipelineCannotBeReusedInLoop() {
-        val a = agent<A, B>("a") { execute { B(it.v) } }
-        val b = agent<B, C>("b") { execute { C(it.v) } }
+        val a = agent<A, B>("a") {}
+        val b = agent<B, C>("b") {}
 
         a then b
 
@@ -78,9 +78,9 @@ class LoopPlacementTest {
 
     @Test
     fun loopInMiddleOfPipelinePassesOutputToNextStage() {
-        val prepare = agent<String, Int>("prepare") { execute { it.length } }
-        val refine  = agent<Int, Int>("refine")    { execute { it + 1 } }
-        val wrap    = agent<Int, String>("wrap")    { execute { "[$it]" } }
+        val prepare = agent<String, Int>("prepare") { skills { skill<String, Int>("prepare") { implementedBy { it.length } } } }
+        val refine  = agent<Int, Int>("refine")     { skills { skill<Int, Int>("refine")     { implementedBy { it + 1 } } } }
+        val wrap    = agent<Int, String>("wrap")    { skills { skill<Int, String>("wrap")    { implementedBy { "[$it]" } } } }
 
         val loop = refine.loop { result -> if (result >= 5) null else result }
 
@@ -92,8 +92,8 @@ class LoopPlacementTest {
 
     @Test
     fun loopAtEndOfPipeline() {
-        val prepare = agent<Int, Int>("prepare") { execute { it * 3 } }
-        val shrink  = agent<Int, Int>("shrink")  { execute { it / 2 } }
+        val prepare = agent<Int, Int>("prepare") { skills { skill<Int, Int>("prepare") { implementedBy { it * 3 } } } }
+        val shrink  = agent<Int, Int>("shrink")  { skills { skill<Int, Int>("shrink")  { implementedBy { it / 2 } } } }
 
         val pipeline = prepare then shrink.loop { result -> if (result == 0) null else result }
 

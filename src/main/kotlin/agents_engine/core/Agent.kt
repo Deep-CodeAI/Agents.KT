@@ -3,10 +3,15 @@ package agents_engine.core
 class Agent<IN, OUT>(
     val name: String,
     val outType: kotlin.reflect.KClass<*>,
+    private val castOut: (Any?) -> OUT,
 ) {
     val skills = mutableMapOf<String, Skill<*, *>>()
+    private val executors = mutableMapOf<String, (Any?) -> Any>()
     private var placedIn: String? = null
-    private var executeBlock: ((IN) -> OUT)? = null
+    var prompt: String = ""
+        private set
+
+    fun prompt(text: String) { prompt = text }
 
     fun markPlaced(context: String) {
         require(placedIn == null) {
@@ -16,25 +21,26 @@ class Agent<IN, OUT>(
         placedIn = context
     }
 
-    fun execute(block: (IN) -> OUT) {
-        executeBlock = block
-    }
-
     operator fun invoke(input: IN): OUT {
-        executeBlock?.let { return it(input) }
-        error("Agent \"$name\" has no execute block. Add execute { } for code agents or skills { } + model { } for LLM agents.")
+        val skill = skills.values.find {
+            it.inType.java.isInstance(input) && it.outType == outType
+        } ?: error(
+            "Agent \"$name\" has no skill for ${outType.simpleName}. " +
+                "Add a skill with implementedBy { } block."
+        )
+        return castOut(executors[skill.name]!!(input))
     }
 
     fun skills(block: SkillsBuilder.() -> Unit) {
         val builder = SkillsBuilder()
         builder.block()
-        builder.skills.forEach { skills[it.name] = it }
+        builder.entries.forEach { (skill, exec) ->
+            skills[skill.name] = skill
+            if (skill.outType == outType) executors[skill.name] = exec
+        }
     }
 
     fun validate() {
-        require(executeBlock == null || skills.isEmpty()) {
-            "Agent \"$name\" has both execute { } and skills { }. Use one or the other."
-        }
         if (skills.isNotEmpty()) {
             require(skills.values.any { it.outType == outType }) {
                 "Agent \"$name\" has no skill producing ${outType.simpleName}. " +
@@ -45,7 +51,7 @@ class Agent<IN, OUT>(
 }
 
 inline fun <IN, reified OUT : Any> agent(name: String, block: Agent<IN, OUT>.() -> Unit): Agent<IN, OUT> {
-    val agent = Agent<IN, OUT>(name, OUT::class)
+    val agent = Agent<IN, OUT>(name, OUT::class) { it as OUT }
     agent.block()
     agent.validate()
     return agent

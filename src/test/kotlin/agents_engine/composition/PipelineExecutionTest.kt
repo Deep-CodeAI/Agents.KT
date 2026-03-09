@@ -13,10 +13,10 @@ class PipelineExecutionTest {
     @Test
     fun pipelineOfTwoCodeAgentsExecutes() {
         val upper = agent<Input, Middle>("upper") {
-            execute { Middle(it.v.uppercase()) }
+            skills { skill<Input, Middle>("upper") { implementedBy { Middle(it.v.uppercase()) } } }
         }
         val exclaim = agent<Middle, Output>("exclaim") {
-            execute { Output("${it.v}!") }
+            skills { skill<Middle, Output>("exclaim") { implementedBy { Output("${it.v}!") } } }
         }
 
         val pipeline = upper then exclaim
@@ -28,10 +28,10 @@ class PipelineExecutionTest {
         val log = mutableListOf<String>()
 
         val first = agent<Input, Middle>("first") {
-            execute { log.add("first"); Middle(it.v) }
+            skills { skill<Input, Middle>("first") { implementedBy { log.add("first"); Middle(it.v) } } }
         }
         val second = agent<Middle, Output>("second") {
-            execute { log.add("second"); Output(it.v) }
+            skills { skill<Middle, Output>("second") { implementedBy { log.add("second"); Output(it.v) } } }
         }
 
         (first then second)(Input("x"))
@@ -46,11 +46,11 @@ class PipelineExecutionTest {
         data class C(val v: Int)
         data class D(val v: Int)
 
-        val a = agent<A, B>("a") { execute { B(it.v + 1) } }
-        val b = agent<B, C>("b") { execute { C(it.v * 2) } }
-        val c = agent<C, D>("c") { execute { D(it.v - 3) } }
+        val a = agent<A, B>("a") { skills { skill<A, B>("a") { implementedBy { B(it.v + 1) } } } }
+        val b = agent<B, C>("b") { skills { skill<B, C>("b") { implementedBy { C(it.v * 2) } } } }
+        val c = agent<C, D>("c") { skills { skill<C, D>("c") { implementedBy { D(it.v - 3) } } } }
 
         val pipeline = a then b then c
-        assertEquals(D((1 + 1) * 2 - 3), pipeline(A(1)))  // ((1+1)*2)-3 = 1
+        assertEquals(D((1 + 1) * 2 - 3), pipeline(A(1)))
     }
 }

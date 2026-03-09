@@ -8,7 +8,7 @@ class Branch<IN, OUT>(
     private val routes: Map<KClass<*>, (Any?) -> OUT>,
 ) {
     operator fun invoke(input: IN): OUT {
-        val result = (source as Agent<IN, Any?>)(input)
+        val result: Any? = source(input)
         val route = routes[result!!::class]
             ?: error("No branch defined for ${result::class.simpleName}.")
         return route(result)
@@ -18,20 +18,21 @@ class Branch<IN, OUT>(
 class BranchBuilder<OUT> {
     val routes = mutableMapOf<KClass<*>, (Any?) -> OUT>()
 
-    inner class OnClause<T>(private val klass: KClass<*>) {
-        @Suppress("UNCHECKED_CAST")
+    inner class OnClause<T : Any>(
+        private val klass: KClass<T>,
+        private val castFn: (Any?) -> T,
+    ) {
         infix fun then(agent: Agent<T, OUT>) {
             agent.markPlaced("branch")
-            routes[klass] = { input -> agent(input as T) }
+            routes[klass] = { input -> agent(castFn(input)) }
         }
 
-        @Suppress("UNCHECKED_CAST")
         infix fun then(pipeline: Pipeline<T, OUT>) {
-            routes[klass] = { input -> pipeline(input as T) }
+            routes[klass] = { input -> pipeline(castFn(input)) }
         }
     }
 
-    inline fun <reified T> on(): OnClause<T> = OnClause(T::class)
+    inline fun <reified T : Any> on(): OnClause<T> = OnClause(T::class) { it as T }
 }
 
 fun <IN, SEALED, OUT> Agent<IN, SEALED>.branch(block: BranchBuilder<OUT>.() -> Unit): Branch<IN, OUT> {
