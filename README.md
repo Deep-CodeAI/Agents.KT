@@ -89,28 +89,51 @@ writeCode.execute(mySpec)   // Specification → CodeBundle
 ### How a skill describes itself to the LLM
 
 ```kotlin
-skill.toLlmDescription()   // compact: name + type signature + description
-skill.toLlmContext()        // all-at-once: description + all knowledge entries merged
-skill.knowledgeTools()      // tools model: knowledge as a callable list the LLM pulls on demand
+skill.toLlmDescription()   // auto-generated markdown — no extra annotations needed
+skill.toLlmContext()        // full context: description + all knowledge content loaded
+skill.knowledgeTools()      // tools model: knowledge as callable list the LLM pulls on demand
 ```
 
-**`toLlmDescription()`** — what the LLM reads when scanning available skills:
+**`toLlmDescription()`** — convention-over-configuration. Auto-generated from what's already on the skill — name, types, description, and knowledge index. No `input()`, `output()`, or `rule()` calls needed:
 
+```markdown
+## Skill: write-code
+
+**Input:** Specification
+**Output:** CodeBundle
+
+Writes production Kotlin code from scratch.
+
+**Knowledge:**
+- style-guide — Preferred coding style — immutability, naming, formatting
+- examples — Concrete input/output pairs for few-shot prompting
 ```
-Skill: write-code | Specification → CodeBundle
-Writes production Kotlin code from scratch based on a specification
+
+Override for the rare case where generated text isn't right:
+
+```kotlin
+skill<Specification, CodeBundle>("write-code", "...") {
+    llmDescription("Custom markdown description")
+}
 ```
 
-**`toLlmContext()`** — everything pre-loaded before the LLM runs. Knowledge descriptions appear as section headers:
+**`toLlmContext()`** — everything pre-loaded before the LLM runs: `toLlmDescription()` followed by the full content of each knowledge entry:
 
-```
-Skill: write-code | Specification → CodeBundle
-Writes production Kotlin code from scratch based on a specification
+```markdown
+## Skill: write-code
 
-Knowledge:
---- style-guide: Preferred coding style — immutability, naming, formatting ---
+**Input:** Specification
+**Output:** CodeBundle
+
+Writes production Kotlin code from scratch.
+
+**Knowledge:**
+- style-guide — Preferred coding style — immutability, naming, formatting
+- examples — Concrete input/output pairs for few-shot prompting
+
+--- style-guide: Preferred coding style... ---
 Prefer val over var. Use data classes for DTOs.
---- examples: Concrete input/output pairs for few-shot prompting ---
+--- examples: Concrete input/output pairs... ---
 ...
 ```
 
@@ -308,8 +331,9 @@ cd agents-kt
 - [x] Skills-only execution — all agents run through `skills { implementedBy { } }`
 - [x] `Skill.description` (mandatory) — sells the skill to the LLM alongside its type signature
 - [x] `Skill.knowledge("key", "description") { }` — named lazy context providers per skill
-- [x] `Skill.toLlmDescription()` / `toLlmContext()` / `knowledgeTools()` — two LLM context models
-- [x] `KnowledgeTool(name, description, call)` — tools model with lazy per-entry loading
+- [x] `Skill.toLlmDescription()` — auto-generated markdown (name, types, description, knowledge index); `llmDescription("...")` override
+- [x] `Skill.toLlmContext()` — full context: description markdown + all knowledge content
+- [x] `Skill.knowledgeTools()` / `KnowledgeTool(name, description, call)` — tools model with lazy per-entry loading
 - [x] `then` — sequential pipeline with composed execution (no runtime casts)
 - [x] `/` — parallel fan-out
 - [x] `*` — forum (multi-agent discussion)
