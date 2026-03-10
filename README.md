@@ -52,7 +52,7 @@ Most agent frameworks let you wire anything to anything. Agents.KT says no.
 | The same agent instance wired into two places | Single-placement rule — `IllegalArgumentException` at construction time |
 | LLM doesn't know which skill to use | Every skill has a mandatory `description` — the LLM reads it to choose |
 | LLM doesn't know what context to load | `knowledge("key", "description") { }` entries — LLM reads descriptions before deciding to call |
-| Flat pipelines only | Five composition operators covering sequential, parallel, iterative, branching, and multi-agent patterns |
+| Flat pipelines only | Six composition operators covering sequential, parallel, iterative, branching, detached spawn, and multi-agent patterns |
 | LLM output is an untyped string | `@Generable` + `@Guide` — `toLlmDescription()`, JSON Schema, prompt fragment, lenient deserializer, and `PartiallyGenerated<T>` via runtime reflection; KSP compile-time generation planned Phase 2 |
 | No testing story | AgentUnit — deterministic through semantic assertions *(planned)* |
 | JVM frameworks require Java installed | Native CLI binary via GraalVM *(planned)* |
@@ -437,21 +437,38 @@ cd agents-kt
 - [ ] Skill routing strategy (predefined rules + `LLM_DECISION`)
 - [ ] `>>` — security/education wrap
 
-**Phase 2 — Runtime** *(Q2 2026)*
-- [ ] Detekt custom rule — static detection of reused agent instances
-- [ ] Forum discussion rounds
-- [ ] Parallel coroutine execution
+**Phase 2 — Runtime + Distribution** *(Q2 2026)*
+- [ ] `model { }` — LLM inference path with tool-calling
+- [ ] Agentic execution loop — multi-turn tool calling with per-invocation budget controls (`maxTurns`, `maxToolCalls`, `maxTokens`, `maxTime`)
+- [ ] Session model — multi-turn `AgentSession`, automatic compaction (`SUMMARIZE`, `SLIDING_WINDOW`, `CUSTOM`)
+- [ ] Reactive context hooks — `beforeInference`, `afterToolCall`, `onBudgetThreshold`; static knowledge vs runtime system reminders
+- [ ] Agent memory — project/user/global scopes, `memory_read`/`memory_write` auto-injected tools, file-based persistent state
+- [ ] KSP annotation processor — compile-time `@Generable`; constrained decoding (Ollama) + guided JSON mode (Anthropic/OpenAI)
+- [ ] Skill routing — predefined rules + `RoutingStrategy.LLM_DECISION`
+- [ ] `.spawn {}` — independent sub-agent lifecycle, `AgentHandle<OUT>`, parent-managed join
+- [ ] Pipeline observability — `observe {}` event handler, `Flow<PipelineEvent>` for streaming UIs, cancellation propagation
+- [ ] Forum discussion rounds and parallel coroutine execution
 - [ ] File-based knowledge: `skill.md`, `reference`, `examples`, `checklist`
 - [ ] Serialization — `agent.json`, A2A AgentCard
 - [ ] JAR bundles and folder-based assembly
 - [ ] Gradle plugin
+- [ ] Native CLI binary (GraalVM — no JRE required); `brew`, npm, pip, curl, apt
 
-**Phase 3 — Distribution** *(Q3 2026)*
-- [ ] Native CLI binary (GraalVM — no JRE required)
-- [ ] `brew install agentskt`, npm, pip, curl, apt
-- [ ] AgentUnit testing framework
-- [ ] A2A protocol support
+**Phase 3 — Production** *(Q3 2026)*
+- [ ] Runtime permission model — `ALLOW_ALL`, `CONFIRM_DESTRUCTIVE`, `ALLOWLIST` with predicate DSL
+- [ ] Team DSL — swarm coordination, message passing, shared memory, worktree isolation
+- [ ] Layer 2: Full Structure DSL with delegates, grants, authority, routing, escalation
+- [ ] AgentUnit testing framework — unit, semantic (LLM-as-judge), Skill Coverage metrics
+- [ ] A2A protocol support (server + client)
 - [ ] MCP tool integration
+- [ ] Production observability: OpenTelemetry traces
+
+**Phase 4 — Ecosystem** *(Q4 2026)*
+- [ ] Knowledge packs — battle-tested prompt libraries for common domains
+- [ ] Agent generation from natural language (NL → Kotlin DSL)
+- [ ] Skillify — extract reusable skills from session transcripts
+- [ ] Visual structure editor, UML bidirectional conversion
+- [ ] Knowledge marketplace
 
 ---
 
