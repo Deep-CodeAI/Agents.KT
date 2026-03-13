@@ -54,8 +54,10 @@ Most agent frameworks let you wire anything to anything. Agents.KT says no.
 | LLM doesn't know what context to load | `knowledge("key", "description") { }` entries — LLM reads descriptions before deciding to call |
 | Flat pipelines only | Six composition operators covering sequential, parallel, iterative, branching, detached spawn, and multi-agent patterns |
 | LLM output is an untyped string | `@Generable` + `@Guide` — `toLlmDescription()`, JSON Schema, prompt fragment, lenient deserializer, and `PartiallyGenerated<T>` via runtime reflection; KSP compile-time generation planned Phase 2 |
+| MCP tools are wrappers, not first-class | `McpTool<IN, OUT>` inherits `Tool<IN, OUT>` — same interface as local tools, no adapters |
+| Permission model is stringly-typed | `grants { tools(writeFile, compile) }` — actual `Tool<*,*>` references, compiler-validated |
 | No testing story | AgentUnit — deterministic through semantic assertions *(planned)* |
-| JVM frameworks require Java installed | Native CLI binary via GraalVM *(planned)* |
+| JVM frameworks require Java installed | Native CLI binary via GraalVM *(planned Phase 2 Priority)* |
 
 ---
 
@@ -164,6 +166,58 @@ tools.find { it.name == "style-guide" }?.call()
 |-------|-----|-------------|
 | All-at-once | `toLlmContext()` | Small knowledge, any LLM |
 | Tools | `knowledgeTools()` | Large knowledge, LLM with tool-calling support |
+
+---
+
+## Model & Tool Calling
+
+Attach a model to an agent and mark a skill as agentic with `tools(...)`. The framework runs a multi-turn loop — model calls tools, results flow back, model produces the final answer.
+
+```kotlin
+val calculator = agent<String, String>("calculator") {
+    prompt("You are a calculator. Use the provided tools to evaluate expressions step by step.")
+    model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
+
+    tools {
+        tool("add",      "Add two numbers. Args: a, b")             { args -> num(args, "a") + num(args, "b") }
+        tool("subtract", "Subtract b from a. Args: a, b")           { args -> num(args, "a") - num(args, "b") }
+        tool("multiply", "Multiply two numbers. Args: a, b")        { args -> num(args, "a") * num(args, "b") }
+        tool("divide",   "Divide a by b. Args: a, b")               { args -> num(args, "a") / num(args, "b") }
+        tool("power",    "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp")) }
+    }
+
+    skills {
+        skill<String, String>("solve", "Evaluate arithmetic expressions using tools") {
+            tools("add", "subtract", "multiply", "divide", "power")
+        }
+    }
+
+    onToolUse { name, args, result ->
+        println("  $name(${args.values.joinToString(", ")}) = $result")
+    }
+}
+
+calculator("Calculate ((15 + 35) / 2)^2")
+//   add(15.0, 35.0) = 50.0
+//   divide(50.0, 2.0) = 25.0
+//   power(25.0, 2.0) = 625.0
+// → "The result is 625."
+```
+
+**`model { }`** — configures the LLM backend. Currently supports Ollama; `host`, `port`, and `temperature` are settable.
+
+**`tools { tool(name, description) { args -> } }`** — registers callable tools. Each tool receives a `Map<String, Any?>` of arguments and returns any value.
+
+**`skill { tools(...) }`** — marks a skill as LLM-driven. The listed tool names are the ones the model may call. The model decides which tools to call and in what order.
+
+**`onToolUse { name, args, result -> }`** — observability hook, called after every tool execution. Useful for logging, tracing, and test assertions.
+
+**Budget control** — prevent runaway loops:
+
+```kotlin
+model { ollama("llama3") }
+budget { maxTurns = 10 }   // throws BudgetExceededException after 10 turns
+```
 
 ---
 
@@ -422,7 +476,7 @@ cd agents-kt
 - [x] `Agent.prompt` — base context string for the LLM
 - [x] Skills-only execution — all agents run through `skills { implementedBy { } }`
 - [x] `Skill.description` (mandatory) — sells the skill to the LLM alongside its type signature
-- [x] `Skill.knowledge("key", "description") { }` — named lazy context providers per skill
+- [x] `Skill.knowledge("key", "description") { }` — named lazy context providers; `loadFile()` inside lambdas
 - [x] `Skill.toLlmDescription()` — auto-generated markdown (name, types, description, knowledge index); `llmDescription("...")` override
 - [x] `Skill.toLlmContext()` — full context: description markdown + all knowledge content
 - [x] `Skill.knowledgeTools()` / `KnowledgeTool(name, description, call)` — tools model with lazy per-entry loading
@@ -432,36 +486,41 @@ cd agents-kt
 - [x] Single-placement enforcement across all structure types
 - [x] `.loop {}` — iterative execution with `(OUT) -> IN?` feedback block
 - [x] `.branch {}` — conditional routing on sealed types, composable with `then`
-- [ ] `model { }` — LLM inference path with tool-calling
-- [x] `@Generable("desc")` / `@Guide` / `@LlmDescription` — runtime reflection: `toLlmDescription()`, `jsonSchema()`, `promptFragment()`, `fromLlmOutput<T>()`, `PartiallyGenerated<T>`; KSP compile-time generation + constrained decoding (Ollama) planned Phase 2
-- [ ] Skill routing strategy (predefined rules + `LLM_DECISION`)
+- [x] `@Generable("desc")` / `@Guide` / `@LlmDescription` — runtime reflection: `toLlmDescription()`, `jsonSchema()`, `promptFragment()`, `fromLlmOutput<T>()`, `PartiallyGenerated<T>`
+- [x] `model { }` — Ollama backend; `host`, `port`, `temperature`; injectable `ModelClient` for tests
+- [x] Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`) + `onToolUse` observability hook
+- [ ] Skill selection (`skillSelection {}` — predefined rules + `SelectionStrategy.LLM_DECISION`)
 - [ ] `>>` — security/education wrap
 
 **Phase 2 — Runtime + Distribution** *(Q2 2026)*
-- [ ] `model { }` — LLM inference path with tool-calling
-- [ ] Agentic execution loop — multi-turn tool calling with per-invocation budget controls (`maxTurns`, `maxToolCalls`, `maxTokens`, `maxTime`)
-- [ ] Session model — multi-turn `AgentSession`, automatic compaction (`SUMMARIZE`, `SLIDING_WINDOW`, `CUSTOM`)
-- [ ] Reactive context hooks — `beforeInference`, `afterToolCall`, `onBudgetThreshold`; static knowledge vs runtime system reminders
-- [ ] Agent memory — project/user/global scopes, `memory_read`/`memory_write` auto-injected tools, file-based persistent state
+
+*Priority:*
+- [ ] `Tool<IN, OUT>` hierarchy + `McpTool<IN, OUT>` — MCP as native Tool inheritance, not a wrapper
+- [ ] MCP client integration — `McpTool` instances consumable alongside local tools
+- [ ] `grants { tools(...) }` — Layer 2 permissions use actual `Tool<*,*>` references
+- [ ] Permission model: 3 states — Granted (auto-runs), Confirmed (user approval), Absent (unavailable)
 - [ ] KSP annotation processor — compile-time `@Generable`; constrained decoding (Ollama) + guided JSON mode (Anthropic/OpenAI)
-- [ ] Skill routing — predefined rules + `RoutingStrategy.LLM_DECISION`
+- [ ] Native CLI binary (GraalVM — no JRE required); `brew`, npm, pip, curl, apt
+- [ ] jlink minimal JRE bundle for runtime (~35MB)
+
+*Secondary:*
+- [ ] Session model — multi-turn `AgentSession`, automatic compaction (`SUMMARIZE`, `SLIDING_WINDOW`, `CUSTOM`)
+- [ ] Reactive context hooks — `beforeInference`, `afterToolCall`, `onBudgetThreshold`
+- [ ] Agent memory — project/user/global scopes, `memory_read`/`memory_write` auto-injected tools
 - [ ] `.spawn {}` — independent sub-agent lifecycle, `AgentHandle<OUT>`, parent-managed join
-- [ ] Pipeline observability — `observe {}` event handler, `Flow<PipelineEvent>` for streaming UIs, cancellation propagation
-- [ ] Forum discussion rounds and parallel coroutine execution
-- [ ] File-based knowledge: `skill.md`, `reference`, `examples`, `checklist`
+- [ ] Pipeline observability — `observe {}` event handler, `Flow<PipelineEvent>` for streaming UIs
 - [ ] Serialization — `agent.json`, A2A AgentCard
 - [ ] JAR bundles and folder-based assembly
 - [ ] Gradle plugin
-- [ ] Native CLI binary (GraalVM — no JRE required); `brew`, npm, pip, curl, apt
 
 **Phase 3 — Production** *(Q3 2026)*
-- [ ] Runtime permission model — `ALLOW_ALL`, `CONFIRM_DESTRUCTIVE`, `ALLOWLIST` with predicate DSL
-- [ ] Team DSL — swarm coordination, message passing, shared memory, worktree isolation
 - [ ] Layer 2: Full Structure DSL with delegates, grants, authority, routing, escalation
+- [ ] All 37 compile-time validations enforced by Gradle plugin
 - [ ] AgentUnit testing framework — unit, semantic (LLM-as-judge), Skill Coverage metrics
 - [ ] A2A protocol support (server + client)
-- [ ] MCP tool integration
+- [ ] File-based knowledge: `skill.md`, `reference`, `examples`, `checklist` + RAG pipeline
 - [ ] Production observability: OpenTelemetry traces
+- [ ] Team DSL — swarm coordination (if isolated execution available)
 
 **Phase 4 — Ecosystem** *(Q4 2026)*
 - [ ] Knowledge packs — battle-tested prompt libraries for common domains

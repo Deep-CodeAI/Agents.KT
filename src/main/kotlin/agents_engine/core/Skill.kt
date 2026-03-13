@@ -21,6 +21,10 @@ class Skill<IN, OUT>(
     val outType: kotlin.reflect.KClass<*>,
 ) {
     var implementation: ((IN) -> OUT)? = null
+    var isAgentic: Boolean = false
+        private set
+    var toolNames: List<String>? = null
+        private set
     private var _llmDescription: String? = null
     private val _knowledge = mutableMapOf<String, KnowledgeEntry>()
 
@@ -36,6 +40,21 @@ class Skill<IN, OUT>(
 
     fun implementedBy(block: (IN) -> OUT) {
         implementation = block
+        isAgentic = false
+    }
+
+    /** Marks this skill as LLM-driven; [names] are the tools the LLM may call. */
+    fun tools(vararg names: String) {
+        isAgentic = true
+        toolNames = names.toList()
+        implementation = null
+    }
+
+    var outputParser: ((String) -> OUT)? = null
+        private set
+
+    fun parseOutput(block: (String) -> OUT) {
+        outputParser = block
     }
 
     fun execute(input: IN): OUT {

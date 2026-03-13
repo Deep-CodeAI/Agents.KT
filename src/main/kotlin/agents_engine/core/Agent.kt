@@ -1,5 +1,13 @@
 package agents_engine.core
 
+import agents_engine.model.BudgetBuilder
+import agents_engine.model.BudgetConfig
+import agents_engine.model.ModelBuilder
+import agents_engine.model.ModelConfig
+import agents_engine.model.ToolDef
+import agents_engine.model.ToolsBuilder
+import agents_engine.model.executeAgentic
+
 class Agent<IN, OUT>(
     val name: String,
     val outType: kotlin.reflect.KClass<*>,
@@ -11,7 +19,37 @@ class Agent<IN, OUT>(
     var prompt: String = ""
         private set
 
+    var modelConfig: ModelConfig? = null
+        private set
+    var budgetConfig: BudgetConfig = BudgetConfig()
+        private set
+    val toolMap: MutableMap<String, ToolDef> = mutableMapOf()
+    var toolUseListener: ((name: String, args: Map<String, Any?>, result: Any?) -> Unit)? = null
+        private set
+
     fun prompt(text: String) { prompt = text }
+
+    fun model(block: ModelBuilder.() -> Unit) {
+        val builder = ModelBuilder()
+        builder.block()
+        modelConfig = builder.build()
+    }
+
+    fun budget(block: BudgetBuilder.() -> Unit) {
+        val builder = BudgetBuilder()
+        builder.block()
+        budgetConfig = builder.build()
+    }
+
+    fun onToolUse(block: (name: String, args: Map<String, Any?>, result: Any?) -> Unit) {
+        toolUseListener = block
+    }
+
+    fun tools(block: ToolsBuilder.() -> Unit) {
+        val builder = ToolsBuilder()
+        builder.block()
+        builder.defs.forEach { toolMap[it.name] = it }
+    }
 
     fun markPlaced(context: String) {
         require(placedIn == null) {
@@ -28,7 +66,11 @@ class Agent<IN, OUT>(
             "Agent \"$name\" has no skill for ${outType.simpleName}. " +
                 "Add a skill with implementedBy { } block."
         )
-        return castOut(executors[skill.name]!!(input))
+        return if (skill.isAgentic) {
+            castOut(executeAgentic(this, skill, input))
+        } else {
+            castOut(executors[skill.name]!!(input))
+        }
     }
 
     fun skills(block: SkillsBuilder.() -> Unit) {
@@ -36,7 +78,7 @@ class Agent<IN, OUT>(
         builder.block()
         builder.entries.forEach { (skill, exec) ->
             skills[skill.name] = skill
-            if (skill.outType == outType) executors[skill.name] = exec
+            if (skill.outType == outType && !skill.isAgentic) executors[skill.name] = exec
         }
     }
 
