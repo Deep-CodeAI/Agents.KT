@@ -1,6 +1,7 @@
-package agents_engine.composition
+package agents_engine.composition.loop
 
 import agents_engine.core.*
+import agents_engine.composition.pipeline.then
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 

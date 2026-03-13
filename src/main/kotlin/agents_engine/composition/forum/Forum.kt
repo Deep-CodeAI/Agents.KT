@@ -1,4 +1,4 @@
-package agents_engine.composition
+package agents_engine.composition.forum
 
 import agents_engine.core.*
 

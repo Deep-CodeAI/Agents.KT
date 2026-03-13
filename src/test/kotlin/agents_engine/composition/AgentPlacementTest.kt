@@ -1,6 +1,9 @@
 package agents_engine.composition
 
 import agents_engine.core.*
+import agents_engine.composition.forum.times
+import agents_engine.composition.parallel.div
+import agents_engine.composition.pipeline.then
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 

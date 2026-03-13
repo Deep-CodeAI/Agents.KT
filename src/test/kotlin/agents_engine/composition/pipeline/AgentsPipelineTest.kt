@@ -1,4 +1,4 @@
-package agents_engine.composition
+package agents_engine.composition.pipeline
 
 import agents_engine.core.*
 import agents_engine.core.AgentEntityDSLTest.SomeAgentAsk

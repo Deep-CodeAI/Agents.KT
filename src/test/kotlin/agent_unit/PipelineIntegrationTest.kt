@@ -2,7 +2,8 @@ package agent_unit
 
 import agents_engine.core.agent
 import agents_engine.core.skill
-import agents_engine.composition.then
+import agents_engine.composition.pipeline.then
+import agents_engine.composition.pipeline.Pipeline
 import org.junit.jupiter.api.Assertions.assertEquals
 import kotlin.test.Test
 

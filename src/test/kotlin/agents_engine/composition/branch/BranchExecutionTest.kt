@@ -1,6 +1,7 @@
-package agents_engine.composition
+package agents_engine.composition.branch
 
 import agents_engine.core.*
+import agents_engine.composition.pipeline.then
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.util.Locale
