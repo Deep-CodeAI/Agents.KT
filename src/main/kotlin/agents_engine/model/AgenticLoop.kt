@@ -21,15 +21,26 @@ fun <IN> executeAgentic(
 
     val messages = mutableListOf<LlmMessage>()
 
-    // System: agent prompt + skill context + tool instructions
-    val toolDefs = skill.toolNames?.mapNotNull { agent.toolMap[it] } ?: emptyList()
-    val client = config.client ?: OllamaClient(config.host, config.port, config.name, config.temperature, toolDefs)
+    // Action tools: tools the skill explicitly lists
+    val actionToolDefs = skill.toolNames?.mapNotNull { agent.toolMap[it] } ?: emptyList()
+
+    // Knowledge tools: exposed lazily — LLM calls them to load context on demand
+    val knowledgeToolDefs = skill.knowledgeTools().map { kt ->
+        ToolDef(kt.name, kt.description) { _ -> kt.call() }
+    }
+    val knowledgeToolMap = knowledgeToolDefs.associateBy { it.name }
+
+    val allToolDefs = actionToolDefs + knowledgeToolDefs
+    val client = config.client ?: OllamaClient(config.host, config.port, config.name, config.temperature, allToolDefs)
+
     val systemContent = buildString {
         if (agent.prompt.isNotBlank()) { append(agent.prompt); append("\n\n") }
-        append(skill.toLlmContext())
-        if (toolDefs.isNotEmpty()) {
+        // When knowledge is lazy, use description only — content loads via tool calls
+        if (knowledgeToolDefs.isNotEmpty()) append(skill.toLlmDescription())
+        else append(skill.toLlmContext())
+        if (allToolDefs.isNotEmpty()) {
             append("\n\nAvailable tools:\n")
-            toolDefs.forEach { tool ->
+            allToolDefs.forEach { tool ->
                 append("- ${tool.name}")
                 if (tool.description.isNotEmpty()) append(": ${tool.description}")
                 append("\n")
@@ -61,10 +72,13 @@ fun <IN> executeAgentic(
             is LlmResponse.ToolCalls -> {
                 messages.add(LlmMessage("assistant", "", response.calls))
                 for (call in response.calls) {
+                    val isKnowledge = call.name in knowledgeToolMap
                     val tool = agent.toolMap[call.name]
-                        ?: error("Tool '${call.name}' not found in agent '${agent.name}'. Available: ${agent.toolMap.keys}")
+                        ?: knowledgeToolMap[call.name]
+                        ?: error("Tool '${call.name}' not found in agent '${agent.name}'. Available: ${agent.toolMap.keys + knowledgeToolMap.keys}")
                     val result = tool.executor(call.arguments)
-                    agent.toolUseListener?.invoke(call.name, call.arguments, result)
+                    if (isKnowledge) agent.knowledgeUsedListener?.invoke(call.name, result?.toString() ?: "")
+                    else agent.toolUseListener?.invoke(call.name, call.arguments, result)
                     messages.add(LlmMessage("tool", result?.toString() ?: "null"))
                 }
             }

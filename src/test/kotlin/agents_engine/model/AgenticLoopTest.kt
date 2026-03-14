@@ -6,6 +6,7 @@ import agents_engine.core.skill
 import org.junit.jupiter.api.assertThrows
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -96,6 +97,101 @@ class AgenticLoopTest {
         val toolMsg = secondCallMsgs.find { it.role == "tool" }
         assertNotNull(toolMsg)
         assertEquals("olleh", toolMsg!!.content)
+    }
+
+    @Test
+    fun `knowledge is exposed as tool and loaded lazily`() {
+        var knowledgeLoaded = false
+        val responses = ArrayDeque<LlmResponse>()
+        responses.add(LlmResponse.ToolCalls(listOf(ToolCall(name = "style-guide", arguments = emptyMap()))))
+        responses.add(LlmResponse.Text("done"))
+        val captured = mutableListOf<List<LlmMessage>>()
+        val mock = ModelClient { msgs -> captured.add(msgs.toList()); responses.removeFirst() }
+
+        val a = agent<String, String>("a") {
+            model { ollama("llama3"); client = mock }
+            skills { skill<String, String>("s", "desc") {
+                tools()
+                knowledge("style-guide", "Coding style rules") { knowledgeLoaded = true; "Prefer val over var." }
+            }}
+        }
+
+        a("task")
+
+        // Content must NOT be in the system prompt — only the tool name/description
+        val systemMsg = captured[0].first { it.role == "system" }
+        assertFalse(systemMsg.content.contains("Prefer val over var."), "Knowledge content leaked into system prompt")
+        assertTrue(systemMsg.content.contains("style-guide"), "Knowledge tool name missing from system prompt")
+
+        // Content loaded only when model called the tool
+        assertTrue(knowledgeLoaded, "Knowledge provider was never called")
+
+        // Tool result message contains the knowledge content
+        val toolMsg = captured[1].find { it.role == "tool" }
+        assertNotNull(toolMsg)
+        assertEquals("Prefer val over var.", toolMsg!!.content)
+    }
+
+    @Test
+    fun `onKnowledgeUsed fires with name and content when knowledge tool is called`() {
+        val knowledgeEvents = mutableListOf<Pair<String, String>>()
+        val responses = ArrayDeque<LlmResponse>()
+        responses.add(LlmResponse.ToolCalls(listOf(ToolCall(name = "style-guide", arguments = emptyMap()))))
+        responses.add(LlmResponse.Text("done"))
+        val mock = ModelClient { _ -> responses.removeFirst() }
+
+        val a = agent<String, String>("a") {
+            model { ollama("llama3"); client = mock }
+            skills { skill<String, String>("s", "desc") {
+                tools()
+                knowledge("style-guide", "Rules") { "Prefer val over var." }
+            }}
+            onKnowledgeUsed { name, content -> knowledgeEvents.add(name to content) }
+        }
+
+        a("task")
+
+        assertEquals(listOf("style-guide" to "Prefer val over var."), knowledgeEvents)
+    }
+
+    @Test
+    fun `onSkillChosen fires with skill name on invocation`() {
+        val chosen = mutableListOf<String>()
+        val mock = ModelClient { _ -> LlmResponse.Text("done") }
+
+        val a = agent<String, String>("a") {
+            model { ollama("llama3"); client = mock }
+            skills { skill<String, String>("my-skill", "desc") { tools() } }
+            onSkillChosen { name -> chosen.add(name) }
+        }
+
+        a("input")
+
+        assertEquals(listOf("my-skill"), chosen)
+    }
+
+    @Test
+    fun `knowledge tool calls do not trigger onToolUse`() {
+        val responses = ArrayDeque<LlmResponse>()
+        responses.add(LlmResponse.ToolCalls(listOf(ToolCall(name = "style-guide", arguments = emptyMap()))))
+        responses.add(LlmResponse.ToolCalls(listOf(ToolCall(name = "greet", arguments = mapOf("name" to "world")))))
+        responses.add(LlmResponse.Text("done"))
+        val mock = ModelClient { _ -> responses.removeFirst() }
+
+        val toolUseNames = mutableListOf<String>()
+        val a = agent<String, String>("a") {
+            model { ollama("llama3"); client = mock }
+            tools { tool("greet") { _ -> "Hi!" } }
+            skills { skill<String, String>("s", "desc") {
+                tools("greet")
+                knowledge("style-guide", "Rules") { "Use val." }
+            }}
+            onToolUse { name, _, _ -> toolUseNames.add(name) }
+        }
+
+        a("task")
+
+        assertEquals(listOf("greet"), toolUseNames, "onToolUse should only fire for action tools, not knowledge tools")
     }
 
     @Test

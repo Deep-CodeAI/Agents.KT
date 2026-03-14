@@ -26,6 +26,10 @@ class Agent<IN, OUT>(
     val toolMap: MutableMap<String, ToolDef> = mutableMapOf()
     var toolUseListener: ((name: String, args: Map<String, Any?>, result: Any?) -> Unit)? = null
         private set
+    var knowledgeUsedListener: ((name: String, content: String) -> Unit)? = null
+        private set
+    var skillChosenListener: ((name: String) -> Unit)? = null
+        private set
 
     fun prompt(text: String) { prompt = text }
 
@@ -43,6 +47,14 @@ class Agent<IN, OUT>(
 
     fun onToolUse(block: (name: String, args: Map<String, Any?>, result: Any?) -> Unit) {
         toolUseListener = block
+    }
+
+    fun onKnowledgeUsed(block: (name: String, content: String) -> Unit) {
+        knowledgeUsedListener = block
+    }
+
+    fun onSkillChosen(block: (name: String) -> Unit) {
+        skillChosenListener = block
     }
 
     fun tools(block: ToolsBuilder.() -> Unit) {
@@ -66,6 +78,7 @@ class Agent<IN, OUT>(
             "Agent \"$name\" has no skill for ${outType.simpleName}. " +
                 "Add a skill with implementedBy { } block."
         )
+        skillChosenListener?.invoke(skill.name)
         return if (skill.isAgentic) {
             castOut(executeAgentic(this, skill, input))
         } else {

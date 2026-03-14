@@ -145,7 +145,7 @@ Prefer val over var. Use data classes for DTOs.
 ...
 ```
 
-**`knowledgeTools()`** — tools model for LLMs with tool-calling support. The LLM reads `description` to decide which entries to load; nothing is fetched until `call()` is invoked:
+**`knowledgeTools()`** — returns knowledge entries as a list of callable tools. In agentic skills (`tools(...)`), this is wired automatically — no extra configuration needed. The LLM sees knowledge entries listed alongside action tools and fetches them on demand; content is never loaded unless called:
 
 ```kotlin
 data class KnowledgeTool(
@@ -153,19 +153,12 @@ data class KnowledgeTool(
     val description: String,   // LLM reads this to decide whether to call
     val call: () -> String,    // lazy — loads only when invoked
 )
-
-val tools = writeCode.knowledgeTools()
-// [KnowledgeTool("style-guide", "Preferred coding style...", ...),
-//  KnowledgeTool("examples",    "Concrete input/output pairs...", ...)]
-
-tools.find { it.name == "style-guide" }?.call()
-// → "Prefer val over var. Use data classes for DTOs."
 ```
 
-| Model | API | When to use |
-|-------|-----|-------------|
-| All-at-once | `toLlmContext()` | Small knowledge, any LLM |
-| Tools | `knowledgeTools()` | Large knowledge, LLM with tool-calling support |
+| Mode | When | How |
+|------|------|-----|
+| Eager (`toLlmContext()`) | Non-agentic skills | All knowledge content dumped into system prompt upfront |
+| Lazy (`knowledgeTools()`) | Agentic skills — **automatic** | Knowledge listed as tools; content loaded only when the LLM calls them |
 
 ---
 
@@ -210,7 +203,45 @@ calculator("Calculate ((15 + 35) / 2)^2")
 
 **`skill { tools(...) }`** — marks a skill as LLM-driven. The listed tool names are the ones the model may call. The model decides which tools to call and in what order.
 
-**`onToolUse { name, args, result -> }`** — observability hook, called after every tool execution. Useful for logging, tracing, and test assertions.
+**`onToolUse { name, args, result -> }`** — fires after every action tool execution. Useful for logging, tracing, and test assertions.
+
+**`onKnowledgeUsed { name, content -> }`** — fires when the LLM fetches a knowledge entry. Receives the key name and loaded content. Does not fire for action tools.
+
+**`onSkillChosen { name -> }`** — fires when the agent selects a skill to execute. Useful for routing visibility in multi-skill agents.
+
+```kotlin
+val a = agent<String, String>("coder") {
+    model { ollama("llama3") }
+    skills { skill<String, String>("write", "Write Kotlin code") {
+        tools()
+        knowledge("style-guide", "Coding conventions") { loadFile("style.md") }
+        knowledge("examples",    "Few-shot examples")  { loadFile("examples.kt") }
+    }}
+    onSkillChosen    { name          -> log("Skill: $name") }
+    onKnowledgeUsed  { name, content -> log("Loaded: $name (${content.length} chars)") }
+    onToolUse        { name, _, result -> log("Tool: $name = $result") }
+}
+// System prompt lists style-guide and examples as callable tools alongside action tools.
+// Content is only fetched when the LLM decides it needs it.
+```
+
+**Typed output** — use `parseOutput { }` on a skill when the agent's `OUT` type isn't `String`:
+
+```kotlin
+val compute = agent<String, Int>("calculator") {
+    model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
+    tools {
+        tool("add",   "Add two numbers. Args: a, b")             { args -> num(args, "a") + num(args, "b") }
+        tool("power", "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp")) }
+    }
+    skills { skill<String, Int>("solve", "Evaluate arithmetic expressions") {
+        tools("add", "power")
+        parseOutput { it.trim().toIntOrNull() ?: Regex("-?\\d+").find(it)?.value?.toInt() ?: error("No int in: $it") }
+    }}
+}
+
+val result: Int = compute("Calculate 2^10")   // → 1024
+```
 
 **Budget control** — prevent runaway loops:
 
