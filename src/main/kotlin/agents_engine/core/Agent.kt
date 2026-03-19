@@ -30,6 +30,8 @@ class Agent<IN, OUT>(
         private set
     var skillChosenListener: ((name: String) -> Unit)? = null
         private set
+    var memoryBank: MemoryBank? = null
+        private set
 
     fun prompt(text: String) { prompt = text }
 
@@ -55,6 +57,13 @@ class Agent<IN, OUT>(
 
     fun onSkillChosen(block: (name: String) -> Unit) {
         skillChosenListener = block
+    }
+
+    fun memory(bank: MemoryBank) {
+        memoryBank = bank
+        for (tool in buildMemoryTools(bank, name)) {
+            toolMap.putIfAbsent(tool.name, tool)
+        }
     }
 
     fun tools(block: ToolsBuilder.() -> Unit) {
