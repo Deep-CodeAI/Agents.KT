@@ -254,7 +254,13 @@ budget { maxTurns = 10 }   // throws BudgetExceededException after 10 turns
 
 ## Agent Memory
 
-Memory persists across invocations — an agent accumulates knowledge over time rather than starting from zero each run. Pass a `MemoryBank` and two tools are auto-injected: `memory_read()` and `memory_write(content)`.
+Memory persists across invocations — an agent accumulates knowledge over time rather than starting from zero each run. Pass a `MemoryBank` and three tools are auto-injected:
+
+| Tool | Arguments | Returns |
+|------|-----------|---------|
+| `memory_read` | — | Full memory content |
+| `memory_write` | `content` | Overwrites memory |
+| `memory_search` | `query` | Lines matching the query (case-insensitive) |
 
 ```kotlin
 val bank = MemoryBank(maxLines = 200)   // in-memory, optional line cap
@@ -264,7 +270,7 @@ val reviewer = agent<CodeDiff, ReviewResult>("reviewer") {
     model { ollama("llama3") }
     skills {
         skill<CodeDiff, ReviewResult>("review", "Reviews code changes") {
-            tools()   // memory_read and memory_write are available automatically
+            tools()   // memory_read, memory_write, memory_search — all auto-available
             knowledge("memory-instructions") {
                 "Before reviewing, call memory_read to check for known patterns. " +
                 "After reviewing, call memory_write to save new patterns discovered."
@@ -311,7 +317,7 @@ Memory format: "prev|curr". Empty memory means start fresh.
     memory(bank)
     model { ollama("llama3"); temperature = 0.0 }
     skills { skill<String, Int>("fib", "Generate next Fibonacci number") {
-        tools()   // memory_read and memory_write are auto-available
+        tools()   // memory tools are auto-available
         parseOutput { it.trim().toInt() }
     }}
 }
@@ -616,7 +622,7 @@ cd agents-kt
 *Secondary:*
 - [ ] Session model — multi-turn `AgentSession`, automatic compaction (`SUMMARIZE`, `SLIDING_WINDOW`, `CUSTOM`)
 - [ ] Reactive context hooks — `beforeInference`, `afterToolCall`, `onBudgetThreshold`
-- [x] Agent memory — project/user/global scopes, `memory_read`/`memory_write` auto-injected tools
+- [x] Agent memory — `MemoryBank`, `memory_read`/`memory_write`/`memory_search` auto-injected tools
 - [ ] `.spawn {}` — independent sub-agent lifecycle, `AgentHandle<OUT>`, parent-managed join
 - [ ] Pipeline observability — `observe {}` event handler, `Flow<PipelineEvent>` for streaming UIs
 - [ ] Serialization — `agent.json`, A2A AgentCard

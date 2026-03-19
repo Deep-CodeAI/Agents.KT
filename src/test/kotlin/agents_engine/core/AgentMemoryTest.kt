@@ -5,6 +5,7 @@ import agents_engine.model.ModelClient
 import agents_engine.model.ToolCall
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -194,6 +195,121 @@ class AgentMemoryTest {
         }
 
         assertEquals("Known pattern: prefer val over var", a.toolMap["memory_read"]!!.executor(emptyMap()))
+    }
+
+    // --- memory_search ---
+
+    @Test
+    fun `memory_search is auto-injected`() {
+        val bank = MemoryBank()
+        val a = agent<String, String>("a") {
+            memory(bank)
+            model { ollama("test"); client = ModelClient { _ -> LlmResponse.Text("done") } }
+            skills { skill<String, String>("s", "s") { tools() } }
+        }
+
+        assertTrue(a.toolMap.containsKey("memory_search"), "memory_search should be auto-injected")
+    }
+
+    @Test
+    fun `memory_search returns matching lines`() {
+        val bank = MemoryBank()
+        bank.write("a", "pattern: prefer val\nbug: NPE in parser\npattern: use data classes\nrefactor: extract method")
+
+        val a = agent<String, String>("a") {
+            memory(bank)
+            model { ollama("test"); client = ModelClient { _ -> LlmResponse.Text("done") } }
+            skills { skill<String, String>("s", "s") { tools() } }
+        }
+
+        val result = a.toolMap["memory_search"]!!.executor(mapOf("query" to "pattern")) as String
+        assertTrue(result.contains("prefer val"))
+        assertTrue(result.contains("data classes"))
+        assertFalse(result.contains("NPE in parser"))
+        assertFalse(result.contains("extract method"))
+    }
+
+    @Test
+    fun `memory_search is case-insensitive`() {
+        val bank = MemoryBank()
+        bank.write("a", "Error: timeout\ninfo: all good\nERROR: disk full")
+
+        val a = agent<String, String>("a") {
+            memory(bank)
+            model { ollama("test"); client = ModelClient { _ -> LlmResponse.Text("done") } }
+            skills { skill<String, String>("s", "s") { tools() } }
+        }
+
+        val result = a.toolMap["memory_search"]!!.executor(mapOf("query" to "error")) as String
+        assertTrue(result.contains("timeout"))
+        assertTrue(result.contains("disk full"))
+        assertFalse(result.contains("all good"))
+    }
+
+    @Test
+    fun `memory_search returns empty string when no matches`() {
+        val bank = MemoryBank()
+        bank.write("a", "some content here")
+
+        val a = agent<String, String>("a") {
+            memory(bank)
+            model { ollama("test"); client = ModelClient { _ -> LlmResponse.Text("done") } }
+            skills { skill<String, String>("s", "s") { tools() } }
+        }
+
+        val result = a.toolMap["memory_search"]!!.executor(mapOf("query" to "nonexistent")) as String
+        assertEquals("", result)
+    }
+
+    @Test
+    fun `memory_search returns empty string when memory is empty`() {
+        val bank = MemoryBank()
+        val a = agent<String, String>("a") {
+            memory(bank)
+            model { ollama("test"); client = ModelClient { _ -> LlmResponse.Text("done") } }
+            skills { skill<String, String>("s", "s") { tools() } }
+        }
+
+        val result = a.toolMap["memory_search"]!!.executor(mapOf("query" to "anything")) as String
+        assertEquals("", result)
+    }
+
+    @Test
+    fun `memory_search accepts query from any arg key`() {
+        val bank = MemoryBank()
+        bank.write("a", "line one\nline two\nline three")
+
+        val a = agent<String, String>("a") {
+            memory(bank)
+            model { ollama("test"); client = ModelClient { _ -> LlmResponse.Text("done") } }
+            skills { skill<String, String>("s", "s") { tools() } }
+        }
+
+        val result = a.toolMap["memory_search"]!!.executor(mapOf("search" to "two")) as String
+        assertTrue(result.contains("line two"))
+    }
+
+    @Test
+    fun `memory_search is auto-available in agentic loop`() {
+        val bank = MemoryBank()
+        bank.write("searcher", "pattern: use val\nbug: NPE\npattern: data classes")
+
+        val toolEvents = mutableListOf<String>()
+        val responses = ArrayDeque<LlmResponse>()
+        responses.add(LlmResponse.ToolCalls(listOf(ToolCall("memory_search", mapOf("query" to "pattern")))))
+        responses.add(LlmResponse.Text("found patterns"))
+        val mock = ModelClient { _ -> responses.removeFirst() }
+
+        val a = agent<String, String>("searcher") {
+            memory(bank)
+            model { ollama("test"); client = mock }
+            skills { skill<String, String>("s", "s") { tools() } }
+            onToolUse { name, _, _ -> toolEvents.add(name) }
+        }
+
+        val result = a("find patterns")
+        assertEquals(listOf("memory_search"), toolEvents)
+        assertTrue(result.contains("found patterns"))
     }
 
     // --- Integration: agentic loop ---

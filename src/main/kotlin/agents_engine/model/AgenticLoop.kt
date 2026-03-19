@@ -24,7 +24,7 @@ fun <IN> executeAgentic(
     // Action tools: tools the skill explicitly lists + auto-injected memory tools
     val skillToolDefs = skill.toolNames?.mapNotNull { agent.toolMap[it] } ?: emptyList()
     val memoryToolDefs = if (agent.memoryBank != null)
-        agent.toolMap.values.filter { it.name == "memory_read" || it.name == "memory_write" }
+        agent.toolMap.values.filter { it.name in setOf("memory_read", "memory_write", "memory_search") }
     else emptyList()
     val actionToolDefs = (skillToolDefs + memoryToolDefs).distinctBy { it.name }
 

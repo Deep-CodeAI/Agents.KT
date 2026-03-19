@@ -41,5 +41,16 @@ internal fun buildMemoryTools(bank: MemoryBank, agentName: String): List<ToolDef
         "ok"
     }
 
-    return listOf(read, write)
+    val search = ToolDef("memory_search", "Search agent memory for lines matching a query. Argument: query (string). Returns matching lines.") { args ->
+        val query = args["query"]?.toString()
+            ?: args.values.firstOrNull()?.toString()
+            ?: ""
+        val content = bank.read(agentName)
+        if (content.isBlank() || query.isBlank()) ""
+        else content.lines()
+            .filter { it.contains(query, ignoreCase = true) }
+            .joinToString("\n")
+    }
+
+    return listOf(read, write, search)
 }
