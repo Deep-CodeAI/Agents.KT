@@ -55,7 +55,7 @@ Most agent frameworks let you wire anything to anything. Agents.KT says no.
 | God-agents with unlimited responsibilities | `Agent<IN, OUT>` — one type contract, compiler-enforced SRP |
 | Runtime type mismatches between agents | `then` requires `A.OUT == B.IN` — compile error otherwise |
 | The same agent instance wired into two places | Single-placement rule — `IllegalArgumentException` at construction time |
-| LLM doesn't know which skill to use | Every skill has a mandatory `description` — the LLM reads it to choose |
+| LLM doesn't know which skill to use | `skillSelection {}` predicates or automatic LLM routing — descriptions sell each skill to the router |
 | LLM doesn't know what context to load | `knowledge("key", "description") { }` entries — LLM reads descriptions before deciding to call |
 | Flat pipelines only | Six composition operators covering sequential, parallel, iterative, branching, detached spawn, and multi-agent patterns |
 | LLM output is an untyped string | `@Generable` + `@Guide` — `toLlmDescription()`, JSON Schema, prompt fragment, lenient deserializer, and `PartiallyGenerated<T>` via runtime reflection; KSP compile-time generation planned Phase 2 |
@@ -212,7 +212,7 @@ calculator("Calculate ((15 + 35) / 2)^2")
 
 **`onKnowledgeUsed { name, content -> }`** — fires when the LLM fetches a knowledge entry. Receives the key name and loaded content. Does not fire for action tools.
 
-**`onSkillChosen { name -> }`** — fires when the agent selects a skill to execute. Useful for routing visibility in multi-skill agents.
+**`onSkillChosen { name -> }`** — fires when the agent selects a skill to execute. Works with all routing strategies — predicate, LLM, and first-match.
 
 ```kotlin
 val a = agent<String, String>("coder") {
@@ -229,6 +229,60 @@ val a = agent<String, String>("coder") {
 // System prompt lists style-guide and examples as callable tools alongside action tools.
 // Content is only fetched when the LLM decides it needs it.
 ```
+
+### Skill Selection
+
+When an agent has multiple skills with the same type signature, the framework decides which one to run. Three strategies, in priority order:
+
+**1. Predicate routing** — deterministic, zero LLM cost:
+
+```kotlin
+val assistant = agent<String, String>("assistant") {
+    model { ollama("llama3") }
+    skills {
+        skill<String, String>("upper", "Convert text to uppercase") {
+            implementedBy { it.uppercase() }
+        }
+        skill<String, String>("lower", "Convert text to lowercase") {
+            implementedBy { it.lowercase() }
+        }
+    }
+    skillSelection { input ->
+        if (input.startsWith("UP:")) "upper" else "lower"
+    }
+}
+
+assistant("UP:hello")  // → "UP:HELLO"
+assistant("HELLO")     // → "hello"
+```
+
+**2. LLM routing** — automatic when `model {}` is configured and multiple skills match. One cheap routing turn before the main agentic loop — the LLM reads all candidate `toLlmDescription()` outputs and picks a skill name:
+
+```kotlin
+val assistant = agent<String, String>("assistant") {
+    model { ollama("gpt-oss:120b-cloud"); temperature = 0.0 }
+    skills {
+        skill<String, String>("summarize", "Summarize the given text into a brief summary") { tools() }
+        skill<String, String>("translate-to-french", "Translate the given text to French") { tools() }
+    }
+    onSkillChosen { name -> println("Routed to: $name") }
+}
+
+assistant("Translate this to French: Hello world")
+// Routed to: translate-to-french
+// → "Bonjour le monde"
+```
+
+**3. First-match fallback** — when no predicate and no model, the first type-compatible skill wins (backward compatible).
+
+| Condition | Strategy |
+|-----------|----------|
+| `skillSelection {}` set | Predicate — always wins |
+| Multiple candidates + `model {}` | LLM routing turn |
+| Single candidate | Direct — no routing needed |
+| Multiple candidates, no model | First match |
+
+---
 
 **Typed output** — use `parseOutput { }` on a skill when the agent's `OUT` type isn't `String`:
 
@@ -610,7 +664,7 @@ cd Agents.KT
 - [x] `@Generable("desc")` / `@Guide` / `@LlmDescription` — runtime reflection: `toLlmDescription()`, `jsonSchema()`, `promptFragment()`, `fromLlmOutput<T>()`, `PartiallyGenerated<T>`
 - [x] `model { }` — Ollama backend; `host`, `port`, `temperature`; injectable `ModelClient` for tests
 - [x] Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`) + `onToolUse` observability hook
-- [ ] Skill selection (`skillSelection {}` — predefined rules + `SelectionStrategy.LLM_DECISION`)
+- [x] Skill selection — predicate-based `skillSelection {}` + automatic LLM routing when multiple skills match
 - [ ] `>>` — security/education wrap
 
 **Phase 2 — Runtime + Distribution** *(Q2 2026)*
