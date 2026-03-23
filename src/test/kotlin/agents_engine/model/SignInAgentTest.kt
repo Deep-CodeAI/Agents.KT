@@ -6,7 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-private const val MODEL = "gpt-oss:20b"
+private const val MODEL = "gpt-oss:120b-cloud"
 private const val HOST  = "localhost"
 private const val PORT  = 11434
 
