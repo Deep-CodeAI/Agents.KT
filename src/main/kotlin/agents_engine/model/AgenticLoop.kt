@@ -90,6 +90,45 @@ fun <IN> executeAgentic(
     }
 }
 
+/**
+ * Asks the LLM to pick a skill from [candidates] based on [input].
+ * Returns the chosen skill name.
+ */
+fun <IN> selectSkillByLlm(
+    agent: Agent<IN, *>,
+    candidates: List<Skill<*, *>>,
+    input: IN,
+): String {
+    val config = requireNotNull(agent.modelConfig) {
+        "Agent '${agent.name}' has no model configured for LLM skill selection."
+    }
+
+    val systemPrompt = buildString {
+        appendLine("You are a skill router. Given the user's input, pick the most appropriate skill.")
+        appendLine()
+        appendLine("Available skills:")
+        candidates.forEach { skill ->
+            appendLine()
+            appendLine(skill.toLlmDescription())
+        }
+        appendLine()
+        appendLine("Respond with ONLY the skill name, nothing else.")
+    }
+
+    val messages = listOf(
+        LlmMessage("system", systemPrompt),
+        LlmMessage("user", input.toString()),
+    )
+
+    val client = config.client ?: OllamaClient(config.host, config.port, config.name, config.temperature)
+    val response = client.chat(messages)
+
+    return when (response) {
+        is LlmResponse.Text -> response.content.trim()
+        is LlmResponse.ToolCalls -> error("Expected text response for skill selection, got tool calls")
+    }
+}
+
 private fun parseOutput(text: String, outType: KClass<*>): Any? = when {
     outType == String::class -> text
     else -> @Suppress("UNCHECKED_CAST") (outType as KClass<Any>).fromLlmOutput(text)

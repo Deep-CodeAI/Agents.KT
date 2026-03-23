@@ -7,6 +7,7 @@ import agents_engine.model.ModelConfig
 import agents_engine.model.ToolDef
 import agents_engine.model.ToolsBuilder
 import agents_engine.model.executeAgentic
+import agents_engine.model.selectSkillByLlm
 
 class Agent<IN, OUT>(
     val name: String,
@@ -32,6 +33,7 @@ class Agent<IN, OUT>(
         private set
     var memoryBank: MemoryBank? = null
         private set
+    private var skillSelector: ((IN) -> String)? = null
 
     fun prompt(text: String) { prompt = text }
 
@@ -59,6 +61,10 @@ class Agent<IN, OUT>(
         skillChosenListener = block
     }
 
+    fun skillSelection(block: (IN) -> String) {
+        skillSelector = block
+    }
+
     fun memory(bank: MemoryBank) {
         memoryBank = bank
         for (tool in buildMemoryTools(bank, name)) {
@@ -81,17 +87,43 @@ class Agent<IN, OUT>(
     }
 
     operator fun invoke(input: IN): OUT {
-        val skill = skills.values.find {
-            it.inType.java.isInstance(input) && it.outType == outType
-        } ?: error(
-            "Agent \"$name\" has no skill for ${outType.simpleName}. " +
-                "Add a skill with implementedBy { } block."
-        )
+        val skill = resolveSkill(input)
         skillChosenListener?.invoke(skill.name)
         return if (skill.isAgentic) {
             castOut(executeAgentic(this, skill, input))
         } else {
             castOut(executors[skill.name]!!(input))
+        }
+    }
+
+    private fun resolveSkill(input: IN): Skill<*, *> {
+        skillSelector?.let { selector ->
+            val selectedName = selector(input)
+            return skills[selectedName] ?: error(
+                "skillSelection returned unknown skill name \"$selectedName\". " +
+                    "Available: ${skills.keys}"
+            )
+        }
+
+        val candidates = skills.values.filter {
+            it.inType.java.isInstance(input) && it.outType == outType
+        }
+
+        return when {
+            candidates.isEmpty() -> error(
+                "Agent \"$name\" has no skill for ${outType.simpleName}. " +
+                    "Add a skill with implementedBy { } block."
+            )
+            candidates.size == 1 -> candidates.single()
+            modelConfig != null -> {
+                val chosenName = selectSkillByLlm(this, candidates, input)
+                candidates.find { it.name == chosenName }
+                    ?: error(
+                        "LLM selected unknown skill \"$chosenName\". " +
+                            "Available: ${candidates.map { it.name }}"
+                    )
+            }
+            else -> candidates.first()
         }
     }
 
