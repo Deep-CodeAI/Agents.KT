@@ -1,1 +1,1 @@
-rootProject.name = "fractal"
+rootProject.name = "agents-kt"

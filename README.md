@@ -1,5 +1,10 @@
 # Agents.KT
 
+[![CI](https://github.com/Deep-CodeAI/Agents.KT/actions/workflows/ci.yml/badge.svg)](https://github.com/Deep-CodeAI/Agents.KT/actions/workflows/ci.yml)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.1-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
+[![JDK](https://img.shields.io/badge/JDK-21+-orange)](https://openjdk.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 **Typed Kotlin DSL framework for AI agent systems.**
 
 *Define Freely. Compose Strictly. Ship Reliably.*
@@ -578,8 +583,8 @@ dependencies {
 For now, clone and run:
 
 ```bash
-git clone https://github.com/kskobeltsyn/agents-kt
-cd agents-kt
+git clone https://github.com/Deep-CodeAI/Agents.KT.git
+cd Agents.KT
 ./gradlew test
 ```
 
@@ -649,4 +654,4 @@ cd agents-kt
 
 ## License
 
-MIT — K.Skobeltsyn Studio
+[MIT](LICENSE) — K.Skobeltsyn Studio
