@@ -1,6 +1,7 @@
 # Agents.KT
 
 [![CI](https://github.com/Deep-CodeAI/Agents.KT/actions/workflows/ci.yml/badge.svg)](https://github.com/Deep-CodeAI/Agents.KT/actions/workflows/ci.yml)
+[![Maven Central](https://img.shields.io/maven-central/v/ai.deep-code/agents-kt?color=blue)](https://central.sonatype.com/artifact/ai.deep-code/agents-kt)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.1-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![JDK](https://img.shields.io/badge/JDK-21+-orange)](https://openjdk.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -674,18 +675,16 @@ A.branch { }   : Agent<X, Sealed<Y>)           → Branch<X,Z>  (all variants �
 
 ## Getting Started
 
-> Agents.KT is in early development. The DSL and composition layer are implemented and tested. Execution engine, CLI, and distribution are on the roadmap.
-
 **Requirements:** JDK 21+, Kotlin 2.x, Gradle
 
 ```kotlin
-// build.gradle.kts — coming soon via Maven Central
+// build.gradle.kts
 dependencies {
-    implementation("dev.agentskt:agents-core:0.1.0")
+    implementation("ai.deep-code:agents-kt:0.1.0")
 }
 ```
 
-For now, clone and run:
+Or clone and build from source:
 
 ```bash
 git clone https://github.com/Deep-CodeAI/Agents.KT.git
