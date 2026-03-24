@@ -165,6 +165,57 @@ data class KnowledgeTool(
 | Eager (`toLlmContext()`) | Non-agentic skills | All knowledge content dumped into system prompt upfront |
 | Lazy (`knowledgeTools()`) | Agentic skills — **automatic** | Knowledge listed as tools; content loaded only when the LLM calls them |
 
+### Shared Knowledge
+
+Knowledge lambdas close over shared state. Multiple agents can reference the same data source — no special API needed. Since knowledge is lazy, every call sees the latest state.
+
+```kotlin
+// Shared data source — both agents read from the same map
+val catalog = mapOf(
+    "products" to """
+        | ID  | Name              | Price | Category    | In Stock |
+        |-----|-------------------|-------|-------------|----------|
+        | P01 | Kotlin In Action  | 45    | Books       | yes      |
+        | P02 | Mechanical KB     | 120   | Electronics | yes      |
+        | P03 | Espresso Machine  | 299   | Appliances  | no       |
+        | P04 | USB-C Hub         | 35    | Electronics | yes      |
+        | P05 | Clean Code        | 40    | Books       | yes      |
+    """.trimIndent(),
+    "policies" to """
+        - Only recommend products that are in stock.
+        - Budget limit must be respected — never exceed it.
+        - Prefer variety across categories when possible.
+    """.trimIndent(),
+)
+
+val recommender = agent<String, String>("recommender") {
+    prompt("Recommend 1-2 products by ID and name. Follow the policies.")
+    model { ollama("gpt-oss:120b-cloud"); temperature = 0.0 }
+    skills { skill<String, String>("recommend", "Recommend products from catalog") {
+        tools()
+        knowledge("products", "Full product catalog with prices and stock") { catalog["products"]!! }
+        knowledge("policies", "Recommendation rules") { catalog["policies"]!! }
+    }}
+}
+
+val validator = agent<String, String>("validator") {
+    prompt("Verify recommendations: products exist, are in stock, within budget. Reply VALID or INVALID: reason.")
+    model { ollama("gpt-oss:120b-cloud"); temperature = 0.0 }
+    skills { skill<String, String>("validate", "Validate recommendations against catalog") {
+        tools()
+        knowledge("products", "Full product catalog with prices and stock") { catalog["products"]!! }
+        knowledge("policies", "Recommendation rules") { catalog["policies"]!! }
+    }}
+}
+
+val pipeline = recommender then validator
+pipeline("I want electronics, budget 100 dollars")
+// recommender picks P04 — USB-C Hub ($35, in stock)
+// validator confirms: "VALID"
+```
+
+Both agents load the same catalog on demand via knowledge tool calls. The recommender picks products; the validator cross-checks them against the same source of truth.
+
 ---
 
 ## Model & Tool Calling
