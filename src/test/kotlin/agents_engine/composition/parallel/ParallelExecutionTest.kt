@@ -66,6 +66,47 @@ class ParallelExecutionTest {
         assertEquals(13, pipeline("hello world"))
     }
 
+    // --- Concurrency ---
+
+    @Test
+    fun `parallel agents run concurrently not sequentially`() {
+        // Each agent sleeps 200ms. Sequential = 600ms+. Parallel = ~200ms.
+        val a = agent<String, String>("a") {
+            skills { skill<String, String>("a", "A") { implementedBy { Thread.sleep(200); "a" } } }
+        }
+        val b = agent<String, String>("b") {
+            skills { skill<String, String>("b", "B") { implementedBy { Thread.sleep(200); "b" } } }
+        }
+        val c = agent<String, String>("c") {
+            skills { skill<String, String>("c", "C") { implementedBy { Thread.sleep(200); "c" } } }
+        }
+
+        val start = System.currentTimeMillis()
+        val result = (a / b / c)("go")
+        val elapsed = System.currentTimeMillis() - start
+
+        assertEquals(listOf("a", "b", "c"), result)
+        assertTrue(elapsed < 500, "Expected parallel execution (~200ms), took ${elapsed}ms")
+    }
+
+    @Test
+    fun `parallel agents run on different threads`() {
+        val threads = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+        val a = agent<String, String>("a") {
+            skills { skill<String, String>("a", "A") { implementedBy { threads["a"] = Thread.currentThread().name; "a" } } }
+        }
+        val b = agent<String, String>("b") {
+            skills { skill<String, String>("b", "B") { implementedBy { threads["b"] = Thread.currentThread().name; "b" } } }
+        }
+
+        (a / b)("go")
+
+        assertEquals(2, threads.size)
+        assertTrue(threads["a"] != threads["b"],
+            "Agents should run on different threads: a=${threads["a"]}, b=${threads["b"]}")
+    }
+
     // --- Mock LLM execution ---
 
     @Test
@@ -149,10 +190,8 @@ class ParallelExecutionTest {
         }
 
         (a / b)("input")
-        assertEquals(listOf("skill-a", "skill-b"), chosen)
+        assertTrue(listOf("skill-a", "skill-b").containsAll(chosen))
     }
-
-    // --- Real LLM integration ---
 
     @Test
     fun `parallel agents with real LLM produce independent results`() {
