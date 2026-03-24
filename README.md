@@ -495,7 +495,7 @@ val full = (specMaster then coder) then (reviewer then deployer)
 
 ### `/` — Parallel Fan-Out
 
-All agents receive the same input independently. The next stage receives `List<OUT>`.
+All agents receive the same input concurrently via coroutines. The next stage receives `List<OUT>`.
 
 ```kotlin
 val parallel = securityReview / styleReview / performanceReview
@@ -656,7 +656,7 @@ cd Agents.KT
 - [x] `Skill.toLlmContext()` — full context: description markdown + all knowledge content
 - [x] `Skill.knowledgeTools()` / `KnowledgeTool(name, description, call)` — tools model with lazy per-entry loading
 - [x] `then` — sequential pipeline with composed execution (no runtime casts)
-- [x] `/` — parallel fan-out
+- [x] `/` — parallel fan-out with coroutine concurrency
 - [x] `*` — forum (multi-agent discussion)
 - [x] Single-placement enforcement across all structure types
 - [x] `.loop {}` — iterative execution with `(OUT) -> IN?` feedback block
