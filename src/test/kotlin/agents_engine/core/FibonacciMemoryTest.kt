@@ -37,7 +37,7 @@ Rules: exactly one memory_read, exactly one memory_write, then reply with just t
         budget { maxTurns = 5 }
         skills { skill<String, Int>("fib", "Generate next Fibonacci number") {
             tools()
-            parseOutput { it.trim().toIntOrNull() ?: Regex("\\d+").find(it)?.value?.toInt() ?: error("No int in: $it") }
+            transformOutput { it.trim().toIntOrNull() ?: Regex("\\d+").find(it)?.value?.toInt() ?: error("No int in: $it") }
         }}
         onToolUse { name, args, result -> println("  [$name] args=$args → $result  (bank: ${bank.read("fibonacci")})") }
     }

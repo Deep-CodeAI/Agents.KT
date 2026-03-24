@@ -2,7 +2,6 @@ package agents_engine.model
 
 import agents_engine.composition.pipeline.then
 import agents_engine.core.agent
-import agents_engine.core.skill
 import org.junit.jupiter.api.assertThrows
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -297,7 +296,7 @@ class AgenticLoopTest {
             }
             skills { skill<String, Int>("solve", "Evaluate arithmetic expressions using tools") {
                 tools("add", "divide", "power")
-                parseOutput { it.trim().toIntOrNull() ?: Regex("-?\\d+").find(it)?.value?.toInt() ?: error("No integer in: $it") }
+                transformOutput { it.trim().toIntOrNull() ?: Regex("-?\\d+").find(it)?.value?.toInt() ?: error("No integer in: $it") }
             }}
             onToolUse { name, args, result -> toolUses.add(ToolUse(name, args, result)) }
         }

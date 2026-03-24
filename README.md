@@ -284,7 +284,7 @@ assistant("Translate this to French: Hello world")
 
 ---
 
-**Typed output** — use `parseOutput { }` on a skill when the agent's `OUT` type isn't `String`:
+**Typed output** — use `transformOutput { }` on a skill when the agent's `OUT` type isn't `String`:
 
 ```kotlin
 val compute = agent<String, Int>("calculator") {
@@ -295,7 +295,7 @@ val compute = agent<String, Int>("calculator") {
     }
     skills { skill<String, Int>("solve", "Evaluate arithmetic expressions") {
         tools("add", "power")
-        parseOutput { it.trim().toIntOrNull() ?: Regex("-?\\d+").find(it)?.value?.toInt() ?: error("No int in: $it") }
+        transformOutput { it.trim().toIntOrNull() ?: Regex("-?\\d+").find(it)?.value?.toInt() ?: error("No int in: $it") }
     }}
 }
 
@@ -377,7 +377,7 @@ Memory format: "prev|curr". Empty memory means start fresh.
     model { ollama("llama3"); temperature = 0.0 }
     skills { skill<String, Int>("fib", "Generate next Fibonacci number") {
         tools()   // memory tools are auto-available
-        parseOutput { it.trim().toInt() }
+        transformOutput { it.trim().toInt() }
     }}
 }
 

@@ -50,11 +50,11 @@ class Skill<IN, OUT>(
         implementation = null
     }
 
-    var outputParser: ((String) -> OUT)? = null
+    var outputTransformer: ((String) -> OUT)? = null
         private set
 
-    fun parseOutput(block: (String) -> OUT) {
-        outputParser = block
+    fun transformOutput(block: (String) -> OUT) {
+        outputTransformer = block
     }
 
     fun execute(input: IN): OUT {

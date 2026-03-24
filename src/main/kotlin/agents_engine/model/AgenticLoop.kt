@@ -69,7 +69,7 @@ fun <IN> executeAgentic(
         when (response) {
             is LlmResponse.Text -> {
                 @Suppress("UNCHECKED_CAST")
-                return (skill.outputParser as? ((String) -> Any?))?.invoke(response.content)
+                return (skill.outputTransformer as? ((String) -> Any?))?.invoke(response.content)
                     ?: parseOutput(response.content, agent.outType)
                     ?: error("Could not parse LLM output as ${agent.outType.simpleName}: '${response.content}'")
             }
