@@ -22,7 +22,19 @@ kotlin {
 }
 
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags("live-llm")
+    }
+}
+
+tasks.register<Test>("integrationTest") {
+    description = "Runs integration tests that require a live LLM (Ollama)"
+    group = "verification"
+    useJUnitPlatform {
+        includeTags("live-llm")
+    }
+    classpath = sourceSets.test.get().runtimeClasspath
+    testClassesDirs = sourceSets.test.get().output.classesDirs
 }
 
 java {

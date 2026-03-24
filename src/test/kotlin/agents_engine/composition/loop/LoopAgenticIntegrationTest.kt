@@ -5,6 +5,7 @@ import agents_engine.core.agent
 import agents_engine.model.LlmResponse
 import agents_engine.model.ModelClient
 import agents_engine.model.ToolCall
+import org.junit.jupiter.api.Tag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -194,6 +195,7 @@ class LoopAgenticIntegrationTest {
 
     // --- Real LLM ---
 
+    @Tag("live-llm")
     @Test
     fun `iterative refinement loop with real LLM`() {
         val iterations = mutableListOf<String>()

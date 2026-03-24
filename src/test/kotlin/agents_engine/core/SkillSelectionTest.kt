@@ -3,6 +3,7 @@ package agents_engine.core
 import agents_engine.model.LlmMessage
 import agents_engine.model.LlmResponse
 import agents_engine.model.ModelClient
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import kotlin.test.assertEquals
@@ -219,6 +220,7 @@ class SkillSelectionTest {
 
     // --- Integration test with real LLM ---
 
+    @Tag("live-llm")
     @Test
     fun `LLM routing picks correct skill with real model`() {
         val chosen = mutableListOf<String>()

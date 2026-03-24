@@ -1,5 +1,6 @@
 package agents_engine.core
 
+import org.junit.jupiter.api.Tag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -42,6 +43,7 @@ Rules: exactly one memory_read, exactly one memory_write, then reply with just t
         onToolUse { name, args, result -> println("  [$name] args=$args → $result  (bank: ${bank.read("fibonacci")})") }
     }
 
+    @Tag("live-llm")
     @Test
     fun `fibonacci via memory-only generates correct sequence`() {
         val bank = MemoryBank()
@@ -54,6 +56,7 @@ Rules: exactly one memory_read, exactly one memory_write, then reply with just t
         assertEquals(5, fib("do it"))
     }
 
+    @Tag("live-llm")
     @Test
     fun `memory state progresses correctly`() {
         val bank = MemoryBank()
@@ -65,6 +68,7 @@ Rules: exactly one memory_read, exactly one memory_write, then reply with just t
         fib("do it"); assertEquals("2|3", bank.read("fibonacci"))
     }
 
+    @Tag("live-llm")
     @Test
     fun `pre-seeded memory resumes from arbitrary point`() {
         val bank = MemoryBank()

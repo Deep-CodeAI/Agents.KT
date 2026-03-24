@@ -2,6 +2,7 @@ package agents_engine.model
 
 import agents_engine.core.agent
 import agents_engine.core.skill
+import org.junit.jupiter.api.Tag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -30,6 +31,7 @@ class SignInAgentTest {
         return "{$entries}"
     }
 
+    @Tag("live-llm")
     @Test
     fun `agent constructs sign-in JSON using knowledge and request generator tool`() {
         val knowledgeEvents = mutableListOf<Pair<String, String>>()

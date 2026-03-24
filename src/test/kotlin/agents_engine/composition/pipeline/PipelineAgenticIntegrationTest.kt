@@ -3,6 +3,7 @@ package agents_engine.composition.pipeline
 import agents_engine.core.agent
 import agents_engine.model.LlmResponse
 import agents_engine.model.ModelClient
+import org.junit.jupiter.api.Tag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -183,6 +184,7 @@ class PipelineAgenticIntegrationTest {
 
     // --- Integration tests with real LLM ---
 
+    @Tag("live-llm")
     @Test
     fun `pipeline of two agentic agents with real LLM`() {
         val skills = mutableListOf<String>()
@@ -212,6 +214,7 @@ class PipelineAgenticIntegrationTest {
             "Expected a small word count, got: $result")
     }
 
+    @Tag("live-llm")
     @Test
     fun `three-stage pipeline extract then transform then format with real LLM`() {
         // Stage 1: extract keywords (LLM)

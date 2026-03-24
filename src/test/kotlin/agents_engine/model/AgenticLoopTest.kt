@@ -2,6 +2,7 @@ package agents_engine.model
 
 import agents_engine.composition.pipeline.then
 import agents_engine.core.agent
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.assertThrows
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -227,6 +228,7 @@ class AgenticLoopTest {
         assertTrue(systemMsg.content.contains("Greet someone by name"))
     }
 
+    @Tag("live-llm")
     @Test
     fun `calculator agent solves nested arithmetic via tool chaining`() {
         fun num(args: Map<String, Any?>, key: String) = args[key].toString().toDouble()
@@ -279,6 +281,7 @@ class AgenticLoopTest {
         assertEquals(625.0, power.result)
     }
 
+    @Tag("live-llm")
     @Test
     fun `agent returns Int via skill output parser`() {
         fun num(args: Map<String, Any?>, key: String) = args[key].toString().toDouble()
@@ -311,6 +314,7 @@ class AgenticLoopTest {
         assertEquals(625.0, power.result)
     }
 
+    @Tag("live-llm")
     @Test
     fun `agent pipeline returns Int result`() {
         fun num(args: Map<String, Any?>, key: String) = args[key].toString().toDouble()

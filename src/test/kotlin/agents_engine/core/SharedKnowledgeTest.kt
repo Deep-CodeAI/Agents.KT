@@ -5,6 +5,7 @@ import agents_engine.model.LlmMessage
 import agents_engine.model.LlmResponse
 import agents_engine.model.ModelClient
 import agents_engine.model.ToolCall
+import org.junit.jupiter.api.Tag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -149,6 +150,7 @@ class SharedKnowledgeTest {
         assertTrue(toolMsg.content.contains("POST /users"))
     }
 
+    @Tag("live-llm")
     @Test
     fun `shared knowledge across agentic agents in pipeline with real LLM`() {
         val projectContext = mapOf(
@@ -182,6 +184,7 @@ class SharedKnowledgeTest {
         assertTrue(result.length > 10, "Expected a real review sentence, got: $result")
     }
 
+    @Tag("live-llm")
     @Test
     fun `shared product catalog drives both recommender and validator with real LLM`() {
         // Shared knowledge: a product catalog that both agents must reference

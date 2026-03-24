@@ -2,6 +2,7 @@ package agents_engine.model
 
 import agents_engine.core.agent
 import agents_engine.core.skill
+import org.junit.jupiter.api.Tag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -17,6 +18,7 @@ class OllamaClientIntegrationTest {
     private val greetTool = ToolDef("greet", "Greet a person by name") { it }
     private val client = OllamaClient(host = HOST, port = PORT, model = MODEL, temperature = 0.0, tools = listOf(greetTool))
 
+    @Tag("live-llm")
     @Test
     fun `returns text response for simple prompt`() {
         val response = client.chat(listOf(
@@ -26,6 +28,7 @@ class OllamaClientIntegrationTest {
         assertTrue((response as LlmResponse.Text).content.isNotBlank())
     }
 
+    @Tag("live-llm")
     @Test
     fun `follows inline tool call format`() {
         val messages = listOf(
@@ -52,6 +55,7 @@ class OllamaClientIntegrationTest {
         assertNotNull(call.arguments["name"])
     }
 
+    @Tag("live-llm")
     @Test
     fun `full agentic loop — model calls tool and returns final answer`() {
         var toolCalled = false

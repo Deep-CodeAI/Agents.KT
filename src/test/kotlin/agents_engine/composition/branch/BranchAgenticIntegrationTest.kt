@@ -5,6 +5,7 @@ import agents_engine.core.agent
 import agents_engine.model.LlmResponse
 import agents_engine.model.ModelClient
 import agents_engine.model.ToolCall
+import org.junit.jupiter.api.Tag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -238,6 +239,7 @@ class BranchAgenticIntegrationTest {
 
     // --- Real LLM integration ---
 
+    @Tag("live-llm")
     @Test
     fun `branch with real LLM classifier`() {
         val chosen = mutableListOf<String>()
@@ -283,6 +285,7 @@ class BranchAgenticIntegrationTest {
     data class Edible(val item: String) : Edibility
     data class NotEdible(val item: String) : Edibility
 
+    @Tag("live-llm")
     @Test
     fun `edible or not branching pipeline with real LLM`() {
         val words = listOf("wood", "apple", "rock", "scissors", "tomato", "bread")
