@@ -12,7 +12,7 @@
 
 ---
 
-Every agent is `Agent<IN, OUT>`. One input type, one output type, one job. Type mismatches and wrong compositions are caught by the compiler. Reused agent instances are caught at construction time.
+Every agent is `Agent<IN, OUT>`. One input type, one output type, one job. Type mismatches and wrong compositions are caught by the compiler.  Reused agent instances are caught at construction time.
 
 ```kotlin
 val parse = agent<RawText, Specification>("parse") {
