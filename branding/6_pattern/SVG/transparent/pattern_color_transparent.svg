@@ -1,0 +1,323 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 820 312">
+    <style>#text{display:none}</style>
+  <defs>
+    <symbol id="pattern">
+      <g transform="scale(0.1)">
+        <g fill="none" font-family="none" font-size="none" font-weight="none" stroke-miterlimit="10" style="mix-blend-mode:normal" text-anchor="none">
+<g id="symbol" transform="translate(.49592 -30.334) scale(2.4946)">
+<path d="m92.944 52.763c1.8281-1.7106 7.4125-5.5806 9.7578-7.1922 4.3125-2.9638 9.4547-7.068 13.803-9.7609-0.10781 6.0267-0.63594 11.308-1.2078 17.27-0.42031 4.877-0.91094 9.7478-1.4734 14.611 0.40469 1.0959 11.869 11.009 13.498 12.577-0.76562 0.71203-4.4859 4.2262-5.1578 4.6408-4.2422 4.5959-11.008 10.575-15.588 14.808-8.7781 8.1558-17.612 16.25-26.503 24.281-1.3781-1.0281-3.1719-2.8003-4.4531-4.0002-2.4781-2.3352-4.9688-4.6577-7.4719-6.9673-7.4328-6.777-14.92-13.492-22.258-20.392-2.7266-2.565-5.3438-5.2984-8.0688-7.8888-0.6875-0.28781-4.4828-3.8508-5.1984-4.5369 1.3078-1.5316 4.1359-3.9161 5.7391-5.3389 2.5312-2.2909 5.0812-4.5628 7.6469-6.8155-0.62188-3.9062-0.90937-9.4541-1.2859-13.531-0.55781-6.0388-1.2344-12.61-1.4453-18.639 6.1484 4.0662 12.086 8.5761 18.141 12.788 1.8719 1.3022 3.8172 2.7184 5.5672 4.1772 3.8328-4.3362 8.9-7.3917 12.714-11.401 4.3672 3.9523 8.9562 7.072 13.244 11.31z" fill="#000"/>
+<path d="m108.38 96.325c0.39375-3.6295 1.1922-6.8673 1.9188-10.421 1.2266-5.9947 2.6891-12.157 3.5219-18.212 0.40469 1.0959 11.869 11.009 13.498 12.577-0.76562 0.71203-4.4859 4.2262-5.1578 4.6408-0.43281 0.20109-2.5109 1.9247-3.0422 2.3548-3.6234 2.9358-7.4109 5.7934-10.739 9.0608z" fill="#fe0091"/>
+<path d="m46.009 68.06c1.4375 8.8891 3.7281 18.979 5.6797 27.868-2.3109-1.908-11.98-10.315-13.867-11.177-0.6875-0.28781-4.4828-3.8508-5.1984-4.5369 1.3078-1.5316 4.1359-3.9161 5.7391-5.3389 2.5312-2.2909 5.0812-4.5628 7.6469-6.8155z" fill="#fe0091"/>
+<path d="m79.7 41.454c4.3672 3.9523 8.9562 7.072 13.244 11.31-0.79375 0.34734-23.947 0.31031-25.958 0.09141 3.8328-4.3362 8.9-7.3917 12.714-11.401z" fill="#fe0091"/>
+<path d="m113.56 41.85c0.07813 0.70172-1.3828 6.6152-1.6422 7.8792-1.0578 5.1542-2.3438 10.39-3.25 15.578-1.2109-1.3788-2.4359-2.4767-3.7734-3.7291l-4.1922-3.7333c4.2172-5.418 8.8328-10.272 12.858-15.995z" fill="#fff"/>
+<path d="m46.422 41.716c1.1734 1.7383 2.7484 3.5758 4.0453 5.2673l8.4203 10.966c-1.1109 1.0927-2.2344 2.1722-3.3703 3.2386-1.3062 1.2502-2.7828 2.5297-4.1266 3.7753-1.1359-6.3189-2.8656-12.553-4.175-18.835-0.27969-1.3372-0.72187-3.0647-0.79375-4.4117z" fill="#fff"/>
+<path d="m101.48 72.882c0.57813-0.02406 0.57656-0.12922 0.91719 0.14688-0.54844 0.82031-2.1609 2.4923-2.8781 3.2789-1.7516 1.8819-3.4594 3.8041-5.1219 5.7648-1.8875-0.04828-5.0062-0.58547-6.9797-0.87625l-2.2766-0.40641c1.7406-2.3542 3.5969-4.2609 5.3797-6.5456 2.1281-0.46281 8.7953-1.2347 10.959-1.3623z" fill="#fff"/>
+<path d="m56.673 72.649c3.8016 0.23484 8.5406 0.97312 12.355 1.4698 0.74063 0.96828 5.0875 5.8878 5.3234 6.5873l-0.95313 0.12656c-2.5578 0.38047-5.4406 0.94969-8.0297 1.3895-1.1016-1.7381-7.025-7.9084-8.6953-9.5733z" fill="#fff"/>
+<path d="m79.878 80.555c0.76406 0.71188 3.5891 6.8983 4.2125 8.1592-1.5844 0.96297-2.5094 1.9958-3.9609 3.0689-1.7297-1.0728-2.0375-2.1211-4.3031-3.1772 1.4062-2.6441 2.5797-5.3362 4.0516-8.0509z" fill="#fff"/>
+<path d="m88.23 92.793c0.26094-0.00453 0.52344-0.00328 0.78437 0.00375 3.875 0.09047 10.23 2.163 13.153 5.0861 0.29219 0.29281 0.12187 0.69359 0.04375 1.1039-4.7016-2.3956-8.6125-4.2417-13.791-5.3819-0.15-0.03297-0.16875-0.64203-0.19062-0.81188z" fill="#fff"/>
+<path d="m69.141 93.02c0.64844-0.07109 1.7656-0.17109 2.3484 0.08172l0.02031 0.24906c-0.72187 0.87344-2.6609 0.96187-3.8094 1.2752-3.0766 0.83969-5.7797 2.1636-8.5578 3.6748-0.44375 0.28063-0.70938 0.49406-1.225 0.61063l-0.29687-0.21734c-0.1-0.33375-0.29531-0.68719-0.07812-0.87359 2.7547-2.3631 8.3266-4.3836 11.598-4.8005z" fill="#fff"/>
+<path d="m79.741 97.127c0.73594 0.15406 4.05 2.8484 5.0172 3.5112-1.3938 0.15531-2.8391 0.14391-4.2438 0.16312-1.8141-0.00687-3.4312-0.00172-5.2422-0.15094 1.6578-1.0953 2.9453-2.2611 4.4688-3.5234z" fill="#fff"/>
+<path d="m88.058 95.199c0.49375 0.12953 0.98594 0.26984 1.4734 0.42078 2.1844 0.68828 8.5578 3.3288 9.9781 5.5434 0.15469 0.24203-0.01562 0.39844-0.17344 0.77078-0.91719-0.06781-6.5359-3.8086-7.8734-4.2798-0.8875-0.31328-2.6359-0.98141-3.4844-1.4058-0.19531-0.37063-0.04844-0.50828 0.07969-1.0494z" fill="#fff"/>
+<path d="m71.016 95.463 0.38125 0.02922c0.44063 0.45641 0.35625 0.20562 0.41875 0.71516-0.325 0.44219-2.1297 0.99813-2.7953 1.3088-2.7031 1.262-5.2656 2.8317-7.8719 4.2906-0.52969 0.10484-0.30156 0.15984-0.72969-0.02469l-0.01094-0.36078c1.4719-2.498 7.9125-5.0998 10.608-5.9583z" fill="#fff"/>
+</g>
+</g>
+      </g>
+    </symbol>
+  </defs>
+  <rect width="820" height="312" fill="none"/>
+
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(0 0) rotate(0.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(68 52) rotate(120.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(0 104) rotate(240.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(68 156) rotate(0.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(0 208) rotate(120.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(68 260) rotate(240.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(0 312) rotate(0.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(136 0) rotate(300.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(205 52) rotate(60.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(136 104) rotate(180.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(205 156) rotate(300.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(136 208) rotate(60.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(205 260) rotate(180.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(136 312) rotate(300.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(273 0) rotate(240.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(341 52) rotate(0.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(273 104) rotate(120.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(341 156) rotate(240.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(273 208) rotate(0.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(341 260) rotate(120.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(273 312) rotate(240.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(410 0) rotate(180.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(478 52) rotate(300.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(410 104) rotate(60.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(478 156) rotate(180.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(410 208) rotate(300.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(478 260) rotate(60.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(410 312) rotate(180.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(546 0) rotate(120.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(615 52) rotate(240.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(546 104) rotate(0.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(615 156) rotate(120.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(546 208) rotate(240.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(615 260) rotate(0.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(546 312) rotate(120.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(683 0) rotate(60.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(751 52) rotate(180.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(683 104) rotate(300.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(751 156) rotate(60.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(683 208) rotate(180.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(751 260) rotate(300.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(683 312) rotate(60.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(820 0) rotate(0.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(888 52) rotate(120.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(820 104) rotate(240.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(888 156) rotate(0.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(820 208) rotate(120.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(888 260) rotate(240.0) scale(2)"
+      />
+
+      <use
+        xlink:href="#pattern"
+        x="-20" y="-20"
+        transform="translate(820 312) rotate(0.0) scale(2)"
+      />
+</svg>

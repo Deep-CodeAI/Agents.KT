@@ -1450,6 +1450,646 @@ fib("do it")  // → 55  (bank: "34|55")
 
 This tests three properties at once: that memory persists across invocations, that the agent correctly reads and writes state, and that the LLM can follow a stateful algorithm using only tool calls and prompt instructions. If Fibonacci works, the memory system is sound.
 
+### 8.6 Prompt Model: Typed Public Interface
+
+#### 8.6.1 The Problem
+
+Without a formal prompt entity, agents accept arbitrary untyped requests. A `coder` agent can receive "book me a flight" — the mismatch is discovered only after the LLM burns tokens attempting to route or hallucinate. In multi-agent systems this is worse: a manager agent can accidentally delegate to the wrong specialist, and the error surfaces as a bad output three hops downstream, not as a compile-time rejection at the delegation point.
+
+The current model conflates two concerns:
+
+- **Public interface** — what requests an agent accepts (currently: the agent's `IN` type + freeform strings)
+- **Internal routing** — how the agent picks a skill (currently: `skill.description` + `RoutingStrategy`)
+
+`Skill.description` serves double duty as both the public advertisement and the internal routing hint. This means the outside world must understand the agent's internal skill decomposition to use it correctly — a layering violation.
+
+#### 8.6.2 Design: `Prompt<IN, OUT>`
+
+A `Prompt` is a **typed, parameterized, reusable interaction template** — the agent's public API contract. It declares what the agent can be asked, how the request is structured for the LLM, and what knowledge slots the interaction requires.
+
+```kotlin
+@JvmInline
+value class PromptId(val value: String)
+
+class Prompt<IN, OUT>(
+    val id: PromptId,
+    val name: String,
+    val description: String,                    // "sells" the prompt to callers and A2A discovery
+    val inputType: KType,                       // reified from generic
+    val outputType: KType,                      // reified from generic
+    val template: PromptTemplate<IN>,           // message construction logic
+    val expects: Set<KnowledgeSlot>,            // knowledge slots this prompt requires
+    val outputFormat: OutputFormat<OUT>,         // structured, freeform, or schema-constrained
+    val examples: List<PromptExample<IN, OUT>>, // few-shot pairs for the prompt itself
+    val tags: Set<String>,                      // for discovery and filtering
+)
+```
+
+#### 8.6.3 DSL Syntax
+
+**Standalone prompt definition** — reusable across agents:
+
+```kotlin
+val securityAudit = prompt<CodeBundle, SecurityReport>("security-audit") {
+    description("Analyzes code for OWASP Top 10 vulnerabilities and produces a severity-ranked report")
+
+    template { input ->
+        system("You are a senior security auditor. Language: ${input.language}.")
+        user("Audit the following code for security vulnerabilities:\n${input.source}")
+        assistant("I'll analyze this code against OWASP Top 10 categories...")  // prefill
+    }
+
+    expects {
+        knowledge("owasp-checklist")      // slot name — skill must fill it
+        knowledge("cve-database")         // optional slot
+    }
+
+    outputFormat { structured<SecurityReport>() }
+
+    example(
+        input = CodeBundle(language = "kotlin", source = "val db = DriverManager.getConnection(url, user, password)"),
+        output = SecurityReport(
+            findings = listOf(Finding(severity = CRITICAL, category = "A03:Injection", detail = "Hardcoded credentials")),
+            score = 2.1
+        )
+    )
+
+    tags("security", "owasp", "audit")
+}
+```
+
+**Inline prompt definition** — when reuse is not needed:
+
+```kotlin
+val coder = agent<Specification, CodeBundle>("coder") {
+    prompts {
+        prompt<Specification, CodeBundle>("write-code") {
+            description("Generates production Kotlin code from a specification")
+            template { spec ->
+                system("You are an expert Kotlin developer. Prefer immutability and coroutines.")
+                user("Implement this specification:\n${spec.toMarkdown()}")
+            }
+            expects { knowledge("style-guide") }
+            outputFormat { structured<CodeBundle>() }
+        }
+
+        prompt<RefactorRequest, CodeBundle>("refactor") {
+            description("Refactors existing code to meet a new specification without breaking contracts")
+            template { req ->
+                system("You are a senior Kotlin developer specializing in safe refactoring.")
+                user("Original code:\n${req.existingCode}\n\nNew requirements:\n${req.newSpec}")
+            }
+            expects { knowledge("style-guide"); knowledge("refactor-rules") }
+            outputFormat { structured<CodeBundle>() }
+        }
+
+        // This agent does NOT accept FlightRequest.
+        // Any attempt to route FlightRequest here → compile error.
+    }
+}
+```
+
+#### 8.6.4 Prompt–Skill Relationship
+
+Prompts are **public**; skills are **private**. The prompt defines *what you can ask*; the skill defines *how it gets done*.
+
+```
+External caller / Manager agent
+        │
+        ▼
+    ┌─────────────────────────────────────┐
+    │ Agent<Specification, CodeBundle>     │
+    │                                     │
+    │   Prompts (public interface):       │
+    │     • write-code                    │ ◄── Discoverable via A2A / MCP
+    │     • refactor                      │
+    │                                     │
+    │   ┌─────────────────────────────┐   │
+    │   │ Skills (private impl):      │   │
+    │   │   • greenfield-code         │   │ ◄── Internal only
+    │   │   • incremental-code        │   │
+    │   │   • format-code (utility)   │   │
+    │   └─────────────────────────────┘   │
+    │                                     │
+    │   Prompt → Skill routing:           │
+    │     write-code ──┬── greenfield     │
+    │                  └── incremental    │
+    │     refactor ────── incremental     │
+    └─────────────────────────────────────┘
+```
+
+**Routing from prompt to skill:**
+
+```kotlin
+val coder = agent<Specification, CodeBundle>("coder") {
+    prompts {
+        +writeCode        // Prompt<Specification, CodeBundle>
+        +refactor         // Prompt<RefactorRequest, CodeBundle>
+    }
+
+    skills {
+        skill<Specification, CodeBundle>("greenfield-code") {
+            triggeredBy { prompt(writeCode) where { !input.hasExistingCode } }
+            knowledge("style-guide") { "Prefer val over var..." }
+            implementedBy { tools("write_file", "compile") }
+        }
+
+        skill<Specification, CodeBundle>("incremental-code") {
+            triggeredBy {
+                prompt(writeCode) where { input.hasExistingCode }
+                prompt(refactor)  // also reachable from refactor prompt
+            }
+            knowledge("style-guide") { "Prefer val over var..." }
+            knowledge("refactor-rules") { "Preserve public API surface..." }
+            implementedBy { tools("read_file", "edit_file", "compile") }
+        }
+    }
+}
+```
+
+**Key constraint:** Every prompt's `expects {}` knowledge slots must be satisfied by at least one skill reachable from that prompt. The compiler validates this:
+
+```
+ERROR [Prompt:30]: Prompt "security-audit" expects knowledge slot "cve-database"
+   but no skill triggered by this prompt provides it.
+   Skills triggered: [greenfield-code, incremental-code]
+   Available slots: [style-guide, refactor-rules]
+   Missing: [cve-database]
+```
+
+#### 8.6.5 Type-Safe Request Routing
+
+The core value proposition: **callers cannot address requests to wrong agents.**
+
+**Agent-to-agent delegation (compile-time):**
+
+```kotlin
+val manager = agent<ProjectRequest, DeliveryPackage>("project-manager") {
+    skills {
+        skill<ProjectRequest, DeliveryPackage>("deliver") {
+            implementedBy {
+                pipeline {
+                    // specMaster exposes prompt accepting TaskRequest
+                    invoke(specMaster, specMaster.prompt("create-spec"))
+
+                    // coder exposes prompt accepting Specification
+                    invoke(coder, coder.prompt("write-code"))
+
+                    // COMPILE ERROR: coder has no prompt accepting TaskRequest
+                    invoke(coder, coder.prompt("create-spec"))
+                    //     Available prompts on "coder": write-code(Specification), refactor(RefactorRequest)
+                    //     None accept: TaskRequest
+
+                    // COMPILE ERROR: reviewer has no prompt accepting Specification
+                    invoke(reviewer, reviewer.prompt("write-code"))
+                    //     "reviewer" does not expose prompt "write-code".
+                    //     Available prompts on "reviewer": review-code(CodeBundle)
+                }
+            }
+        }
+    }
+}
+```
+
+**A2A remote invocation (runtime with schema validation):**
+
+```kotlin
+// External caller discovers prompts via AgentCard
+val card = discoverAgent("https://api.deep-code.ai/.well-known/agent.json")
+
+// Runtime validation: does the remote agent accept this request shape?
+val prompt = card.prompts.find { it.name == "write-code" }
+    ?: error("Agent does not expose 'write-code' prompt")
+
+// Schema check: does my input match the prompt's inputSchema?
+prompt.validateInput(mySpecification)  // throws if schema mismatch
+val result = card.invoke(prompt, mySpecification)
+```
+
+**CLI invocation (discoverable command set):**
+
+```bash
+# List available prompts on an agent
+$ agents prompts coder
+  write-code    Generates production Kotlin code from a specification
+                Input:  Specification
+                Output: CodeBundle
+
+  refactor      Refactors existing code to meet a new specification
+                Input:  RefactorRequest
+                Output: CodeBundle
+
+# Invoke a specific prompt
+$ agents invoke coder --prompt write-code --input ./api-spec.yaml
+
+# Error: agent "coder" does not expose prompt "deploy"
+$ agents invoke coder --prompt deploy --input ./config.yaml
+```
+
+#### 8.6.6 Knowledge Slot Binding
+
+Prompts declare **what knowledge they need** (slots); skills provide **what knowledge they have** (entries). The framework validates the binding.
+
+```kotlin
+// Prompt declares slots
+val securityAudit = prompt<CodeBundle, SecurityReport>("security-audit") {
+    expects {
+        knowledge("owasp-checklist")                    // required slot
+        knowledge("cve-database", required = false)     // optional slot
+    }
+}
+
+// Skill fills slots
+skill<CodeBundle, SecurityReport>("audit") {
+    triggeredBy { prompt(securityAudit) }
+
+    knowledge("owasp-checklist") { loadChecklist("security/owasp-2025.md") }
+    knowledge("cve-database") { queryCveApi(input.language) }
+
+    implementedBy { tools("static_analysis", "report_generator") }
+}
+```
+
+**Delivery to the LLM:** When a prompt is invoked, the framework:
+
+1. Selects the skill via `triggeredBy` routing
+2. Evaluates the prompt's `template {}` to construct messages
+3. Resolves knowledge slots from the skill's `knowledge {}` entries
+4. Injects knowledge into the LLM context using the skill's chosen model (all-at-once or tools)
+5. Validates the output against the prompt's `outputFormat`
+
+This means the prompt controls the **conversation structure** (system/user/assistant messages) while the skill controls the **knowledge and execution strategy**. The same prompt with different skills produces different results because the knowledge is different — but the interaction pattern is consistent.
+
+#### 8.6.7 Prompt Template DSL
+
+The template DSL constructs a typed message sequence:
+
+```kotlin
+sealed interface PromptMessage {
+    data class System(val content: String) : PromptMessage
+    data class User(val content: String) : PromptMessage
+    data class Assistant(val content: String) : PromptMessage  // prefill
+}
+
+class PromptTemplate<IN>(
+    val build: (IN) -> List<PromptMessage>
+)
+
+// DSL builder
+template { input: CodeBundle ->
+    system("You are a security auditor specializing in ${input.language}.")
+    user("Audit the following code:\n${input.source}")
+    assistant("I'll analyze this against OWASP Top 10...")  // optional prefill
+}
+```
+
+**Parameterized templates** — the template receives the typed input and can use any field:
+
+```kotlin
+prompt<TranslationRequest, TranslatedDoc>("translate") {
+    template { req ->
+        system("You are a professional translator. Source: ${req.sourceLang}. Target: ${req.targetLang}.")
+        user(req.content)
+    }
+}
+```
+
+**Multi-turn templates** — for prompts that require structured multi-step interaction:
+
+```kotlin
+prompt<DesignRequest, DesignDoc>("design-review") {
+    template { req ->
+        system("You are a senior architect reviewing a system design.")
+        user("Here is the design document:\n${req.document}")
+        assistant("I'll review this against the following criteria...")
+        user("Focus on: ${req.focusAreas.joinToString()}")
+    }
+}
+```
+
+#### 8.6.8 Output Format
+
+Prompts declare how the output should be structured:
+
+```kotlin
+sealed interface OutputFormat<OUT> {
+    class Structured<OUT>(val schema: KType) : OutputFormat<OUT>    // JSON schema from data class
+    class Freeform<OUT>(val parser: (String) -> OUT) : OutputFormat<OUT>  // custom parsing
+    class SchemaConstrained<OUT>(val jsonSchema: JsonObject) : OutputFormat<OUT>  // explicit JSON Schema
+}
+
+// DSL
+outputFormat { structured<SecurityReport>() }           // auto-generates JSON Schema from data class
+outputFormat { freeform { raw -> parseMarkdown(raw) } } // custom parser
+outputFormat { schema(securityReportSchema) }            // explicit schema
+```
+
+When `structured` is used, the framework auto-generates a JSON Schema from the Kotlin data class and passes it to the LLM as a response format constraint. This maps directly to MCP's `outputSchema` on tools.
+
+#### 8.6.9 Serialization
+
+**agent.json — Prompt Section:**
+
+```json
+{
+  "spec": {
+    "prompts": [
+      {
+        "id": "write-code",
+        "name": "Write Code",
+        "description": "Generates production Kotlin code from a specification",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "language": { "type": "string" },
+            "requirements": { "type": "array", "items": { "type": "string" } },
+            "hasExistingCode": { "type": "boolean" }
+          },
+          "required": ["language", "requirements"]
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "files": { "type": "array" },
+            "compilable": { "type": "boolean" }
+          }
+        },
+        "expects": [
+          { "slot": "style-guide", "required": true },
+          { "slot": "cve-database", "required": false }
+        ],
+        "examples": [
+          {
+            "input": { "language": "kotlin", "requirements": ["REST API", "CRUD"] },
+            "output": { "files": ["UserController.kt"], "compilable": true }
+          }
+        ],
+        "tags": ["kotlin", "generation"]
+      }
+    ],
+    "skills": [ ... ],
+    "types": { ... }
+  }
+}
+```
+
+**A2A AgentCard — Prompt Mapping:**
+
+| Prompt DSL | A2A AgentCard | Exported? |
+|------------|---------------|-----------|
+| `prompt.name` | `skills[].name` | Yes — prompts map to A2A skills |
+| `prompt.description` | `skills[].description` | Yes |
+| `prompt.inputSchema` | `skills[].inputModes` | Yes — JSON Schema advertised |
+| `prompt.outputSchema` | `skills[].outputModes` | Yes |
+| `prompt.tags` | `skills[].tags` | Yes |
+| `prompt.examples` | — | Not in A2A spec; available via agent.json |
+| `prompt.expects` | — | Internal: knowledge wiring |
+| `prompt.template` | — | Internal: LLM interaction pattern |
+
+**Key mapping decision:** A2A's `skills[]` are the public interface of an agent — they describe *what the agent can do*. This maps to **prompts**, not to Agents.KT skills. The A2A skill list is generated from the agent's `prompts {}` block, not from `skills {}`. This maintains the public/private separation: external callers see prompts; internal implementation (skills) remains opaque.
+
+```kotlin
+// Before (v0.9): AgentCard.skills generated from agent's skills
+// After (v1.0): AgentCard.skills generated from agent's prompts
+
+val card = coder.toAgentCard(...)
+// card.skills = [
+//   { name: "write-code", description: "Generates production Kotlin code...", inputModes: [...] },
+//   { name: "refactor", description: "Refactors existing code...", inputModes: [...] }
+// ]
+// NOT: [{ name: "greenfield-code", ... }, { name: "incremental-code", ... }]
+```
+
+**MCP Prompt Compatibility:**
+
+When an Agents.KT agent acts as an MCP server (Phase 3), its prompts are exposed via MCP's `prompts/list` and `prompts/get`:
+
+```json
+// MCP prompts/list response (auto-generated from agent's prompts {})
+{
+  "prompts": [
+    {
+      "name": "write-code",
+      "description": "Generates production Kotlin code from a specification",
+      "arguments": [
+        { "name": "language", "description": "Target programming language", "required": true },
+        { "name": "requirements", "description": "List of requirements", "required": true }
+      ]
+    }
+  ]
+}
+```
+
+```json
+// MCP prompts/get response (template evaluated with arguments)
+{
+  "messages": [
+    { "role": "system", "content": "You are an expert Kotlin developer..." },
+    { "role": "user", "content": "Implement this specification:\n..." }
+  ]
+}
+```
+
+#### 8.6.10 Prompt Composition
+
+Prompts can be composed, just like agents:
+
+**Prompt chaining** — one prompt's output feeds another:
+
+```kotlin
+// The framework validates: writeCode.OUT == reviewCode.IN
+val writeAndReview = writeCode then reviewCode
+// Result: ComposedPrompt<Specification, ReviewResult>
+```
+
+**Prompt refinement** — extending a base prompt with additional constraints:
+
+```kotlin
+val strictWriteCode = writeCode.refine {
+    template { input ->
+        inherit()  // include base template messages
+        user("Additional constraint: 100% test coverage required.")
+    }
+    expects {
+        inherit()  // include base knowledge slots
+        knowledge("coverage-rules")  // add new slot
+    }
+}
+```
+
+**Prompt variants** — same interface, different interaction patterns:
+
+```kotlin
+val verboseAudit = securityAudit.variant("verbose") {
+    template { input ->
+        system("You are a security auditor. Explain each finding in detail with remediation steps.")
+        user("Audit this code:\n${input.source}")
+    }
+}
+
+val conciseAudit = securityAudit.variant("concise") {
+    template { input ->
+        system("You are a security auditor. List findings as one-liners, severity only.")
+        user(input.source)
+    }
+}
+```
+
+#### 8.6.11 Compile-Time Validations
+
+New validations added to the catalog:
+
+| # | Category | Check | Severity |
+|---|----------|-------|----------|
+| 27 | **Prompts** | Every exposed prompt must be handled by at least one skill (`triggeredBy`) | Error |
+| 28 | **Prompts** | Prompt input type must be assignable from agent's `IN` type (or a subtype the agent can construct) | Error |
+| 29 | **Prompts** | Prompt output type must be assignable to agent's `OUT` type | Error |
+| 30 | **Prompts** | Every `expects` required knowledge slot must be provided by all skills reachable from that prompt | Error |
+| 31 | **Prompts** | Prompt `outputFormat` structured type must match prompt's `OUT` type parameter | Error |
+| 32 | **Prompts** | No two prompts on the same agent may have identical `(inputType, name)` pairs | Error |
+| 33 | **Prompts** | Agent with `prompts {}` block must have at least one prompt | Error |
+| 34 | **Prompts** | Optional knowledge slot in `expects` should be provided by at least one skill (otherwise the slot is dead code) | Warning |
+
+**Error message examples:**
+
+```
+ERROR [Prompt:27]: Prompt "security-audit" on agent "coder" is not
+   handled by any skill. Add `triggeredBy { prompt(securityAudit) }`
+   to at least one skill.
+
+ERROR [Prompt:28]: Prompt "write-code" accepts Specification
+   but agent "reviewer" consumes CodeBundle.
+   Prompt input type must be assignable from the agent's IN type.
+
+ERROR [Prompt:30]: Prompt "security-audit" expects required knowledge
+   slot "owasp-checklist" but skill "greenfield-code" (triggered by this
+   prompt) does not provide it.
+   Provided by skill: [style-guide]
+   Missing: [owasp-checklist]
+
+WARNING [Prompt:34]: Prompt "security-audit" declares optional knowledge
+   slot "threat-model" but no reachable skill provides it.
+   Consider removing the slot or adding knowledge to a skill.
+```
+
+#### 8.6.12 Backward Compatibility
+
+The prompt entity is **additive** — existing agents without `prompts {}` blocks continue to work as before:
+
+- **No `prompts {}` block:** Agent accepts its `IN` type directly. Skills use `routing {}` or `RoutingStrategy.LLM_DECISION` as currently specified. The agent's A2A card generates skills from `skills {}` (existing behavior).
+- **With `prompts {}` block:** Agent accepts requests only through declared prompts. Skills use `triggeredBy { prompt(...) }` for routing. The agent's A2A card generates skills from `prompts {}` (new behavior). Any skill without a `triggeredBy` clause becomes an internal utility skill — not reachable from external prompts, only callable by other skills or by the agent's own LLM routing.
+
+**Migration path:**
+
+```kotlin
+// Before: skill description is the public interface
+val coder = agent<Specification, CodeBundle>("coder") {
+    skills {
+        skill<Specification, CodeBundle>("write-code", "Generates Kotlin code...") {
+            implementedBy { tools("write_file", "compile") }
+        }
+    }
+}
+
+// After: prompt is the public interface, skill is internal
+val coder = agent<Specification, CodeBundle>("coder") {
+    prompts {
+        prompt<Specification, CodeBundle>("write-code") {
+            description("Generates production Kotlin code from a specification")
+            template { spec -> ... }
+        }
+    }
+    skills {
+        skill<Specification, CodeBundle>("write-code-impl") {
+            triggeredBy { prompt("write-code") }
+            knowledge("style-guide") { ... }
+            implementedBy { tools("write_file", "compile") }
+        }
+    }
+}
+```
+
+#### 8.6.13 Shared Prompt Libraries
+
+Prompts are standalone typed values — they can be packaged and distributed like knowledge packs:
+
+```kotlin
+// Published as: dev.agentskt.prompts:security-prompts:1.0.0
+object SecurityPrompts {
+    val audit = prompt<CodeBundle, SecurityReport>("security-audit") { ... }
+    val penTest = prompt<Endpoint, PenTestReport>("pen-test") { ... }
+    val compliance = prompt<CodeBundle, ComplianceReport>("compliance-check") { ... }
+}
+
+// Consumed by any agent:
+val securityReviewer = agent<CodeBundle, SecurityReport>("security-reviewer") {
+    prompts {
+        +SecurityPrompts.audit
+        +SecurityPrompts.compliance
+    }
+    skills { ... }
+}
+```
+
+**Distribution format:** Prompt libraries are published as Maven artifacts containing:
+
+```
+security-prompts-1.0.0.jar
+├── META-INF/
+│   └── prompts/
+│       ├── security-audit.json       ← serialized prompt definition
+│       ├── pen-test.json
+│       └── compliance-check.json
+├── com/deepcode/prompts/security/
+│   └── SecurityPrompts.class         ← compiled prompt objects
+└── examples/
+    └── audit-examples.json           ← bundled few-shot pairs
+```
+
+#### 8.6.14 UML Mapping
+
+| DSL Concept | UML Equivalent |
+|-------------|---------------|
+| `prompt<IN,OUT>` | Provided interface (port on component boundary) |
+| `prompt.template` | Interaction diagram / protocol state machine |
+| `prompt.expects` | Required interface (dependency on knowledge provider) |
+| `prompt → skill` routing | Realize relationship (interface → implementation) |
+
+Addition to the existing UML Isomorphism table:
+
+```
+Bidirectional: Prompt ←→ UML Provided Interface
+  Draw UML provided interface → generate prompt stub
+  Write prompt DSL → visualize as port on component boundary
+```
+
+#### 8.6.15 Roadmap Placement
+
+**Phase 2 (Q2 2026):**
+- `Prompt<IN, OUT>` entity definition and DSL
+- Prompt → Skill routing via `triggeredBy`
+- Knowledge slot binding and validation
+- Compile-time validations #27–#34
+- Prompt serialization in agent.json
+- A2A AgentCard generation from prompts (replacing skill-based generation)
+- CLI: `agents prompts <agent>` command
+
+**Phase 3 (Q3 2026):**
+- MCP prompt compatibility (`prompts/list`, `prompts/get`)
+- Prompt composition operators (`then`, `refine`, `variant`)
+- Shared prompt libraries (Maven distribution)
+- AgentUnit: prompt-level testing (validate template output, knowledge slot resolution)
+
+#### 8.6.16 Open Questions
+
+11. **Prompt variance:** Should `Prompt<IN, OUT>` support contravariance on IN? A `Prompt<Animal, Report>` could accept `Dog` — useful for generic prompts consumed by specialized agents.
+
+12. **Prompt versioning:** When a prompt's schema changes (new required field), how do existing callers discover the breaking change? Semantic versioning on prompt definitions? Deprecation annotations?
+
+13. **Dynamic prompt discovery:** Should agents be able to register prompts at runtime (e.g., an agent that generates prompts from a database schema)? This conflicts with compile-time validation but enables meta-agent patterns.
+
+14. **Prompt-level budgets:** Should prompts carry token budget hints? A "concise audit" prompt might have a lower budget than a "verbose audit" — useful for cost management in production.
+
 ---
 
 ## 9. Two-Layer Architecture
@@ -2753,7 +3393,7 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 **Planned:**
 - `model { }` — extend to multi-provider (Anthropic, OpenAI, Google) via ChatModel abstraction
 - KSP annotation processor for compile-time `@Generable` schema generation; constrained decoding (Ollama) + guided JSON mode (Anthropic/OpenAI) enforcement tiers
-- Skill routing: predefined rules + `RoutingStrategy.LLM_DECISION`
+- ~~Skill routing: predefined rules + `RoutingStrategy.LLM_DECISION`~~ ✓ done
 - Layer 2: Structure DSL with delegates, grants, authority, routing, escalation
 - All validations from §11 catalog
 - CLI: `agents new`, `generate`, `validate`
@@ -2770,16 +3410,20 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 - Constrained decoding (Ollama/vLLM) + guided JSON mode (Anthropic/OpenAI)
 
 **Secondary (stretch):**
+- `Prompt<IN, OUT>` entity definition and DSL — typed public interface for agents (§8.6)
+- Prompt → Skill routing via `triggeredBy`, knowledge slot binding and validation (§8.6.4–§8.6.6)
+- Compile-time validations #27–#34 for prompts (§8.6.11)
+- Prompt serialization in agent.json; A2A AgentCard generation from prompts (§8.6.9)
 - Tool constraints: `constraints {}` DSL with `ToolConstraint` sealed hierarchy — visibility control per turn (§5.6)
 - Typed hook payloads: `onSkillStart<T>`, `onToolCall<T>`, `onToolResult<T>` (§8.4)
 - Typed memory strategies: `sliding<T>`, `tokenBudget<T>`, `summarized<T>` namespaces (§8.5)
 - Human-in-the-loop: `confirm()` with message templates, timeouts, fallback behavior (§9.2.1)
 - Session model: multi-turn conversation, compaction strategies (§5.7)
 - Reactive context hooks: `beforeInference`, `afterToolCall`, `onBudgetThreshold` (§8.4)
-- Skill routing: predefined rules + `RoutingStrategy.LLM_DECISION`
+- ~~Skill routing: predefined rules + `RoutingStrategy.LLM_DECISION`~~ ✓ done
 - MCP server: expose agents as MCP endpoints (§5.8)
 - Pipeline observability: `observe {}`, `Flow<PipelineEvent>` (§10.2)
-- Forum discussion rounds and Parallel coroutine execution
+- Forum discussion rounds and ~~Parallel coroutine execution~~ ✓ done
 
 ### Phase 3: Production (Q3 2026)
 
@@ -2787,9 +3431,12 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 - `.spawn {}` operator: independent sub-agent lifecycle (§10.1)
 - Layer 2: Structure DSL with delegates, grants, authority, routing
 - Runtime permission model (§9.2.1)
+- MCP prompt compatibility: `prompts/list`, `prompts/get` (§8.6.9)
+- Prompt composition operators: `then`, `refine`, `variant` (§8.6.10)
+- Shared prompt libraries — Maven distribution (§8.6.13)
 - A2A server + client
 - JAR distribution: agent bundles, assembly engine, Gradle plugin
-- CLI: `serve`, `inspect`, `validate`
+- CLI: `serve`, `inspect`, `validate`, `prompts`
 - GraalVM native binary + jlink runtime
 
 ### Phase 4: Ecosystem (Q4 2026)

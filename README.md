@@ -1,14 +1,19 @@
-# Agents.KT
+<p align="center">
+  <img src="branding/1_logo/PNG/transparent/logo_color_transparent.png" alt="Agents.KT" width="320" />
+</p>
 
-[![CI](https://github.com/Deep-CodeAI/Agents.KT/actions/workflows/ci.yml/badge.svg)](https://github.com/Deep-CodeAI/Agents.KT/actions/workflows/ci.yml)
-[![Maven Central](https://img.shields.io/maven-central/v/ai.deep-code/agents-kt?color=blue)](https://central.sonatype.com/artifact/ai.deep-code/agents-kt)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.1-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![JDK](https://img.shields.io/badge/JDK-21+-orange)](https://openjdk.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+<p align="center">
+  <strong>Typed Kotlin DSL framework for AI agent systems.</strong><br/>
+  <em>Define Freely. Compose Strictly. Ship Reliably.</em>
+</p>
 
-**Typed Kotlin DSL framework for AI agent systems.**
-
-*Define Freely. Compose Strictly. Ship Reliably.*
+<p align="center">
+  <a href="https://github.com/Deep-CodeAI/Agents.KT/actions/workflows/ci.yml"><img src="https://github.com/Deep-CodeAI/Agents.KT/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://central.sonatype.com/artifact/ai.deep-code/agents-kt"><img src="https://img.shields.io/maven-central/v/ai.deep-code/agents-kt?color=blue" alt="Maven Central" /></a>
+  <a href="https://kotlinlang.org"><img src="https://img.shields.io/badge/Kotlin-2.1-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin" /></a>
+  <a href="https://openjdk.org"><img src="https://img.shields.io/badge/JDK-21+-orange" alt="JDK" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
+</p>
 
 ---
 
