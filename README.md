@@ -372,33 +372,67 @@ budget { maxTurns = 10 }   // throws BudgetExceededException after 10 turns
 
 Tools fail at runtime — network errors, timeouts, flaky APIs. Agents.KT lets each tool declare its own recovery strategy, and **the fixer is always an agent**. No special parser class, no lambda callbacks — a regular `Agent<String, String>` with the same composition, telemetry, and budget tracking as everything else. Deterministic agents (`implementedBy`) cost zero LLM calls.
 
-**Retry a flaky tool:**
+### `onError` inside the tool block
+
+Error handling lives where the tool lives:
 
 ```kotlin
-val a = agent<String, String>("fetcher") {
-    model { ollama("llama3"); client = mock }
-    tools {
-        tool("fetch", "Fetch a URL") { _ -> httpGet() }
+tools {
+    tool("fetch") {
+        description("Fetch a URL")
+        executor { args -> httpGet(args["url"].toString()) }
+        onError {
+            executionError { _ -> retry(maxAttempts = 3) }
+        }
     }
-    onToolError("fetch") {
-        executionError { _ -> retry(maxAttempts = 3) }
-    }
-    skills { skill<String, String>("s", "s") { tools("fetch") } }
 }
 // Tool throws → retries up to 3 times → succeeds or throws ToolExecutionException
 ```
 
-**`onError` inside the tool definition** — error handling declared where the tool lives:
+Agent-based repair — the fixer is an `Agent<String, String>`:
+
+```kotlin
+val jsonFixer = agent<String, String>("json-fixer") {
+    skills {
+        skill<String, String>("cleanup", "Fixes common JSON issues") {
+            implementedBy { input -> input.replace(",}", "}").replace(",]", "]") }
+        }
+    }
+}
+
+tools {
+    tool("parse") {
+        description("Parse JSON input")
+        executor { args -> parseJson(args["json"].toString()) }
+        onError {
+            invalidArgs { _, _ -> fix(agent = jsonFixer) }
+            executionError { _ -> fix(agent = jsonFixer, retries = 3) }
+        }
+    }
+}
+```
+
+Shorthand form also works — `onError` as a named parameter:
 
 ```kotlin
 tools {
     tool("fetch", "Fetch a URL", onError = {
         executionError { _ -> retry(maxAttempts = 3) }
-    }) { _ -> httpGet() }
+    }) { args -> httpGet(args["url"].toString()) }
 }
 ```
 
-**Tool-level defaults** — set once, override per tool:
+Or at the agent level via `onToolError`:
+
+```kotlin
+onToolError("fetch") {
+    executionError { _ -> retry(maxAttempts = 3) }
+}
+```
+
+### Defaults and priority
+
+Set defaults once, override per tool:
 
 ```kotlin
 tools {
@@ -407,80 +441,128 @@ tools {
             executionError { _ -> retry(maxAttempts = 3) }
         }
     }
-    tool("fetch", "Fetch URL")     { _ -> httpGet() }   // inherits retry(3)
-    tool("compile", "Compile code") { _ -> compile() }  // inherits retry(3)
+    tool("fetch", "Fetch URL") { _ -> httpGet() }      // inherits retry(3)
+    tool("compile") {
+        description("Compile code")
+        executor { _ -> compile() }
+        onError { executionError { _ -> retry(maxAttempts = 1) } }  // overrides
+    }
 }
-// Override for a specific tool:
-onToolError("compile") {
-    executionError { _ -> retry(maxAttempts = 1) }
-}
-// Resolution priority: tool-level onError > agent-level onToolError > defaults
 ```
 
-**Agent-based repair** — the fixer is an `Agent<String, String>`. Deterministic via `implementedBy`, zero LLM calls:
+Resolution priority: **tool block `onError`** > **agent-level `onToolError`** > **defaults**.
+
+### Built-in tools: `escalate` and `throwException`
+
+Every agent has two framework-provided tools — `escalate` and `throwException`. They exist in every agent's `toolMap` but are **inactive by default**. A skill activates them by referencing them in `tools(...)`:
 
 ```kotlin
-val jsonFixer = agent<String, String>("json-fixer") {
+val fixer = agent<String, String>("json-fixer") {
+    prompt("Fix malformed JSON. If structural error, call escalate. If binary garbage, call throwException.")
+    model { ollama("gpt-4o-mini"); temperature = 0.0 }
     skills {
-        skill<String, String>("cleanup", "Fixes common JSON issues") {
-            implementedBy { input ->
-                input.replace(",}", "}").replace(",]", "]")
-            }
+        skill<String, String>("fix", "Fix JSON") {
+            tools("escalate", "throwException")   // activates built-in tools
         }
     }
-}
-
-val pathSanitizer = agent<String, String>("path-sanitizer") {
-    skills {
-        skill<String, String>("sanitize", "Normalizes OS paths") {
-            implementedBy { input -> input.replace("\\", "/") }
-        }
-    }
-}
-
-onToolError("write_file") {
-    invalidArgs { _, _ -> fix(agent = jsonFixer) }
-    deserializationError { _, _ -> sanitize(agent = pathSanitizer) }
 }
 ```
 
-The framework calls the repair agent with the broken input and uses its output as the fixed value. Supports retries: `fix(agent = jsonFixer, retries = 3)`.
+**`escalate`** — soft failure. The error is fed back to the parent LLM as a tool result, giving it a chance to retry with corrected arguments:
 
-Same `Agent<String, String>`. Same slot in `onError`. Same telemetry, same `agentTest {}`. The caller doesn't know or care whether the fixer uses an LLM or a regex — fractal composition applied to error recovery.
-
-**Escalation** — a repair agent throws `EscalationException` to signal "I can't fix this, parent agent deal with it":
-
-```kotlin
-val strictFixer = agent<String, String>("strict-fixer") {
-    skills {
-        skill<String, String>("fix", "Attempts to fix") {
-            implementedBy { _ ->
-                throw EscalationException("Schema mismatch, not a formatting issue", Severity.HIGH)
-            }
-        }
-    }
-}
-// When the fixer escalates, the framework wraps it in ToolExecutionException.
+```
+LLM calls parseJson(json = "{name: world}")  →  tool throws (unquoted keys)
+  → fixer agent tries to fix
+  → fixer LLM calls escalate(reason = "Unquoted keys. Corrected: {\"name\":\"world\"}")
+    → error fed back to parent LLM: "ERROR: Tool 'parseJson' failed: Unquoted keys..."
+      → parent LLM retries: parseJson(json = '{"name":"world"}')  →  succeeds
 ```
 
-**Hard failure** — throw `ToolExecutionException` to stop everything immediately:
+**`throwException`** — hard failure. `ToolExecutionException` propagates immediately through the pipeline. No retries.
+
+Deterministic agents can also escalate by throwing directly:
 
 ```kotlin
 implementedBy { _ ->
-    throw ToolExecutionException("Fundamentally broken — binary data, not JSON")
+    throw EscalationException("Schema mismatch", Severity.HIGH)  // soft
+    // or
+    throw ToolExecutionException("Binary data, not JSON")         // hard
 }
-// Propagates through the pipeline. No retries, no escalation.
 ```
 
-**`onToolUse` fires after successful recovery** — listeners only see the final, successful result:
+### Full example: JSON key counter with escalation recovery
+
+A complete working example — agent parses malformed JSON via a tool, fixer agent escalates with corrected data, the LLM retries and succeeds:
 
 ```kotlin
-onToolError("flaky") { executionError { _ -> retry(maxAttempts = 3) } }
-onToolUse { name, _, result -> toolEvents.add("$name=$result") }
-// toolEvents == ["flaky=recovered"]  — only the successful call is reported
+// Fixer agent: LLM-driven, uses the built-in escalate tool.
+// Analyzes the parse error and suggests corrected JSON in the escalation reason.
+val fixer = agent<String, String>("json-fixer") {
+    prompt(
+        "You receive a string that failed to parse as JSON. " +
+        "Call the escalate tool with a reason that includes the corrected valid JSON."
+    )
+    model { ollama("gpt-4o-mini"); temperature = 0.0 }
+    budget { maxTurns = 3 }
+    skills {
+        skill<String, String>("fix", "Analyze and escalate JSON errors") {
+            tools("escalate")   // activates the built-in escalate tool
+        }
+    }
+}
+
+// Main agent: uses calculateNumberOfKeys tool with onError inside the tool block.
+val agent = agent<String, String>("json-analyst") {
+    prompt(
+        "Use the calculateNumberOfKeys tool to count keys in JSON objects. " +
+        "If a tool returns an ERROR, read it carefully — it contains corrected JSON. " +
+        "Retry the tool with the corrected JSON. Reply with ONLY the number."
+    )
+    model { ollama("llama3"); temperature = 0.0 }
+    budget { maxTurns = 10 }
+    tools {
+        tool("calculateNumberOfKeys") {
+            description("Count top-level keys in a JSON object. Args: json (valid JSON string)")
+            executor { args ->
+                val json = args["json"]?.toString()
+                    ?: throw IllegalArgumentException("Missing 'json' argument")
+                val keys = Regex(""""([^"]+)"\s*:""").findAll(json).toList()
+                if (keys.isEmpty()) throw IllegalArgumentException("No valid keys — unquoted keys?")
+                keys.size
+            }
+            onError {
+                executionError { _ -> fix(agent = fixer, retries = 2) }
+            }
+        }
+    }
+    skills {
+        skill<String, String>("solve", "Analyze JSON using tools") {
+            tools("calculateNumberOfKeys")
+        }
+    }
+    onToolUse { name, args, result ->
+        println("  $name(${args["json"].toString().take(60)}) = $result")
+    }
+}
+
+agent("How many keys? {name: world, age: 30, active: true}")
+//   calculateNumberOfKeys({name: world, age: 30, active: true}) =
+//       ERROR: Tool 'calculateNumberOfKeys' failed: No valid keys — unquoted keys? ...
+//   calculateNumberOfKeys({"name":"world","age":30,"active":true}) = 3
+// → "3"
 ```
 
-**Error types** — `ToolError` is a sealed hierarchy for programmatic handling:
+The flow:
+1. LLM calls `calculateNumberOfKeys(json="{name: world, ...}")` — malformed, unquoted keys
+2. Tool throws → `onError` invokes `fixer` agent
+3. Fixer LLM analyzes the error, calls `escalate(reason="...corrected: {\"name\":\"world\",...}")`
+4. Escalation error fed back to main LLM as tool result
+5. Main LLM reads the corrected JSON from the error, retries with valid JSON
+6. Tool succeeds → returns `3`
+
+### Error types
+
+`ToolError` is a sealed hierarchy for programmatic handling:
 
 ```kotlin
 sealed interface ToolError {

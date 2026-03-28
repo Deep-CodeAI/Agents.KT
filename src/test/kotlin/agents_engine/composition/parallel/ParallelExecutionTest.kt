@@ -139,7 +139,7 @@ class ParallelExecutionTest {
 
         val a = agent<String, String>("a") {
             model { ollama("llama3"); client = mockA }
-            tools { tool("reverse") { args -> args["t"].toString().reversed() } }
+            tools { tool("reverse", "") { args -> args["t"].toString().reversed() } }
             skills { skill<String, String>("sa", "Reverse") { tools("reverse") } }
         }
         val b = agent<String, String>("b") {

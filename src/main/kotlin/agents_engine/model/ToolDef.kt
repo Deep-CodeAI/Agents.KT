@@ -29,13 +29,13 @@ class ToolsBuilder {
         defaultErrorHandler = builder.errorHandler
     }
 
-    fun tool(name: String, description: String = "", executor: (Map<String, Any?>) -> Any?) {
+    fun tool(name: String, description: String, executor: (Map<String, Any?>) -> Any?) {
         defs.add(ToolDef(name, description, executor))
     }
 
     fun tool(
         name: String,
-        description: String = "",
+        description: String,
         onError: OnErrorBuilder.() -> Unit,
         executor: (Map<String, Any?>) -> Any?,
     ) {
@@ -44,9 +44,35 @@ class ToolsBuilder {
         defs.add(def)
     }
 
-    // Convenience overload without description
-    fun tool(name: String, executor: (Map<String, Any?>) -> Any?) {
-        defs.add(ToolDef(name, "", executor))
+    fun tool(name: String, block: ToolDefBuilder.() -> Unit) {
+        val builder = ToolDefBuilder(name)
+        builder.block()
+        val def = builder.build()
+        defs.add(def)
+    }
+}
+
+class ToolDefBuilder(private val name: String) {
+    private var desc: String = ""
+    private var exec: ((Map<String, Any?>) -> Any?)? = null
+    private var handler: ToolErrorHandler? = null
+
+    fun description(text: String) { desc = text }
+
+    fun executor(block: (Map<String, Any?>) -> Any?) { exec = block }
+
+    fun onError(block: OnErrorBuilder.() -> Unit) {
+        handler = OnErrorBuilder().apply(block).build()
+    }
+
+    internal fun build(): ToolDef {
+        val def = ToolDef(
+            name,
+            desc,
+            requireNotNull(exec) { "Tool \"$name\" must have an executor { } block." },
+        )
+        handler?.let { def.errorHandler = it }
+        return def
     }
 }
 

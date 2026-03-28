@@ -69,7 +69,7 @@ class AgenticLoopTest {
 
         val a = agent<String, String>("a") {
             model { ollama("llama3"); client = mock }
-            tools { tool("greet") { _ -> toolExecuted = true; "Hi!" } }
+            tools { tool("greet", "") { _ -> toolExecuted = true; "Hi!" } }
             skills { skill<String, String>("s", "s") { tools("greet") } }
         }
 
@@ -87,7 +87,7 @@ class AgenticLoopTest {
 
         val a = agent<String, String>("a") {
             model { ollama("llama3"); client = mock }
-            tools { tool("reverse") { args -> args["text"].toString().reversed() } }
+            tools { tool("reverse", "") { args -> args["text"].toString().reversed() } }
             skills { skill<String, String>("s", "s") { tools("reverse") } }
         }
 
@@ -181,7 +181,7 @@ class AgenticLoopTest {
         val toolUseNames = mutableListOf<String>()
         val a = agent<String, String>("a") {
             model { ollama("llama3"); client = mock }
-            tools { tool("greet") { _ -> "Hi!" } }
+            tools { tool("greet", "") { _ -> "Hi!" } }
             skills { skill<String, String>("s", "desc") {
                 tools("greet")
                 knowledge("style-guide", "Rules") { "Use val." }
@@ -203,7 +203,7 @@ class AgenticLoopTest {
         val a = agent<String, String>("a") {
             model { ollama("llama3"); client = mock }
             budget { maxTurns = 3 }
-            tools { tool("noop") { _ -> "ok" } }
+            tools { tool("noop", "") { _ -> "ok" } }
             skills { skill<String, String>("s", "s") { tools("noop") } }
         }
 

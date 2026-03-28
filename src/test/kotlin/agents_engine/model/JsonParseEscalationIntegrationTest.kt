@@ -170,4 +170,84 @@ class JsonParseEscalationIntegrationTest {
         assertEquals(3, lastSuccess.result, "Corrected JSON should have 3 keys")
         assertTrue(result.contains("3"), "Expected 3 in result, got: $result")
     }
+
+    /**
+     * Live LLM integration test with onError inside the tool block DSL.
+     * The tool rejects the first call unconditionally to guarantee the escalation path runs.
+     * Fixer agent escalates → error fed back to LLM → LLM retries → second call succeeds.
+     */
+    @Tag("live-llm")
+    @Test
+    fun `tool block onError - fixer escalates and LLM retries with corrected JSON`() {
+        val fixer = agent<String, String>("json-fixer") {
+            prompt(
+                "You receive a string that was supposed to be valid JSON but failed to parse. " +
+                "Analyze the error. Call the escalate tool with a reason that includes the corrected valid JSON. " +
+                "Severity should be MEDIUM for fixable formatting issues."
+            )
+            model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
+            budget { maxTurns = 3 }
+            skills { skill<String, String>("fix", "Analyze and escalate JSON errors") {
+                tools("escalate")
+            }}
+        }
+
+        data class ToolUse(val name: String, val args: Map<String, Any?>, val result: Any?)
+        val toolUses = mutableListOf<ToolUse>()
+        var rawCallCount = 0
+
+        val a = agent<String, String>("json-agent") {
+            prompt(
+                "You are a JSON analysis assistant. Use the calculateNumberOfKeys tool to count keys in JSON objects. " +
+                "The tool takes ONE argument: json (a valid JSON string with double-quoted keys). " +
+                "If a tool returns an ERROR, read the error carefully — it may contain the corrected JSON. " +
+                "Extract the corrected JSON from the error and retry. Reply with ONLY the final number."
+            )
+            model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
+            budget { maxTurns = 10 }
+            tools {
+                tool("calculateNumberOfKeys") {
+                    description("Count top-level keys in a JSON object. Args: json (string — valid JSON with double-quoted keys)")
+                    executor { args ->
+                        rawCallCount++
+                        // First call ALWAYS fails — forces the escalation path
+                        if (rawCallCount == 1) {
+                            throw IllegalArgumentException(
+                                "JSON validation failed on first attempt. " +
+                                "The correct JSON should be: {\"name\":\"world\",\"age\":30,\"active\":true}"
+                            )
+                        }
+                        // Subsequent calls: normal validation
+                        buildCalculateNumberOfKeysTool()(args)
+                    }
+                    onError {
+                        executionError { _ -> fix(agent = fixer, retries = 2) }
+                    }
+                }
+            }
+            skills { skill<String, String>("solve", "Analyze JSON using tools") {
+                tools("calculateNumberOfKeys")
+            }}
+            onToolUse { name, args, result ->
+                toolUses.add(ToolUse(name, args, result))
+                println("  $name(json=${args["json"].toString().take(80)}) = $result")
+            }
+        }
+
+        val result = a("How many keys are in this JSON? {name: world, age: 30, active: true}")
+        println("Result: $result")
+
+        // Must have at least 2 tool uses: first escalated, second succeeded
+        assertTrue(rawCallCount >= 2, "Tool must have been called at least twice (first fail + retry), got: $rawCallCount")
+        assertTrue(toolUses.size >= 2, "onToolUse must fire at least twice (escalation error + success), got: ${toolUses.size}")
+
+        // First call should be the escalation error fed back
+        val firstResult = toolUses[0].result.toString()
+        assertTrue(firstResult.contains("ERROR"), "First call should be escalation error, got: $firstResult")
+
+        // Last call should be successful with 3 keys
+        val lastSuccess = toolUses.last()
+        assertEquals(3, lastSuccess.result, "Corrected JSON should have 3 keys")
+        assertTrue(result.contains("3"), "Expected 3 in result, got: $result")
+    }
 }

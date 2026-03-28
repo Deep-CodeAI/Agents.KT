@@ -95,7 +95,7 @@ class AgentMemoryTest {
     fun `auto-injected tools do not overwrite user-defined tools`() {
         val bank = MemoryBank()
         val a = agent<String, String>("a") {
-            tools { tool("memory_read") { _ -> "custom" } }
+            tools { tool("memory_read", "") { _ -> "custom" } }
             memory(bank)
             model { ollama("test"); client = ModelClient { _ -> LlmResponse.Text("done") } }
             skills { skill<String, String>("s", "s") { tools("memory_read") } }

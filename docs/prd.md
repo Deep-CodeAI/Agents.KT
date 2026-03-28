@@ -3116,7 +3116,366 @@ Testing uses **JUnit**. Agents are Kotlin functions — standard testing applies
 
 ---
 
-## 17. Project Structure
+## 17. Tool Error Recovery
+
+### 17.1 The Problem
+
+LLMs produce malformed tool calls. JSON with trailing commas, missing required fields, wrong types, OS-specific path separators, markdown fencing around JSON, hallucinated field names. Every agent framework hits this wall. The standard industry response is a dedicated `StructureFixingParser` class (Koog), a `repairToolCall` callback (Vercel AI SDK), or runtime retry-and-pray.
+
+Agents.KT takes a different position: **the fixer is an agent**. No special parser class, no dedicated repair interface. An `Agent<String, String>` that takes broken input and returns fixed output — with full access to the same skills, tools, telemetry, budget tracking, and governance as every other agent in the system.
+
+### 17.2 Two Failure Classes
+
+Tool errors split into two fundamentally different categories:
+
+**Tool-local failures** — the tool itself received garbage. Malformed JSON arguments, deserialization errors, encoding issues, OS-specific path problems. The tool knows its own schema and can fix itself. The parent agent has no business knowing about backslash normalization.
+
+**Domain failures** — the tool executed successfully but the result is wrong in context. A file written outside the project boundary, generated code that doesn't match the spec, a query that violates business rules. The tool has no idea it did anything wrong — only the agent, with its domain knowledge, can judge.
+
+This section covers tool-local failures. Domain failures are the agent's responsibility via `constraints {}` (Section Y).
+
+### 17.3 Error Taxonomy
+
+Tool-local errors form a sealed hierarchy:
+
+```kotlin
+sealed interface ToolError {
+    /** LLM produced syntactically invalid arguments (malformed JSON, wrong types) */
+    data class InvalidArgs(
+        val rawArgs: String,
+        val parseError: String,
+        val expectedSchema: JsonSchema
+    ) : ToolError
+
+    /** Arguments parsed but a specific value failed deserialization
+     *  (encoding, path separators, type coercion) */
+    data class DeserializationError(
+        val rawValue: String,
+        val targetType: KType,
+        val cause: Throwable
+    ) : ToolError
+
+    /** Tool executed but threw at runtime (timeout, network, IO, OOM) */
+    data class ExecutionError(
+        val args: ToolArgs,
+        val cause: Throwable
+    ) : ToolError
+
+    /** A repair agent called escalate() — it cannot fix the problem */
+    data class EscalationError(
+        val source: AgentRef,
+        val reason: String,
+        val severity: Severity,
+        val originalError: ToolError,
+        val attempts: Int
+    ) : ToolError
+}
+```
+
+Every error carries enough context for either deterministic or LLM-driven repair — no re-parsing needed downstream.
+
+### 17.4 The `onError` DSL
+
+Each tool declares its own error recovery strategy inside its block via `onError {}`. Three verbs correspond to three error types:
+
+```kotlin
+agent<Spec, Code>("coder") {
+    tools {
+        tool("write_file") {
+            description("Write a file to disk")
+            executor { args -> writeFile(args["path"].toString(), args["code"].toString()) }
+            onError {
+                invalidArgs   { args, error -> fix(agent = jsonFixer) }
+                deserializationError { raw, error -> sanitize(agent = pathSanitizer) }
+                executionError { e -> retry(maxAttempts = 3) }
+            }
+        }
+    }
+}
+```
+
+The tool block DSL provides `description(...)`, `executor { }`, and `onError { }`. Error handling is declared where the tool lives — not as a separate callback.
+
+Three forms are supported, in priority order:
+
+**1. Inside the tool block** (highest priority):
+
+```kotlin
+tool("parse") {
+    description("Parse JSON")
+    executor { args -> parseJson(args) }
+    onError {
+        executionError { _ -> fix(agent = jsonFixer, retries = 3) }
+    }
+}
+```
+
+**2. Agent-level `onToolError`** (middle priority):
+
+```kotlin
+onToolError("parse") {
+    executionError { _ -> fix(agent = jsonFixer, retries = 3) }
+}
+```
+
+**3. Tool-level defaults** (lowest priority):
+
+```kotlin
+tools {
+    defaults {
+        onError {
+            invalidArgs { _, _ -> fix(agent = jsonFixer, retries = 3) }
+            executionError { _ -> retry(maxAttempts = 2) }
+        }
+    }
+
+    tool("write_file") {                                  // inherits defaults
+        description("Write file")
+        executor { args -> writeFile(args) }
+    }
+    tool("compile") {                                     // overrides defaults
+        description("Compile code")
+        executor { args -> compile(args) }
+        onError { executionError { _ -> retry(maxAttempts = 1) } }
+    }
+}
+```
+
+Resolution: tool block `onError` > agent-level `onToolError` > defaults. Unhandled error types propagate as unrecoverable failures.
+
+### 17.5 The Fixer Is an Agent
+
+Every repair verb takes an `Agent<String, String>`. No lambdas, no special parser classes — the same abstraction used everywhere else. **The fixing agent is a regular `Agent<String, String>`** — same type system, same composition, same telemetry, same everything.
+
+#### Deterministic repair (zero LLM calls)
+
+A repair agent does not require an LLM. `implementedBy` with a pure function is already part of the skill model (Section 5.2.2):
+
+```kotlin
+val jsonFixer = agent<String, String>("json-fixer") {
+    skills {
+        skill<String, String>("cleanup", "Fixes common JSON issues") {
+            implementedBy { input ->
+                input
+                    .trimMarkdownFencing()
+                    .fixTrailingCommas()
+                    .normalizeQuotes()
+                    .unescapeUnicode()
+                    ?: escalate("Not JSON at all — binary or completely garbled")
+            }
+        }
+    }
+}
+```
+
+Same `Agent<String, String>`. Same slot in `onError`. Same telemetry, same budget tracking, same `agentTest {}`. The caller does not know or care whether the fixer uses an LLM or a regex. This is the fractal composition principle (Design Principle 4) applied to error recovery.
+
+#### LLM-driven repair
+
+When deterministic fixes aren't enough, the repair agent can use a model:
+
+```kotlin
+val jsonFixer = agent<String, String>("json-fixer") {
+    prompt("Fix malformed JSON. Preserve all data. Make minimal changes only.")
+    model { cheap("gpt-4o-mini"); temperature = 0.0 }
+}
+
+val sanitizer = agent<String, String>("sanitizer") {
+    prompt("Clean the raw value to match the target type. Return only the corrected value.")
+    model { cheap("gpt-4o-mini"); temperature = 0.0 }
+}
+
+onError {
+    invalidArgs { _, _ -> fix(agent = jsonFixer, retries = 3) }
+    deserializationError { _, _ -> sanitize(agent = sanitizer, retries = 2) }
+    executionError { _ -> retry(maxAttempts = 3) }
+}
+```
+
+The framework packs context into the agent's input string automatically:
+
+| Verb | Input to agent | Context injected |
+|------|---------------|-----------------|
+| `fix` | Broken JSON + parse error | `tool.paramsSchema` |
+| `sanitize` | Raw value + deserialization error | `param.type` (single field) |
+
+### 17.6 Built-in Tools: `escalate` and `throwException`
+
+Every agent has two framework-provided tools — `escalate` and `throwException` — registered in `toolMap` at construction time. They are **inactive by default**: present in every agent but only available to skills that explicitly reference them via `tools("escalate", "throwException")`.
+
+```kotlin
+val fixer = agent<String, String>("json-fixer") {
+    prompt("Fix malformed JSON. If structural error, call escalate. If binary garbage, call throwException.")
+    model { cheap("gpt-4o-mini"); temperature = 0.0 }
+    skills {
+        skill<String, String>("fix", "Fix JSON") {
+            tools("escalate", "throwException")   // activates built-in tools for this skill
+        }
+    }
+}
+```
+
+**`escalate`** — soft failure. Args: `reason` (string), `severity` (LOW/MEDIUM/HIGH/CRITICAL, optional, defaults to HIGH).
+
+The repair loop stops. The error is **fed back to the parent LLM as a tool result**, giving it a chance to retry with corrected arguments. The parent agent's LLM sees the error message and can adjust its next tool call.
+
+**`throwException`** — hard failure. Args: `reason` (string).
+
+A `ToolExecutionException` propagates through the pipeline. No retries, no second chances. Use when the input is fundamentally unrecoverable (binary data, wrong protocol, etc.).
+
+Deterministic agents can also signal escalation and hard failure by throwing directly:
+
+```kotlin
+implementedBy { _ ->
+    throw EscalationException("Schema mismatch", Severity.HIGH)  // soft — fed back to LLM
+    // or
+    throw ToolExecutionException("Binary data, not JSON")         // hard — kills the run
+}
+```
+
+Both emit `PipelineEvent` entries — telemetry sees every escalation and every exception.
+
+### 17.7 Escalation Flow
+
+Escalation feeds the error back to the parent LLM, which can retry with corrected data:
+
+```
+LLM calls parseJson(json = "{name: world}")
+  → tool throws: "unquoted keys"
+  → tool.onError.executionError triggered
+    → json-fixer agent invoked
+      → fixer LLM calls escalate("Unquoted keys. Corrected: {\"name\":\"world\"}")
+        → error fed back to parent LLM as tool result:
+            "ERROR: Tool 'parseJson' failed: Unquoted keys. Corrected: {\"name\":\"world\"}"
+          → parent LLM retries: parseJson(json = '{"name":"world"}')
+            → tool succeeds → LLM continues
+```
+
+If the parent LLM keeps failing, the budget limit (`maxTurns`) stops the loop. `throwException` bypasses this — it propagates immediately as an exception.
+
+If the parent agent also escalates, the error walks up the delegation tree until a handler is found or the root agent receives it. This is `throw` for agents — typed, observable, and following the org chart.
+
+### 17.8 Full Example: JSON Key Counter with Escalation Recovery
+
+A complete working example demonstrating the full error recovery cycle — tool failure, LLM-driven fixer agent, escalation via built-in tool, error fed back to parent LLM, retry with corrected data:
+
+```kotlin
+// ─── Fixer Agent ───
+// LLM-driven repair agent. Analyzes the parse error and calls the built-in
+// escalate tool with the corrected JSON in the reason string.
+val jsonFixer = agent<String, String>("json-fixer") {
+    prompt(
+        "You receive a string that failed to parse as JSON. " +
+        "Analyze the error. Call the escalate tool with a reason " +
+        "that includes the corrected valid JSON."
+    )
+    model { ollama("gpt-4o-mini"); temperature = 0.0 }
+    budget { maxTurns = 3 }
+    skills {
+        skill<String, String>("fix", "Analyze and escalate JSON errors") {
+            tools("escalate")   // activates the built-in escalate tool
+        }
+    }
+}
+
+// ─── Main Agent ───
+// Uses calculateNumberOfKeys tool with onError inside the tool block.
+// When the tool fails, the fixer agent is invoked. When the fixer escalates,
+// the error is fed back to this agent's LLM, which retries with corrected data.
+val analyst = agent<String, String>("json-analyst") {
+    prompt(
+        "Use the calculateNumberOfKeys tool to count keys in JSON objects. " +
+        "The tool takes one argument: json (a valid JSON string with double-quoted keys). " +
+        "If a tool returns an ERROR, read it carefully — it contains corrected JSON. " +
+        "Retry the tool with the corrected JSON. Reply with ONLY the number."
+    )
+    model { ollama("llama3"); temperature = 0.0 }
+    budget { maxTurns = 10 }
+    tools {
+        tool("calculateNumberOfKeys") {
+            description("Count top-level keys in a JSON object. Args: json (valid JSON string)")
+            executor { args ->
+                val json = args["json"]?.toString()
+                    ?: throw IllegalArgumentException("Missing 'json' argument")
+                val keys = Regex(""""([^"]+)"\s*:""").findAll(json).toList()
+                if (keys.isEmpty()) {
+                    throw IllegalArgumentException(
+                        "No valid keys found — JSON may have unquoted keys"
+                    )
+                }
+                keys.size
+            }
+            onError {
+                executionError { _ -> fix(agent = jsonFixer, retries = 2) }
+            }
+        }
+    }
+    skills {
+        skill<String, String>("solve", "Analyze JSON using tools") {
+            tools("calculateNumberOfKeys")
+        }
+    }
+}
+
+analyst("How many keys? {name: world, age: 30, active: true}")
+// → "3"
+```
+
+**What happens at runtime:**
+
+```
+1. LLM calls calculateNumberOfKeys(json = "{name: world, age: 30, active: true}")
+   → Tool throws: "No valid keys found — JSON may have unquoted keys"
+
+2. tool.onError.executionError triggered
+   → jsonFixer agent invoked with the error as input
+
+3. jsonFixer LLM analyzes the error
+   → Calls escalate(reason = "Unquoted keys. Corrected: {\"name\":\"world\",\"age\":30,\"active\":true}")
+   → EscalationException caught by framework
+
+4. Error fed back to parent LLM as tool result:
+   "ERROR: Tool 'calculateNumberOfKeys' failed: Unquoted keys. Corrected: {...}"
+
+5. Parent LLM reads the corrected JSON from the error message
+   → Retries: calculateNumberOfKeys(json = '{"name":"world","age":30,"active":true}')
+   → Tool succeeds → returns 3
+
+6. LLM returns "3"
+```
+
+Key design points demonstrated:
+- **The fixer is an agent** — same `Agent<String, String>`, same composition, same telemetry
+- **`escalate` is a built-in tool** — always present, activated by `tools("escalate")`
+- **Escalation is soft** — error fed back to the LLM, not thrown as an exception
+- **`onError` inside the tool block** — error handling declared where the tool lives
+- **Budget limits** prevent infinite retry loops
+
+### 17.9 Compile-Time Validations (Planned)
+
+| # | Check | Severity |
+|---|-------|----------|
+| 1 | `onError` handler references a tool that exists in the agent's `tools {}` block | Error |
+| 2 | Repair agent type must be `Agent<String, String>` | Error |
+| 3 | `escalate()` and `throwException()` are only available inside agents used as repair agents | Warning |
+| 4 | `defaults` onError handlers don't conflict with per-tool overrides | Warning |
+| 5 | Repair agent's model must be configured (no model = deterministic only) | Info |
+
+### 17.10 Competitive Comparison
+
+| Framework | Mechanism | Type-safe | Observable | Testable | Composable |
+|-----------|-----------|-----------|------------|----------|------------|
+| **Koog** | `StructureFixingParser` class | Partial (reified) | ❌ Black box | ❌ No test API | ❌ Standalone class |
+| **Vercel AI SDK** | `repairToolCall` callback | ❌ Untyped JS | ❌ Manual logging | ❌ No framework | ❌ Callback only |
+| **Pydantic AI** | `RetryPromptPart` + validators | ✅ Pydantic schema | Partial (Logfire) | Partial | ❌ Coupled to run loop |
+| **DSPy** | `Assert`/`Suggest` + backtracking | ❌ Dynamic Python | ❌ Internal only | ❌ No isolation | ❌ Module transform |
+| **Agents.KT** | `Agent<String, String>` in `onError {}` | ✅ Full type system | ✅ PipelineEvent | ✅ AgentUnit | ✅ Same composition as everything |
+
+The key differentiator: every other framework invented a new abstraction for error repair. Agents.KT uses the abstraction it already has — the agent.
+
+---
+
+## 18. Project Structure
 
 ```
 agents/
@@ -3140,7 +3499,7 @@ agents/
 
 ---
 
-## 18. Competitive Landscape
+## 19. Competitive Landscape
 
 - **LangChain (Python)** — largest ecosystem, 100x community, no typed contracts, no compile-time validation
 - **CrewAI (Python)** — fast to prototype, role-based agents, no type safety, flat architecture
@@ -3154,7 +3513,7 @@ agents/
 
 ---
 
-## 19. Full Example: Deep-Code.AI
+## 20. Full Example: Deep-Code.AI
 
 ```kotlin
 // ─── Domain Types ───
@@ -3350,7 +3709,7 @@ pipelineTest("full") {
 
 ---
 
-## 20. UML Isomorphism (Deep-Code.AI Integration)
+## 21. UML Isomorphism (Deep-Code.AI Integration)
 
 | DSL Concept | UML Equivalent |
 |-------------|---------------|
@@ -3367,7 +3726,7 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 
 ---
 
-## 21. Roadmap
+## 22. Roadmap
 
 ### Phase 1: Core DSL (Q1 2026)
 
@@ -3451,7 +3810,7 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 
 ---
 
-## 22. Open Questions
+## 23. Open Questions
 
 1. **Variance rules:** Should `Agent<IN, OUT>` support covariance/contravariance? `Agent<SpecRequest, Specification>` assignable to `Agent<TaskRequest, Specification>`?
 
@@ -3489,7 +3848,7 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 
 ---
 
-## 23. Success Metrics
+## 24. Success Metrics
 
 | Metric | 6 months | 12 months |
 |--------|----------|-----------|
