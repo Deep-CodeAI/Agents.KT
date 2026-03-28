@@ -1,5 +1,5 @@
 plugins {
-    kotlin("jvm") version "2.1.0"
+    kotlin("jvm") version "2.3.20"
     `maven-publish`
     signing
 }
@@ -12,8 +12,8 @@ repositories {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlin:kotlin-reflect:2.1.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
+    implementation("org.jetbrains.kotlin:kotlin-reflect:2.3.20")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     testImplementation(kotlin("test"))
 }
 
