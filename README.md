@@ -368,6 +368,114 @@ budget { maxTurns = 10 }   // throws BudgetExceededException after 10 turns
 
 ---
 
+## Tool Error Recovery
+
+LLMs produce malformed tool calls — trailing commas, missing fields, wrong types, markdown fencing around JSON. Every agent framework hits this. Agents.KT's answer: **the fixer is an agent**. No special parser class, no dedicated repair interface — a regular `Agent<String, String>` with the same composition, telemetry, and budget tracking as everything else.
+
+**Three error types, one DSL:**
+
+```kotlin
+agent<Spec, Code>("coder") {
+    tools {
+        tool("write_file") {
+            param("path", STRING); param("code", CODE)
+            returns(FILE_REF)
+
+            onError {
+                invalidArgs        { args, error -> /* malformed JSON */  }
+                deserializationError { raw, error -> /* type mismatch */  }
+                executionError     { e ->            /* runtime failure */ }
+            }
+        }
+    }
+}
+```
+
+**Deterministic fixes — zero LLM calls:**
+
+```kotlin
+onError {
+    invalidArgs { args, error ->
+        fix { args.trimMarkdownFencing().fixTrailingCommas() }
+    }
+    deserializationError { raw, error ->
+        sanitize { raw.normalizePathSeparators().removeBom() }
+    }
+    executionError { e ->
+        retry(maxAttempts = 3, backoff = exponential())
+    }
+}
+```
+
+**LLM-driven repair — same `Agent<String, String>` interface:**
+
+```kotlin
+val jsonFixer = agent<String, String>("json-fixer") {
+    prompt("Fix malformed JSON. Preserve all data. Make minimal changes only.")
+    model { cheap("gpt-4o-mini"); temperature = 0.0 }
+    tools { escalate(); throwException() }
+}
+
+onError {
+    invalidArgs { args, error -> fix(agent = jsonFixer, retries = 3) }
+}
+```
+
+**Hybrid — cheapest path first:**
+
+```kotlin
+invalidArgs { args, error ->
+    fix { tryJsonCleanup(args) } ?: fix(agent = jsonFixer, retries = 3)
+}
+```
+
+Deterministic lambda returns `null` → falls through to LLM agent. The framework injects context (broken JSON, parse error, tool schema) into the repair agent's input automatically.
+
+**Tool-level defaults** — set once, override per tool:
+
+```kotlin
+tools {
+    defaults {
+        onError {
+            invalidArgs { args, error -> fix(jsonFixer, retries = 3) }
+            executionError { e -> retry(maxAttempts = 2, backoff = exponential()) }
+        }
+    }
+    tool("write_file") { /* inherits defaults */ }
+    tool("compile")    { onError { /* override */ } }
+}
+```
+
+**Escalation** — repair agents can call `escalate()` (soft failure — parent agent decides) or `throwException()` (hard failure — propagates through pipeline). Escalation walks up the `structure {}` delegation tree until a handler is found.
+
+```
+malformed tool args
+  → json-fixer attempts fix (1/3)
+  → json-fixer attempts fix (2/3)
+  → json-fixer calls escalate("Schema mismatch, not formatting")
+    → parent agent "coder" receives EscalationError
+      → coder retries, reroutes to stronger model, or escalates further
+```
+
+**Deterministic agents — same interface, zero LLM calls:**
+
+```kotlin
+val jsonFixer = agent<String, String>("json-fixer") {
+    skills {
+        skill<String, String>("cleanup", "Fixes common JSON issues") {
+            implementedBy { input ->
+                input.trimMarkdownFencing().fixTrailingCommas().normalizeQuotes()
+                    ?: escalate("Not JSON at all")
+            }
+        }
+    }
+}
+```
+
+Same slot in `onError`. Same telemetry. The caller doesn't know or care whether the fixer uses an LLM or a regex — fractal composition applied to error recovery.
+
+---
+
 ## Agent Memory
 
 Memory persists across invocations — an agent accumulates knowledge over time rather than starting from zero each run. Pass a `MemoryBank` and three tools are auto-injected:
