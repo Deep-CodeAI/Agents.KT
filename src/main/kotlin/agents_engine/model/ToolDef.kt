@@ -4,7 +4,10 @@ class ToolDef(
     val name: String,
     val description: String = "",
     val executor: (Map<String, Any?>) -> Any?,
-)
+) {
+    var errorHandler: ToolErrorHandler? = null
+        internal set
+}
 
 class ToolDefaultsBuilder {
     internal var errorHandler: ToolErrorHandler? = null
@@ -28,6 +31,17 @@ class ToolsBuilder {
 
     fun tool(name: String, description: String = "", executor: (Map<String, Any?>) -> Any?) {
         defs.add(ToolDef(name, description, executor))
+    }
+
+    fun tool(
+        name: String,
+        description: String = "",
+        onError: OnErrorBuilder.() -> Unit,
+        executor: (Map<String, Any?>) -> Any?,
+    ) {
+        val def = ToolDef(name, description, executor)
+        def.errorHandler = OnErrorBuilder().apply(onError).build()
+        defs.add(def)
     }
 
     // Convenience overload without description

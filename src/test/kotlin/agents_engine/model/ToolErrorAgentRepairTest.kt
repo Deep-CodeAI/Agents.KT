@@ -73,28 +73,6 @@ class ToolErrorAgentRepairTest {
     }
 
     @Test
-    fun `hybrid fix - deterministic first, fallback to agent`() {
-        val agentFixer = agent<String, String>("json-fixer") {
-            skills {
-                skill<String, String>("fix", "Fixes JSON") {
-                    implementedBy { _ -> """{"fixed":true}""" }
-                }
-            }
-        }
-
-        val handler = OnErrorBuilder().apply {
-            invalidArgs { raw, _ ->
-                // Deterministic attempt returns null (can't fix)
-                fix { null } ?: fix(agent = agentFixer)
-            }
-        }.build()
-
-        val result = handler.handleInvalidArgs("total-garbage", "not JSON")
-        assertIs<RepairResult.Fixed>(result)
-        assertEquals("""{"fixed":true}""", result.value)
-    }
-
-    @Test
     fun `escalation produces EscalationError with context`() {
         val escalatingFixer = agent<String, String>("esc-fixer") {
             skills {

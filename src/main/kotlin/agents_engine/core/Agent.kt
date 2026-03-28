@@ -91,7 +91,9 @@ class Agent<IN, OUT>(
     }
 
     fun getToolErrorHandler(toolName: String): ToolErrorHandler? =
-        toolErrorHandlers[toolName] ?: defaultToolErrorHandler
+        toolMap[toolName]?.errorHandler
+            ?: toolErrorHandlers[toolName]
+            ?: defaultToolErrorHandler
 
     fun markPlaced(context: String) {
         require(placedIn == null) {

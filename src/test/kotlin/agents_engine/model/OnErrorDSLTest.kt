@@ -6,27 +6,25 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class OnErrorDSLTest {
 
-    // -- invalidArgs: deterministic fix --
+    // -- invalidArgs: deterministic agent fix --
 
     @Test
-    fun `invalidArgs fix lambda receives raw args and returns fixed string`() {
-        var receivedRaw: String? = null
-        var receivedError: String? = null
+    fun `invalidArgs fix with agent is accessible via getToolErrorHandler`() {
+        val fixer = agent<String, String>("fixer") {
+            skills { skill<String, String>("fix", "Fix") {
+                implementedBy { _ -> """{"name":"world"}""" }
+            }}
+        }
 
         val a = agent<String, String>("a") {
             tools {
                 tool("greet", "Greet") { args -> "Hi ${args["name"]}" }
             }
             onToolError("greet") {
-                invalidArgs { raw, error ->
-                    receivedRaw = raw
-                    receivedError = error
-                    fix { """{"name":"world"}""" }
-                }
+                invalidArgs { _, _ -> fix(agent = fixer) }
             }
             skills { skill<String, String>("s", "s") { implementedBy { it } } }
         }
@@ -35,19 +33,15 @@ class OnErrorDSLTest {
     }
 
     @Test
-    fun `invalidArgs fix lambda returning null signals cannot-fix`() {
-        val handler = OnErrorBuilder().apply {
-            invalidArgs { _, _ -> fix { null } }
-        }.build()
+    fun `invalidArgs fix with agent returns fixed value`() {
+        val fixer = agent<String, String>("trailing-comma-fixer") {
+            skills { skill<String, String>("fix", "Fix trailing commas") {
+                implementedBy { input -> input.replace(",}", "}") }
+            }}
+        }
 
-        val result = handler.handleInvalidArgs("garbage", "parse error")
-        assertIs<RepairResult.Unrecoverable>(result)
-    }
-
-    @Test
-    fun `invalidArgs fix lambda returning value signals fixed`() {
         val handler = OnErrorBuilder().apply {
-            invalidArgs { raw, _ -> fix { raw.replace(",}", "}") } }
+            invalidArgs { _, _ -> fix(agent = fixer) }
         }.build()
 
         val result = handler.handleInvalidArgs("""{"a":1,}""", "trailing comma")
@@ -55,12 +49,34 @@ class OnErrorDSLTest {
         assertEquals("""{"a":1}""", result.value)
     }
 
-    // -- deserializationError: deterministic sanitize --
+    @Test
+    fun `invalidArgs fix with failing agent returns unrecoverable`() {
+        val broken = agent<String, String>("broken") {
+            skills { skill<String, String>("fix", "Fix") {
+                implementedBy { _ -> error("Cannot fix") }
+            }}
+        }
+
+        val handler = OnErrorBuilder().apply {
+            invalidArgs { _, _ -> fix(agent = broken) }
+        }.build()
+
+        val result = handler.handleInvalidArgs("garbage", "parse error")
+        assertIs<RepairResult.Unrecoverable>(result)
+    }
+
+    // -- deserializationError: deterministic agent sanitize --
 
     @Test
-    fun `deserializationError sanitize lambda fixes raw value`() {
+    fun `deserializationError sanitize with agent fixes raw value`() {
+        val pathFixer = agent<String, String>("path-fixer") {
+            skills { skill<String, String>("fix", "Normalize paths") {
+                implementedBy { input -> input.replace("\\", "/") }
+            }}
+        }
+
         val handler = OnErrorBuilder().apply {
-            deserializationError { raw, _ -> sanitize { raw.replace("\\", "/") } }
+            deserializationError { _, _ -> sanitize(agent = pathFixer) }
         }.build()
 
         val result = handler.handleDeserializationError("C:\\Users\\file", "Expected unix path")
@@ -69,9 +85,15 @@ class OnErrorDSLTest {
     }
 
     @Test
-    fun `deserializationError sanitize returning null signals cannot-fix`() {
+    fun `deserializationError sanitize with failing agent returns unrecoverable`() {
+        val broken = agent<String, String>("broken") {
+            skills { skill<String, String>("fix", "Fix") {
+                implementedBy { _ -> error("Cannot sanitize") }
+            }}
+        }
+
         val handler = OnErrorBuilder().apply {
-            deserializationError { _, _ -> sanitize { null } }
+            deserializationError { _, _ -> sanitize(agent = broken) }
         }.build()
 
         val result = handler.handleDeserializationError("binary-garbage", "Not decodable")
@@ -81,7 +103,7 @@ class OnErrorDSLTest {
     // -- executionError: retry --
 
     @Test
-    fun `executionError retry returns Retry with max attempts and backoff`() {
+    fun `executionError retry returns Retry with max attempts`() {
         val handler = OnErrorBuilder().apply {
             executionError { _ -> retry(maxAttempts = 3) }
         }.build()
@@ -92,7 +114,7 @@ class OnErrorDSLTest {
     }
 
     @Test
-    fun `executionError with no handler returns null`() {
+    fun `executionError with null return passes through`() {
         val handler = OnErrorBuilder().apply {
             executionError { _ -> null }
         }.build()

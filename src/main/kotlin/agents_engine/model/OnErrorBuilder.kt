@@ -11,24 +11,14 @@ sealed interface RepairResult {
 
 class RepairScope(private val input: String) {
 
-    fun fix(block: () -> String?): RepairResult? {
-        val fixed = block()
-        return if (fixed != null) RepairResult.Fixed(fixed) else null
-    }
-
     fun fix(agent: Agent<String, String>, retries: Int = 1): RepairResult {
         return executeAgentFix(agent, input, retries)
     }
-
-    fun sanitize(block: () -> String?): RepairResult? = fix(block)
 
     fun sanitize(agent: Agent<String, String>, retries: Int = 1): RepairResult =
         fix(agent, retries)
 
     fun retry(maxAttempts: Int): RepairResult.Retry = RepairResult.Retry(maxAttempts)
-
-    @Suppress("unused")
-    val Fail: RepairResult get() = RepairResult.Unrecoverable
 }
 
 class ToolErrorHandler(

@@ -9,13 +9,31 @@ import kotlin.test.assertNull
 
 class ToolErrorDefaultsTest {
 
+    private val trailingCommaFixer = agent<String, String>("trailing-comma-fixer") {
+        skills { skill<String, String>("fix", "Fix trailing commas") {
+            implementedBy { input -> input.replace(",}", "}") }
+        }}
+    }
+
+    private val defaultFixer = agent<String, String>("default-fixer") {
+        skills { skill<String, String>("fix", "Default fix") {
+            implementedBy { _ -> "default-fix" }
+        }}
+    }
+
+    private val compileFixer = agent<String, String>("compile-fixer") {
+        skills { skill<String, String>("fix", "Compile fix") {
+            implementedBy { _ -> "compile-fix" }
+        }}
+    }
+
     @Test
     fun `defaults onError applies to all tools`() {
         val a = agent<String, String>("a") {
             tools {
                 defaults {
                     onError {
-                        invalidArgs { raw, _ -> fix { raw.replace(",}", "}") } }
+                        invalidArgs { _, _ -> fix(agent = trailingCommaFixer) }
                     }
                 }
                 tool("greet", "Greet") { args -> "Hi ${args["name"]}" }
@@ -34,14 +52,14 @@ class ToolErrorDefaultsTest {
             tools {
                 defaults {
                     onError {
-                        invalidArgs { _, _ -> fix { "default-fix" } }
+                        invalidArgs { _, _ -> fix(agent = defaultFixer) }
                     }
                 }
                 tool("greet", "Greet") { args -> "Hi ${args["name"]}" }
                 tool("compile", "Compile") { _ -> "ok" }
             }
             onToolError("compile") {
-                invalidArgs { _, _ -> fix { "compile-fix" } }
+                invalidArgs { _, _ -> fix(agent = compileFixer) }
             }
             skills { skill<String, String>("s", "s") { implementedBy { it } } }
         }
