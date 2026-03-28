@@ -895,7 +895,7 @@ A.branch { }   : Agent<X, Sealed<Y>)           â†’ Branch<X,Z>  (all variants â†
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("ai.deep-code:agents-kt:0.1.0")
+    implementation("ai.deep-code:agents-kt:0.1.1")
 }
 ```
 
