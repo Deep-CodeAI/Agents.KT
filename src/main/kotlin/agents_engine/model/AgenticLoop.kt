@@ -80,7 +80,7 @@ fun <IN> executeAgentic(
                     val tool = agent.toolMap[call.name]
                         ?: knowledgeToolMap[call.name]
                         ?: error("Tool '${call.name}' not found in agent '${agent.name}'. Available: ${agent.toolMap.keys + knowledgeToolMap.keys}")
-                    val result = tool.executor(call.arguments)
+                    val result = executeToolWithRecovery(agent, tool, call)
                     if (isKnowledge) agent.knowledgeUsedListener?.invoke(call.name, result?.toString() ?: "")
                     else agent.toolUseListener?.invoke(call.name, call.arguments, result)
                     messages.add(LlmMessage("tool", result?.toString() ?: "null"))
@@ -126,6 +126,47 @@ fun <IN> selectSkillByLlm(
     return when (response) {
         is LlmResponse.Text -> response.content.trim()
         is LlmResponse.ToolCalls -> error("Expected text response for skill selection, got tool calls")
+    }
+}
+
+private fun <IN> executeToolWithRecovery(
+    agent: Agent<IN, *>,
+    tool: ToolDef,
+    call: ToolCall,
+): Any? {
+    val handler = agent.getToolErrorHandler(call.name)
+    try {
+        return tool.executor(call.arguments)
+    } catch (e: Throwable) {
+        if (handler == null) throw e
+
+        val result = handler.handleExecutionError(e)
+        when (result) {
+            is RepairResult.Retry -> {
+                repeat(result.maxAttempts) { attempt ->
+                    try {
+                        return tool.executor(call.arguments)
+                    } catch (_: Throwable) {
+                        if (attempt == result.maxAttempts - 1) {
+                            throw ToolExecutionException(
+                                "Tool '${call.name}' failed after ${result.maxAttempts} retries", e
+                            )
+                        }
+                    }
+                }
+                throw ToolExecutionException(
+                    "Tool '${call.name}' failed after ${result.maxAttempts} retries", e
+                )
+            }
+            is RepairResult.Fixed -> return result.value
+            is RepairResult.Escalated -> throw ToolExecutionException(
+                "Tool '${call.name}' escalated: ${result.reason}", e
+            )
+            is RepairResult.Unrecoverable -> throw ToolExecutionException(
+                "Tool '${call.name}' failed and recovery was unrecoverable", e
+            )
+            null -> throw e
+        }
     }
 }
 

@@ -4,7 +4,9 @@ import agents_engine.model.BudgetBuilder
 import agents_engine.model.BudgetConfig
 import agents_engine.model.ModelBuilder
 import agents_engine.model.ModelConfig
+import agents_engine.model.OnErrorBuilder
 import agents_engine.model.ToolDef
+import agents_engine.model.ToolErrorHandler
 import agents_engine.model.ToolsBuilder
 import agents_engine.model.executeAgentic
 import agents_engine.model.selectSkillByLlm
@@ -34,6 +36,9 @@ class Agent<IN, OUT>(
     var memoryBank: MemoryBank? = null
         private set
     private var skillSelector: ((IN) -> String)? = null
+    private val toolErrorHandlers: MutableMap<String, ToolErrorHandler> = mutableMapOf()
+    internal var defaultToolErrorHandler: ToolErrorHandler? = null
+        private set
 
     fun prompt(text: String) { prompt = text }
 
@@ -76,7 +81,17 @@ class Agent<IN, OUT>(
         val builder = ToolsBuilder()
         builder.block()
         builder.defs.forEach { toolMap[it.name] = it }
+        builder.defaultErrorHandler?.let { defaultToolErrorHandler = it }
     }
+
+    fun onToolError(toolName: String, block: OnErrorBuilder.() -> Unit) {
+        val builder = OnErrorBuilder()
+        builder.block()
+        toolErrorHandlers[toolName] = builder.build()
+    }
+
+    fun getToolErrorHandler(toolName: String): ToolErrorHandler? =
+        toolErrorHandlers[toolName] ?: defaultToolErrorHandler
 
     fun markPlaced(context: String) {
         require(placedIn == null) {
