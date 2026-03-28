@@ -3782,7 +3782,7 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 - ~~Skill routing: predefined rules + `RoutingStrategy.LLM_DECISION`~~ ✓ done
 - MCP server: expose agents as MCP endpoints (§5.8)
 - Pipeline observability: `observe {}`, `Flow<PipelineEvent>` (§10.2)
-- Forum discussion rounds and ~~Parallel coroutine execution~~ ✓ done
+- ~~Forum discussion rounds and Parallel coroutine execution~~ ✓ done — Forum.invoke() with concurrent participants + captain, `onMentionEmitted` debate tracking
 
 ### Phase 3: Production (Q3 2026)
 

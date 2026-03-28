@@ -798,7 +798,7 @@ val pipeline = (quick / deep) then synthesizer
 
 ### `*` — Forum (Multi-Agent Discussion)
 
-Think *jury deliberation* — the case lands on the table, agents discuss across rounds, the last agent (foreperson) delivers the verdict. Agents see each other's reasoning; parallel agents do not.
+Think *jury deliberation* — the case lands on the table, agents discuss across rounds, the last agent (foreperson) delivers the verdict. Agents see each other's reasoning; parallel agents do not. All participants run concurrently; the captain delivers the final result.
 
 ```kotlin
 val forum = initiator * analyst * critic * captain
@@ -806,6 +806,11 @@ val forum = initiator * analyst * critic * captain
 
 val pipeline = inputConverter then forum then formatter
 // Pipeline<Input, FormattedDecision>
+
+// Track the debate as it unfolds
+forum.onMentionEmitted { agentName, output ->
+    println("[$agentName]: $output")
+}
 ```
 
 ### `.loop {}` — Iterative Execution
@@ -922,7 +927,7 @@ cd Agents.KT
 - [x] `Skill.knowledgeTools()` / `KnowledgeTool(name, description, call)` — tools model with lazy per-entry loading
 - [x] `then` — sequential pipeline with composed execution (no runtime casts)
 - [x] `/` — parallel fan-out with coroutine concurrency
-- [x] `*` — forum (multi-agent discussion)
+- [x] `*` — forum (multi-agent discussion) with concurrent participants, captain, and `onMentionEmitted` debate tracking
 - [x] Single-placement enforcement across all structure types
 - [x] `.loop {}` — iterative execution with `(OUT) -> IN?` feedback block
 - [x] `.branch {}` — conditional routing on sealed types, composable with `then`
