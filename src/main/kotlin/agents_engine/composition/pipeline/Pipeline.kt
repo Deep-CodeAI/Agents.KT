@@ -26,11 +26,11 @@ infix fun <A, B, C> Pipeline<A, B>.then(other: Agent<B, C>): Pipeline<A, C> {
 
 infix fun <A, B, C> Agent<A, B>.then(other: Forum<B, C>): Pipeline<A, C> {
     this.markPlaced("pipeline")
-    return Pipeline(listOf(this) + other.agents) { error("Forum execution not yet implemented") }
+    return Pipeline(listOf(this) + other.agents) { input -> other(this(input)) }
 }
 
 infix fun <A, B, C> Pipeline<A, B>.then(other: Forum<B, C>): Pipeline<A, C> {
-    return Pipeline(agents + other.agents) { error("Forum execution not yet implemented") }
+    return Pipeline(agents + other.agents) { input -> other(this(input)) }
 }
 
 infix fun <A, B, C> Pipeline<A, B>.then(other: Pipeline<B, C>): Pipeline<A, C> {
