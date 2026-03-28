@@ -145,7 +145,7 @@ class ToolErrorAgenticLoopTest {
     }
 
     @Test
-    fun `escalation in agentic loop produces ToolExecutionException with escalation context`() {
+    fun `escalation in agentic loop feeds error back to LLM`() {
         val fixer = agent<String, String>("esc-fixer") {
             skills {
                 skill<String, String>("fix", "Fix") {
@@ -154,9 +154,11 @@ class ToolErrorAgenticLoopTest {
             }
         }
 
+        val captured = mutableListOf<List<LlmMessage>>()
         val responses = ArrayDeque<LlmResponse>()
         responses.add(LlmResponse.ToolCalls(listOf(ToolCall("strict", emptyMap()))))
-        val mock = ModelClient { _ -> responses.removeFirst() }
+        responses.add(LlmResponse.Text("handled"))
+        val mock = ModelClient { msgs -> captured.add(msgs.toList()); responses.removeFirst() }
 
         val a = agent<String, String>("a") {
             model { ollama("test"); client = mock }
@@ -169,13 +171,13 @@ class ToolErrorAgenticLoopTest {
             skills { skill<String, String>("s", "s") { tools("strict") } }
         }
 
-        var caught = false
-        try {
-            a("input")
-        } catch (e: ToolExecutionException) {
-            caught = true
-            assertTrue(e.message!!.contains("Cannot fix schema"))
-        }
-        assertTrue(caught)
+        val result = a("input")
+        assertEquals("handled", result)
+
+        // LLM should see the escalation error in the tool message
+        val secondCall = captured[1]
+        val toolMsg = secondCall.last { it.role == "tool" }
+        assertTrue(toolMsg.content.contains("Cannot fix schema"), "Error should be fed back: ${toolMsg.content}")
+        assertTrue(toolMsg.content.contains("CRITICAL"), "Severity should be in message: ${toolMsg.content}")
     }
 }

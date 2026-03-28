@@ -8,6 +8,7 @@ import agents_engine.model.OnErrorBuilder
 import agents_engine.model.ToolDef
 import agents_engine.model.ToolErrorHandler
 import agents_engine.model.ToolsBuilder
+import agents_engine.model.buildBuiltInTools
 import agents_engine.model.executeAgentic
 import agents_engine.model.selectSkillByLlm
 
@@ -165,6 +166,9 @@ class Agent<IN, OUT>(
 
 inline fun <IN, reified OUT : Any> agent(name: String, block: Agent<IN, OUT>.() -> Unit): Agent<IN, OUT> {
     val agent = Agent<IN, OUT>(name, OUT::class) { it as OUT }
+    for (tool in buildBuiltInTools()) {
+        agent.toolMap.putIfAbsent(tool.name, tool)
+    }
     agent.block()
     agent.validate()
     return agent

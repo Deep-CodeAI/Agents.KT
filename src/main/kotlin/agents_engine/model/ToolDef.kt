@@ -49,3 +49,22 @@ class ToolsBuilder {
         defs.add(ToolDef(name, "", executor))
     }
 }
+
+fun buildBuiltInTools(): List<ToolDef> = listOf(
+    ToolDef(
+        "escalate",
+        "Signal that you cannot fix the problem. Args: reason (string), severity (LOW/MEDIUM/HIGH/CRITICAL, optional, defaults to HIGH)."
+    ) { args ->
+        val reason = args["reason"]?.toString() ?: "Unknown reason"
+        val severityStr = args["severity"]?.toString()?.uppercase() ?: "HIGH"
+        val severity = try { Severity.valueOf(severityStr) } catch (_: Exception) { Severity.HIGH }
+        throw EscalationException(reason, severity)
+    },
+    ToolDef(
+        "throwException",
+        "Signal a hard failure — the problem is fundamentally unrecoverable. Args: reason (string)."
+    ) { args ->
+        val reason = args["reason"]?.toString() ?: "Unknown reason"
+        throw ToolExecutionException(reason)
+    },
+)

@@ -370,74 +370,54 @@ budget { maxTurns = 10 }   // throws BudgetExceededException after 10 turns
 
 ## Tool Error Recovery
 
-Tools fail at runtime — network errors, timeouts, flaky APIs. Agents.KT lets each tool declare its own recovery strategy via `onToolError`, and the fixer can be a plain lambda or a full `Agent<String, String>`.
+Tools fail at runtime — network errors, timeouts, flaky APIs. Agents.KT lets each tool declare its own recovery strategy, and **the fixer is always an agent**. No special parser class, no lambda callbacks — a regular `Agent<String, String>` with the same composition, telemetry, and budget tracking as everything else. Deterministic agents (`implementedBy`) cost zero LLM calls.
 
-**Retry a flaky tool** — the tool throws on first call, succeeds on retry:
+**Retry a flaky tool:**
 
 ```kotlin
-var callCount = 0
-val responses = ArrayDeque<LlmResponse>()
-responses.add(LlmResponse.ToolCalls(listOf(ToolCall("fetch", mapOf("url" to "http://api.example.com")))))
-responses.add(LlmResponse.Text("done"))
-val mock = ModelClient { _ -> responses.removeFirst() }
-
 val a = agent<String, String>("fetcher") {
     model { ollama("llama3"); client = mock }
     tools {
-        tool("fetch", "Fetch a URL") { _ ->
-            callCount++
-            if (callCount == 1) throw RuntimeException("Connection timeout")
-            "{ \"status\": \"ok\" }"
-        }
+        tool("fetch", "Fetch a URL") { _ -> httpGet() }
     }
     onToolError("fetch") {
         executionError { _ -> retry(maxAttempts = 3) }
     }
     skills { skill<String, String>("s", "s") { tools("fetch") } }
 }
-
-a("fetch data")
-// callCount == 2: failed once, retried, succeeded
+// Tool throws → retries up to 3 times → succeeds or throws ToolExecutionException
 ```
 
-When all retries are exhausted, the framework throws `ToolExecutionException` with the tool name and original cause.
+**`onError` inside the tool definition** — error handling declared where the tool lives:
+
+```kotlin
+tools {
+    tool("fetch", "Fetch a URL", onError = {
+        executionError { _ -> retry(maxAttempts = 3) }
+    }) { _ -> httpGet() }
+}
+```
 
 **Tool-level defaults** — set once, override per tool:
 
 ```kotlin
-val a = agent<String, String>("worker") {
-    tools {
-        defaults {
-            onError {
-                executionError { _ -> retry(maxAttempts = 3) }
-            }
+tools {
+    defaults {
+        onError {
+            executionError { _ -> retry(maxAttempts = 3) }
         }
-        tool("fetch", "Fetch URL")     { _ -> httpGet() }   // inherits retry(3)
-        tool("compile", "Compile code") { _ -> compile() }  // inherits retry(3)
     }
-    // Override for a specific tool:
-    onToolError("compile") {
-        executionError { _ -> retry(maxAttempts = 1) }
-    }
-    skills { skill<String, String>("s", "s") { tools("fetch", "compile") } }
+    tool("fetch", "Fetch URL")     { _ -> httpGet() }   // inherits retry(3)
+    tool("compile", "Compile code") { _ -> compile() }  // inherits retry(3)
 }
-// fetch uses default retry(3), compile uses its override retry(1)
+// Override for a specific tool:
+onToolError("compile") {
+    executionError { _ -> retry(maxAttempts = 1) }
+}
+// Resolution priority: tool-level onError > agent-level onToolError > defaults
 ```
 
-**Deterministic fix** — `invalidArgs` and `deserializationError` use `fix {}` / `sanitize {}` lambdas that return the corrected value, or `null` to signal "can't fix":
-
-```kotlin
-onToolError("write_file") {
-    invalidArgs { raw, error ->
-        fix { raw.replace(",}", "}").replace(",]", "]") }   // fix trailing commas
-    }
-    deserializationError { raw, error ->
-        sanitize { raw.replace("\\", "/") }                  // normalize path separators
-    }
-}
-```
-
-**Agent-based repair** — the fixer is a regular `Agent<String, String>`. Same type system, same composition, same everything:
+**Agent-based repair** — the fixer is an `Agent<String, String>`. Deterministic via `implementedBy`, zero LLM calls:
 
 ```kotlin
 val jsonFixer = agent<String, String>("json-fixer") {
@@ -450,25 +430,23 @@ val jsonFixer = agent<String, String>("json-fixer") {
     }
 }
 
-onToolError("parse") {
+val pathSanitizer = agent<String, String>("path-sanitizer") {
+    skills {
+        skill<String, String>("sanitize", "Normalizes OS paths") {
+            implementedBy { input -> input.replace("\\", "/") }
+        }
+    }
+}
+
+onToolError("write_file") {
     invalidArgs { _, _ -> fix(agent = jsonFixer) }
+    deserializationError { _, _ -> sanitize(agent = pathSanitizer) }
 }
 ```
 
 The framework calls the repair agent with the broken input and uses its output as the fixed value. Supports retries: `fix(agent = jsonFixer, retries = 3)`.
 
-**Hybrid — cheapest path first, fallback to agent:**
-
-```kotlin
-onToolError("parse") {
-    invalidArgs { raw, _ ->
-        // Try deterministic fix first
-        fix { tryJsonCleanup(raw) }
-        // If fix {} returned null (can't fix), fall through to agent
-            ?: fix(agent = jsonFixer, retries = 3)
-    }
-}
-```
+Same `Agent<String, String>`. Same slot in `onError`. Same telemetry, same `agentTest {}`. The caller doesn't know or care whether the fixer uses an LLM or a regex — fractal composition applied to error recovery.
 
 **Escalation** — a repair agent throws `EscalationException` to signal "I can't fix this, parent agent deal with it":
 
@@ -482,9 +460,7 @@ val strictFixer = agent<String, String>("strict-fixer") {
         }
     }
 }
-
-// When the fixer escalates, the framework wraps it in a ToolExecutionException
-// with the escalation reason. The parent agent receives the error.
+// When the fixer escalates, the framework wraps it in ToolExecutionException.
 ```
 
 **Hard failure** — throw `ToolExecutionException` to stop everything immediately:
@@ -499,14 +475,8 @@ implementedBy { _ ->
 **`onToolUse` fires after successful recovery** — listeners only see the final, successful result:
 
 ```kotlin
-val toolEvents = mutableListOf<String>()
-val a = agent<String, String>("a") {
-    // ...
-    onToolError("flaky") { executionError { _ -> retry(maxAttempts = 3) } }
-    onToolUse { name, _, result -> toolEvents.add("$name=$result") }
-}
-
-a("input")
+onToolError("flaky") { executionError { _ -> retry(maxAttempts = 3) } }
+onToolUse { name, _, result -> toolEvents.add("$name=$result") }
 // toolEvents == ["flaky=recovered"]  — only the successful call is reported
 ```
 
@@ -519,7 +489,6 @@ sealed interface ToolError {
     data class ExecutionError(val args: Map<String, Any?>, val cause: Throwable)
     data class EscalationError(val source: String, val reason: String, val severity: Severity, ...)
 }
-
 // Severity: LOW, MEDIUM, HIGH, CRITICAL
 ```
 

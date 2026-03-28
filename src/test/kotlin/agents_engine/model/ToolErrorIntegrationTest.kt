@@ -84,9 +84,7 @@ class ToolErrorIntegrationTest {
 
     @Tag("live-llm")
     @Test
-    fun `escalation from repair agent throws ToolExecutionException with reason`() {
-        fun num(args: Map<String, Any?>, key: String) = args[key].toString().toDouble()
-
+    fun `escalation feeds error back to LLM which responds gracefully`() {
         val fixer = agent<String, String>("fixer") {
             skills {
                 skill<String, String>("fix", "Attempt to fix tool errors") {
@@ -98,10 +96,10 @@ class ToolErrorIntegrationTest {
         }
 
         val a = agent<String, String>("calculator") {
-            prompt("You are a calculator. You MUST use the add tool for every addition — never compute mentally. Reply with ONLY the final number.")
+            prompt("You are a calculator. Use the add tool. If a tool returns an error, reply with the error description — do NOT retry the tool.")
             model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
+            budget { maxTurns = 5 }
             tools {
-                // Tool always fails — simulates a permanently broken service
                 tool("add", "Add two numbers. Args: a, b") { _ ->
                     throw RuntimeException("Hardware fault")
                 }
@@ -114,9 +112,10 @@ class ToolErrorIntegrationTest {
             }}
         }
 
-        val ex = assertThrows<ToolExecutionException> { a("Calculate 1 + 1") }
-        println("Caught: ${ex.message}")
-        assertTrue(ex.message!!.contains("Persistent hardware failure"), "Should contain escalation reason")
+        val result = a("Calculate 1 + 1")
+        println("Result: $result")
+        // LLM should see the error and respond (not crash)
+        assertTrue(result.isNotBlank(), "LLM should produce a response after escalation")
     }
 
     @Tag("live-llm")

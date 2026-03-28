@@ -159,9 +159,8 @@ private fun <IN> executeToolWithRecovery(
                 )
             }
             is RepairResult.Fixed -> return result.value
-            is RepairResult.Escalated -> throw ToolExecutionException(
-                "Tool '${call.name}' escalated: ${result.reason}", e
-            )
+            is RepairResult.Escalated -> return "ERROR: Tool '${call.name}' failed: ${result.reason} " +
+                "(severity: ${result.severity}). Please retry with corrected arguments."
             is RepairResult.Unrecoverable -> throw ToolExecutionException(
                 "Tool '${call.name}' failed and recovery was unrecoverable", e
             )

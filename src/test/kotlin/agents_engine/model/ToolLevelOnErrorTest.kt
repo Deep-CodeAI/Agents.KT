@@ -265,4 +265,144 @@ class ToolLevelOnErrorTest {
         assertEquals(2, fetchCalls, "fetch should have retried once")
         assertEquals(2, compileCalls, "compile should have retried once via defaults")
     }
+
+    // -- Escalation and throw inside tool-level onError --
+
+    @Test
+    fun `tool-level escalation feeds error back to LLM in agentic loop`() {
+        val escalatingFixer = agent<String, String>("esc-fixer") {
+            skills { skill<String, String>("fix", "Attempts repair") {
+                implementedBy { _ ->
+                    throw EscalationException("Schema mismatch, not a transient error", Severity.HIGH)
+                }
+            }}
+        }
+
+        val captured = mutableListOf<List<LlmMessage>>()
+        val responses = ArrayDeque<LlmResponse>()
+        responses.add(LlmResponse.ToolCalls(listOf(ToolCall("strict", emptyMap()))))
+        responses.add(LlmResponse.Text("handled"))
+        val mock = ModelClient { msgs -> captured.add(msgs.toList()); responses.removeFirst() }
+
+        val a = agent<String, String>("a") {
+            model { ollama("test"); client = mock }
+            tools {
+                tool("strict", "Strict tool", onError = {
+                    executionError { _ -> fix(agent = escalatingFixer, retries = 1) }
+                }) { _ -> throw RuntimeException("Bad input") }
+            }
+            skills { skill<String, String>("s", "s") { tools("strict") } }
+        }
+
+        val result = a("input")
+        assertEquals("handled", result)
+
+        val toolMsg = captured[1].last { it.role == "tool" }
+        assertTrue(toolMsg.content.contains("Schema mismatch"), "Error fed back: ${toolMsg.content}")
+    }
+
+    @Test
+    fun `tool-level throwException propagates ToolExecutionException in agentic loop`() {
+        val hardFailFixer = agent<String, String>("hard-fail") {
+            skills { skill<String, String>("fix", "Attempts repair") {
+                implementedBy { _ ->
+                    throw ToolExecutionException("Fundamentally broken — cannot recover")
+                }
+            }}
+        }
+
+        val responses = ArrayDeque<LlmResponse>()
+        responses.add(LlmResponse.ToolCalls(listOf(ToolCall("doomed", emptyMap()))))
+        val mock = ModelClient { _ -> responses.removeFirst() }
+
+        val a = agent<String, String>("a") {
+            model { ollama("test"); client = mock }
+            tools {
+                tool("doomed", "Doomed tool", onError = {
+                    executionError { _ -> fix(agent = hardFailFixer, retries = 2) }
+                }) { _ -> throw RuntimeException("Broken") }
+            }
+            skills { skill<String, String>("s", "s") { tools("doomed") } }
+        }
+
+        var caught = false
+        try {
+            a("input")
+        } catch (e: ToolExecutionException) {
+            caught = true
+            assertEquals("Fundamentally broken — cannot recover", e.message)
+        }
+        assertTrue(caught, "ToolExecutionException should propagate immediately")
+    }
+
+    @Test
+    fun `tool-level retry exhaustion throws ToolExecutionException`() {
+        val responses = ArrayDeque<LlmResponse>()
+        responses.add(LlmResponse.ToolCalls(listOf(ToolCall("always-fail", emptyMap()))))
+        val mock = ModelClient { _ -> responses.removeFirst() }
+
+        val a = agent<String, String>("a") {
+            model { ollama("test"); client = mock }
+            tools {
+                tool("always-fail", "Never works", onError = {
+                    executionError { _ -> retry(maxAttempts = 2) }
+                }) { _ -> throw RuntimeException("Permanent failure") }
+            }
+            skills { skill<String, String>("s", "s") { tools("always-fail") } }
+        }
+
+        var caught = false
+        try {
+            a("input")
+        } catch (e: ToolExecutionException) {
+            caught = true
+            assertTrue(e.message!!.contains("always-fail"), "Should mention tool name")
+            assertTrue(e.message!!.contains("retries"), "Should mention retries")
+        }
+        assertTrue(caught)
+    }
+
+    @Test
+    fun `tool-level escalation with invalidArgs handler`() {
+        val escalatingFixer = agent<String, String>("esc-fixer") {
+            skills { skill<String, String>("fix", "Tries to fix args") {
+                implementedBy { _ ->
+                    throw EscalationException("Binary garbage, not JSON", Severity.CRITICAL)
+                }
+            }}
+        }
+
+        val handler = OnErrorBuilder().apply {
+            invalidArgs { _, _ -> fix(agent = escalatingFixer) }
+        }.build()
+
+        val result = handler.handleInvalidArgs("\u0000\u0001\u0002", "Not valid UTF-8")
+        assertIs<RepairResult.Escalated>(result)
+        assertEquals("Binary garbage, not JSON", result.reason)
+        assertEquals(Severity.CRITICAL, result.severity)
+    }
+
+    @Test
+    fun `tool-level throwException with invalidArgs handler propagates`() {
+        val hardFail = agent<String, String>("hard-fail") {
+            skills { skill<String, String>("fix", "Tries to fix") {
+                implementedBy { _ ->
+                    throw ToolExecutionException("Input is not recoverable")
+                }
+            }}
+        }
+
+        val handler = OnErrorBuilder().apply {
+            invalidArgs { _, _ -> fix(agent = hardFail) }
+        }.build()
+
+        var caught = false
+        try {
+            handler.handleInvalidArgs("garbage", "error")
+        } catch (e: ToolExecutionException) {
+            caught = true
+            assertEquals("Input is not recoverable", e.message)
+        }
+        assertTrue(caught, "ToolExecutionException should propagate through handler")
+    }
 }
