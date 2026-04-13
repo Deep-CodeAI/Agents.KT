@@ -30,6 +30,10 @@ class ToolsBuilder {
     }
 
     fun tool(name: String, description: String, executor: (Map<String, Any?>) -> Any?) {
+        require(defs.none { it.name == name }) {
+            "Tool \"$name\" is already defined in this tools block. " +
+                "Tool names must be unique."
+        }
         defs.add(ToolDef(name, description, executor))
     }
 
@@ -39,12 +43,20 @@ class ToolsBuilder {
         onError: OnErrorBuilder.() -> Unit,
         executor: (Map<String, Any?>) -> Any?,
     ) {
+        require(defs.none { it.name == name }) {
+            "Tool \"$name\" is already defined in this tools block. " +
+                "Tool names must be unique."
+        }
         val def = ToolDef(name, description, executor)
         def.errorHandler = OnErrorBuilder().apply(onError).build()
         defs.add(def)
     }
 
     fun tool(name: String, block: ToolDefBuilder.() -> Unit) {
+        require(defs.none { it.name == name }) {
+            "Tool \"$name\" is already defined in this tools block. " +
+                "Tool names must be unique."
+        }
         val builder = ToolDefBuilder(name)
         builder.block()
         val def = builder.build()

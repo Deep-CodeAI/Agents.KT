@@ -81,7 +81,13 @@ class Agent<IN, OUT>(
     fun tools(block: ToolsBuilder.() -> Unit) {
         val builder = ToolsBuilder()
         builder.block()
-        builder.defs.forEach { toolMap[it.name] = it }
+        builder.defs.forEach {
+            require(it.name !in toolMap) {
+                "Agent \"$name\" already has a tool named \"${it.name}\". " +
+                    "Tool names must be unique per agent."
+            }
+            toolMap[it.name] = it
+        }
         builder.defaultErrorHandler?.let { defaultToolErrorHandler = it }
     }
 

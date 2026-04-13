@@ -55,6 +55,17 @@ class SkillKnowledgeTest {
     }
 
     @Test
+    fun `duplicate knowledge keys throw`() {
+        assertThrows<IllegalArgumentException> {
+            skill<String, String>("process", "Processes a string") {
+                knowledge("rules") { "First" }
+                knowledge("rules") { "Second" }
+                implementedBy { it }
+            }
+        }
+    }
+
+    @Test
     fun `SkillsBuilder skill factory accepts description`() {
         val builder = SkillsBuilder()
         val s = with(builder) {

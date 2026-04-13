@@ -35,6 +35,10 @@ class Skill<IN, OUT>(
     fun llmDescription(text: String) { _llmDescription = text }
 
     fun knowledge(key: String, description: String = "", provider: () -> String) {
+        require(key !in _knowledge) {
+            "Skill \"$name\" already has knowledge entry \"$key\". " +
+                "Knowledge keys must be unique per skill."
+        }
         _knowledge[key] = KnowledgeEntry(description, provider)
     }
 
