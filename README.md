@@ -17,7 +17,7 @@
 
 ---
 
-Every agent is `Agent<IN, OUT>`. One input type, one output type, one job. Type mismatches and wrong compositions are caught by the compiler.  Reused agent instances are caught at construction time.
+Every agent is `Agent<IN, OUT>`. One input type, one output type, one job. Type mismatches and wrong compositions are caught by the compiler where composition is purely type-driven, and structural misuses fail fast at construction time. Reused agent instances are caught at construction time.
 
 ```kotlin
 val parse = agent<RawText, Specification>("parse") {
@@ -63,7 +63,7 @@ Most agent frameworks let you wire anything to anything. Agents.KT says no.
 | The same agent instance wired into two places | Single-placement rule — `IllegalArgumentException` at construction time |
 | LLM doesn't know which skill to use | Manual `skillSelection {}` routing or automatic LLM routing — descriptions sell each skill to the router |
 | LLM doesn't know what context to load | `knowledge("key", "description") { }` entries — LLM reads descriptions before deciding to call |
-| Flat pipelines only | Six composition operators covering sequential, parallel, iterative, branching, detached spawn, and multi-agent patterns |
+| Flat pipelines only | Composition operators covering sequential, forum, parallel, iterative, and branching patterns |
 | LLM output is an untyped string | `@Generable` + `@Guide` — `toLlmDescription()`, JSON Schema, prompt fragment, lenient deserializer, and `PartiallyGenerated<T>` via runtime reflection; KSP compile-time generation planned Phase 2 |
 | MCP tools are wrappers, not first-class | `McpTool<IN, OUT>` inherits `Tool<IN, OUT>` — same interface as local tools, no adapters |
 | Permission model is stringly-typed | `grants { tools(writeFile, compile) }` — actual `Tool<*,*>` references, compiler-validated |
@@ -74,7 +74,7 @@ Most agent frameworks let you wire anything to anything. Agents.KT says no.
 
 ## Skills
 
-An agent is a container of typed skills. Each skill has its own `<IN, OUT>` and a mandatory `description`. At least one skill must produce the agent's `OUT` type — validated at construction.
+An agent is a container of typed skills. Each skill has its own `<IN, OUT>` and a `description` used for docs and LLM routing. At least one skill must produce the agent's `OUT` type — validated at construction.
 
 ```kotlin
 val writeCode = skill<Specification, CodeBundle>("write-code",
@@ -269,7 +269,7 @@ calculator("Calculate ((15 + 35) / 2)^2")
 
 **`onKnowledgeUsed { name, content -> }`** — fires when the LLM fetches a knowledge entry. Receives the key name and loaded content. Does not fire for action tools.
 
-**`onSkillChosen { name -> }`** — fires when the agent selects a skill to execute. Works with all routing strategies — predicate, LLM, and first-match.
+**`onSkillChosen { name -> }`** — fires when the agent selects a skill to execute. Works with all routing strategies — manual `skillSelection {}`, LLM, and first-match.
 
 ```kotlin
 val a = agent<String, String>("coder") {
@@ -796,9 +796,9 @@ val pipeline = (quick / deep) then synthesizer
 // Pipeline<CodeBundle, Report>
 ```
 
-### `*` — Forum (Multi-Agent Discussion)
+### `*` — Forum (Multi-Agent Coordination)
 
-Think *jury deliberation* — the case lands on the table, agents discuss across rounds, the last agent (foreperson) delivers the verdict. Agents see each other's reasoning; parallel agents do not. All participants run concurrently; the captain delivers the final result.
+The `*` shorthand is convention over configuration: every agent receives the same input, all non-final agents run concurrently as participants, and the last agent is the captain. The captain determines the forum `OUT` type and is the default finalizer.
 
 ```kotlin
 val forum = initiator * analyst * critic * captain
@@ -807,11 +807,24 @@ val forum = initiator * analyst * critic * captain
 val pipeline = inputConverter then forum then formatter
 // Pipeline<Input, FormattedDecision>
 
-// Track the debate as it unfolds
+// Track forum outputs as they arrive
 forum.onMentionEmitted { agentName, output ->
     println("[$agentName]: $output")
 }
 ```
+
+For explicit roles and permissions, use the forum DSL:
+
+```kotlin
+val forum = forum<Specs, Decision> {
+    participant(initiator)
+    participant(analyst)
+    captain(captain)
+    allowForumReturn(analyst)   // optional; captain may return by default
+}
+```
+
+`forum_return` is a built-in forum capability. The captain gets it automatically; additional registered participants can be granted it with `allowForumReturn(...)`. If nobody calls `forum_return`, the captain's normal return value becomes the forum result.
 
 ### `.loop {}` — Iterative Execution
 
@@ -886,7 +899,7 @@ a * forum // ❌ same instance, different structure — also caught
 Agent<A, B>    : A → B
 A then B       : Agent<X,Y> then Agent<Y,Z>    → Pipeline<X,Z>
 A / B          : Agent<X,Y> / Agent<X,Y>       → Parallel<X,Y>  →  List<Y> to next
-A * B          : Agent<X,Y> * Agent<*,Z>       → Forum<X,Z>
+A * B          : Agent<X,Y> * Agent<X,Z>       → Forum<X,Z>
 A.loop { }     : (Pipeline<X,Y> | Agent<X,Y>)  → Loop<X,Y>   (null = stop, X = continue)
 A.branch { }   : Agent<X, Sealed<Y>)           → Branch<X,Z>  (all variants → same Z)
 ```
@@ -920,21 +933,22 @@ cd Agents.KT
 - [x] `Agent<IN, OUT>` with SRP enforcement
 - [x] `Agent.prompt` — base context string for the LLM
 - [x] Skills-only execution — all agents run through `skills { implementedBy { } }`
-- [x] `Skill.description` (mandatory) — sells the skill to the LLM alongside its type signature
+- [x] `Skill.description` — sells the skill to the LLM alongside its type signature
 - [x] `Skill.knowledge("key", "description") { }` — named lazy context providers; `loadFile()` inside lambdas
 - [x] `Skill.toLlmDescription()` — auto-generated markdown (name, types, description, knowledge index); `llmDescription("...")` override
 - [x] `Skill.toLlmContext()` — full context: description markdown + all knowledge content
 - [x] `Skill.knowledgeTools()` / `KnowledgeTool(name, description, call)` — tools model with lazy per-entry loading
 - [x] `then` — sequential pipeline with composed execution (no runtime casts)
 - [x] `/` — parallel fan-out with coroutine concurrency
-- [x] `*` — forum (multi-agent discussion) with concurrent participants, captain, and `onMentionEmitted` debate tracking
+- [x] `*` — forum shorthand with concurrent participants, last-agent captain, and `onMentionEmitted`
+- [x] `forum { participant(...); captain(...); allowForumReturn(...) }` — explicit forum roles and finalization permissions
 - [x] Single-placement enforcement across all structure types
 - [x] `.loop {}` — iterative execution with `(OUT) -> IN?` feedback block
 - [x] `.branch {}` — conditional routing on sealed types, composable with `then`
 - [x] `@Generable("desc")` / `@Guide` / `@LlmDescription` — runtime reflection: `toLlmDescription()`, `jsonSchema()`, `promptFragment()`, `fromLlmOutput<T>()`, `PartiallyGenerated<T>`
 - [x] `model { }` — Ollama backend; `host`, `port`, `temperature`; injectable `ModelClient` for tests
 - [x] Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`) + `onToolUse` observability hook
-- [x] Skill selection — predicate-based `skillSelection {}` + automatic LLM routing when multiple skills match
+- [x] Skill selection — manual `skillSelection {}` + automatic LLM routing when multiple skills match
 - [ ] `>>` — security/education wrap
 
 **Phase 2 — Runtime + Distribution** *(Q2 2026)*

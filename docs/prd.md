@@ -240,7 +240,7 @@ Sealed types enable exhaustive branching (Section 7.5).
 ```
 Agent<A, B>     : A → B          (typed function)
 A then B        : Agent<X,Y> then Agent<Y,Z> → Pipeline<X,Z>
-A * B           : Agent<X,Y> * Agent<*,Z> → Forum<X, Z>  (first's IN, last answers)
+A * B           : Agent<X,Y> * Agent<X,Z> → Forum<X, Z>  (shared input, last agent is captain)
 A / B           : Agent<X,Y> / Agent<X,Y> → Parallel<X,Y>  (fan-out; all run independently; List<Y> to next stage)
                   Liskov: declare agents as Agent<X, CommonSupertype> — implementations may return subtypes.
 A.loop { }      : (Agent<X,Y> | Pipeline<X,Y>).loop { (Y) -> X? } → Loop<X,Y>
@@ -742,7 +742,7 @@ When a skill is exposed as MCP, the framework generates schemas from the skill's
 
 A skill is an independently typed function `Skill<IN, OUT>` — it is **not** locked to the agent's type contract. An agent is a container of skills, each with its own `<IN, OUT>`. The only constraint: **at least one skill must produce the agent's `OUT` type.** This is validated at agent construction time.
 
-Every skill has a **mandatory `description`** — a short text that "sells" the skill to the LLM alongside its type signature, enabling the LLM to choose the right skill for the job. Skills also carry unlimited named **`knowledge` entries**: lazy `() -> String` providers that supply context to the LLM when the skill is selected.
+Every skill has a `description` — a short text that "sells" the skill to the LLM alongside its type signature, enabling the LLM to choose the right skill for the job. Skills also carry unlimited named **`knowledge` entries**: lazy `() -> String` providers that supply context to the LLM when the skill is selected.
 
 Skills can be defined **outside the agent** as top-level typed values and added with `+`, or **inline** inside the `skills { }` block. Top-level skills give the developer a fully typed reference — no casts needed when calling `execute()` directly.
 
@@ -777,7 +777,7 @@ myAgent.skills.keys                                   // ["printer", "answerer"]
 │                                            │
 │  WHAT     (A2A contract, public)           │
 │  ├── name        — unique identifier       │
-│  ├── description — "sells" skill to LLM   │  ← mandatory, implemented
+│  ├── description — "sells" skill to LLM   │  ← implemented
 │  ├── tags, examples                        │
 │  └── → auto-generates AgentCard.skills[]   │
 │                                            │
@@ -796,7 +796,7 @@ myAgent.skills.keys                                   // ["printer", "answerer"]
 │  ├── tools()     — direct execution        │
 │  ├── agent()     — delegate to one agent   │
 │  ├── pipeline {} — sequential chain        │
-│  ├── forum {}    — agents discuss + converge │
+│  ├── forum {}    — participants + captain    │
 │  └── branch {}   — conditional routing     │
 └───────────────────────────────────────────┘
 ```
@@ -842,11 +842,11 @@ checkSpelling.execute("some text")     // fully typed: String → String
 
 ### 6.3 Skill Selection
 
-When an agent has multiple skills, selection happens in one of two ways:
+When an agent has multiple skills, selection happens in one of two primary ways:
 
 **LLM decides** (default) — the LLM reads each skill's `description` and `knowledgeTools()` descriptions, then chooses. This is the natural path when `model {}` is configured.
 
-**Predicate-based** — explicit Kotlin predicates when deterministic routing is needed:
+**Manual `skillSelection {}` routing** — explicit Kotlin logic when deterministic routing is needed:
 
 ```kotlin
 skillSelection { input ->
@@ -981,7 +981,7 @@ Both models coexist — the execution engine chooses based on the configured mod
 
 ## 7. implementedBy: Fractal Composition
 
-A skill can be implemented by **anything that transforms IN to OUT**: tools, agents, pipelines, forums (multi-agent discussion), conditional branches, or any combination.
+A skill can be implemented by **anything that transforms IN to OUT**: tools, agents, pipelines, forums (multi-agent coordination), conditional branches, or any combination.
 
 ### 7.1 Tools (Leaf Execution)
 
@@ -1020,12 +1020,12 @@ skill("write-and-test") {
 
 ### 7.4 Forum (Multi-Agent Discussion)
 
-Think **jury deliberation** — the case (IN) is dropped on the table, jurors discuss and see each other's reasoning across rounds, and one agent delivers the verdict (OUT). Convention: the last agent in the `*` chain is the foreperson.
+Think **jury deliberation** with explicit coordination semantics. Every forum member receives the same input, non-final agents run concurrently as participants, and one agent delivers the verdict (OUT). Convention: the last agent in the `*` chain is the captain.
 
-Forum typing: **first agent's IN** determines the input, **last agent's OUT** (captain) determines the output. Agents in between can have any types — they're participants in a discussion, not a pipeline.
+Forum typing: members share the same `IN`, and the **last agent's OUT** (captain) determines the forum output.
 
 ```kotlin
-// Forum: first's IN = Specs, captain's OUT = Result
+// Forum: shared IN = Specs, captain's OUT = Result
 val codeDiscussion = opinionsArbitrageMaster * crazyGenerator * passiveGenerator * answerMaster
 // Forum<Specs, Result>
 
@@ -1035,13 +1035,13 @@ val pipeline = inputToSpecsConverter then (opinionsArbitrageMaster * crazyGenera
 
 skill("reliable-write") {
     implementedBy {
-        forum(maxRounds = 3) {
-            agent(kotlinExpert)          // Specification → Opinion
-            agent(javaConverter)         // Specification → Opinion
-            agent(arbiter)              // Opinions → FinalCode  ← captain
+        forum<Specification, FinalCode> {
+            participant(kotlinExpert)    // Specification → Opinion
+            participant(javaConverter)   // Specification → Opinion
+            captain(arbiter)             // Specification → FinalCode
+            allowForumReturn(kotlinExpert)
         }
-        // Agents see each other's outputs, discuss across rounds
-        // Last agent is the captain — delivers the final answer
+        // Captain may finalize by default; selected participants may also call forum_return
         // Forum<Specification, FinalCode>
     }
 }
@@ -1080,7 +1080,7 @@ val pipeline = coder then parallel then synthesizer
 // synthesizer: Agent<List<Review>, FinalResult>
 ```
 
-The distinction from Forum: parallel agents do **not** see each other's outputs — each runs in isolation on the same input. Forum agents collaborate across rounds.
+The distinction from Forum: parallel agents do **not** share a finalizer or coordination path — each runs in isolation on the same input. Forum agents share one input and converge through a captain/finalizer.
 
 ### 7.6 Loop (Iterative Execution)
 
@@ -1155,9 +1155,9 @@ skill("supervised-write") {
         pipeline {
             tools("analyze_spec")         // my tool
             then agent(kotlinExpert)        // delegate to agent
-            then forum(maxRounds = 2) {    // reviewers discuss
-                agent(reviewer1)
-                agent(reviewer2)
+            then forum<ReviewInput, ReviewVerdict> {
+                participant(reviewer1)
+                captain(reviewer2)
             }
             then tools("finalize")         // my tool again
         }
@@ -1208,7 +1208,7 @@ pipeline { a then b then c }:
   a.in == Skill's IN, c.out == Skill's OUT, chain links
 
 forum { a * b * c }:
-  Forum IN = a.IN, Forum OUT = c.OUT (captain), middle agents any types
+  Forum IN = a.IN = b.IN = c.IN, Forum OUT = c.OUT (captain)
 
 parallel { a / b / c }:
   All agents share same IN and OUT (declare as common supertype for Liskov)
@@ -2235,7 +2235,7 @@ The framework provides the building blocks — `AgentSession` (§5.7), `.spawn {
 | Operator | Semantics | Type Constraint | Result Type |
 |----------|-----------|----------------|-------------|
 | `then` | Sequential pipeline | `A.OUT == B.IN` | `Pipeline<A.IN, B.OUT>` |
-| `*` | Forum (discuss + converge) | First's `IN`, last's `OUT` (captain) | `Forum<first.IN, last.OUT>` |
+| `*` | Forum shorthand (participants + captain) | Shared `IN`, last's `OUT` (captain) | `Forum<IN, last.OUT>` |
 | `/` | Parallel (fan-out) | All share `IN` and `OUT` (or common supertype via Liskov) | `Parallel<IN, OUT>` — next stage receives `List<OUT>` |
 | `.loop {}` | Iterative — `null` stops, `IN` continues | `(OUT) -> IN?` feedback block | `Loop<IN, OUT>` — composable with `then` |
 | `>>` | Security wrap | `Guard<IN,IN> >> Pipeline<IN,OUT>` | `Pipeline<IN, OUT>` |
@@ -2491,7 +2491,7 @@ val pipeline = coder then panel then synthesizer
 // Pipeline<Spec, FinalReport>
 ```
 
-For perspectives that need to see each other's reasoning (debate, not parallel), use `*` (forum):
+For coordinated perspectives that should share the same input and converge on one result, use `*` (forum shorthand):
 
 ```kotlin
 val debate = optimist * pessimist * realist * decisionMaker
@@ -2536,7 +2536,7 @@ The explore agent literally cannot call `writeFile` — it's not in its tools. I
 | **Reflexion** | Reflection + `memory {}` | Learns from failures across invocations |
 | **Planning** | `then` pipeline with manager agent | Decompose → delegate → verify |
 | **Expert Panel** | `/` parallel + synthesizer | Multiple perspectives, merged result |
-| **Debate** | `*` forum | Agents see each other's reasoning |
+| **Debate / jury** | `*` forum | Shared input, concurrent participants, captain/finalizer |
 | **Hierarchical** | `.asTool()` + `grants {}` | Sub-agents with isolated tools and context |
 
 The framework doesn't name these patterns — it provides the typed, validated building blocks. Patterns are how you compose them.
@@ -2573,7 +2573,7 @@ Validations are enforced at three levels: **compiler** (Kotlin generics — actu
 | 22 | **Resources** | Child budgets ≤ parent budget | Warning |
 | 23 | **Resources** | Forum participants ≤ concurrency limit | Warning |
 | 24 | **Topology** | Agent instance placed in at most one structure (Pipeline or Forum) — cross-structure and duplicate reuse requires a new instance | Error |
-| 25 | **Skills** | Every skill must have a non-empty `description` | Error |
+| 25 | **Skills** | Skill descriptions are strongly recommended for routing quality | Warning |
 | 26 | **Execution** | Agent invoked with no skills matching the required output type | Error |
 | 27 | **Budget** | Agent with `model {}` must have explicit or inherited budget | Warning |
 | 28 | **Budget** | Spawned agent budget ≤ parent remaining budget | Warning |
@@ -3734,14 +3734,14 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 - `Agent<IN, OUT>` typed definitions with SRP enforcement — `agent<IN,OUT>("name") { }`
 - `Agent.prompt` — base context string for the LLM
 - Skills-only execution path — all agents run through `skills { }`, `implementedBy { kotlinLambda }`
-- `Skill.description` (mandatory) — sells the skill to the LLM alongside its type signature
+- `Skill.description` — sells the skill to the LLM alongside its type signature
 - `Skill.knowledge("key", "description") { "..." }` — unlimited named lazy providers; description tells LLM what the entry contains before it calls it
 - `Skill.toLlmDescription()` — auto-generated markdown: `## Skill`, `**Input:**`/`**Output:**` with inline `@Generable` type shape (description + fields + `@Guide` texts), description prose, `**Knowledge:**` index; override with `llmDescription("...")` when needed
 - `Skill.toLlmContext()` — full context: `toLlmDescription()` + all knowledge entry contents (separator: `--- key ---\ncontent`); loaded lazily
 - `Skill.knowledgeTools()` → `List<KnowledgeTool(name, description, call)>` — tools model: LLM reads `description` to decide which entries to pull; each `call()` is lazy
 - `@Generable("desc")` / `@Guide` / `@LlmDescription` — runtime reflection: `toLlmDescription()` (convention-over-configuration markdown for any `@Generable` class), `jsonSchema()`, `promptFragment()`, `fromLlmOutput<T>()`, `PartiallyGenerated<T>`; sealed types via `"type"` discriminator
 - `Pipeline` execution via composed functions — no runtime casts, no reflection
-- Composition operators: `then` (pipeline), `*` (forum), `/` (parallel), `.loop {}` (iterative + plain `while`), `.branch {}` (sealed type routing)
+- Composition operators: `then` (pipeline), `*` (forum shorthand), `/` (parallel), `.loop {}` (iterative + plain `while`), `.branch {}` (sealed type routing)
 - DDD package structure: `agents_engine.core` (entities) + `agents_engine.composition` (operators)
 - Single-placement rule: each agent instance participates in at most one structure
 - `model { }` — Ollama backend; `host`, `port`, `temperature`; injectable `ModelClient` for tests
@@ -3782,7 +3782,7 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 - ~~Skill routing: predefined rules + `RoutingStrategy.LLM_DECISION`~~ ✓ done
 - MCP server: expose agents as MCP endpoints (§5.8)
 - Pipeline observability: `observe {}`, `Flow<PipelineEvent>` (§10.2)
-- ~~Forum discussion rounds and Parallel coroutine execution~~ ✓ done — Forum.invoke() with concurrent participants + captain, `onMentionEmitted` debate tracking
+- ~~Forum coordination runtime and Parallel coroutine execution~~ ✓ done — Forum.invoke() with concurrent participants + captain, `onMentionEmitted` output tracking
 
 ### Phase 3: Production (Q3 2026)
 
@@ -3828,7 +3828,7 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 
 8. **Knowledge embedding cost:** RAG vs full inclusion per skill? Token budget management for large knowledge packs.
 
-9. **Skill selection strategy:** When multiple skills match by input type, should the LLM use `description` + `knowledgeTools()` descriptions to choose, or explicit predicates? What is the fallback when no LLM is configured? (Partial answer: `description` on skills and knowledge entries is implemented; predicate-based `skillSelection {}` planned.)
+9. **Skill selection strategy:** When multiple skills match by input type, should the LLM use `description` + `knowledgeTools()` descriptions to choose, or explicit manual routing? What is the fallback when no LLM is configured? (Current answer: `description` on skills and knowledge entries is implemented; `skillSelection {}` and fallback-first-match are implemented.)
 
 10. ~~**Knowledge bridging:**~~ **Resolved.** Code-based `knowledge("key") { "..." }` entries are the only knowledge mechanism. `loadFile()` inside the lambda handles file content. No framework-managed file conventions.
 

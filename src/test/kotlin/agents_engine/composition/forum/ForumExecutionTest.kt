@@ -7,6 +7,8 @@ import agents_engine.model.ModelClient
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 private const val MODEL = "gpt-oss:120b-cloud"
@@ -206,6 +208,81 @@ class ForumExecutionTest {
 
         val result = (a * b * captain)("What is 2+2?")
         assertEquals("verdict", result)
+    }
+
+    @Test
+    fun `captain can finalize forum by default via injected forum_return`() {
+        val participant = agent<String, String>("participant") {
+            skills { skill<String, String>("participant", "Participant") { implementedBy { "participant" } } }
+        }
+        val captainClient = ModelClient { _ ->
+            LlmResponse.ToolCalls(listOf(agents_engine.model.ToolCall("forum_return", mapOf("value" to "captain verdict"))))
+        }
+        val captain = agent<String, String>("captain") {
+            model { ollama("llama3"); client = captainClient }
+            skills { skill<String, String>("captain", "Captain") { tools() } }
+        }
+
+        val result = forum<String, String> {
+            participant(participant)
+            captain(captain)
+        }("topic")
+
+        assertFalse(participant.toolMap.containsKey("forum_return"))
+        assertEquals("captain verdict", result)
+    }
+
+    @Test
+    fun `participant can finalize forum when explicitly allowed`() {
+        var captainExecuted = false
+        val earlyReturn = ModelClient { _ ->
+            LlmResponse.ToolCalls(listOf(agents_engine.model.ToolCall("forum_return", mapOf("value" to "done early"))))
+        }
+        val shouldNotRun = ModelClient { _ ->
+            captainExecuted = true
+            LlmResponse.Text("captain verdict")
+        }
+
+        val participant = agent<String, String>("participant") {
+            model { ollama("llama3"); client = earlyReturn }
+            skills { skill<String, String>("participant", "Finalize immediately when enough information is available") { tools() } }
+        }
+        val captain = agent<String, String>("captain") {
+            model { ollama("llama3"); client = shouldNotRun }
+            skills { skill<String, String>("captain", "Captain") { tools() } }
+        }
+
+        val result = forum<String, String> {
+            participant(participant)
+            captain(captain)
+            allowForumReturn(participant)
+        }("topic")
+
+        assertEquals("done early", result)
+        assertEquals(false, captainExecuted, "Captain should not execute after forum_return finalizes the forum")
+    }
+
+    @Test
+    fun `allowForumReturn fails for agent outside the forum`() {
+        val participant = agent<String, String>("participant") {
+            skills { skill<String, String>("participant", "Participant") { implementedBy { "participant" } } }
+        }
+        val captain = agent<String, String>("captain") {
+            skills { skill<String, String>("captain", "Captain") { implementedBy { "captain" } } }
+        }
+        val outsider = agent<String, String>("outsider") {
+            skills { skill<String, String>("outsider", "Outsider") { implementedBy { "outsider" } } }
+        }
+
+        val error = assertFailsWith<IllegalArgumentException> {
+            forum<String, String> {
+                participant(participant)
+                captain(captain)
+                allowForumReturn(outsider)
+            }
+        }
+
+        assertTrue(error.message!!.contains("allowForumReturn can only be used with agents registered in this forum."))
     }
 
     @Test

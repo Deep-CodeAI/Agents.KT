@@ -10,19 +10,17 @@ class AgentsForumTest {
     fun test() {
         data class Input(val text: String)
         data class Specs(val text: String)
-        data class Task(val specs: Specs, val text: String)
         data class Result(val text: String)
         data class Opinion(val text: String)
         data class Opinions(val opinions: List<Opinion>)
         val inputToSpecsConverter = agent<Input, Specs>("inputToSpecs") {}
 
-        val forumInitiationAgent = agent<Specs, Task>("forumStarter") {}
-        val crazyCodeSlopGenerator = agent<Task, Opinion>("crazyCodeSlopGenerator") {}
-        val passiveCodeGenerator = agent<Task, Opinion>("passiveCodeGenerator") {}
-        val opinionsArbitrageMaster = agent<Task, Opinions>("passiveCodeGenerator") {}
-        val answerMaster = agent<Opinions, Result>("passiveCodeGenerator") {}
+        val forumInitiationAgent = agent<Specs, Opinion>("forumStarter") {}
+        val crazyCodeSlopGenerator = agent<Specs, Opinion>("crazyCodeSlopGenerator") {}
+        val passiveCodeGenerator = agent<Specs, Opinions>("passiveCodeGenerator") {}
+        val answerMaster = agent<Specs, Result>("answerMaster") {}
         val printMaster = agent<Result, String>("messenger") {}
 
-        val pipeline = inputToSpecsConverter then (forumInitiationAgent * opinionsArbitrageMaster * crazyCodeSlopGenerator * passiveCodeGenerator * answerMaster) then printMaster
+        val pipeline = inputToSpecsConverter then (forumInitiationAgent * crazyCodeSlopGenerator * passiveCodeGenerator * answerMaster) then printMaster
     }
 }

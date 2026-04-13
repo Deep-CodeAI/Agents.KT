@@ -40,6 +40,7 @@ class Agent<IN, OUT>(
     private val toolErrorHandlers: MutableMap<String, ToolErrorHandler> = mutableMapOf()
     internal var defaultToolErrorHandler: ToolErrorHandler? = null
         private set
+    internal val autoToolNames: MutableSet<String> = mutableSetOf()
 
     fun prompt(text: String) { prompt = text }
 
@@ -101,6 +102,14 @@ class Agent<IN, OUT>(
         toolMap[toolName]?.errorHandler
             ?: toolErrorHandlers[toolName]
             ?: defaultToolErrorHandler
+
+    internal fun enableAutoTool(name: String) {
+        autoToolNames += name
+    }
+
+    internal fun disableAutoTool(name: String) {
+        autoToolNames -= name
+    }
 
     fun markPlaced(context: String) {
         require(placedIn == null) {

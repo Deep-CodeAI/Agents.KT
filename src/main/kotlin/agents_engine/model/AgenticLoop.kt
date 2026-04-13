@@ -21,12 +21,13 @@ fun <IN> executeAgentic(
 
     val messages = mutableListOf<LlmMessage>()
 
-    // Action tools: tools the skill explicitly lists + auto-injected memory tools
+    // Action tools: tools the skill explicitly lists + agent capabilities + auto-injected memory tools
     val skillToolDefs = skill.toolNames?.mapNotNull { agent.toolMap[it] } ?: emptyList()
+    val autoToolDefs = agent.autoToolNames.mapNotNull { agent.toolMap[it] }
     val memoryToolDefs = if (agent.memoryBank != null)
         agent.toolMap.values.filter { it.name in setOf("memory_read", "memory_write", "memory_search") }
     else emptyList()
-    val actionToolDefs = (skillToolDefs + memoryToolDefs).distinctBy { it.name }
+    val actionToolDefs = (skillToolDefs + autoToolDefs + memoryToolDefs).distinctBy { it.name }
 
     // Knowledge tools: exposed lazily — LLM calls them to load context on demand
     val knowledgeToolDefs = skill.knowledgeTools().map { kt ->

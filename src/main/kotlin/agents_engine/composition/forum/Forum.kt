@@ -1,12 +1,17 @@
 package agents_engine.composition.forum
 
 import agents_engine.core.*
+import agents_engine.generation.constructFromMap
+import agents_engine.generation.fromLlmOutput
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlin.reflect.KClass
 
 class Forum<IN, OUT>(
-    val agents: List<Agent<*, *>>,
+    val agents: List<Agent<IN, *>>,
+    private val outType: KClass<*>,
+    private val castOut: (Any?) -> OUT,
 ) {
     private var mentionListener: ((agentName: String, output: Any?) -> Unit)? = null
 
@@ -15,34 +20,141 @@ class Forum<IN, OUT>(
     }
 
     @Suppress("UNCHECKED_CAST")
-    operator fun invoke(input: IN): OUT = runBlocking(Dispatchers.Default) {
-        val forumInput = input as Any?
-        val participants = agents.dropLast(1)
-        val captain = agents.last() as Agent<Any?, OUT>
+    operator fun invoke(input: IN): OUT = try {
+        runBlocking(Dispatchers.Default) {
+            val participants = agents.dropLast(1)
+            val captain = agents.last() as Agent<IN, OUT>
 
-        // All participants process the input concurrently
-        participants.map { agent ->
-            async {
-                val output = (agent as Agent<Any?, Any?>)(forumInput)
-                mentionListener?.invoke(agent.name, output)
-                output
-            }
-        }.map { it.await() }
+            // All participants process the input concurrently
+            participants.map { agent ->
+                async {
+                    val output = (agent as Agent<IN, Any?>)(input)
+                    mentionListener?.invoke(agent.name, output)
+                    output
+                }
+            }.map { it.await() }
 
-        // Captain delivers the final verdict
-        val verdict = captain(forumInput)
-        mentionListener?.invoke(captain.name, verdict)
-        verdict
+            // Captain delivers the final verdict
+            val verdict = captain(input)
+            mentionListener?.invoke(captain.name, verdict)
+            verdict
+        }
+    } catch (e: ForumReturnException) {
+        castForumReturn(e.value)
+    }
+
+    private fun castForumReturn(raw: Any?): OUT {
+        if (outType == String::class) return castOut(raw?.toString())
+        if (outType.java.isInstance(raw)) return castOut(raw)
+        if (raw is Map<*, *>) {
+            @Suppress("UNCHECKED_CAST")
+            val mapped = (outType as KClass<Any>).constructFromMap(raw as Map<String, Any?>)
+                ?: error("forum_return value could not be parsed as ${outType.simpleName}: $raw")
+            return castOut(mapped)
+        }
+        if (raw is String) {
+            @Suppress("UNCHECKED_CAST")
+            val parsed = (outType as KClass<Any>).fromLlmOutput(raw)
+                ?: error("forum_return value could not be parsed as ${outType.simpleName}: '$raw'")
+            return castOut(parsed)
+        }
+        error("forum_return value is incompatible with ${outType.simpleName}: $raw")
     }
 }
 
-operator fun <A, B, C> Agent<A, B>.times(other: Agent<*, C>): Forum<A, C> {
-    this.markPlaced("forum")
-    other.markPlaced("forum")
-    return Forum(listOf(this, other))
+private class ForumReturnException(val value: Any?) : RuntimeException()
+
+private fun buildForumReturnTool(): agents_engine.model.ToolDef =
+    agents_engine.model.ToolDef(
+        "forum_return",
+        "Finalize the forum immediately. Args: value (optional) or a JSON object matching the forum result type."
+    ) { args ->
+        val value = when {
+            "value" in args -> args["value"]
+            args.isEmpty() -> ""
+            args.size == 1 -> args.values.first()
+            else -> args
+        }
+        throw ForumReturnException(value)
+    }
+
+private fun Agent<*, *>.reserveForumReturnName() {
+    require("forum_return" !in toolMap) {
+        "Agent \"$name\" already has a tool named \"forum_return\". " +
+            "That name is reserved for forum control."
+    }
 }
 
-operator fun <A, B, C> Forum<A, B>.times(other: Agent<*, C>): Forum<A, C> {
-    other.markPlaced("forum")
-    return Forum(agents + other)
+private fun Agent<*, *>.setForumReturnPermission(allowed: Boolean) {
+    if (allowed) {
+        toolMap["forum_return"] = buildForumReturnTool()
+        enableAutoTool("forum_return")
+    } else {
+        toolMap.remove("forum_return")
+        disableAutoTool("forum_return")
+    }
+}
+
+private fun <IN, OUT> Agent<IN, OUT>.prepareForForum(allowForumReturn: Boolean) {
+    reserveForumReturnName()
+    setForumReturnPermission(allowForumReturn)
+    markPlaced("forum")
+}
+
+class ForumBuilder<IN, OUT> {
+    private val participants = mutableListOf<Agent<IN, *>>()
+    private var captain: Agent<IN, OUT>? = null
+    private val forumReturnAllowed = mutableSetOf<Agent<IN, *>>()
+
+    fun <T> participant(agent: Agent<IN, T>) {
+        require(agent !in participants && agent !== captain) {
+            "Agent \"${agent.name}\" is already registered in this forum."
+        }
+        participants += agent
+    }
+
+    fun captain(agent: Agent<IN, OUT>) {
+        require(captain == null) { "Forum already has a captain." }
+        require(agent !in participants) {
+            "Agent \"${agent.name}\" is already registered as a participant in this forum."
+        }
+        captain = agent
+    }
+
+    fun <T> allowForumReturn(agent: Agent<IN, T>) {
+        forumReturnAllowed += agent
+    }
+
+    internal fun build(): Forum<IN, OUT> {
+        val captainAgent = requireNotNull(captain) { "Forum must declare a captain." }
+        val allAgents = participants + captainAgent
+        require(forumReturnAllowed.all { it in allAgents }) {
+            "allowForumReturn can only be used with agents registered in this forum."
+        }
+
+        participants.forEach { participant ->
+            participant.prepareForForum(participant in forumReturnAllowed)
+        }
+        captainAgent.prepareForForum(true)
+
+        return Forum(allAgents, captainAgent.outType) { it as OUT }
+    }
+}
+
+fun <IN, OUT> forum(block: ForumBuilder<IN, OUT>.() -> Unit): Forum<IN, OUT> {
+    val builder = ForumBuilder<IN, OUT>()
+    builder.block()
+    return builder.build()
+}
+
+operator fun <A, B, C> Agent<A, B>.times(other: Agent<A, C>): Forum<A, C> {
+    this.prepareForForum(allowForumReturn = false)
+    other.prepareForForum(allowForumReturn = true)
+    return Forum(listOf(this, other), other.outType) { it as C }
+}
+
+operator fun <A, B, C> Forum<A, B>.times(other: Agent<A, C>): Forum<A, C> {
+    agents.last().setForumReturnPermission(false)
+    other.prepareForForum(allowForumReturn = true)
+    return Forum(agents + other, other.outType) { it as C }
 }
