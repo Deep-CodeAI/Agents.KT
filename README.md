@@ -61,7 +61,7 @@ Most agent frameworks let you wire anything to anything. Agents.KT says no.
 | God-agents with unlimited responsibilities | `Agent<IN, OUT>` — one type contract, compiler-enforced SRP |
 | Runtime type mismatches between agents | `then` requires `A.OUT == B.IN` — compile error otherwise |
 | The same agent instance wired into two places | Single-placement rule — `IllegalArgumentException` at construction time |
-| LLM doesn't know which skill to use | `skillSelection {}` predicates or automatic LLM routing — descriptions sell each skill to the router |
+| LLM doesn't know which skill to use | Manual `skillSelection {}` routing or automatic LLM routing — descriptions sell each skill to the router |
 | LLM doesn't know what context to load | `knowledge("key", "description") { }` entries — LLM reads descriptions before deciding to call |
 | Flat pipelines only | Six composition operators covering sequential, parallel, iterative, branching, detached spawn, and multi-agent patterns |
 | LLM output is an untyped string | `@Generable` + `@Guide` — `toLlmDescription()`, JSON Schema, prompt fragment, lenient deserializer, and `PartiallyGenerated<T>` via runtime reflection; KSP compile-time generation planned Phase 2 |
@@ -291,7 +291,7 @@ val a = agent<String, String>("coder") {
 
 When an agent has multiple skills with the same type signature, the framework decides which one to run. Three strategies, in priority order:
 
-**1. Predicate routing** — deterministic, zero LLM cost:
+**1. Manual routing via `skillSelection {}`** — deterministic, zero LLM cost. This can be a simple predicate, a `when`, or any other Kotlin logic that returns a skill name:
 
 ```kotlin
 val assistant = agent<String, String>("assistant") {
@@ -330,11 +330,11 @@ assistant("Translate this to French: Hello world")
 // → "Bonjour le monde"
 ```
 
-**3. First-match fallback** — when no predicate and no model, the first type-compatible skill wins (backward compatible).
+**3. First-match fallback** — when there is no `skillSelection {}` and no model-based routing, the first type-compatible skill wins (backward compatible).
 
 | Condition | Strategy |
 |-----------|----------|
-| `skillSelection {}` set | Predicate — always wins |
+| `skillSelection {}` set | Manual routing — always wins |
 | Multiple candidates + `model {}` | LLM routing turn |
 | Single candidate | Direct — no routing needed |
 | Multiple candidates, no model | First match |

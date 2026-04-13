@@ -121,16 +121,21 @@ class Agent<IN, OUT>(
     }
 
     private fun resolveSkill(input: IN): Skill<*, *> {
+        val candidates = skills.values.filter {
+            it.inType.java.isInstance(input) && it.outType == outType
+        }
+
         skillSelector?.let { selector ->
             val selectedName = selector(input)
-            return skills[selectedName] ?: error(
+            val selected = skills[selectedName] ?: error(
                 "skillSelection returned unknown skill name \"$selectedName\". " +
                     "Available: ${skills.keys}"
             )
-        }
-
-        val candidates = skills.values.filter {
-            it.inType.java.isInstance(input) && it.outType == outType
+            check(selected in candidates) {
+                "skillSelection returned incompatible skill \"$selectedName\". " +
+                    "Compatible skills for agent \"$name\": ${candidates.map { it.name }}"
+            }
+            return selected
         }
 
         return when {

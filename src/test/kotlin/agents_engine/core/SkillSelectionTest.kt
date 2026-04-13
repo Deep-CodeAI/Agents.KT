@@ -71,6 +71,44 @@ class SkillSelectionTest {
     }
 
     @Test
+    fun `skillSelection returning wrong input type skill throws clearly`() {
+        val a = agent<String, String>("a") {
+            skills {
+                skill<String, String>("upper", "Uppercase") {
+                    implementedBy { it.uppercase() }
+                }
+                skill<Int, String>("from-int", "Formats integers") {
+                    implementedBy { "n=$it" }
+                }
+            }
+            skillSelection { "from-int" }
+        }
+
+        val ex = assertThrows<IllegalStateException> { a("hello") }
+        assertTrue(ex.message!!.contains("incompatible"))
+        assertTrue(ex.message!!.contains("from-int"))
+    }
+
+    @Test
+    fun `skillSelection returning wrong output type skill throws clearly`() {
+        val a = agent<String, String>("a") {
+            skills {
+                skill<String, String>("upper", "Uppercase") {
+                    implementedBy { it.uppercase() }
+                }
+                skill<String, Int>("count", "Counts chars") {
+                    implementedBy { it.length }
+                }
+            }
+            skillSelection { "count" }
+        }
+
+        val ex = assertThrows<IllegalStateException> { a("hello") }
+        assertTrue(ex.message!!.contains("incompatible"))
+        assertTrue(ex.message!!.contains("count"))
+    }
+
+    @Test
     fun `single-skill agent without skillSelection still works`() {
         val a = agent<String, String>("a") {
             skills {
