@@ -14,18 +14,42 @@ object InlineToolCallParser {
     }
 
     fun toJson(call: ToolCall): String =
-        """{"tool":"${call.name}","arguments":${argsToJson(call.arguments)}}"""
+        """{"tool":${call.name.toJsonString()},"arguments":${argsToJson(call.arguments)}}"""
 
     fun argsToJson(args: Map<String, Any?>): String {
-        val entries = args.entries.joinToString(",") { (k, v) -> "\"$k\":${valueToJson(v)}" }
+        val entries = args.entries.joinToString(",") { (k, v) -> "${k.toJsonString()}:${valueToJson(v)}" }
         return "{$entries}"
     }
 
     private fun valueToJson(v: Any?): String = when (v) {
         null       -> "null"
-        is String  -> "\"${v.replace("\"", "\\\"")}\""
+        is String  -> v.toJsonString()
         is Number  -> v.toString()
         is Boolean -> v.toString()
-        else       -> "\"$v\""
+        is Map<*, *> -> v.entries.joinToString(",", "{", "}") { (k, value) ->
+            "${k.toString().toJsonString()}:${valueToJson(value)}"
+        }
+        is List<*> -> v.joinToString(",", "[", "]") { valueToJson(it) }
+        else       -> v.toString().toJsonString()
     }
+}
+
+private fun String.toJsonString(): String = buildString(length + 2) {
+    append('"')
+    for (ch in this@toJsonString) {
+        when (ch) {
+            '\\' -> append("\\\\")
+            '"' -> append("\\\"")
+            '\b' -> append("\\b")
+            '\u000C' -> append("\\f")
+            '\n' -> append("\\n")
+            '\r' -> append("\\r")
+            '\t' -> append("\\t")
+            else -> {
+                if (ch.code < 0x20) append("\\u%04x".format(ch.code))
+                else append(ch)
+            }
+        }
+    }
+    append('"')
 }

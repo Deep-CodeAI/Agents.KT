@@ -111,7 +111,9 @@ internal object LenientJsonParser {
                     sb.append(
                         when (s[pos]) {
                             '"' -> '"'; '\\' -> '\\'; '/' -> '/'
+                            'b' -> '\b'; 'f' -> '\u000C'
                             'n' -> '\n'; 'r' -> '\r'; 't' -> '\t'
+                            'u' -> parseUnicodeEscape() ?: 'u'
                             else -> s[pos]
                         }
                     )
@@ -122,6 +124,14 @@ internal object LenientJsonParser {
             }
             if (pos < s.length) pos++ // consume closing '"'
             return sb.toString()
+        }
+
+        private fun parseUnicodeEscape(): Char? {
+            if (pos + 4 >= s.length) return null
+            val hex = s.substring(pos + 1, pos + 5)
+            if (hex.any { !it.isDigit() && it.lowercaseChar() !in 'a'..'f' }) return null
+            pos += 4
+            return hex.toInt(16).toChar()
         }
 
         private fun parseBoolean(): Boolean =

@@ -149,6 +149,10 @@ class Agent<IN, OUT>(
         val builder = SkillsBuilder()
         builder.block()
         builder.entries.forEach { (skill, exec) ->
+            require(skill.name !in skills) {
+                "Agent \"$name\" already has a skill named \"${skill.name}\". " +
+                    "Skill names must be unique per agent."
+            }
             skills[skill.name] = skill
             if (skill.outType == outType && !skill.isAgentic) executors[skill.name] = exec
         }

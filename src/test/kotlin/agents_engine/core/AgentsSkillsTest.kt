@@ -49,4 +49,30 @@ class AgentsSkillsTest {
         }
     }
 
+    @Test
+    fun duplicateSkillNamesInSameBlockThrow() {
+        assertThrows<IllegalArgumentException> {
+            agent<String, String>("duplicateSkills") {
+                skills {
+                    skill<String, String>("dup") { implementedBy { it.uppercase() } }
+                    skill<Int, String>("dup") { implementedBy { it.toString() } }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun duplicateSkillNamesAcrossSkillsBlocksThrow() {
+        assertThrows<IllegalArgumentException> {
+            agent<String, String>("duplicateAcrossBlocks") {
+                skills {
+                    skill<String, String>("dup") { implementedBy { it } }
+                }
+                skills {
+                    skill<String, String>("dup") { implementedBy { "$it!" } }
+                }
+            }
+        }
+    }
+
 }

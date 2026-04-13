@@ -1,5 +1,6 @@
 package agents_engine.model
 
+import agents_engine.generation.LenientJsonParser
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -88,5 +89,78 @@ class InlineToolCallParserTest {
     @Test
     fun `returns null for empty object`() {
         assertNull(InlineToolCallParser.parse("{}"))
+    }
+
+    @Test
+    fun `toJson round-trips file paths and multiline content`() {
+        val call = ToolCall(
+            name = "write_file",
+            arguments = mapOf(
+                "path" to """C:\tmp\notes.txt""",
+                "content" to "first line\n\tsecond line",
+            ),
+        )
+
+        val parsed = InlineToolCallParser.parse(InlineToolCallParser.toJson(call))
+
+        assertNotNull(parsed)
+        assertEquals("write_file", parsed!!.name)
+        assertEquals("""C:\tmp\notes.txt""", parsed.arguments["path"])
+        assertEquals("first line\n\tsecond line", parsed.arguments["content"])
+    }
+
+    @Test
+    fun `toJson round-trips quoted and control characters`() {
+        val original = mapOf(
+            "quoted" to """say "hello" from C:\temp""",
+            "control" to "row1\rrow2\tindent\b\u000C\u0001",
+        )
+
+        val parsed = InlineToolCallParser.parse(
+            InlineToolCallParser.toJson(ToolCall(name = "echo", arguments = original))
+        )
+
+        assertNotNull(parsed)
+        assertEquals("echo", parsed!!.name)
+        assertEquals(original["quoted"], parsed.arguments["quoted"])
+        assertEquals(original["control"], parsed.arguments["control"])
+    }
+
+    @Test
+    fun `argsToJson preserves nested maps and lists`() {
+        val json = InlineToolCallParser.argsToJson(
+            mapOf(
+                "payload" to mapOf(
+                    "path" to """/tmp/demo""",
+                    "lines" to listOf("one", "two\nthree"),
+                ),
+            ),
+        )
+
+        val parsed = LenientJsonParser.parse(json) as? Map<*, *>
+        val payload = parsed?.get("payload") as? Map<*, *>
+
+        assertNotNull(payload)
+        assertEquals("/tmp/demo", payload!!["path"])
+        assertEquals(listOf("one", "two\nthree"), payload["lines"])
+    }
+
+    @Test
+    fun `argsToJson preserves escapes inside nested payloads`() {
+        val json = InlineToolCallParser.argsToJson(
+            mapOf(
+                "payload" to mapOf(
+                    "message" to """say "hello" from C:\tmp""",
+                    "notes" to listOf("a\rb", "c\t\bd", "\u0001"),
+                ),
+            ),
+        )
+
+        val parsed = LenientJsonParser.parse(json) as? Map<*, *>
+        val payload = parsed?.get("payload") as? Map<*, *>
+
+        assertNotNull(payload)
+        assertEquals("""say "hello" from C:\tmp""", payload!!["message"])
+        assertEquals(listOf("a\rb", "c\t\bd", "\u0001"), payload["notes"])
     }
 }

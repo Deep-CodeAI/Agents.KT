@@ -99,6 +99,18 @@ class LenientJsonParserTest {
     }
 
     @Test
+    fun `handles backspace and formfeed escapes`() {
+        val result = LenientJsonParser.parse("""{"text": "a\bb\fc"}""") as? Map<*, *>
+        assertEquals("a\bb\u000Cc", result!!["text"])
+    }
+
+    @Test
+    fun `handles unicode escape sequences`() {
+        val result = LenientJsonParser.parse("""{"text": "\u0001\u263A"}""") as? Map<*, *>
+        assertEquals("\u0001\u263A", result!!["text"])
+    }
+
+    @Test
     fun `returns null for plain text with no JSON structure`() {
         assertNull(LenientJsonParser.parse("this is not json at all"))
     }
