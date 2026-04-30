@@ -237,17 +237,18 @@ class AgenticLoopTest {
         val toolUses = mutableListOf<ToolUse>()
 
         val a = agent<String, Int>("calculator") {
-            prompt("You are a calculator. Use the provided tools to evaluate expressions step by step.")
+            prompt("You are a calculator. Use the provided tools to evaluate expressions step by step. After all tool calls, reply with ONLY the final number.")
             model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
             tools {
                 tool("add",      "Add two numbers. Args: a, b")             { args -> num(args, "a") + num(args, "b") }
                 tool("subtract", "Subtract b from a. Args: a, b")           { args -> num(args, "a") - num(args, "b") }
                 tool("multiply", "Multiply two numbers. Args: a, b")        { args -> num(args, "a") * num(args, "b") }
                 tool("divide",   "Divide a by b. Args: a, b")               { args -> num(args, "a") / num(args, "b") }
-                tool("power",    "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp").toDouble()).toInt() }
+                tool("power",    "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp")) }
             }
             skills { skill<String, Int>("solve", "Evaluate arithmetic expressions using tools") {
                 tools("add", "subtract", "multiply", "divide", "power")
+                transformOutput { it.trim().toIntOrNull() ?: Regex("-?\\d+").find(it)?.value?.toInt() ?: error("No integer in: $it") }
             }}
             onToolUse { name, args, result ->
                 toolUses.add(ToolUse(name, args, result))
@@ -258,8 +259,7 @@ class AgenticLoopTest {
         // ((15 + 35) / 2)^2  =  (50 / 2)^2  =  25^2  =  625
         val result = a("Calculate ((15 + 35) / 2)^2")
         println(result)
-//        assertTrue(result.contains("625"), "Expected 625 in result, got: $result")
-        assertEquals(result, 625, "Expected 625 in result, got: $result")
+        assertEquals(625, result, "Expected 625, got: $result")
 
         assertEquals(3, toolUses.size, "Expected exactly 3 tool calls")
 
