@@ -11,11 +11,15 @@ class AgentsSkillsTest {
     data class SomeSpec(val v: String, val k: Long)
 
     @Test
-    fun agentWithEmptySkillsCanBeCreated() {
-        val agent = agent<SomeAgentAsk, SomeIntermediate>("testAgent") {
-            skills {
+    fun agentWithEmptySkillsFailsFastAtConstruction() {
+        val error = assertThrows<IllegalArgumentException> {
+            agent<SomeAgentAsk, SomeIntermediate>("testAgent") {
+                skills {
+                }
             }
         }
+
+        kotlin.test.assertTrue(error.message!!.contains("must declare at least one skill"))
     }
 
     @Test

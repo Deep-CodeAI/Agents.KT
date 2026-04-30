@@ -228,6 +228,60 @@ class AgenticLoopTest {
         assertTrue(systemMsg.content.contains("Greet someone by name"))
     }
 
+    @Test
+    @Tag("live-llm")
+    fun `calculator agent solves nested arithmetic via tool chaining and with Int in the end`() {
+        fun num(args: Map<String, Any?>, key: String) = args[key].toString().toDouble()
+
+        data class ToolUse(val name: String, val args: Map<String, Any?>, val result: Any?)
+        val toolUses = mutableListOf<ToolUse>()
+
+        val a = agent<String, Int>("calculator") {
+            prompt("You are a calculator. Use the provided tools to evaluate expressions step by step.")
+            model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
+            tools {
+                tool("add",      "Add two numbers. Args: a, b")             { args -> num(args, "a") + num(args, "b") }
+                tool("subtract", "Subtract b from a. Args: a, b")           { args -> num(args, "a") - num(args, "b") }
+                tool("multiply", "Multiply two numbers. Args: a, b")        { args -> num(args, "a") * num(args, "b") }
+                tool("divide",   "Divide a by b. Args: a, b")               { args -> num(args, "a") / num(args, "b") }
+                tool("power",    "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp").toDouble()).toInt() }
+            }
+            skills { skill<String, Int>("solve", "Evaluate arithmetic expressions using tools") {
+                tools("add", "subtract", "multiply", "divide", "power")
+            }}
+            onToolUse { name, args, result ->
+                toolUses.add(ToolUse(name, args, result))
+                println("  $name(${args.values.joinToString(", ")}) = $result")
+            }
+        }
+
+        // ((15 + 35) / 2)^2  =  (50 / 2)^2  =  25^2  =  625
+        val result = a("Calculate ((15 + 35) / 2)^2")
+        println(result)
+//        assertTrue(result.contains("625"), "Expected 625 in result, got: $result")
+        assertEquals(result, 625, "Expected 625 in result, got: $result")
+
+        assertEquals(3, toolUses.size, "Expected exactly 3 tool calls")
+
+        val add = toolUses[0]
+        assertEquals("add", add.name)
+        assertEquals(15.0, add.args["a"].toString().toDouble())
+        assertEquals(35.0, add.args["b"].toString().toDouble())
+        assertEquals(50.0, add.result)
+
+        val divide = toolUses[1]
+        assertEquals("divide", divide.name)
+        assertEquals(50.0, divide.args["a"].toString().toDouble())
+        assertEquals(2.0,  divide.args["b"].toString().toDouble())
+        assertEquals(25.0, divide.result)
+
+        val power = toolUses[2]
+        assertEquals("power", power.name)
+        assertEquals(25.0, power.args["base"].toString().toDouble())
+        assertEquals(2.0,  power.args["exp"].toString().toDouble())
+        assertEquals(625.0, power.result)
+    }
+
     @Tag("live-llm")
     @Test
     fun `calculator agent solves nested arithmetic via tool chaining`() {

@@ -5,6 +5,8 @@ import agents_engine.core.Skill
 import agents_engine.generation.fromLlmOutput
 import kotlin.reflect.KClass
 
+private const val MAX_ARGUMENT_REPAIR_STEPS = 8
+
 /**
  * Runs the agentic loop for [skill] on [agent] with [input].
  * Returns the parsed output as [Any]; the caller casts it via the agent's castOut.
@@ -69,8 +71,7 @@ fun <IN> executeAgentic(
 
         when (response) {
             is LlmResponse.Text -> {
-                @Suppress("UNCHECKED_CAST")
-                return (skill.outputTransformer as? ((String) -> Any?))?.invoke(response.content)
+                return skill.outputTransformer?.invoke(response.content)
                     ?: parseOutput(response.content, agent.outType)
                     ?: error("Could not parse LLM output as ${agent.outType.simpleName}: '${response.content}'")
             }
@@ -136,8 +137,99 @@ private fun <IN> executeToolWithRecovery(
     call: ToolCall,
 ): Any? {
     val handler = agent.getToolErrorHandler(call.name)
+    call.invalidArgumentsError?.let { parseError ->
+        return recoverInvalidArguments(agent, tool, call, handler, parseError)
+    }
+    return executeToolWithExecutionRecovery(agent, tool, call.name, call.arguments, handler)
+}
+
+private fun <IN> recoverInvalidArguments(
+    agent: Agent<IN, *>,
+    tool: ToolDef,
+    call: ToolCall,
+    handler: ToolErrorHandler?,
+    parseError: String,
+): Any? {
+    val rawArguments = call.rawArguments ?: ""
+    if (handler == null) {
+        throw ToolExecutionException(
+            "Tool '${call.name}' received invalid arguments: $parseError",
+            IllegalArgumentException(parseError),
+        )
+    }
+
+    var currentRaw = rawArguments
+    var currentError = parseError
+    var useInvalidArgsHandler = true
+
+    repeat(MAX_ARGUMENT_REPAIR_STEPS) {
+        val result = if (useInvalidArgsHandler) {
+            handler.handleInvalidArgs(currentRaw, currentError)
+        } else {
+            handler.handleDeserializationError(currentRaw, currentError)
+        }
+
+        when (result) {
+            is RepairResult.Fixed -> {
+                val parsed = parseToolArguments(result.value)
+                if (parsed.parseError == null) {
+                    return executeToolWithExecutionRecovery(
+                        agent = agent,
+                        tool = tool,
+                        toolName = call.name,
+                        args = parsed.arguments,
+                        handler = handler,
+                    )
+                }
+                currentRaw = result.value
+                currentError = parsed.parseError
+                useInvalidArgsHandler = false
+            }
+            is RepairResult.Retry -> {
+                repeat(result.maxAttempts) {
+                    val parsed = parseToolArguments(currentRaw)
+                    if (parsed.parseError == null) {
+                        return executeToolWithExecutionRecovery(
+                            agent = agent,
+                            tool = tool,
+                            toolName = call.name,
+                            args = parsed.arguments,
+                            handler = handler,
+                        )
+                    }
+                }
+                throw ToolExecutionException(
+                    "Tool '${call.name}' arguments remained invalid after ${result.maxAttempts} retries",
+                    IllegalArgumentException(currentError),
+                )
+            }
+            is RepairResult.Escalated -> return formatEscalatedToolError(call.name, result)
+            is RepairResult.Unrecoverable -> throw ToolExecutionException(
+                "Tool '${call.name}' argument recovery was unrecoverable",
+                IllegalArgumentException(currentError),
+            )
+            null -> throw ToolExecutionException(
+                "Tool '${call.name}' received invalid arguments: $currentError",
+                IllegalArgumentException(currentError),
+            )
+        }
+    }
+
+    throw ToolExecutionException(
+        "Tool '${call.name}' argument recovery exceeded $MAX_ARGUMENT_REPAIR_STEPS repair steps",
+        IllegalArgumentException(currentError),
+    )
+}
+
+private fun <IN> executeToolWithExecutionRecovery(
+    agent: Agent<IN, *>,
+    tool: ToolDef,
+    toolName: String,
+    args: Map<String, Any?>,
+    handler: ToolErrorHandler?,
+): Any? {
     try {
-        return tool.executor(call.arguments)
+        return tool.executor(args)
     } catch (e: Throwable) {
         if (handler == null) throw e
 
@@ -146,29 +238,32 @@ private fun <IN> executeToolWithRecovery(
             is RepairResult.Retry -> {
                 repeat(result.maxAttempts) { attempt ->
                     try {
-                        return tool.executor(call.arguments)
+                        return tool.executor(args)
                     } catch (_: Throwable) {
                         if (attempt == result.maxAttempts - 1) {
                             throw ToolExecutionException(
-                                "Tool '${call.name}' failed after ${result.maxAttempts} retries", e
+                                "Tool '$toolName' failed after ${result.maxAttempts} retries", e
                             )
                         }
                     }
                 }
                 throw ToolExecutionException(
-                    "Tool '${call.name}' failed after ${result.maxAttempts} retries", e
+                    "Tool '$toolName' failed after ${result.maxAttempts} retries", e
                 )
             }
             is RepairResult.Fixed -> return result.value
-            is RepairResult.Escalated -> return "ERROR: Tool '${call.name}' failed: ${result.reason} " +
-                "(severity: ${result.severity}). Please retry with corrected arguments."
+            is RepairResult.Escalated -> return formatEscalatedToolError(toolName, result)
             is RepairResult.Unrecoverable -> throw ToolExecutionException(
-                "Tool '${call.name}' failed and recovery was unrecoverable", e
+                "Tool '$toolName' failed and recovery was unrecoverable", e
             )
             null -> throw e
         }
     }
 }
+
+private fun formatEscalatedToolError(toolName: String, result: RepairResult.Escalated): String =
+    "ERROR: Tool '$toolName' failed: ${result.reason} " +
+        "(severity: ${result.severity}). Please retry with corrected arguments."
 
 private fun parseOutput(text: String, outType: KClass<*>): Any? = when {
     outType == String::class -> text

@@ -14,12 +14,21 @@ class LoopPlacementTest {
     data class B(val v: Int)
     data class C(val v: Int)
 
+    private inline fun <reified IN : Any, reified OUT : Any> stubAgent(name: String, sampleOut: OUT): Agent<IN, OUT> =
+        agent(name) {
+            skills {
+                skill<IN, OUT>("$name-skill") {
+                    implementedBy { sampleOut }
+                }
+            }
+        }
+
     // ─── Agent inside loop is tracked ───
 
     @Test
     fun agentInLoopCannotBeReusedInPipeline() {
-        val a = agent<A, A>("a") {}
-        val b = agent<A, B>("b") {}
+        val a = stubAgent<A, A>("a", A(1))
+        val b = stubAgent<A, B>("b", B(2))
 
         a.loop { null }
 
@@ -30,7 +39,7 @@ class LoopPlacementTest {
 
     @Test
     fun agentInLoopCannotBeReusedInAnotherLoop() {
-        val a = agent<A, A>("a") {}
+        val a = stubAgent<A, A>("a", A(1))
 
         a.loop { null }
 
@@ -41,8 +50,8 @@ class LoopPlacementTest {
 
     @Test
     fun agentInLoopCannotBeReusedInForum() {
-        val a = agent<A, A>("a") {}
-        val b = agent<A, B>("b") {}
+        val a = stubAgent<A, A>("a", A(1))
+        val b = stubAgent<A, B>("b", B(2))
 
         a.loop { null }
 
@@ -53,8 +62,8 @@ class LoopPlacementTest {
 
     @Test
     fun agentInLoopCannotBeReusedInParallel() {
-        val a = agent<A, A>("a") {}
-        val b = agent<A, A>("b") {}
+        val a = stubAgent<A, A>("a", A(1))
+        val b = stubAgent<A, A>("b", A(2))
 
         a.loop { null }
 
@@ -67,8 +76,8 @@ class LoopPlacementTest {
 
     @Test
     fun agentInPipelineCannotBeReusedInLoop() {
-        val a = agent<A, B>("a") {}
-        val b = agent<B, C>("b") {}
+        val a = stubAgent<A, B>("a", B(2))
+        val b = stubAgent<B, C>("b", C(3))
 
         a then b
 

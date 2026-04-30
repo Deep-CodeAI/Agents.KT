@@ -3,6 +3,7 @@ package agents_engine.model
 import agents_engine.core.agent
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class ToolErrorAgenticLoopTest {
@@ -179,5 +180,89 @@ class ToolErrorAgenticLoopTest {
         val toolMsg = secondCall.last { it.role == "tool" }
         assertTrue(toolMsg.content.contains("Cannot fix schema"), "Error should be fed back: ${toolMsg.content}")
         assertTrue(toolMsg.content.contains("CRITICAL"), "Severity should be in message: ${toolMsg.content}")
+    }
+
+    @Test
+    fun `invalidArgs handler repairs malformed tool arguments inside agentic loop`() {
+        val fixer = agent<String, String>("args-fixer") {
+            skills {
+                skill<String, String>("fix", "Repair malformed JSON arguments") {
+                    implementedBy { """{"value": 21}""" }
+                }
+            }
+        }
+
+        val toolResults = mutableListOf<Any?>()
+        val responses = ArrayDeque<LlmResponse>()
+        responses.add(
+            LlmResponse.ToolCalls(
+                listOf(
+                    ToolCall(
+                        name = "double",
+                        rawArguments = """{"value": 21 trailing""",
+                        invalidArgumentsError = "Could not parse tool arguments as JSON object.",
+                    )
+                )
+            )
+        )
+        responses.add(LlmResponse.Text("done"))
+        val mock = ModelClient { _ -> responses.removeFirst() }
+
+        val a = agent<String, String>("a") {
+            model { ollama("test"); client = mock }
+            tools {
+                tool("double", "Double the value argument") { args ->
+                    ((args["value"] as Number).toInt() * 2).toString()
+                }
+            }
+            onToolError("double") {
+                invalidArgs { _, _ -> fix(agent = fixer) }
+            }
+            skills { skill<String, String>("s", "s") { tools("double") } }
+            onToolUse { _, _, result -> toolResults.add(result) }
+        }
+
+        assertEquals("done", a("input"))
+        assertEquals(listOf<Any?>("42"), toolResults)
+    }
+
+    @Test
+    fun `deserializationError handler repairs invalid fixed arguments inside agentic loop`() {
+        val toolResults = mutableListOf<Any?>()
+        val responses = ArrayDeque<LlmResponse>()
+        responses.add(
+            LlmResponse.ToolCalls(
+                listOf(
+                    ToolCall(
+                        name = "double",
+                        rawArguments = """{"value": nope""",
+                        invalidArgumentsError = "Could not parse tool arguments as JSON object.",
+                    )
+                )
+            )
+        )
+        responses.add(LlmResponse.Text("done"))
+        val mock = ModelClient { _ -> responses.removeFirst() }
+
+        val a = agent<String, String>("a") {
+            model { ollama("test"); client = mock }
+            tools {
+                tool("double", "Double the value argument") { args ->
+                    ((args["value"] as Number).toInt() * 2).toString()
+                }
+            }
+            onToolError("double") {
+                invalidArgs { _, _ -> RepairResult.Fixed("still not json") }
+                deserializationError { _, _ -> RepairResult.Fixed("""{"value": 9}""") }
+            }
+            skills { skill<String, String>("s", "s") { tools("double") } }
+            onToolUse { _, _, result -> toolResults.add(result) }
+        }
+
+        val result = a("input")
+
+        assertIs<String>(result)
+        assertEquals("done", result)
+        assertEquals(listOf<Any?>("18"), toolResults)
     }
 }

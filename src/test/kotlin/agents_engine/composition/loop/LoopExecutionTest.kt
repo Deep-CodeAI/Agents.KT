@@ -5,6 +5,7 @@ import agents_engine.composition.pipeline.then
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class LoopExecutionTest {
 
@@ -62,5 +63,18 @@ class LoopExecutionTest {
         val pipeline = prepare then loop then finalize
         // "hi".length=2, loop: 2→3→4→5 stop, "result:5"
         assertEquals("result:5", pipeline("hi"))
+    }
+
+    @Test
+    fun loopFailsWhenMaxIterationsIsExceeded() {
+        val loop = agent<Int, Int>("inc") {
+            skills { skill<Int, Int>("inc") { implementedBy { it + 1 } } }
+        }.loop(maxIterations = 3) { result -> result }
+
+        val error = assertThrows<IllegalStateException> {
+            loop(0)
+        }
+
+        assertTrue(error.message!!.contains("maxIterations=3"))
     }
 }

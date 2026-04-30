@@ -18,14 +18,23 @@ class OllamaClientIntegrationTest {
     private val greetTool = ToolDef("greet", "Greet a person by name") { it }
     private val client = OllamaClient(host = HOST, port = PORT, model = MODEL, temperature = 0.0, tools = listOf(greetTool))
 
+    @Test
+    fun `malformed native tool arguments are surfaced as invalid args instead of empty map`() {
+        val parsed = parseToolArguments("""["Alice"]""")
+
+        assertEquals("""["Alice"]""", parsed.rawArguments)
+        assertTrue(parsed.parseError != null, "Malformed arguments should report a parse error")
+        assertEquals(emptyMap<String, Any?>(), parsed.arguments)
+    }
+
     @Tag("live-llm")
     @Test
     fun `returns text response for simple prompt`() {
         val response = client.chat(listOf(
             LlmMessage("user", "Reply with exactly the word: pong"),
         ))
-        assertIs<LlmResponse.Text>(response)
-        assertTrue((response as LlmResponse.Text).content.isNotBlank())
+        val text = assertIs<LlmResponse.Text>(response)
+        assertTrue(text.content.isNotBlank())
     }
 
     @Tag("live-llm")
@@ -48,8 +57,8 @@ class OllamaClientIntegrationTest {
             LlmMessage("user", "Greet Alice using the greet tool."),
         )
         val response = client.chat(messages)
-        assertIs<LlmResponse.ToolCalls>(response)
-        val call = (response as LlmResponse.ToolCalls).calls.first()
+        val toolCalls = assertIs<LlmResponse.ToolCalls>(response)
+        val call = toolCalls.calls.first()
         println(call)
         assertEquals("greet", call.name)
         assertNotNull(call.arguments["name"])

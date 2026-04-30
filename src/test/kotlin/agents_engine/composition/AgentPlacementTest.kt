@@ -14,21 +14,30 @@ class AgentPlacementTest {
     data class C(val v: String)
     data class D(val v: String)
 
+    private inline fun <reified IN : Any, reified OUT : Any> stubAgent(name: String, sampleOut: OUT): Agent<IN, OUT> =
+        agent(name) {
+            skills {
+                skill<IN, OUT>("$name-skill") {
+                    implementedBy { sampleOut }
+                }
+            }
+        }
+
     // ─── Pipeline ───
 
     @Test
     fun agentCanBePlacedInPipelineOnce() {
-        val a = agent<A, B>("a") {}
-        val b = agent<B, C>("b") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<B, C>("b", C("c"))
         val pipeline = a then b
         assert(pipeline.agents.size == 2)
     }
 
     @Test
     fun agentCannotBePlacedInTwoPipelines() {
-        val a = agent<A, B>("a") {}
-        val b = agent<B, C>("b") {}
-        val c = agent<B, C>("c") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<B, C>("b", C("c"))
+        val c = stubAgent<B, C>("c", C("c"))
 
         a then b
 
@@ -39,8 +48,8 @@ class AgentPlacementTest {
 
     @Test
     fun agentCannotAppearTwiceInSamePipeline() {
-        val a = agent<A, B>("a") {}
-        val b = agent<B, A>("b") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<B, A>("b", A("a"))
 
         val pipeline = a then b
 
@@ -53,17 +62,17 @@ class AgentPlacementTest {
 
     @Test
     fun agentCanBePlacedInForumOnce() {
-        val a = agent<A, B>("a") {}
-        val b = agent<A, C>("b") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<A, C>("b", C("c"))
         val forum = a * b
         assert(forum.agents.size == 2)
     }
 
     @Test
     fun agentCannotBePlacedInTwoForums() {
-        val a = agent<A, B>("a") {}
-        val b = agent<A, C>("b") {}
-        val c = agent<A, C>("c") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<A, C>("b", C("c"))
+        val c = stubAgent<A, C>("c", C("c"))
 
         a * b
 
@@ -74,8 +83,8 @@ class AgentPlacementTest {
 
     @Test
     fun agentCannotAppearTwiceInSameForum() {
-        val a = agent<A, B>("a") {}
-        val b = agent<A, C>("b") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<A, C>("b", C("c"))
 
         val forum = a * b
 
@@ -88,9 +97,9 @@ class AgentPlacementTest {
 
     @Test
     fun agentInPipelineCannotBeReusedInForum() {
-        val a = agent<A, B>("a") {}
-        val b = agent<B, C>("b") {}
-        val c = agent<A, C>("c") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<B, C>("b", C("c"))
+        val c = stubAgent<A, C>("c", C("c"))
 
         a then b
 
@@ -101,9 +110,9 @@ class AgentPlacementTest {
 
     @Test
     fun agentInForumCannotBeReusedInPipeline() {
-        val a = agent<A, B>("a") {}
-        val b = agent<A, C>("b") {}
-        val c = agent<B, C>("c") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<A, C>("b", C("c"))
+        val c = stubAgent<B, C>("c", C("c"))
 
         a * b
 
@@ -116,17 +125,17 @@ class AgentPlacementTest {
 
     @Test
     fun agentCanBePlacedInParallelOnce() {
-        val a = agent<A, B>("a") {}
-        val b = agent<A, B>("b") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<A, B>("b", B("b"))
         val parallel = a / b
         assert(parallel.agents.size == 2)
     }
 
     @Test
     fun agentCannotBePlacedInTwoParallels() {
-        val a = agent<A, B>("a") {}
-        val b = agent<A, B>("b") {}
-        val c = agent<A, B>("c") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<A, B>("b", B("b"))
+        val c = stubAgent<A, B>("c", B("b"))
 
         a / b
 
@@ -137,8 +146,8 @@ class AgentPlacementTest {
 
     @Test
     fun agentCannotAppearTwiceInSameParallel() {
-        val a = agent<A, B>("a") {}
-        val b = agent<A, B>("b") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<A, B>("b", B("b"))
 
         val parallel = a / b
 
@@ -151,9 +160,9 @@ class AgentPlacementTest {
 
     @Test
     fun agentInParallelCannotBeReusedInPipeline() {
-        val a = agent<A, B>("a") {}
-        val b = agent<A, B>("b") {}
-        val c = agent<B, C>("c") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<A, B>("b", B("b"))
+        val c = stubAgent<B, C>("c", C("c"))
 
         a / b
 
@@ -164,9 +173,9 @@ class AgentPlacementTest {
 
     @Test
     fun agentInPipelineCannotBeReusedInParallel() {
-        val a = agent<A, B>("a") {}
-        val b = agent<B, C>("b") {}
-        val c = agent<A, B>("c") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<B, C>("b", C("c"))
+        val c = stubAgent<A, B>("c", B("b"))
 
         a then b
 
@@ -179,9 +188,9 @@ class AgentPlacementTest {
 
     @Test
     fun agentInParallelCannotBeReusedInForum() {
-        val a = agent<A, B>("a") {}
-        val b = agent<A, B>("b") {}
-        val c = agent<A, C>("c") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<A, B>("b", B("b"))
+        val c = stubAgent<A, C>("c", C("c"))
 
         a / b
 
@@ -192,9 +201,9 @@ class AgentPlacementTest {
 
     @Test
     fun agentInForumCannotBeReusedInParallel() {
-        val a = agent<A, B>("a") {}
-        val b = agent<A, C>("b") {}
-        val c = agent<A, B>("c") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<A, C>("b", C("c"))
+        val c = stubAgent<A, B>("c", B("b"))
 
         a * b
 
@@ -207,10 +216,10 @@ class AgentPlacementTest {
 
     @Test
     fun agentLeadingIntoForumIsTracked() {
-        val a = agent<A, B>("a") {}
-        val b = agent<B, C>("b") {}
-        val c = agent<B, D>("c") {}
-        val d = agent<A, B>("d") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<B, C>("b", C("c"))
+        val c = stubAgent<B, D>("c", D("d"))
+        val d = stubAgent<A, B>("d", B("b"))
 
         a then (b * c)  // a is a connector: leads pipeline into forum
 
@@ -221,10 +230,10 @@ class AgentPlacementTest {
 
     @Test
     fun agentLeadingIntoParallelIsTracked() {
-        val a = agent<A, B>("a") {}
-        val b = agent<B, C>("b") {}
-        val c = agent<B, C>("c") {}
-        val d = agent<A, B>("d") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<B, C>("b", C("c"))
+        val c = stubAgent<B, C>("c", C("c"))
+        val d = stubAgent<A, B>("d", B("b"))
 
         a then (b / c)  // a is a connector: leads pipeline into parallel
 
@@ -235,14 +244,14 @@ class AgentPlacementTest {
 
     @Test
     fun aggregatorAfterParallelIsTracked() {
-        val a = agent<A, B>("a") {}
-        val b = agent<A, B>("b") {}
-        val agg = agent<List<B>, C>("agg") {}
+        val a = stubAgent<A, B>("a", B("b"))
+        val b = stubAgent<A, B>("b", B("b"))
+        val agg = stubAgent<List<B>, C>("agg", C("c"))
 
         (a / b) then agg  // agg is a connector: trails parallel into pipeline
 
-        val c = agent<A, B>("c") {}
-        val d = agent<A, B>("d") {}
+        val c = stubAgent<A, B>("c", B("b"))
+        val d = stubAgent<A, B>("d", B("b"))
         assertThrows<IllegalArgumentException> {
             (c / d) then agg  // agg was already placed — must throw
         }

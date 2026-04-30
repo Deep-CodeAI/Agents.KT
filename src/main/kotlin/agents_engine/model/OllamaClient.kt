@@ -6,6 +6,48 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 
+internal data class ParsedToolArguments(
+    val arguments: Map<String, Any?>,
+    val rawArguments: String? = null,
+    val parseError: String? = null,
+)
+
+internal fun parseToolArguments(rawArgs: Any?): ParsedToolArguments = when (rawArgs) {
+    null -> ParsedToolArguments(emptyMap())
+    is Map<*, *> -> ParsedToolArguments(
+        arguments = rawArgs.entries.associate { (k, v) -> k.toString() to v },
+    )
+    is String -> {
+        val trimmed = rawArgs.trim()
+        if (trimmed.isEmpty()) {
+            ParsedToolArguments(emptyMap(), rawArguments = rawArgs)
+        } else {
+            val parsed = LenientJsonParser.parse(rawArgs)
+            when (parsed) {
+                is Map<*, *> -> ParsedToolArguments(
+                    arguments = parsed.entries.associate { (k, v) -> k.toString() to v },
+                    rawArguments = rawArgs,
+                )
+                null -> ParsedToolArguments(
+                    arguments = emptyMap(),
+                    rawArguments = rawArgs,
+                    parseError = "Could not parse tool arguments as JSON object.",
+                )
+                else -> ParsedToolArguments(
+                    arguments = emptyMap(),
+                    rawArguments = rawArgs,
+                    parseError = "Tool arguments must decode to a JSON object.",
+                )
+            }
+        }
+    }
+    else -> ParsedToolArguments(
+        arguments = emptyMap(),
+        rawArguments = rawArgs.toString(),
+        parseError = "Tool arguments must be provided as a JSON object.",
+    )
+}
+
 class OllamaClient(
     private val host: String = "localhost",
     private val port: Int = 11434,
@@ -44,7 +86,7 @@ class OllamaClient(
         }
         val toolsJson = if (tools.isNotEmpty()) {
             val defs = tools.joinToString(",") { t ->
-                """{"type":"function","function":{"name":"${t.name}","description":${t.description.toJsonString()},"parameters":{"type":"object","properties":{}}}}"""
+                """{"type":"function","function":{"name":"${t.name}","description":${t.description.toJsonString()},"parameters":{"type":"object","properties":{},"additionalProperties":true}}}"""
             }
             ""","tools":[$defs]"""
         } else ""
@@ -64,14 +106,13 @@ class OllamaClient(
             val calls = rawToolCalls.mapNotNull { tc ->
                 val fn = (tc as? Map<*, *>)?.get("function") as? Map<*, *> ?: return@mapNotNull null
                 val name = fn["name"] as? String ?: return@mapNotNull null
-                val rawArgs = fn["arguments"]
-                val arguments = when (rawArgs) {
-                    is Map<*, *> -> rawArgs.entries.associate { (k, v) -> k.toString() to v }
-                    is String    -> (LenientJsonParser.parse(rawArgs) as? Map<*, *>)
-                        ?.entries?.associate { (k, v) -> k.toString() to v } ?: emptyMap()
-                    else         -> emptyMap()
-                }
-                ToolCall(name = name, arguments = arguments)
+                val parsedArgs = parseToolArguments(fn["arguments"])
+                ToolCall(
+                    name = name,
+                    arguments = parsedArgs.arguments,
+                    rawArguments = parsedArgs.rawArguments,
+                    invalidArgumentsError = parsedArgs.parseError,
+                )
             }
             if (calls.isNotEmpty()) return LlmResponse.ToolCalls(calls)
         }

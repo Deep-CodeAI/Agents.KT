@@ -6,6 +6,15 @@ import org.junit.jupiter.api.Test
 
 class AgentsForumTest {
 
+    private inline fun <reified IN : Any, reified OUT : Any> stubAgent(name: String, sampleOut: OUT): Agent<IN, OUT> =
+        agent(name) {
+            skills {
+                skill<IN, OUT>("$name-skill") {
+                    implementedBy { sampleOut }
+                }
+            }
+        }
+
     @Test
     fun test() {
         data class Input(val text: String)
@@ -13,13 +22,13 @@ class AgentsForumTest {
         data class Result(val text: String)
         data class Opinion(val text: String)
         data class Opinions(val opinions: List<Opinion>)
-        val inputToSpecsConverter = agent<Input, Specs>("inputToSpecs") {}
+        val inputToSpecsConverter = stubAgent<Input, Specs>("inputToSpecs", Specs("specs"))
 
-        val forumInitiationAgent = agent<Specs, Opinion>("forumStarter") {}
-        val crazyCodeSlopGenerator = agent<Specs, Opinion>("crazyCodeSlopGenerator") {}
-        val passiveCodeGenerator = agent<Specs, Opinions>("passiveCodeGenerator") {}
-        val answerMaster = agent<Specs, Result>("answerMaster") {}
-        val printMaster = agent<Result, String>("messenger") {}
+        val forumInitiationAgent = stubAgent<Specs, Opinion>("forumStarter", Opinion("start"))
+        val crazyCodeSlopGenerator = stubAgent<Specs, Opinion>("crazyCodeSlopGenerator", Opinion("slop"))
+        val passiveCodeGenerator = stubAgent<Specs, Opinions>("passiveCodeGenerator", Opinions(emptyList()))
+        val answerMaster = stubAgent<Specs, Result>("answerMaster", Result("result"))
+        val printMaster = stubAgent<Result, String>("messenger", "sent")
 
         val pipeline = inputToSpecsConverter then (forumInitiationAgent * crazyCodeSlopGenerator * passiveCodeGenerator * answerMaster) then printMaster
     }

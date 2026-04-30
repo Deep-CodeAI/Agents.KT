@@ -1,6 +1,7 @@
 package agents_engine.core
 
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 
 
 class AgentEntityDSLTest {
@@ -11,6 +12,19 @@ class AgentEntityDSLTest {
     @Test
     fun agentsWork() {
         val someAgent = agent<SomeAgentAsk, SomeAgentResult>("SomeAgentAsk-to-SomeAgentResult") {
+            skills {
+                skill<SomeAgentAsk, SomeAgentResult>("convert") {
+                    implementedBy { SomeAgentResult(it.v, 1L) }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun emptyAgentFailsFast() {
+        assertThrows<IllegalArgumentException> {
+            agent<SomeAgentAsk, SomeAgentResult>("invalid") {
+            }
         }
     }
 

@@ -46,8 +46,9 @@ class SkillInvokeTest {
     }
 
     @Test
-    fun agentWithNoSkillsThrowsOnInvoke() {
-        val a = agent<Input, Output>("a") {}
-        assertThrows<IllegalStateException> { a(Input("x")) }
+    fun agentWithNoSkillsFailsAtConstruction() {
+        assertThrows<IllegalArgumentException> {
+            agent<Input, Output>("a") {}
+        }
     }
 }

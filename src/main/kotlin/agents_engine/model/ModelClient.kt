@@ -6,7 +6,12 @@ data class LlmMessage(
     val toolCalls: List<ToolCall>? = null,
 )
 
-data class ToolCall(val name: String, val arguments: Map<String, Any?>)
+data class ToolCall(
+    val name: String,
+    val arguments: Map<String, Any?> = emptyMap(),
+    val rawArguments: String? = null,
+    val invalidArgumentsError: String? = null,
+)
 
 sealed interface LlmResponse {
     data class Text(val content: String) : LlmResponse

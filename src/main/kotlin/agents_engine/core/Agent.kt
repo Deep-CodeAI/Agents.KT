@@ -179,11 +179,12 @@ class Agent<IN, OUT>(
     }
 
     fun validate() {
-        if (skills.isNotEmpty()) {
-            require(skills.values.any { it.outType == outType }) {
-                "Agent \"$name\" has no skill producing ${outType.simpleName}. " +
-                    "At least one skill must return the agent's OUT type."
-            }
+        require(skills.isNotEmpty()) {
+            "Agent \"$name\" must declare at least one skill."
+        }
+        require(skills.values.any { it.outType == outType }) {
+            "Agent \"$name\" has no skill producing ${outType.simpleName}. " +
+                "At least one skill must return the agent's OUT type."
         }
     }
 }
