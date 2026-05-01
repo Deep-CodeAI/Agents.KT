@@ -43,7 +43,7 @@ Rules: exactly one memory_read, exactly one memory_write, then reply with just t
         onToolUse { name, args, result -> println("  [$name] args=$args → $result  (bank: ${bank.read("fibonacci")})") }
     }
 
-//    @Tag("live-llm")
+    @Tag("live-llm")
     @Test
     fun `fibonacci via memory-only generates correct sequence`() {
         val bank = MemoryBank()
