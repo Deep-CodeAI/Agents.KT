@@ -195,7 +195,21 @@ class Agent<IN, OUT>(
         placedIn = context
     }
 
-    operator fun invoke(input: IN): OUT {
+    /**
+     * Blocking entry point — preserved for back-compat. Routes through [invokeSuspend]
+     * via a single `runBlocking` at the user-facing boundary. See #638: internal
+     * composition (Pipeline / Forum / Parallel / Loop / Branch) calls [invokeSuspend]
+     * directly so the framework never wraps `runBlocking` around itself.
+     */
+    operator fun invoke(input: IN): OUT = kotlinx.coroutines.runBlocking { invokeSuspend(input) }
+
+    /**
+     * Suspending entry point (#638). Callers in coroutine scopes — including the
+     * suspending invokeSuspend on every composition operator — call this directly,
+     * which lets parent-scope cancellation and `withTimeout` propagate cleanly into
+     * the agentic loop. The blocking [invoke] is a thin shim over this.
+     */
+    suspend fun invokeSuspend(input: IN): OUT {
         val skill = resolveSkill(input)
         skillChosenListener?.invoke(skill.name)
         return if (skill.isAgentic) {
@@ -205,7 +219,7 @@ class Agent<IN, OUT>(
         }
     }
 
-    private fun resolveSkill(input: IN): Skill<*, *> {
+    private suspend fun resolveSkill(input: IN): Skill<*, *> {
         val candidates = skills.values.filter {
             it.inType.java.isInstance(input) && it.outType == outType
         }

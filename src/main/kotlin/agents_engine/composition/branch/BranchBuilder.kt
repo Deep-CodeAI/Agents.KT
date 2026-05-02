@@ -13,11 +13,11 @@ class BranchBuilder<OUT> {
     ) {
         infix fun then(agent: Agent<T, OUT>) {
             agent.markPlaced("branch")
-            routes += BranchRoute.TypeRoute(klass) { input -> agent(castFn(input)) }
+            routes += BranchRoute.TypeRoute(klass) { input -> agent.invokeSuspend(castFn(input)) }
         }
 
         infix fun then(pipeline: Pipeline<T, OUT>) {
-            routes += BranchRoute.TypeRoute(klass) { input -> pipeline(castFn(input)) }
+            routes += BranchRoute.TypeRoute(klass) { input -> pipeline.invokeSuspend(castFn(input)) }
         }
     }
 
@@ -38,13 +38,13 @@ class BranchBuilder<OUT> {
     infix fun OnNull.then(agent: Agent<*, OUT>) {
         @Suppress("UNCHECKED_CAST")
         (agent as Agent<Any?, OUT>).markPlaced("branch")
-        routes += BranchRoute.NullRoute { _ -> @Suppress("UNCHECKED_CAST") (agent as Agent<Any?, OUT>)(null) }
+        routes += BranchRoute.NullRoute { _ -> @Suppress("UNCHECKED_CAST") (agent as Agent<Any?, OUT>).invokeSuspend(null) }
     }
 
     infix fun OnElse.then(agent: Agent<*, OUT>) {
         @Suppress("UNCHECKED_CAST")
         (agent as Agent<Any?, OUT>).markPlaced("branch")
-        routes += BranchRoute.ElseRoute { input -> @Suppress("UNCHECKED_CAST") (agent as Agent<Any?, OUT>)(input) }
+        routes += BranchRoute.ElseRoute { input -> @Suppress("UNCHECKED_CAST") (agent as Agent<Any?, OUT>).invokeSuspend(input) }
     }
 
     inline fun <reified T : Any> on(): OnClause<T> = OnClause(T::class) { it as T }

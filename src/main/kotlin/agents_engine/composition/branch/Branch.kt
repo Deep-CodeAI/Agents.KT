@@ -1,6 +1,7 @@
 package agents_engine.composition.branch
 
 import agents_engine.core.*
+import kotlinx.coroutines.runBlocking
 import kotlin.reflect.KClass
 
 /**
@@ -11,20 +12,25 @@ import kotlin.reflect.KClass
  * - `TypeRoute(klass)`: matches via `klass.isInstance(result)` — covers subtypes.
  * - `NullRoute`: matches when the result is `null`.
  * - `ElseRoute`: matches anything not handled by earlier routes.
+ *
+ * #638: executors are suspend so a branch can dispatch into agents/pipelines via
+ * their suspending entry points without nested `runBlocking`.
  */
 sealed interface BranchRoute<OUT> {
-    val executor: (Any?) -> OUT
-    data class TypeRoute<OUT>(val klass: KClass<*>, override val executor: (Any?) -> OUT) : BranchRoute<OUT>
-    data class NullRoute<OUT>(override val executor: (Any?) -> OUT) : BranchRoute<OUT>
-    data class ElseRoute<OUT>(override val executor: (Any?) -> OUT) : BranchRoute<OUT>
+    val executor: suspend (Any?) -> OUT
+    data class TypeRoute<OUT>(val klass: KClass<*>, override val executor: suspend (Any?) -> OUT) : BranchRoute<OUT>
+    data class NullRoute<OUT>(override val executor: suspend (Any?) -> OUT) : BranchRoute<OUT>
+    data class ElseRoute<OUT>(override val executor: suspend (Any?) -> OUT) : BranchRoute<OUT>
 }
 
 class Branch<IN, OUT> internal constructor(
     private val source: Agent<IN, *>,
     private val routes: List<BranchRoute<OUT>>,
 ) {
-    operator fun invoke(input: IN): OUT {
-        val result: Any? = source(input)
+    operator fun invoke(input: IN): OUT = runBlocking { invokeSuspend(input) }
+
+    suspend fun invokeSuspend(input: IN): OUT {
+        val result: Any? = source.invokeSuspend(input)
         if (result == null) {
             val nullRoute = routes.firstOrNull { it is BranchRoute.NullRoute }
                 ?: routes.firstOrNull { it is BranchRoute.ElseRoute }

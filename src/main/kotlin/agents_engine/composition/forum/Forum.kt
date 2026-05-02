@@ -5,7 +5,9 @@ import agents_engine.generation.constructFromMap
 import agents_engine.generation.fromLlmOutput
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlin.reflect.KClass
 
 /**
@@ -38,16 +40,25 @@ class Forum<IN, OUT>(
         mentionListener = block
     }
 
+    operator fun invoke(input: IN): OUT = runBlocking { invokeSuspend(input) }
+
+    /**
+     * #638: participants run concurrently inside `coroutineScope`, not
+     * `runBlocking(Dispatchers.Default)`. Cancellation, timeouts, and dispatcher
+     * choice all live with the caller — the framework no longer creates its own
+     * scope inside the agentic loop.
+     */
     @Suppress("UNCHECKED_CAST")
-    operator fun invoke(input: IN): OUT = try {
-        runBlocking(Dispatchers.Default) {
+    suspend fun invokeSuspend(input: IN): OUT = try {
+        withContext(Dispatchers.Default) {
+            coroutineScope {
             val participants = agents.dropLast(1)
             val captain = agents.last()
 
             // All participants process the input concurrently
             val contributions = participants.map { agent ->
                 async {
-                    val output = (agent as Agent<IN, Any?>)(input)
+                    val output = (agent as Agent<IN, Any?>).invokeSuspend(input)
                     mentionListener?.invoke(agent.name, output)
                     ParticipantContribution(agent.name, output)
                 }
@@ -56,12 +67,13 @@ class Forum<IN, OUT>(
             // Captain delivers the final verdict
             val verdict: OUT = if (captainTakesTranscript) {
                 val transcript = ForumTranscript(originalInput = input, contributions = contributions)
-                (captain as Agent<ForumTranscript<IN>, OUT>)(transcript)
+                (captain as Agent<ForumTranscript<IN>, OUT>).invokeSuspend(transcript)
             } else {
-                (captain as Agent<IN, OUT>)(input)
+                (captain as Agent<IN, OUT>).invokeSuspend(input)
             }
             mentionListener?.invoke(captain.name, verdict)
             verdict
+            }
         }
     } catch (e: ForumReturnException) {
         castForumReturn(e.value)

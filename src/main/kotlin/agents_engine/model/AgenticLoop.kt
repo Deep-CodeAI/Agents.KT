@@ -7,6 +7,8 @@ import agents_engine.generation.constructFromMap
 import agents_engine.generation.fromLlmOutput
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.reflect.KClass
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private const val MAX_ARGUMENT_REPAIR_STEPS = 8
 
@@ -14,7 +16,7 @@ private const val MAX_ARGUMENT_REPAIR_STEPS = 8
  * Runs the agentic loop for [skill] on [agent] with [input].
  * Returns the parsed output as [Any]; the caller casts it via the agent's castOut.
  */
-fun <IN> executeAgentic(
+suspend fun <IN> executeAgentic(
     agent: Agent<IN, *>,
     skill: Skill<*, *>,
     input: IN,
@@ -106,7 +108,7 @@ fun <IN> executeAgentic(
                 BudgetReason.TURNS,
             )
 
-        val response = client.chat(messages)
+        val response = withContext(Dispatchers.IO) { client.chat(messages) }
         turns++
 
         when (response) {
@@ -152,7 +154,7 @@ fun <IN> executeAgentic(
  * (older / smaller models), falls back to treating it as a skill name with
  * confidence = 1.0.
  */
-fun <IN> selectSkillByLlm(
+suspend fun <IN> selectSkillByLlm(
     agent: Agent<IN, *>,
     candidates: List<Skill<*, *>>,
     input: IN,
@@ -180,7 +182,7 @@ fun <IN> selectSkillByLlm(
     )
 
     val client = config.client ?: OllamaClient(config.host, config.port, config.name, config.temperature)
-    val response = client.chat(messages)
+    val response = withContext(Dispatchers.IO) { client.chat(messages) }
 
     val raw = when (response) {
         is LlmResponse.Text -> response.content.trim()
