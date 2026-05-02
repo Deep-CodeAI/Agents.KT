@@ -258,6 +258,13 @@ fun <T : Any> KClass<T>.fromLlmOutput(json: String): T? {
 @PublishedApi
 internal fun <T : Any> KClass<T>.constructFromMap(fields: Map<*, Any?>): T? {
     val ctor = primaryConstructor ?: return null
+    // Strict args (#665): refuse extras so additionalProperties:false is enforced
+    // at the Kotlin layer regardless of provider behavior. The "type" discriminator
+    // is allowed because sealed-variant schemas advertise it as part of the variant.
+    val allowedKeys = ctor.parameters.mapNotNull { it.name }.toMutableSet().apply { add("type") }
+    val incomingKeys = fields.keys.mapNotNull { it?.toString() }
+    val extraKeys = incomingKeys.filter { it !in allowedKeys }
+    if (extraKeys.isNotEmpty()) return null
     return try {
         val args = mutableMapOf<KParameter, Any?>()
         for (param in ctor.parameters) {
