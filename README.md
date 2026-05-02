@@ -66,9 +66,83 @@ Most agent frameworks let you wire anything to anything. Agents.KT says no.
 | Flat pipelines only | Composition operators covering sequential, forum, parallel, iterative, and branching patterns |
 | LLM output is an untyped string | `@Generable` + `@Guide` — `toLlmDescription()`, JSON Schema, prompt fragment, lenient deserializer, and `PartiallyGenerated<T>` via runtime reflection; KSP compile-time generation planned Phase 2 |
 | MCP tools are wrappers, not first-class | `mcp { server() }` agent DSL — three transports (HTTP/stdio/TCP), auth, namespacing; agents can also be exposed as MCP servers via `McpServer.from(agent)` |
-| Permission model is stringly-typed | `grants { tools(writeFile, compile) }` — actual `Tool<*,*>` references, compiler-validated |
+| Permission model is stringly-typed | `grants { tools(writeFile, compile) }` — actual `Tool<*,*>` references, compiler-validated *(planned Phase 2)* |
 | No testing story | AgentUnit — deterministic through semantic assertions *(planned)* |
 | JVM frameworks require Java installed | Native CLI binary via GraalVM *(planned Phase 2 Priority)* |
+
+---
+
+## What's in the Box
+
+The README is long. This section is the index — every claim below points to working code in `main`, with the issue number that established it. Anything not in this section but visible elsewhere in the README is either *(planned)* with that suffix, or lives under [Roadmap](#roadmap).
+
+### Implemented today
+
+These APIs work in `main`, are unit-tested, and are exercised by integration tests (`./gradlew test` for default suite, `./gradlew integrationTest` for live-LLM):
+
+- **Typed agents** — `Agent<IN, OUT>` with at least one skill producing `OUT`, validated at construction. See [Skills](#skills).
+- **Skills with knowledge** — `skill { knowledge("key", "...") { } }`, lazy-loaded per call. See [Shared Knowledge](#shared-knowledge).
+- **Agentic loop with tool calling** — multi-turn `chat ↔ tools` driven by the model. See [Model & Tool Calling](#model--tool-calling).
+- **Typed tools via `@Generable`** — `tool<Args, Result>(...)` with reflection-built JSON Schema; `additionalProperties: false`; sealed-discriminator validation (#658, #661, #699).
+- **Per-skill tool authorization** — runtime allowlist; the prompt's "Available tools" listing is descriptive, the security boundary is the runtime check (#630). See [Tool authorization model](#tool-authorization-model).
+- **Inline tool-call fallback** — auto-recovery when an Ollama model rejects native `tools` (e.g. `gemma3:4b`) — strips the field, injects inline JSON format prompt, retries (#702, #706). See [Inline tool-call fallback](#inline-tool-call-fallback-ollama-models-without-native-tool-support).
+- **Composition operators** — `then`, `/` (parallel), `*` and `forum { }` (multi-agent), `.loop {}`, `.branch {}` on sealed types. See [Composition Operators](#composition-operators).
+- **Single-placement rule** — each `Agent` instance participates in at most one structure; second placement throws at construction. See [Single-Placement Rule](#single-placement-rule).
+- **Memory bank** — `memory(MemoryBank())` auto-injects `memory_read` / `memory_write` / `memory_search` tools. See [Agent Memory](#agent-memory).
+- **LLM skill routing** — manual `skillSelection { }` or LLM router with `skillSelectionConfidenceThreshold`; `SkillRoute(name, confidence, rationale)` is structured (#641). See [Skill Selection](#skill-selection).
+- **Tool error recovery** — per-tool `onError`, per-skill default, agent default; built-in `escalate` and `throwException` agents. See [Tool Error Recovery](#tool-error-recovery).
+- **Budget controls** — `budget { maxTurns; maxToolCalls; maxDuration; perToolTimeout }` (sacrificial-thread enforcement) (#637).
+- **MCP client** — `mcp { server() }` over HTTP / stdio / TCP; Bearer auth; namespaced tools (`server.tool`). See [MCP Integration](#mcp-integration).
+- **MCP server** — `McpServer.from(agent)` exposes an agent as an MCP-conformant server with explicit `tools/listChanged: false` capability (#619).
+- **`McpRunner` standalone** — picocli-style one-liner main for shipping agents as MCP services.
+- **Frozen-after-construction agents** — structural mutators (skills, tools, memory, model, budget, prompt, error handlers, routing) reject post-construction calls (#697, #708).
+- **Encapsulated tool/skill maps** — `Agent.toolMap` and `Agent.skills` are read-only `Map` views; mutation only via DSL or framework-internal escape hatches (#659, #667).
+- **`LlmProviderException`** — provider-boundary errors (auth, model-not-found, capability mismatch) surface distinctly from output-parse errors (#702).
+- **Untrusted tool-output wrapping** — tool results carry an envelope so the model can't impersonate framework messages (#642).
+
+### Experimental
+
+APIs that exist in `main` and have tests, but haven't been exercised in production and may evolve based on real-world usage:
+
+- **Forum with `transcriptCaptain`** — captain receives the full `ForumTranscript<IN>` (all participant outputs) instead of only the original input (#639). Useful for synthesis patterns; semantics may sharpen with usage.
+- **Branch on sealed hierarchies** — `BranchRoute` sealed type with `onNull` / `onElse` markers and construction-time completeness validation (#640). Stable surface, limited real-world coverage.
+
+### Security model
+
+What the framework enforces today:
+
+| Boundary | Enforcement | Established by |
+|----------|-------------|----------------|
+| Tool authorization | Runtime per-skill allowlist; unknown calls rejected — prompt is descriptive only | #630 |
+| Tool name typos | Fail-fast at agent construction | #631 |
+| Reserved memory names | `memory_read` / `memory_write` / `memory_search` cannot be shadowed by user tools | #659 |
+| Agent contract | Skills, tools, memory, model, budget, prompt frozen after `agent { }` returns | #697, #708 |
+| Typed args | `additionalProperties: false`; sealed `type` discriminator must match constructed variant | #661, #699 |
+| Repaired args | Re-validated through the typed schema before reaching the executor | #658 |
+| Tool output trust | Tool results wrapped in untrusted envelope so the model can't forge framework messages | #642 |
+| Provider errors | Surface as `LlmProviderException` — never confused with model output | #702 |
+| Budget caps | `maxTurns`, `maxToolCalls`, `maxDuration`, `perToolTimeout` (sacrificial-thread enforced) | #637 |
+
+What the framework does **not** enforce — your responsibility:
+
+- **Prompt-injection content filtering** — assumes you trust your inputs and system prompts.
+- **Sandboxing of tool executors** — tool code runs in-process with full JVM permissions; sandbox at the OS / container layer if the tools execute untrusted plans.
+- **Resource limits beyond budgets** — no automatic memory, file-descriptor, or network quotas.
+- **Authentication on `McpServer`** — incoming MCP requests are not credential-checked yet (see Known Limitations).
+
+### Known limitations
+
+- **Single LLM provider** — Ollama only. The injectable `ModelClient` covers test stubs and custom adapters; native multi-provider (Anthropic, OpenAI, Google) is Phase 2.
+- **Synchronous agentic loop** — `runBlocking` inside the loop until the suspend refactor lands (#638). Calling agents from existing coroutine scopes works but doesn't propagate cancellation cleanly.
+- **No incoming auth on `McpServer`** — outgoing client supports Bearer; the server does not validate credentials. Suitable for trusted-network deployments only.
+- **No Origin header validation on MCP HTTP** — deferred until the MCP-server hardening pass.
+- **Runtime reflection for `@Generable`** — KSP compile-time generation is Phase 2. Today's path uses reflection at first-use; cost is amortized but not zero.
+- **No streaming** — `chat()` returns a complete `LlmResponse`; `Flow<...>` streaming is on the Phase 2 roadmap.
+- **No native binary** — JVM-only (≥ JDK 21). GraalVM and `jlink` bundles are Phase 2 priorities.
+- **No A2A protocol yet** — agent-to-agent over network (Phase 2 / 3).
+- **Inline-tool-call fallback model variance** — small Ollama models (e.g. `gemma3:4b`) reliably emit single tool calls via the inline format but may produce thin final-turn text after multi-step tool sequences. For multi-step reasoning, a tool-native model (`gpt-oss:20b-cloud` and similar) is the better fit.
+
+For planned features beyond these limitations, see [Roadmap](#roadmap).
 
 ---
 
@@ -1117,7 +1191,7 @@ cd Agents.KT
 - [x] `.branch {}` — conditional routing on sealed types, composable with `then`
 - [x] `@Generable("desc")` / `@Guide` / `@LlmDescription` — runtime reflection: `toLlmDescription()`, `jsonSchema()`, `promptFragment()`, `fromLlmOutput<T>()`, `PartiallyGenerated<T>`
 - [x] `model { }` — Ollama backend; `host`, `port`, `temperature`; injectable `ModelClient` for tests; auto-fallback to inline JSON tool-call format for models without native tool support (#706)
-- [x] Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`) + `onToolUse` observability hook
+- [x] Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`, `maxToolCalls`, `maxDuration`, `perToolTimeout`) + `onToolUse` observability hook (#637)
 - [x] Skill selection — manual `skillSelection {}` + automatic LLM routing when multiple skills match
 - [ ] `>>` — security/education wrap
 
