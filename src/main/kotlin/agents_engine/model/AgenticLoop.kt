@@ -38,6 +38,14 @@ fun <IN> executeAgentic(
     val knowledgeToolMap = knowledgeToolDefs.associateBy { it.name }
 
     val allToolDefs = actionToolDefs + knowledgeToolDefs
+
+    // Authorization boundary: execution looks up against THIS allowlist only,
+    // not the wider agent.toolMap. A model emitting any tool name not in this
+    // map will be refused — even if the agent has that tool registered for a
+    // different skill. This is the runtime enforcement the prompt does NOT do.
+    val allowedToolDefs = allToolDefs.distinctBy { it.name }
+    val allowedToolMap = allowedToolDefs.associateBy { it.name }
+
     val client = config.client ?: OllamaClient(config.host, config.port, config.name, config.temperature, allToolDefs)
 
     val systemContent = buildString {
@@ -79,9 +87,11 @@ fun <IN> executeAgentic(
                 messages.add(LlmMessage("assistant", "", response.calls))
                 for (call in response.calls) {
                     val isKnowledge = call.name in knowledgeToolMap
-                    val tool = agent.toolMap[call.name]
-                        ?: knowledgeToolMap[call.name]
-                        ?: error("Tool '${call.name}' not found in agent '${agent.name}'. Available: ${agent.toolMap.keys + knowledgeToolMap.keys}")
+                    val tool = allowedToolMap[call.name]
+                        ?: error(
+                            "Tool '${call.name}' is not allowed for skill '${skill.name}'. " +
+                                "Allowed: ${allowedToolMap.keys}"
+                        )
                     val result = executeToolWithRecovery(agent, tool, call)
                     if (isKnowledge) agent.knowledgeUsedListener?.invoke(call.name, result?.toString() ?: "")
                     else agent.toolUseListener?.invoke(call.name, call.arguments, result)

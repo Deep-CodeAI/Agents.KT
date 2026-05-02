@@ -452,11 +452,22 @@ Budget is **per-invocation** — each `agent(input)` call starts fresh. Structur
 
 ### Tool Whitelist
 
-Tools declared in `implementedBy { tools(...) }` are the **only** tools the LLM can call. Unknown tool calls are rejected with an error message to the LLM, not silently ignored:
+Tools declared in `skill { tools(...) }` are the **only** tools the LLM can call. Unknown tool calls — whether from a typo, hallucination, jailbreak, or model from a different family — are rejected with `IllegalStateException` at the runtime boundary, not silently executed:
 
 ```
-Tool 'delete_file' is not available. Available: write_file, compile, run_tests
+Tool 'delete_file' is not allowed for skill 'write-code'. Allowed: [write_file, compile, run_tests]
 ```
+
+**This is enforced runtime-side, not by the prompt.** The system prompt's "Available tools" listing is descriptive (the LLM is told what it can call), but the security boundary is the runtime allowlist:
+
+```
+allowed = skill.toolNames
+        ∪ agent.autoToolNames
+        ∪ memory tools (when memory configured)
+        ∪ skill.knowledge() entries
+```
+
+A tool registered globally on the agent (`tools { tool(...) }`) is **not** auto-available to every skill — each skill must opt in via `tools(name)`. Tool name typos in `tools(...)` fail-fast at agent construction (no silent drops). Established by issue #630 (allowlist enforcement) and #631 (typo validation).
 
 ### Tool Constraints
 

@@ -186,6 +186,19 @@ class Agent<IN, OUT>(
             "Agent \"$name\" has no skill producing ${outType.simpleName}. " +
                 "At least one skill must return the agent's OUT type."
         }
+        // Fail-fast: tool-name typos in `tools(...)` should not silently disappear.
+        for (skill in skills.values) {
+            val unknown = skill.toolNames.orEmpty().filterNot { it in toolMap }
+            require(unknown.isEmpty()) {
+                "Skill \"${skill.name}\" on agent \"$name\" references unknown tools: $unknown. " +
+                    "Available: ${toolMap.keys}"
+            }
+        }
+        val unknownAuto = autoToolNames.filterNot { it in toolMap }
+        require(unknownAuto.isEmpty()) {
+            "Agent \"$name\" auto-tools reference unknown tools: $unknownAuto. " +
+                "Available: ${toolMap.keys}"
+        }
     }
 }
 

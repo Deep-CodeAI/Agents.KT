@@ -287,6 +287,33 @@ val a = agent<String, String>("coder") {
 // Content is only fetched when the LLM decides it needs it.
 ```
 
+### Tool authorization model
+
+**The `skill { tools(...) }` declaration is authorization, enforced at execution.** Every agentic invocation builds a per-skill allowlist and the runtime refuses to execute any tool not in it. The system prompt's "Available tools" listing is descriptive — what the LLM is told it can call — but it is not the security boundary. Even if the model emits a tool name it was never shown (hallucination, jailbreak, or model from a different family), the runtime rejects it.
+
+The allowlist for an agentic invocation:
+
+```
+skill.toolNames                          (what the skill explicitly listed)
+∪ agent.autoToolNames                    (auto-injected agent capabilities)
+∪ memory_read / memory_write / memory_search   (when memory { } is configured)
+∪ skill.knowledge() entries              (lazy knowledge providers, exposed as tools)
+```
+
+Anything outside that set is rejected with:
+
+```
+IllegalStateException: Tool 'X' is not allowed for skill 'Y'. Allowed: [a, b, c]
+```
+
+The error names the offending skill and lists only the allowed tools — it does **not** leak the wider `agent.toolMap` to the model or to logs.
+
+**Practical guidance.** Tools registered on the agent (`tools { tool(...) }`) are pooled at the agent level, but they are **not** auto-available to every skill — each skill must opt in via `tools(name)`. For dangerous tools (`shell`, `writeFile`, `deploy`, anything that hits production), the safest pattern is:
+
+- Declare them only on the skill that needs them.
+- Don't rely on the system prompt's "Available tools" list as a fence; it isn't one.
+- Use a typo-safe `tools(...)` call — the framework fails fast at agent construction if a name doesn't exist.
+
 ### Skill Selection
 
 When an agent has multiple skills with the same type signature, the framework decides which one to run. Three strategies, in priority order:
