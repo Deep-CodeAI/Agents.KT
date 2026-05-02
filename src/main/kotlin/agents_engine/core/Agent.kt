@@ -17,7 +17,14 @@ class Agent<IN, OUT>(
     val outType: kotlin.reflect.KClass<*>,
     private val castOut: (Any?) -> OUT,
 ) {
-    val skills = mutableMapOf<String, Skill<*, *>>()
+    private val _skills = mutableMapOf<String, Skill<*, *>>()
+    private val _skillsView: Map<String, Skill<*, *>> = java.util.Collections.unmodifiableMap(_skills)
+    /**
+     * Read-only view of all skills registered on this agent. Mutation goes through
+     * [skills] { } DSL block; direct map mutation (or downcast-then-mutate) would
+     * bypass uniqueness checks and the construction-time invariants — see #667.
+     */
+    val skills: Map<String, Skill<*, *>> get() = _skillsView
     private val executors = mutableMapOf<String, (Any?) -> Any>()
     private var placedIn: String? = null
     var prompt: String = ""
@@ -219,11 +226,11 @@ class Agent<IN, OUT>(
         val builder = SkillsBuilder()
         builder.block()
         builder.entries.forEach { (skill, exec) ->
-            require(skill.name !in skills) {
+            require(skill.name !in _skills) {
                 "Agent \"$name\" already has a skill named \"${skill.name}\". " +
                     "Skill names must be unique per agent."
             }
-            skills[skill.name] = skill
+            _skills[skill.name] = skill
             if (skill.outType == outType && !skill.isAgentic) executors[skill.name] = exec
         }
     }
@@ -249,6 +256,9 @@ class Agent<IN, OUT>(
             "Agent \"$name\" auto-tools reference unknown tools: $unknownAuto. " +
                 "Available: ${toolMap.keys}"
         }
+        // Freeze skills so the agent's contract (allowlist composition, dispatch)
+        // can't drift after construction via a held Skill reference. See #668.
+        skills.values.forEach { it.frozen = true }
     }
 }
 

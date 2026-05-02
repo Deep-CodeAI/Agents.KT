@@ -138,6 +138,11 @@ class ToolsBuilder {
             "Typed tool \"$name\" Args type ${argsClass.simpleName} must be annotated with @Generable. " +
                 "Add `@Generable(\"description\")` to the data class."
         }
+        require(!argsClass.isSealed) {
+            "Typed tool \"$name\" Args type ${argsClass.simpleName} is sealed. " +
+                "Sealed Args (one-of variants) are not yet supported as tool inputs — " +
+                "use a concrete data class for now."
+        }
         val wrapped: (Map<String, Any?>) -> Any? = { rawArgs ->
             val typed = argsClass.constructFromMap(rawArgs)
                 ?: error(

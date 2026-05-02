@@ -28,13 +28,30 @@ class Skill<IN, OUT>(
     private var _llmDescription: String? = null
     private val _knowledge = mutableMapOf<String, KnowledgeEntry>()
 
+    /**
+     * Set to true by Agent.validate() at the end of construction. Mutators throw
+     * once frozen so the agent's allowlist composition + agentic/deterministic
+     * dispatch can't drift via a held Skill reference. See #668.
+     */
+    @PublishedApi internal var frozen: Boolean = false
+
+    private fun checkNotFrozen() {
+        check(!frozen) {
+            "Skill \"$name\" is frozen — cannot mutate after agent construction."
+        }
+    }
+
     // backward-compat: callable by key — skill.knowledge["key"]!!()
     val knowledge: Map<String, () -> String>
         get() = _knowledge.mapValues { it.value.provider }
 
-    fun llmDescription(text: String) { _llmDescription = text }
+    fun llmDescription(text: String) {
+        checkNotFrozen()
+        _llmDescription = text
+    }
 
     fun knowledge(key: String, description: String = "", provider: () -> String) {
+        checkNotFrozen()
         require(key !in _knowledge) {
             "Skill \"$name\" already has knowledge entry \"$key\". " +
                 "Knowledge keys must be unique per skill."
@@ -43,12 +60,14 @@ class Skill<IN, OUT>(
     }
 
     fun implementedBy(block: (IN) -> OUT) {
+        checkNotFrozen()
         implementation = block
         isAgentic = false
     }
 
     /** Marks this skill as LLM-driven; [names] are the tools the LLM may call. */
     fun tools(vararg names: String) {
+        checkNotFrozen()
         isAgentic = true
         toolNames = names.toList()
         implementation = null
@@ -58,6 +77,7 @@ class Skill<IN, OUT>(
         private set
 
     fun transformOutput(block: (String) -> OUT) {
+        checkNotFrozen()
         outputTransformer = block
     }
 

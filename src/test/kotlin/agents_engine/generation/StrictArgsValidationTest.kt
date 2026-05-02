@@ -58,4 +58,14 @@ class StrictArgsValidationTest {
         )
         assertEquals(Geometry.CircleStrict(radius = 5.0), result)
     }
+
+    @Test
+    fun `non-sealed data class rejects type key as extra (#669)`() {
+        // 'type' is a discriminator — only legal for sealed variants. For plain
+        // data classes it's an extra and must be rejected.
+        val result = StrictArgs::class.constructFromMap(
+            mapOf("name" to "x", "type" to "AnythingAtAll"),
+        )
+        assertNull(result, "non-sealed data class must reject 'type' as an unknown key")
+    }
 }

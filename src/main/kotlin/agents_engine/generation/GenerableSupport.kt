@@ -260,8 +260,10 @@ internal fun <T : Any> KClass<T>.constructFromMap(fields: Map<*, Any?>): T? {
     val ctor = primaryConstructor ?: return null
     // Strict args (#665): refuse extras so additionalProperties:false is enforced
     // at the Kotlin layer regardless of provider behavior. The "type" discriminator
-    // is allowed because sealed-variant schemas advertise it as part of the variant.
-    val allowedKeys = ctor.parameters.mapNotNull { it.name }.toMutableSet().apply { add("type") }
+    // is allowed ONLY for sealed-variant construction (#669) — for plain data classes
+    // an extra "type" key is a real extra and must be rejected.
+    val allowedKeys = ctor.parameters.mapNotNull { it.name }.toMutableSet()
+    if (this.allSuperclasses.any { it.isSealed }) allowedKeys.add("type")
     val incomingKeys = fields.keys.mapNotNull { it?.toString() }
     val extraKeys = incomingKeys.filter { it !in allowedKeys }
     if (extraKeys.isNotEmpty()) return null
