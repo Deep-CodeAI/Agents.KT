@@ -92,16 +92,21 @@ class AgentMemoryTest {
     }
 
     @Test
-    fun `auto-injected tools do not overwrite user-defined tools`() {
-        val bank = MemoryBank()
-        val a = agent<String, String>("a") {
-            tools { tool("memory_read", "") { _ -> "custom" } }
-            memory(bank)
-            model { ollama("test"); client = ModelClient { _ -> LlmResponse.Text("done") } }
-            skills { skill<String, String>("s", "s") { tools("memory_read") } }
+    fun `user attempts to register a reserved memory tool name are rejected (#644)`() {
+        try {
+            agent<String, String>("a") {
+                tools { tool("memory_read", "") { _ -> "custom" } }
+                memory(MemoryBank())
+                model { ollama("test"); client = ModelClient { _ -> LlmResponse.Text("done") } }
+                skills { skill<String, String>("s", "s") { tools("memory_read") } }
+            }
+            kotlin.test.fail("expected reserved-name rejection")
+        } catch (e: IllegalArgumentException) {
+            kotlin.test.assertTrue(
+                e.message!!.contains("memory_read") && e.message!!.contains("reserved", ignoreCase = true),
+                "error must explain the reservation: ${e.message}",
+            )
         }
-
-        assertEquals("custom", a.toolMap["memory_read"]!!.executor(emptyMap()))
     }
 
     // --- Tools read/write through the bank ---

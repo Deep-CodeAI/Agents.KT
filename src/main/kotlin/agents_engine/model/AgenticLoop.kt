@@ -40,12 +40,21 @@ fun <IN> executeAgentic(
 
     val allToolDefs = actionToolDefs + knowledgeToolDefs
 
+    // Fail-fast on duplicate tool names across the allowed sources (skill tools,
+    // auto tools, memory tools, knowledge entries). `distinctBy` would silently
+    // pick a winner; we want this surfaced as a configuration error. See #645.
+    val duplicateNames = allToolDefs.groupBy { it.name }.filterValues { it.size > 1 }.keys
+    check(duplicateNames.isEmpty()) {
+        "Duplicate tool names in allowed tool set for skill '${skill.name}': $duplicateNames. " +
+            "A name appears in more than one source (skill tools, auto tools, memory tools, " +
+            "knowledge entries) — pick one source per name."
+    }
+
     // Authorization boundary: execution looks up against THIS allowlist only,
     // not the wider agent.toolMap. A model emitting any tool name not in this
     // map will be refused — even if the agent has that tool registered for a
     // different skill. This is the runtime enforcement the prompt does NOT do.
-    val allowedToolDefs = allToolDefs.distinctBy { it.name }
-    val allowedToolMap = allowedToolDefs.associateBy { it.name }
+    val allowedToolMap = allToolDefs.associateBy { it.name }
 
     val client = config.client ?: OllamaClient(config.host, config.port, config.name, config.temperature, allToolDefs)
 

@@ -35,6 +35,22 @@ class ToolDefaultsBuilder {
     }
 }
 
+/**
+ * Names reserved for built-in memory tools, registered exclusively via
+ * `Agent.memory(bank)`. User code cannot register these via the tools DSL
+ * — would otherwise silently shadow the built-ins via `putIfAbsent` and be
+ * auto-allowed by the agentic loop's memory path. See #644.
+ */
+@PublishedApi internal val RESERVED_MEMORY_TOOL_NAMES =
+    setOf("memory_read", "memory_write", "memory_search")
+
+@PublishedApi internal fun requireUserNotReservedToolName(name: String) {
+    require(name !in RESERVED_MEMORY_TOOL_NAMES) {
+        "Tool name \"$name\" is reserved for built-in memory tools (registered via memory(bank)). " +
+            "Pick a different name."
+    }
+}
+
 class ToolsBuilder {
     @PublishedApi internal val defs = mutableListOf<ToolDef>()
     internal var defaultErrorHandler: ToolErrorHandler? = null
@@ -46,6 +62,7 @@ class ToolsBuilder {
     }
 
     fun tool(name: String, description: String, executor: (Map<String, Any?>) -> Any?) {
+        requireUserNotReservedToolName(name)
         require(defs.none { it.name == name }) {
             "Tool \"$name\" is already defined in this tools block. " +
                 "Tool names must be unique."
@@ -59,6 +76,7 @@ class ToolsBuilder {
         onError: OnErrorBuilder.() -> Unit,
         executor: (Map<String, Any?>) -> Any?,
     ) {
+        requireUserNotReservedToolName(name)
         require(defs.none { it.name == name }) {
             "Tool \"$name\" is already defined in this tools block. " +
                 "Tool names must be unique."
@@ -69,6 +87,7 @@ class ToolsBuilder {
     }
 
     fun tool(name: String, block: ToolDefBuilder.() -> Unit) {
+        requireUserNotReservedToolName(name)
         require(defs.none { it.name == name }) {
             "Tool \"$name\" is already defined in this tools block. " +
                 "Tool names must be unique."
@@ -80,6 +99,7 @@ class ToolsBuilder {
     }
 
     operator fun ToolDef.unaryPlus() {
+        requireUserNotReservedToolName(this.name)
         require(defs.none { it.name == this.name }) {
             "Tool \"${this.name}\" is already defined in this tools block. " +
                 "Tool names must be unique."
@@ -105,6 +125,7 @@ class ToolsBuilder {
         description: String,
         crossinline executor: (Args) -> Result,
     ) {
+        requireUserNotReservedToolName(name)
         require(defs.none { it.name == name }) {
             "Tool \"$name\" is already defined in this tools block. " +
                 "Tool names must be unique."
