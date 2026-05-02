@@ -74,7 +74,7 @@ class ForumTranscriptTest {
 
     @Test
     fun `onMentionEmitted still fires per participant in transcript mode (regression)`() {
-        val mentions = mutableListOf<Pair<String, Any?>>()
+        val mentions = java.util.concurrent.CopyOnWriteArrayList<Pair<String, Any?>>()
         val a = agent<String, String>("a") { skills { skill<String, String>("s", "") { implementedBy { "x" } } } }
         val b = agent<String, String>("b") { skills { skill<String, String>("s", "") { implementedBy { "y" } } } }
         val captain = agent<ForumTranscript<String>, String>("c") {
@@ -86,9 +86,9 @@ class ForumTranscriptTest {
         f("input")
 
         // Participants AND captain should each fire mentionListener
-        assertTrue(mentions.any { it.first == "a" && it.second == "x" })
-        assertTrue(mentions.any { it.first == "b" && it.second == "y" })
-        assertTrue(mentions.any { it.first == "c" && it.second == "ok" })
+        assertTrue(mentions.any { it.first == "a" && it.second == "x" }, "got: $mentions")
+        assertTrue(mentions.any { it.first == "b" && it.second == "y" }, "got: $mentions")
+        assertTrue(mentions.any { it.first == "c" && it.second == "ok" }, "got: $mentions")
     }
 
     @Test

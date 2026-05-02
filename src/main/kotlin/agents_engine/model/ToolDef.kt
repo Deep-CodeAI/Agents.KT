@@ -1,7 +1,9 @@
 package agents_engine.model
 
+import agents_engine.generation.Generable
 import agents_engine.generation.constructFromMap
 import kotlin.reflect.KClass
+import kotlin.reflect.full.findAnnotation
 
 /**
  * A tool the agentic loop can invoke on the model's behalf.
@@ -132,6 +134,10 @@ class ToolsBuilder {
                 "Tool names must be unique."
         }
         val argsClass = Args::class
+        require(argsClass.findAnnotation<Generable>() != null) {
+            "Typed tool \"$name\" Args type ${argsClass.simpleName} must be annotated with @Generable. " +
+                "Add `@Generable(\"description\")` to the data class."
+        }
         val wrapped: (Map<String, Any?>) -> Any? = { rawArgs ->
             val typed = argsClass.constructFromMap(rawArgs)
                 ?: error(

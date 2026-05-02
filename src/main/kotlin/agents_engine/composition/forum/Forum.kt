@@ -111,10 +111,10 @@ private fun Agent<*, *>.reserveForumReturnName() {
 
 private fun Agent<*, *>.setForumReturnPermission(allowed: Boolean) {
     if (allowed) {
-        toolMap["forum_return"] = buildForumReturnTool()
+        registerBuiltInTool(buildForumReturnTool())
         enableAutoTool("forum_return")
     } else {
-        toolMap.remove("forum_return")
+        unregisterTool("forum_return")
         disableAutoTool("forum_return")
     }
 }

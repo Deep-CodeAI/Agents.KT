@@ -35,13 +35,7 @@ fun <IN, OUT> Agent<IN, OUT>.mcp(block: McpServersBuilder.() -> Unit) {
         attachedClients.getOrPut(this) { mutableListOf() }.addAll(connected.map { it.second })
     }
     connected.forEach { (prefix, client) ->
-        client.toolDefs(prefix = prefix).forEach { td ->
-            require(td.name !in toolMap) {
-                "Agent \"$name\" already has a tool named \"${td.name}\". " +
-                    "Tool names must be unique per agent."
-            }
-            toolMap[td.name] = td
-        }
+        client.toolDefs(prefix = prefix).forEach { td -> registerTool(td) }
     }
 }
 

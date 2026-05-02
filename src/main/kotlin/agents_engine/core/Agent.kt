@@ -27,7 +27,44 @@ class Agent<IN, OUT>(
         private set
     var budgetConfig: BudgetConfig = BudgetConfig()
         private set
-    val toolMap: MutableMap<String, ToolDef> = mutableMapOf()
+    private val _toolMap: MutableMap<String, ToolDef> = mutableMapOf()
+    private val _toolMapView: Map<String, ToolDef> = java.util.Collections.unmodifiableMap(_toolMap)
+    /**
+     * Read-only view of all tools registered on this agent. Mutation goes through
+     * [registerTool] / [registerBuiltInTool] / [unregisterTool] (internal API)
+     * so the framework's guards (reserved names, uniqueness) are always applied.
+     * Direct map mutation (or downcast-then-mutate) would bypass the runtime
+     * authorization model — see #659.
+     */
+    val toolMap: Map<String, ToolDef> get() = _toolMapView
+
+    /**
+     * Internal API for tools that pass through user DSL guards (reservation +
+     * uniqueness). MCP DSL, ToolsBuilder result merging, and other code paths
+     * that surface tools the user named call this.
+     */
+    internal fun registerTool(def: ToolDef) {
+        require(def.name !in agents_engine.model.RESERVED_MEMORY_TOOL_NAMES) {
+            "Tool name \"${def.name}\" is reserved for built-in memory tools (registered via memory(bank))."
+        }
+        require(def.name !in _toolMap) {
+            "Agent \"$name\" already has a tool named \"${def.name}\". Tool names must be unique."
+        }
+        _toolMap[def.name] = def
+    }
+
+    /**
+     * Internal API for built-ins allowed to use reserved names (memory_*, forum_return,
+     * escalate, throwException). Idempotent via putIfAbsent — repeated registration of
+     * the same built-in is a no-op.
+     */
+    @PublishedApi
+    internal fun registerBuiltInTool(def: ToolDef) {
+        _toolMap.putIfAbsent(def.name, def)
+    }
+
+    /** Internal API to remove a tool (e.g., Forum cleaning up forum_return on captain change). */
+    internal fun unregisterTool(name: String) { _toolMap.remove(name) }
     var toolUseListener: ((name: String, args: Map<String, Any?>, result: Any?) -> Unit)? = null
         private set
     var knowledgeUsedListener: ((name: String, content: String) -> Unit)? = null
@@ -86,20 +123,14 @@ class Agent<IN, OUT>(
     fun memory(bank: MemoryBank) {
         memoryBank = bank
         for (tool in buildMemoryTools(bank, name)) {
-            toolMap.putIfAbsent(tool.name, tool)
+            registerBuiltInTool(tool)
         }
     }
 
     fun tools(block: ToolsBuilder.() -> Unit) {
         val builder = ToolsBuilder()
         builder.block()
-        builder.defs.forEach {
-            require(it.name !in toolMap) {
-                "Agent \"$name\" already has a tool named \"${it.name}\". " +
-                    "Tool names must be unique per agent."
-            }
-            toolMap[it.name] = it
-        }
+        builder.defs.forEach { registerTool(it) }
         builder.defaultErrorHandler?.let { defaultToolErrorHandler = it }
     }
 
@@ -224,7 +255,7 @@ class Agent<IN, OUT>(
 inline fun <IN, reified OUT : Any> agent(name: String, block: Agent<IN, OUT>.() -> Unit): Agent<IN, OUT> {
     val agent = Agent<IN, OUT>(name, OUT::class) { it as OUT }
     for (tool in buildBuiltInTools()) {
-        agent.toolMap.putIfAbsent(tool.name, tool)
+        agent.registerBuiltInTool(tool)
     }
     agent.block()
     agent.validate()

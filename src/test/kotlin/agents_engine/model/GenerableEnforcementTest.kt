@@ -1,0 +1,42 @@
+package agents_engine.model
+
+import agents_engine.core.agent
+import agents_engine.generation.Generable
+import kotlin.test.Test
+import kotlin.test.assertTrue
+import kotlin.test.fail
+
+@Generable("Annotated args") data class GoodArgs(val foo: String)
+data class BadArgs(val foo: String)   // intentionally NOT @Generable
+
+/**
+ * Tests for #660 — typed tool builder rejects non-@Generable Args at agent construction.
+ */
+class GenerableEnforcementTest {
+
+    @Test
+    fun `typed tool with non-Generable Args throws at agent construction`() {
+        try {
+            agent<String, String>("a") {
+                tools { tool<BadArgs, String>("doStuff", "") { "ok" } }
+                skills { skill<String, String>("s", "stub") { tools("doStuff") } }
+            }
+            fail("expected rejection of non-@Generable Args")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("BadArgs"), "error must name the offending type: ${e.message}")
+            assertTrue(e.message!!.contains("doStuff"), "error must name the offending tool: ${e.message}")
+            assertTrue(e.message!!.contains("@Generable"), "error must mention the missing annotation: ${e.message}")
+        }
+    }
+
+    @Test
+    fun `typed tool with @Generable Args works (regression)`() {
+        val a = agent<String, String>("ok") {
+            tools { tool<GoodArgs, String>("doStuff", "") { args -> args.foo } }
+            skills { skill<String, String>("s", "stub") { tools("doStuff") } }
+        }
+        @Suppress("UNCHECKED_CAST")
+        val result = a.toolMap["doStuff"]!!.executor(mapOf("foo" to "x"))
+        assertTrue(result == "x")
+    }
+}

@@ -94,7 +94,7 @@ fun KClass<*>.jsonSchema(): String =
     if (isSealed) sealedJsonSchema() else dataClassJsonSchema()
 
 private fun KClass<*>.dataClassJsonSchema(): String {
-    val ctor = primaryConstructor ?: return """{"type":"object"}"""
+    val ctor = primaryConstructor ?: return """{"type":"object","additionalProperties":false}"""
     return buildString {
         append("""{"type":"object","properties":{""")
         ctor.parameters.forEachIndexed { i, param ->
@@ -108,7 +108,9 @@ private fun KClass<*>.dataClassJsonSchema(): String {
                 if (i > 0) append(",")
                 append(""""${param.name}"""")
             }
-        append("]}")
+        // Strict by default (#661): the contract IS the type. Extras the model invents
+        // would otherwise be silently dropped; better to fail constraint-decoding upfront.
+        append("""],"additionalProperties":false}""")
     }
 }
 
@@ -135,7 +137,7 @@ private fun KClass<*>.variantJsonSchema(): String {
         ctor?.parameters?.filter { !it.type.isMarkedNullable && !it.isOptional }?.forEach { param ->
             append(""","${param.name}"""")
         }
-        append("]")
+        append("""],"additionalProperties":false""")
         if (guide != null) append(""","description":"${guide.description.escapeJson()}"""")
         append("}")
     }
