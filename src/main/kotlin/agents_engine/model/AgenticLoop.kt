@@ -230,20 +230,26 @@ private fun <IN> executeToolWithRecovery(
     call.invalidArgumentsError?.let { parseError ->
         return recoverInvalidArguments(agent, tool, call, handler, parseError)
     }
-    // Typed-args pre-validation: for tools authored via tool<Args, _>("..."),
-    // attempt @Generable deserialization BEFORE invoking the executor. Failure
-    // routes through the same invalidArgs handler as JSON-parse failures.
-    tool.argsType?.let { argsClass ->
-        @Suppress("UNCHECKED_CAST")
-        val constructed = (argsClass as KClass<Any>).constructFromMap(call.arguments)
-        if (constructed == null) {
-            return recoverInvalidArguments(
-                agent, tool, call, handler,
-                parseError = "Could not deserialize ${argsClass.simpleName} from arguments: ${call.arguments}",
-            )
-        }
+    val typedError = validateTypedArgsOrNull(tool, call.arguments)
+    if (typedError != null) {
+        return recoverInvalidArguments(agent, tool, call, handler, typedError)
     }
     return executeToolWithExecutionRecovery(agent, tool, call.name, call.arguments, handler)
+}
+
+/**
+ * Single source of truth for typed-args validation. Returns null on success,
+ * an error message on failure. Invoked at every entry point that hands args
+ * to the executor — including the repair path (#658) — so a `Fixed` repair
+ * that's syntactically valid but typed-invalid can't bypass the contract.
+ */
+private fun validateTypedArgsOrNull(tool: ToolDef, args: Map<String, Any?>): String? {
+    val argsClass = tool.argsType ?: return null
+    @Suppress("UNCHECKED_CAST")
+    val constructed = (argsClass as KClass<Any>).constructFromMap(args)
+    return if (constructed == null) {
+        "Could not deserialize ${argsClass.simpleName} from arguments: $args"
+    } else null
 }
 
 private fun <IN> recoverInvalidArguments(
@@ -276,6 +282,16 @@ private fun <IN> recoverInvalidArguments(
             is RepairResult.Fixed -> {
                 val parsed = parseToolArguments(result.value)
                 if (parsed.parseError == null) {
+                    // #658: re-validate typed args before reaching the executor.
+                    val typedError = validateTypedArgsOrNull(tool, parsed.arguments)
+                    if (typedError != null) {
+                        // Continue the repair loop with the new typed-validation error
+                        // — keeps invalidArgs as the failure classification.
+                        currentRaw = result.value
+                        currentError = typedError
+                        useInvalidArgsHandler = true
+                        return@repeat
+                    }
                     return executeToolWithExecutionRecovery(
                         agent = agent,
                         tool = tool,
@@ -292,13 +308,17 @@ private fun <IN> recoverInvalidArguments(
                 repeat(result.maxAttempts) {
                     val parsed = parseToolArguments(currentRaw)
                     if (parsed.parseError == null) {
-                        return executeToolWithExecutionRecovery(
-                            agent = agent,
-                            tool = tool,
-                            toolName = call.name,
-                            args = parsed.arguments,
-                            handler = handler,
-                        )
+                        val typedError = validateTypedArgsOrNull(tool, parsed.arguments)
+                        if (typedError == null) {
+                            return executeToolWithExecutionRecovery(
+                                agent = agent,
+                                tool = tool,
+                                toolName = call.name,
+                                args = parsed.arguments,
+                                handler = handler,
+                            )
+                        }
+                        // Typed validation failed — falls through to the throw below
                     }
                 }
                 throw ToolExecutionException(
