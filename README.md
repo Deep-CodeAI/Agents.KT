@@ -65,7 +65,7 @@ Most agent frameworks let you wire anything to anything. Agents.KT says no.
 | LLM doesn't know what context to load | `knowledge("key", "description") { }` entries — LLM reads descriptions before deciding to call |
 | Flat pipelines only | Composition operators covering sequential, forum, parallel, iterative, and branching patterns |
 | LLM output is an untyped string | `@Generable` + `@Guide` — `toLlmDescription()`, JSON Schema, prompt fragment, lenient deserializer, and `PartiallyGenerated<T>` via runtime reflection; KSP compile-time generation planned Phase 2 |
-| MCP tools are wrappers, not first-class | `McpTool<IN, OUT>` inherits `Tool<IN, OUT>` — same interface as local tools, no adapters |
+| MCP tools are wrappers, not first-class | `mcp { server() }` agent DSL — three transports (HTTP/stdio/TCP), auth, namespacing; agents can also be exposed as MCP servers via `McpServer.from(agent)` |
 | Permission model is stringly-typed | `grants { tools(writeFile, compile) }` — actual `Tool<*,*>` references, compiler-validated |
 | No testing story | AgentUnit — deterministic through semantic assertions *(planned)* |
 | JVM frameworks require Java installed | Native CLI binary via GraalVM *(planned Phase 2 Priority)* |
@@ -365,6 +365,77 @@ val result: Int = compute("Calculate 2^10")   // → 1024
 model { ollama("llama3") }
 budget { maxTurns = 10 }   // throws BudgetExceededException after 10 turns
 ```
+
+---
+
+## MCP Integration
+
+Agents.KT speaks MCP in **both directions**: an agent can consume tools from any MCP server, and any agent can expose its skills as an MCP server that Claude Code, Cursor, or any MCP-aware client can call. Three transports — HTTP, stdio, TCP — share one wire format. Zero new dependencies; all on JDK 21.
+
+### Consuming MCP servers — `mcp { server() }`
+
+```kotlin
+val coder = agent<String, String>("coder") {
+    mcp {
+        server("github") {
+            url = "https://api.github.com/mcp"
+            auth = McpAuth.Bearer(System.getenv("GITHUB_TOKEN"))
+        }
+        server("filesystem") {
+            command = listOf("npx", "@modelcontextprotocol/server-filesystem", "/src")
+        }
+        server("internal") { host = "mcp.internal"; port = 9000 }
+    }
+    skills {
+        skill<String, String>("work", "Use the registered tools") {
+            tools("github.create_pull_request", "filesystem.read_file", "internal.foo")
+        }
+    }
+}
+```
+
+Each `server(name) { }` declares **exactly one** transport (`url=` xor `command=` xor `host=`+`port=`), connects at agent-build time, and registers the discovered tools into the agent's `toolMap` with names prefixed by the server name. Collisions across servers can't happen — the prefix is the namespace.
+
+**`mcp { }`** — block on the agent, takes one or more `server(name) { }` sub-blocks. Failures fail the agent build (fail fast).
+
+**`McpAuth.Bearer(token)`** — HTTP-only auth. Stdio and TCP derive auth from connection identity. OAuth 2.1 is on the roadmap.
+
+**`agent.mcpClients`** — connected clients for lifecycle control (`close()` in tests).
+
+### Exposing an agent as an MCP server — `McpServer.from(agent)`
+
+```kotlin
+@Generable("Person being greeted")
+data class GreetRequest(@Guide("Name") val name: String, @Guide("Lang") val language: String = "en")
+
+val greeter = agent<GreetRequest, String>("greeter") {
+    skills {
+        skill<GreetRequest, String>("greet", "Greet a person") {
+            implementedBy { req -> "[${req.language}] Hello, ${req.name}!" }
+        }
+    }
+}
+
+val server = McpServer.from(greeter) {
+    port = 8080         // 0 = auto-assigned
+    expose("greet")
+}.start()
+
+println(server.url)     // http://localhost:8080/mcp
+```
+
+Exposed skills become MCP tools. The `inputSchema` is generated from the skill's `IN` type via `@Generable` reflection — the JSON schema includes `@Guide` descriptions so the calling LLM knows what each field means.
+
+### How external clients consume your `McpServer`
+
+| Client | How |
+|--------|-----|
+| Our own `McpClient` | `McpClient.connect(server.url)` then `client.call("greet", mapOf("name" to "Kon"))` |
+| **Claude Code** | Add `{"mcpServers": {"my-agent": {"type": "http", "url": "http://localhost:8080/mcp"}}}` to `~/.claude.json` and restart |
+| Cursor / IDEs | Same URL, the IDE's MCP config block |
+| Anything that speaks MCP | Standard JSON-RPC 2.0 over Streamable HTTP, protocol version `2025-03-26` |
+
+See the [MCP Integration](https://github.com/Deep-CodeAI/Agents.KT/wiki/MCP-Integration) wiki page for the full DSL surface, lower-level `McpClient` factories, in-process mock servers for hermetic tests, and protocol-version handling.
 
 ---
 
