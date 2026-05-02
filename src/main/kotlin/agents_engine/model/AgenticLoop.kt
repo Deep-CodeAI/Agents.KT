@@ -2,6 +2,7 @@ package agents_engine.model
 
 import agents_engine.core.Agent
 import agents_engine.core.Skill
+import agents_engine.generation.constructFromMap
 import agents_engine.generation.fromLlmOutput
 import kotlin.reflect.KClass
 
@@ -149,6 +150,19 @@ private fun <IN> executeToolWithRecovery(
     val handler = agent.getToolErrorHandler(call.name)
     call.invalidArgumentsError?.let { parseError ->
         return recoverInvalidArguments(agent, tool, call, handler, parseError)
+    }
+    // Typed-args pre-validation: for tools authored via tool<Args, _>("..."),
+    // attempt @Generable deserialization BEFORE invoking the executor. Failure
+    // routes through the same invalidArgs handler as JSON-parse failures.
+    tool.argsType?.let { argsClass ->
+        @Suppress("UNCHECKED_CAST")
+        val constructed = (argsClass as KClass<Any>).constructFromMap(call.arguments)
+        if (constructed == null) {
+            return recoverInvalidArguments(
+                agent, tool, call, handler,
+                parseError = "Could not deserialize ${argsClass.simpleName} from arguments: ${call.arguments}",
+            )
+        }
     }
     return executeToolWithExecutionRecovery(agent, tool, call.name, call.arguments, handler)
 }

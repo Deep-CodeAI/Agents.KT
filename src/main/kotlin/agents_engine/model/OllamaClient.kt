@@ -1,6 +1,7 @@
 package agents_engine.model
 
 import agents_engine.generation.LenientJsonParser
+import agents_engine.generation.jsonSchema
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -70,7 +71,7 @@ class OllamaClient(
         return parseResponse(response.body())
     }
 
-    private fun buildRequestJson(messages: List<LlmMessage>): String {
+    internal fun buildRequestJson(messages: List<LlmMessage>): String {
         val messagesJson = messages.joinToString(",") { msg ->
             buildString {
                 append("""{"role":"${msg.role}","content":${msg.content.toJsonString()}""")
@@ -86,7 +87,9 @@ class OllamaClient(
         }
         val toolsJson = if (tools.isNotEmpty()) {
             val defs = tools.joinToString(",") { t ->
-                """{"type":"function","function":{"name":"${t.name}","description":${t.description.toJsonString()},"parameters":{"type":"object","properties":{},"additionalProperties":true}}}"""
+                val parametersJson = t.argsType?.jsonSchema()
+                    ?: """{"type":"object","properties":{},"additionalProperties":true}"""
+                """{"type":"function","function":{"name":"${t.name}","description":${t.description.toJsonString()},"parameters":$parametersJson}}"""
             }
             ""","tools":[$defs]"""
         } else ""

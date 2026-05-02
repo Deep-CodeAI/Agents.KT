@@ -103,7 +103,7 @@ private fun KClass<*>.dataClassJsonSchema(): String {
         }
         append("""},"required":[""")
         ctor.parameters
-            .filter { !it.type.isMarkedNullable }
+            .filter { !it.type.isMarkedNullable && !it.isOptional }
             .forEachIndexed { i, param ->
                 if (i > 0) append(",")
                 append(""""${param.name}"""")
@@ -132,7 +132,7 @@ private fun KClass<*>.variantJsonSchema(): String {
             append(""""${param.name}":${param.jsonSchemaFragment()}""")
         }
         append("""},"required":["type"""")
-        ctor?.parameters?.filter { !it.type.isMarkedNullable }?.forEach { param ->
+        ctor?.parameters?.filter { !it.type.isMarkedNullable && !it.isOptional }?.forEach { param ->
             append(""","${param.name}"""")
         }
         append("]")
@@ -253,6 +253,7 @@ fun <T : Any> KClass<T>.fromLlmOutput(json: String): T? {
     return constructFromMap(obj as Map<String, Any?>)
 }
 
+@PublishedApi
 internal fun <T : Any> KClass<T>.constructFromMap(fields: Map<*, Any?>): T? {
     val ctor = primaryConstructor ?: return null
     return try {

@@ -1,8 +1,24 @@
 package agents_engine.model
 
+import agents_engine.generation.constructFromMap
+import kotlin.reflect.KClass
+
+/**
+ * A tool the agentic loop can invoke on the model's behalf.
+ *
+ * The wire signature is intentionally `Map<String, Any?> -> Any?` because that's
+ * what the LLM actually sends and reads. For typed authoring, use the
+ * `tool<Args, Result>("name") { args -> ... }` builder — it wraps your typed
+ * lambda in a Map-shaped executor and records the [argsType] so downstream
+ * consumers (provider schema generation, runtime validation) can introspect it.
+ *
+ * @property argsType the `@Generable` Args class for typed tools, `null` for
+ *   tools authored via the legacy `tool(name, desc) { args: Map -> ... }` form.
+ */
 class ToolDef(
     val name: String,
     val description: String = "",
+    val argsType: KClass<*>? = null,
     val executor: (Map<String, Any?>) -> Any?,
 ) {
     var errorHandler: ToolErrorHandler? = null
@@ -20,7 +36,7 @@ class ToolDefaultsBuilder {
 }
 
 class ToolsBuilder {
-    internal val defs = mutableListOf<ToolDef>()
+    @PublishedApi internal val defs = mutableListOf<ToolDef>()
     internal var defaultErrorHandler: ToolErrorHandler? = null
 
     fun defaults(block: ToolDefaultsBuilder.() -> Unit) {
@@ -34,7 +50,7 @@ class ToolsBuilder {
             "Tool \"$name\" is already defined in this tools block. " +
                 "Tool names must be unique."
         }
-        defs.add(ToolDef(name, description, executor))
+        defs.add(ToolDef(name = name, description = description, executor = executor))
     }
 
     fun tool(
@@ -47,7 +63,7 @@ class ToolsBuilder {
             "Tool \"$name\" is already defined in this tools block. " +
                 "Tool names must be unique."
         }
-        val def = ToolDef(name, description, executor)
+        val def = ToolDef(name = name, description = description, executor = executor)
         def.errorHandler = OnErrorBuilder().apply(onError).build()
         defs.add(def)
     }
@@ -70,6 +86,39 @@ class ToolsBuilder {
         }
         defs.add(this)
     }
+
+    /**
+     * Typed tool builder — `tool<Args, Result>("name", "desc") { args -> ... }`.
+     *
+     * The framework wraps the typed `executor` in a `(Map<String, Any?>) -> Any?`
+     * adapter that constructs `Args` from the incoming map via reflection
+     * (`Args::class.constructFromMap(map)`). The resulting [ToolDef] carries
+     * `argsType = Args::class` so downstream code (provider schema generation
+     * in #635, runtime validation routing in #636) can introspect it.
+     *
+     * `Args` should be a `@Generable` data class — required fields enforce
+     * presence, defaults are honored.
+     */
+    @JvmName("toolTyped")
+    inline fun <reified Args : Any, Result> tool(
+        name: String,
+        description: String,
+        crossinline executor: (Args) -> Result,
+    ) {
+        require(defs.none { it.name == name }) {
+            "Tool \"$name\" is already defined in this tools block. " +
+                "Tool names must be unique."
+        }
+        val argsClass = Args::class
+        val wrapped: (Map<String, Any?>) -> Any? = { rawArgs ->
+            val typed = argsClass.constructFromMap(rawArgs)
+                ?: error(
+                    "Tool '$name' could not deserialize ${argsClass.simpleName} from arguments: $rawArgs"
+                )
+            executor(typed)
+        }
+        defs.add(ToolDef(name = name, description = description, executor = wrapped, argsType = argsClass))
+    }
 }
 
 class ToolDefBuilder(private val name: String) {
@@ -87,9 +136,9 @@ class ToolDefBuilder(private val name: String) {
 
     internal fun build(): ToolDef {
         val def = ToolDef(
-            name,
-            desc,
-            requireNotNull(exec) { "Tool \"$name\" must have an executor { } block." },
+            name = name,
+            description = desc,
+            executor = requireNotNull(exec) { "Tool \"$name\" must have an executor { } block." },
         )
         handler?.let { def.errorHandler = it }
         return def
@@ -98,19 +147,21 @@ class ToolDefBuilder(private val name: String) {
 
 fun buildBuiltInTools(): List<ToolDef> = listOf(
     ToolDef(
-        "escalate",
-        "Signal that you cannot fix the problem. Args: reason (string), severity (LOW/MEDIUM/HIGH/CRITICAL, optional, defaults to HIGH)."
-    ) { args ->
-        val reason = args["reason"]?.toString() ?: "Unknown reason"
-        val severityStr = args["severity"]?.toString()?.uppercase() ?: "HIGH"
-        val severity = try { Severity.valueOf(severityStr) } catch (_: Exception) { Severity.HIGH }
-        throw EscalationException(reason, severity)
-    },
+        name = "escalate",
+        description = "Signal that you cannot fix the problem. Args: reason (string), severity (LOW/MEDIUM/HIGH/CRITICAL, optional, defaults to HIGH).",
+        executor = { args ->
+            val reason = args["reason"]?.toString() ?: "Unknown reason"
+            val severityStr = args["severity"]?.toString()?.uppercase() ?: "HIGH"
+            val severity = try { Severity.valueOf(severityStr) } catch (_: Exception) { Severity.HIGH }
+            throw EscalationException(reason, severity)
+        },
+    ),
     ToolDef(
-        "throwException",
-        "Signal a hard failure — the problem is fundamentally unrecoverable. Args: reason (string)."
-    ) { args ->
-        val reason = args["reason"]?.toString() ?: "Unknown reason"
-        throw ToolExecutionException(reason)
-    },
+        name = "throwException",
+        description = "Signal a hard failure — the problem is fundamentally unrecoverable. Args: reason (string).",
+        executor = { args ->
+            val reason = args["reason"]?.toString() ?: "Unknown reason"
+            throw ToolExecutionException(reason)
+        },
+    ),
 )

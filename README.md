@@ -263,6 +263,25 @@ calculator("Calculate ((15 + 35) / 2)^2")
 
 **`tools { tool(name, description) { args -> } }`** — registers callable tools. Each tool receives a `Map<String, Any?>` of arguments and returns any value.
 
+**`tools { tool<Args, Result>(name, description) { args -> } }`** — typed variant. `Args` must be `@Generable`; the framework deserializes the model's arguments into a typed instance via reflection (`KClass.constructFromMap`) before invoking the executor. The provider envelope advertises a real JSON Schema generated from `Args::class.jsonSchema()` (proper `properties`, `required`, `@Guide` descriptions per field) instead of the legacy `properties: {}, additionalProperties: true`. Deserialization failures (missing required field, wrong type) route through `onError { invalidArgs { ... } }` like JSON-parse failures, not `executionError`.
+
+```kotlin
+@Generable("Write a file to disk")
+data class WriteFileArgs(
+    @Guide("Absolute path") val path: String,
+    @Guide("UTF-8 file contents") val content: String,
+)
+
+@Generable data class WriteFileResult(val bytesWritten: Long)
+
+tools {
+    tool<WriteFileArgs, WriteFileResult>("write_file", "Writes content to a file") { args ->
+        File(args.path).writeText(args.content)
+        WriteFileResult(args.content.length.toLong())
+    }
+}
+```
+
 **`skill { tools(...) }`** — marks a skill as LLM-driven. The listed tool names are the ones the model may call. The model decides which tools to call and in what order.
 
 **`onToolUse { name, args, result -> }`** — fires after every action tool execution. Useful for logging, tracing, and test assertions.
