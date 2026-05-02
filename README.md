@@ -306,6 +306,32 @@ val a = agent<String, String>("coder") {
 // Content is only fetched when the LLM decides it needs it.
 ```
 
+### Inline tool-call fallback (Ollama, models without native tool support)
+
+Some Ollama models — `gemma3`, certain Mistral variants, smaller community models — don't accept the native `tools: [...]` field on `/api/chat` and reject the request with `{"error":"... does not support tools"}`. Without recovery, the agent fails to start.
+
+`OllamaClient.chat` recovers transparently: on the capability error, it retries the same request **once** with the native `tools` field stripped and the tool catalog injected into a system message in inline JSON tool-call format:
+
+```
+{"tool":"<tool_name>","arguments":{<key>:<value>, ...}}
+```
+
+The model emits a single JSON object per call; `InlineToolCallParser` consumes it and the agentic loop proceeds normally. Your existing `system` message is preserved — the inline format prompt is appended into a single system message, not duplicated.
+
+A per-instance latch records the model's incapability, so subsequent `chat()` calls in the same agentic loop skip the native attempt and go straight to the inline path (one HTTP roundtrip per turn instead of two).
+
+```kotlin
+val a = agent<String, String>("calc") {
+    // gemma3:4b doesn't support native tools — the fallback drives it via inline JSON
+    model { ollama("gemma3:4b"); host = "localhost"; port = 11434 }
+    tools { tool("evaluate", "Evaluate an arithmetic expression") { args -> eval(args["expression"]!!) } }
+    skills { skill<String, String>("calc", "Compute") { tools("evaluate") } }
+}
+a("Compute (2+3)*4")  // works — agent invokes evaluate via inline tool call, returns "20"
+```
+
+Only the `does not support tools` capability error triggers the fallback. Other provider errors — auth failures, model-not-found, transport — propagate as `LlmProviderException` (#702). Established by issues #702 (provider-error surfacing) and #706 (inline fallback).
+
 ### Tool authorization model
 
 **The `skill { tools(...) }` declaration is authorization, enforced at execution.** Every agentic invocation builds a per-skill allowlist and the runtime refuses to execute any tool not in it. The system prompt's "Available tools" listing is descriptive — what the LLM is told it can call — but it is not the security boundary. Even if the model emits a tool name it was never shown (hallucination, jailbreak, or model from a different family), the runtime rejects it.
@@ -1090,7 +1116,7 @@ cd Agents.KT
 - [x] `.loop {}` — iterative execution with `(OUT) -> IN?` feedback block
 - [x] `.branch {}` — conditional routing on sealed types, composable with `then`
 - [x] `@Generable("desc")` / `@Guide` / `@LlmDescription` — runtime reflection: `toLlmDescription()`, `jsonSchema()`, `promptFragment()`, `fromLlmOutput<T>()`, `PartiallyGenerated<T>`
-- [x] `model { }` — Ollama backend; `host`, `port`, `temperature`; injectable `ModelClient` for tests
+- [x] `model { }` — Ollama backend; `host`, `port`, `temperature`; injectable `ModelClient` for tests; auto-fallback to inline JSON tool-call format for models without native tool support (#706)
 - [x] Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`) + `onToolUse` observability hook
 - [x] Skill selection — manual `skillSelection {}` + automatic LLM routing when multiple skills match
 - [ ] `>>` — security/education wrap

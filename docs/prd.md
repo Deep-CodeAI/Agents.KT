@@ -511,6 +511,42 @@ Construction-time validation catches errors before runtime:
 
 This is the typed upgrade of BeeAI's `RequirementAgent` pattern: their `Rule` has 6 boolean flags (allowed, hidden, forced, prevent_stop, reason) that can conflict at runtime. Agents.KT's sealed hierarchy makes impossible states unrepresentable at compile time.
 
+### Tool Capability Fallback (Provider-Level Recovery)
+
+Local model ecosystems are uneven. Some Ollama models (`gemma3`, certain Mistral variants, smaller community releases) reject the native `tools` field on `/api/chat` and respond with `{"error":"... does not support tools"}`. Without recovery, every agent that pairs such a model with `tools(...)` fails to start — even though the model itself is perfectly capable of emitting structured JSON.
+
+The framework's principle: **provider-level capability gaps don't propagate to user code.** `OllamaClient.chat` performs a one-shot retry when it observes the capability error:
+
+1. Strips the native `tools` field from the request body.
+2. Generates an inline tool-call prompt — `{"tool":"<name>","arguments":{...}}` format — listing each registered tool with its description and `@Generable`-derived argument schema.
+3. Appends the inline prompt to the user's existing `system` message (not duplicated as a separate message), preserving the user's framing.
+4. Re-issues the request and feeds the response through `InlineToolCallParser`, which already handles the inline format for non-native-tool models.
+
+A `@Volatile` latch on the client instance remembers the capability outcome — subsequent `chat()` calls in the same agentic loop skip the native attempt entirely and go straight to inline mode (one HTTP roundtrip per turn instead of two).
+
+```kotlin
+agent<String, String>("calc") {
+    // No native tool support — the fallback path drives it transparently.
+    model { ollama("gemma3:4b") }
+    tools { tool("evaluate", "Evaluate an arithmetic expression") { args -> eval(args["expression"]!!) } }
+    skills { skill<String, String>("calc", "Compute") { tools("evaluate") } }
+}
+// Verified live with gemma3:4b: greet, evaluate("(2+3)*4")=20, fib(10)=55
+```
+
+Recovery scope is deliberately narrow:
+
+| Provider error | Behavior |
+|---|---|
+| `does not support tools` | Auto-recover via inline format |
+| Auth / authorization failure | Throw `LlmProviderException` |
+| Model not found | Throw `LlmProviderException` |
+| Transport / malformed body | Throw `LlmProviderException` |
+
+Only the capability case auto-recovers. Other provider-boundary errors throw `LlmProviderException` so they surface clearly at the boundary instead of leaking as unparseable model "output." Established by issues #702 (provider-error surfacing) and #706 (inline fallback).
+
+This is the same architectural move as the Anthropic/OpenAI guided-JSON fallback for models that don't expose JSON mode: the framework abstracts provider-specific protocol gaps so agent code stays portable across model families.
+
 ### Two Execution Paths (Unified)
 
 Every agent runs through skills. Skills have two implementation paths:
@@ -3878,7 +3914,7 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 - Composition operators: `then` (pipeline), `*` (forum shorthand), `/` (parallel), `.loop {}` (iterative + plain `while`), `.branch {}` (sealed type routing)
 - DDD package structure: `agents_engine.core` (entities) + `agents_engine.composition` (operators)
 - Single-placement rule: each agent instance participates in at most one structure
-- `model { }` — Ollama backend; `host`, `port`, `temperature`; injectable `ModelClient` for tests
+- `model { }` — Ollama backend; `host`, `port`, `temperature`; injectable `ModelClient` for tests; auto-fallback to inline JSON tool-call format for models without native tool support — `gemma3` and similar (#706)
 - Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`) + `onToolUse` observability callback
 - `onSkillChosen { name -> }` — fires when agent selects a skill to execute
 - `onKnowledgeUsed { name, content -> }` — fires when LLM fetches a knowledge entry (tools model)
