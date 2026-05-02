@@ -35,6 +35,7 @@ class McpServer private constructor(
     private val portRequest: Int,
 ) {
     private var http: HttpServer? = null
+    private val sessionId: String = java.util.UUID.randomUUID().toString()
 
     val url: String
         get() = http?.let { "http://localhost:${it.address.port}/mcp" }
@@ -53,6 +54,16 @@ class McpServer private constructor(
 
     private fun handle(exchange: HttpExchange) {
         try {
+            if (exchange.requestMethod != "POST") {
+                exchange.responseHeaders.add("Allow", "POST")
+                respond(exchange, 405, """{"error":"Method Not Allowed — only POST is supported"}""")
+                return
+            }
+            val ct = exchange.requestHeaders.getFirst("Content-Type")
+            if (ct == null || !ct.startsWith("application/json")) {
+                respond(exchange, 415, """{"error":"Unsupported Media Type — expected application/json"}""")
+                return
+            }
             val bodyText = exchange.requestBody.bufferedReader().use { it.readText() }
             val request = LenientJsonParser.parse(bodyText) as? Map<*, *>
                 ?: return respond(exchange, 400, "{}")
@@ -62,12 +73,15 @@ class McpServer private constructor(
             if (method.startsWith("notifications/")) { respond(exchange, 202, ""); return }
 
             val response: String = when (method) {
-                "initialize" -> jsonRpcResult(id, mapOf(
-                    "protocolVersion" to MCP_PROTOCOL_VERSION,
-                    "capabilities" to mapOf("tools" to emptyMap<String, Any?>()),
-                    "serverInfo" to mapOf("name" to "agents-kt-mcp-server", "version" to "0.1.3"),
+                "initialize" -> {
+                    exchange.responseHeaders.add("Mcp-Session-Id", sessionId)
+                    handleInitialize(id, request)
+                }
+                "ping" -> jsonRpcResult(id, emptyMap<String, Any?>())
+                "tools/list" -> jsonRpcResult(id, mapOf(
+                    "tools" to exposedSkills.map { it.toMcpDescriptor() },
+                    "nextCursor" to null,
                 ))
-                "tools/list" -> jsonRpcResult(id, mapOf("tools" to exposedSkills.map { it.toMcpDescriptor() }))
                 "tools/call" -> handleToolCall(id, request)
                 else -> jsonRpcError(id, -32601, "Method not found: $method")
             }
@@ -77,6 +91,23 @@ class McpServer private constructor(
         } finally {
             exchange.close()
         }
+    }
+
+    private fun handleInitialize(id: Any?, request: Map<*, *>): String {
+        val params = request["params"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+        val requested = params["protocolVersion"] as? String
+        if (requested != null && requested != MCP_PROTOCOL_VERSION) {
+            return jsonRpcError(
+                id,
+                -32602,
+                "Unsupported protocolVersion: \"$requested\". Server speaks: \"$MCP_PROTOCOL_VERSION\".",
+            )
+        }
+        return jsonRpcResult(id, mapOf(
+            "protocolVersion" to MCP_PROTOCOL_VERSION,
+            "capabilities" to mapOf("tools" to mapOf("listChanged" to false)),
+            "serverInfo" to mapOf("name" to "agents-kt-mcp-server", "version" to "0.1.3"),
+        ))
     }
 
     private fun handleToolCall(id: Any?, request: Map<*, *>): String {
@@ -151,7 +182,7 @@ internal class ExposedSkill private constructor(
 ) {
     fun toMcpDescriptor(): Map<String, Any?> = buildMap {
         put("name", skill.name)
-        put("description", skill.toLlmDescription())
+        put("description", skill.description)
         put("inputSchema", schema)
     }
 
