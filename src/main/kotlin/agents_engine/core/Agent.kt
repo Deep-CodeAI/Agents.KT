@@ -48,9 +48,13 @@ class Agent<IN, OUT>(
     /**
      * Internal API for tools that pass through user DSL guards (reservation +
      * uniqueness). MCP DSL, ToolsBuilder result merging, and other code paths
-     * that surface tools the user named call this.
+     * that surface tools the user named call this. Freeze-checked: closes the
+     * post-construction `agent.mcp { server(...) }` bypass that #697 missed
+     * (see #708). `registerBuiltInTool` and `unregisterTool` remain unguarded
+     * because Forum needs them for runtime captain rotation.
      */
     internal fun registerTool(def: ToolDef) {
+        checkNotFrozen()
         require(def.name !in agents_engine.model.RESERVED_MEMORY_TOOL_NAMES) {
             "Tool name \"${def.name}\" is reserved for built-in memory tools (registered via memory(bank))."
         }

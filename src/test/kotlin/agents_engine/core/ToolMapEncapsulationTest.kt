@@ -34,12 +34,16 @@ class ToolMapEncapsulationTest {
     }
 
     @Test
-    fun `internal registerTool rejects reserved memory names`() {
-        val a = agent<String, String>("a") {
-            skills { skill<String, String>("s", "stub") { implementedBy { it } } }
-        }
+    fun `tools DSL rejects reserved memory names (via registerTool guard)`() {
+        // After #708 added freeze to registerTool, the legitimate way to test
+        // the reservation guard is through the user-facing tools { } DSL —
+        // which internally calls registerTool during construction (before the
+        // freeze flips). Direct post-construction calls now hit freeze first.
         try {
-            a.registerTool(ToolDef(name = "memory_read", executor = { "x" }))
+            agent<String, String>("a") {
+                tools { tool("memory_read", "x") { _ -> "x" } }
+                skills { skill<String, String>("s", "stub") { implementedBy { it } } }
+            }
             fail("expected reservation rejection")
         } catch (e: IllegalArgumentException) {
             assertTrue(e.message!!.contains("memory_read"))
@@ -48,13 +52,15 @@ class ToolMapEncapsulationTest {
     }
 
     @Test
-    fun `internal registerTool rejects duplicate names`() {
-        val a = agent<String, String>("a") {
-            tools { tool("first", "x") { _ -> "ok" } }
-            skills { skill<String, String>("s", "stub") { tools("first") } }
-        }
+    fun `tools DSL rejects duplicate names (via registerTool guard)`() {
         try {
-            a.registerTool(ToolDef(name = "first", executor = { "dup" }))
+            agent<String, String>("a") {
+                tools {
+                    tool("first", "x") { _ -> "ok" }
+                    tool("first", "x") { _ -> "dup" }
+                }
+                skills { skill<String, String>("s", "stub") { tools("first") } }
+            }
             fail("expected duplicate rejection")
         } catch (e: IllegalArgumentException) {
             assertTrue(e.message!!.contains("first"))

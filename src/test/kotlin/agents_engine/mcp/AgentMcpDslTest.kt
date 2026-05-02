@@ -20,6 +20,30 @@ class AgentMcpDslTest {
         MockTcpMcpServer.start(block).also { toStop.add { it.stop() } }
 
     @Test
+    fun `mcp block throws after construction (#708)`() {
+        // #708: post-construction mcp { } must not silently mutate the tool
+        // registry. The freeze guard on registerTool transitively closes this
+        // path — even with a perfectly valid MCP server config.
+        val s = startHttp { tool("ping") { respond { _ -> listOf(textBlock("pong")) } } }
+
+        val a = agent<String, String>("dsl-frozen") {
+            // Note: NO mcp { } block during construction — added post-hoc below.
+            skills { skill<String, String>("noop", "stub") { implementedBy { "ok" } } }
+        }
+
+        try {
+            a.mcp { server("late") { url = s.url } }
+            fail("expected freeze rejection on post-construction mcp { }")
+        } catch (e: IllegalStateException) {
+            assertTrue(
+                e.message!!.contains("frozen", ignoreCase = true),
+                "must explain why: ${e.message}",
+            )
+        }
+        assertTrue("late.ping" !in a.toolMap, "tool must NOT have been registered post-construction")
+    }
+
+    @Test
     fun `HTTP server registered via mcp DSL exposes namespaced tools`() {
         val s = startHttp {
             tool("ping") { respond { _ -> listOf(textBlock("pong")) } }

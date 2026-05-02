@@ -1,5 +1,6 @@
 package agents_engine.core
 
+import agents_engine.model.ToolDef
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlin.test.fail
@@ -71,6 +72,27 @@ class AgentFreezeTest {
     @Test fun `skillSelection throws after construction`() {
         val a = trivial()
         assertFrozenError { a.skillSelection { _ -> "s" } }
+    }
+
+    @Test fun `registerTool throws after construction (closes mcp post-construction bypass #708)`() {
+        // #708: Agent.mcp { } is a public extension that calls registerTool(td)
+        // to install MCP tools. Without freeze on registerTool, post-construction
+        // mcp { } silently mutates the registry — defeating "frozen after
+        // construction." Guarding registerTool closes both the direct API and
+        // the mcp DSL path.
+        val a = trivial()
+        assertFrozenError {
+            a.registerTool(ToolDef(name = "late_tool", executor = { "x" }))
+        }
+    }
+
+    @Test fun `registerBuiltInTool remains unguarded for runtime composition (regression)`() {
+        // Forum's captain-rotation flow registers/unregisters forum_return at
+        // runtime via the built-in path. That MUST stay open even after freeze.
+        val a = trivial()
+        a.registerBuiltInTool(ToolDef(name = "memory_read", executor = { "x" }))   // no throw
+        assertTrue("memory_read" in a.toolMap)
+        a.unregisterTool("memory_read")                                            // no throw
     }
 
     @Test fun `listeners (onToolUse, onSkillChosen, etc) remain settable post-construction (regression)`() {
