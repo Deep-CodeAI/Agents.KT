@@ -52,6 +52,8 @@ class McpServer private constructor(
 
     fun stop() { http?.stop(0); http = null }
 
+    fun isRunning(): Boolean = http != null
+
     private fun handle(exchange: HttpExchange) {
         try {
             if (exchange.requestMethod != "POST") {

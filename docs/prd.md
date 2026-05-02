@@ -736,6 +736,21 @@ server.start()
 
 When a skill is exposed as MCP, the framework generates schemas from the skill's `@Generable` IN/OUT types *at that point* — not at tool construction. Local tools never pay schema cost unless explicitly exposed.
 
+### McpRunner: picocli-style standalone main
+
+For agents shipped as runnable JARs (or Docker / GraalVM native), `McpRunner` collapses lifecycle to one line:
+
+```kotlin
+fun main(args: Array<String>) = exitProcess(McpRunner.serve(coder, args) {
+    port = 8080                    // overridden by --port
+    expose("write-code")           // overridden by --expose (repeatable)
+})
+```
+
+The runner parses CLI args (block defaults override-able by flags), starts the server, prints the listening URL, registers a JVM shutdown hook for graceful `stop()`, and blocks until SIGTERM/SIGINT. Hand-rolled CLI parser (no picocli dependency) — stays consistent with the project's "JDK 21 only, no extra deps" ethos.
+
+Flags: `--port N`, `--expose NAME` (repeatable), `-h/--help`, `-V/--version`. This is the foundation the Gradle plugin (§14.2) and runtime distribution (§15) build on — `application { mainClass = ... }` auto-generation, GraalVM native binary, jlink runtime bundle.
+
 ---
 
 ## 6. Skill Model: Independent Typed Functions
@@ -3874,7 +3889,10 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 - Session model: multi-turn conversation, compaction strategies (§5.7)
 - Reactive context hooks: `beforeInference`, `afterToolCall`, `onBudgetThreshold` (§8.4)
 - ~~Skill routing: predefined rules + `RoutingStrategy.LLM_DECISION`~~ ✓ done
-- MCP server: expose agents as MCP endpoints (§5.8)
+- ~~MCP client: `mcp { server() }` agent DSL with HTTP / stdio / TCP transports, Bearer auth, namespacing~~ ✓ done
+- ~~MCP server: `McpServer.from(agent) { expose() }` exposes agent skills as MCP tools~~ ✓ done
+- ~~MCP server: 2025-03-26 spec conformance (ping, capabilities, protocolVersion negotiation, cursor/nextCursor, Content-Type/415, 405 with Allow, Mcp-Session-Id, plain description)~~ ✓ done
+- ~~MCP runner: `McpRunner.serve(agent, args)` picocli-style one-line `main` for standalone agent JARs~~ ✓ done
 - Pipeline observability: `observe {}`, `Flow<PipelineEvent>` (§10.2)
 - ~~Forum coordination runtime and Parallel coroutine execution~~ ✓ done — Forum.invoke() with concurrent participants + captain, `onMentionEmitted` output tracking
 

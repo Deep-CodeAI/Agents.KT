@@ -435,6 +435,21 @@ Exposed skills become MCP tools. The `inputSchema` is generated from the skill's
 | Cursor / IDEs | Same URL, the IDE's MCP config block |
 | Anything that speaks MCP | Standard JSON-RPC 2.0 over Streamable HTTP, protocol version `2025-03-26` |
 
+### Standalone server with `McpRunner` — picocli-style one-liner main
+
+Wrap any agent in a real runnable JAR with one line:
+
+```kotlin
+fun main(args: Array<String>) = exitProcess(McpRunner.serve(greeter, args) {
+    port = 8080                        // overridden by --port
+    expose("greet")                    // overridden by --expose (repeatable)
+})
+```
+
+The runner parses CLI args, builds the `McpServer`, prints the listening URL + session id, registers a JVM shutdown hook for graceful `stop()`, and blocks until SIGTERM/SIGINT. Returns the process exit code.
+
+Flags: `--port N`, `--expose NAME` (repeatable), `-h/--help`, `-V/--version`. Hand-rolled CLI parser, zero new dependencies.
+
 See the [MCP Integration](https://github.com/Deep-CodeAI/Agents.KT/wiki/MCP-Integration) wiki page for the full DSL surface, lower-level `McpClient` factories, in-process mock servers for hermetic tests, and protocol-version handling.
 
 ---
