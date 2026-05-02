@@ -49,7 +49,7 @@ internal fun parseToolArguments(rawArgs: Any?): ParsedToolArguments = when (rawA
     )
 }
 
-class OllamaClient(
+open class OllamaClient(
     private val host: String = "localhost",
     private val port: Int = 11434,
     private val model: String,
@@ -60,18 +60,81 @@ class OllamaClient(
 
     private val http = HttpClient.newHttpClient()
 
+    /**
+     * #706: Once a model has been observed to reject native tools, skip the native
+     * attempt on subsequent calls and go straight to the inline-prompt path. This
+     * matters for the agentic loop, which calls `chat()` multiple times per turn —
+     * without the latch we'd burn an extra HTTP roundtrip per turn re-discovering
+     * the same incapability.
+     */
+    @Volatile private var nativeToolsKnownUnsupported: Boolean = false
+
     override fun chat(messages: List<LlmMessage>): LlmResponse {
-        val body = buildRequestJson(messages)
+        if (tools.isNotEmpty() && nativeToolsKnownUnsupported) {
+            return parseResponse(sendChat(buildRequestJson(withInlineToolPrompt(messages), includeTools = false)))
+        }
+        val body = buildRequestJson(messages, includeTools = true)
+        val responseBody = sendChat(body)
+        return try {
+            parseResponse(responseBody)
+        } catch (e: LlmProviderException) {
+            // #706: Some Ollama models (e.g. gemma3) reject native `tools` capability.
+            // Instead of failing, retry once with tools removed from the request and
+            // the tool catalog injected into a system message — the inline JSON tool
+            // call format that `InlineToolCallParser` already consumes. Other provider
+            // errors (auth, model-not-found, transport) propagate unchanged.
+            if (tools.isNotEmpty() && isNativeToolCapabilityError(e.message)) {
+                nativeToolsKnownUnsupported = true
+                val inlineMessages = withInlineToolPrompt(messages)
+                val inlineBody = buildRequestJson(inlineMessages, includeTools = false)
+                parseResponse(sendChat(inlineBody))
+            } else {
+                throw e
+            }
+        }
+    }
+
+    /** Test seam (#706): subclasses override to stub HTTP without standing up a server. */
+    internal open fun sendChat(body: String): String {
         val request = HttpRequest.newBuilder()
             .uri(URI.create("$baseUrl/api/chat"))
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build()
-        val response = http.send(request, HttpResponse.BodyHandlers.ofString())
-        return parseResponse(response.body())
+        return http.send(request, HttpResponse.BodyHandlers.ofString()).body()
     }
 
-    internal fun buildRequestJson(messages: List<LlmMessage>): String {
+    private fun isNativeToolCapabilityError(msg: String?): Boolean =
+        msg?.contains("does not support tools", ignoreCase = true) == true
+
+    internal fun buildInlineToolPrompt(): String {
+        val descriptions = tools.joinToString("\n") { t ->
+            val params = t.argsType?.jsonSchema() ?: """{"type":"object"}"""
+            "- ${t.name}: ${t.description}. Arguments schema: $params"
+        }
+        return """
+            You can use the following tools. To call a tool, respond with ONLY a single JSON object — no prose, no code fences, no explanation:
+
+            {"tool":"<tool_name>","arguments":{<key>:<value>, ...}}
+
+            If no tool is needed, answer normally in plain text.
+
+            Available tools:
+            $descriptions
+        """.trimIndent()
+    }
+
+    internal fun withInlineToolPrompt(messages: List<LlmMessage>): List<LlmMessage> {
+        val inlinePrompt = buildInlineToolPrompt()
+        val first = messages.firstOrNull()
+        return if (first?.role == "system") {
+            listOf(LlmMessage("system", first.content + "\n\n" + inlinePrompt)) + messages.drop(1)
+        } else {
+            listOf(LlmMessage("system", inlinePrompt)) + messages
+        }
+    }
+
+    internal fun buildRequestJson(messages: List<LlmMessage>, includeTools: Boolean = true): String {
         val messagesJson = messages.joinToString(",") { msg ->
             buildString {
                 append("""{"role":"${msg.role}","content":${msg.content.toJsonString()}""")
@@ -85,7 +148,7 @@ class OllamaClient(
                 append("}")
             }
         }
-        val toolsJson = if (tools.isNotEmpty()) {
+        val toolsJson = if (includeTools && tools.isNotEmpty()) {
             val defs = tools.joinToString(",") { t ->
                 val parametersJson = t.argsType?.jsonSchema()
                     ?: """{"type":"object","properties":{},"additionalProperties":true}"""
