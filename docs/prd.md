@@ -751,6 +751,20 @@ The runner parses CLI args (block defaults override-able by flags), starts the s
 
 Flags: `--port N`, `--expose NAME` (repeatable), `-h/--help`, `-V/--version`. This is the foundation the Gradle plugin (§14.2) and runtime distribution (§15) build on — `application { mainClass = ... }` auto-generation, GraalVM native binary, jlink runtime bundle.
 
+### Agent Deployment Modes — library, hosted, autonomous
+
+The same agent definition can be deployed in three ways. Each mode is one line of glue away from the next:
+
+| Mode | Glue | Where it runs | Who can call it |
+|------|------|---------------|----------------|
+| **Library** | `agent<IN, OUT>("...") { skills { } }` | In the host JVM, in-process | Internal Kotlin code, fully typed |
+| **Hosted** | + `McpServer.from(agent) { expose("...") }.start()` | In the host JVM, also addressable | Internal callers (typed) AND any MCP client (over HTTP) |
+| **Autonomous (ejected)** | `fun main(args) = exitProcess(McpRunner.serve(agent, args))` | Its own process / JAR / Docker / native binary | Any MCP client, anywhere |
+
+The progression matches how agents earn their independence: start as an in-process function, grow into a hosted endpoint when external callers appear, **eject** into autonomy when the deploy unit needs to be the agent itself (independent scaling, separate ops budget, language-neutral fleet). The agent definition is the same Kotlin code in all three modes — only the wiring around it changes.
+
+This three-mode model is what §13's distributed framework, §14's Gradle plugin, and §15's runtime distribution are all in service of: making the autonomous mode as cheap operationally as the library mode is at compile time. See the [Agent Deployment Modes](https://github.com/Deep-CodeAI/Agents.KT/wiki/Agent-Deployment-Modes) wiki page for the full narrative and tradeoff table.
+
 ---
 
 ## 6. Skill Model: Independent Typed Functions

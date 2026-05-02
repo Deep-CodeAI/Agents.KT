@@ -450,6 +450,18 @@ The runner parses CLI args, builds the `McpServer`, prints the listening URL + s
 
 Flags: `--port N`, `--expose NAME` (repeatable), `-h/--help`, `-V/--version`. Hand-rolled CLI parser, zero new dependencies.
 
+### Three ways to run an agent — library, hosted, autonomous
+
+Same agent, three deployment modes; each is one line of glue away from the next:
+
+| Mode | Glue | Where it runs | Who can call it |
+|------|------|---------------|----------------|
+| **Library** | `agent<IN, OUT>("...") { skills { ... } }` | In your JVM, in-process | Your Kotlin code, fully typed |
+| **Hosted** | + `McpServer.from(agent) { expose("...") }.start()` | In your JVM, plus an MCP endpoint | Internal callers (typed) AND any MCP client |
+| **Autonomous** | `fun main(args) = exitProcess(McpRunner.serve(agent, args))` | Its own process / JAR / Docker / native binary | Any MCP client, anywhere |
+
+You don't pick once — you can **eject** the agent into autonomy when independent scale matters. See [Agent Deployment Modes](https://github.com/Deep-CodeAI/Agents.KT/wiki/Agent-Deployment-Modes) for the full progression and tradeoffs.
+
 See the [MCP Integration](https://github.com/Deep-CodeAI/Agents.KT/wiki/MCP-Integration) wiki page for the full DSL surface, lower-level `McpClient` factories, in-process mock servers for hermetic tests, and protocol-version handling.
 
 ---
