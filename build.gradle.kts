@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "ai.deep-code"
-version = "0.1.2"
+version = "0.1.3"
 
 repositories {
     mavenCentral()
@@ -23,7 +23,7 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform {
-        excludeTags("live-llm")
+        excludeTags("live-llm", "live-mcp")
     }
 }
 
@@ -32,6 +32,16 @@ tasks.register<Test>("integrationTest") {
     group = "verification"
     useJUnitPlatform {
         includeTags("live-llm")
+    }
+    classpath = sourceSets.test.get().runtimeClasspath
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+}
+
+tasks.register<Test>("mcpIntegrationTest") {
+    description = "Runs integration tests that require a live MCP server (set MCP_REDMINE_URL)"
+    group = "verification"
+    useJUnitPlatform {
+        includeTags("live-mcp")
     }
     classpath = sourceSets.test.get().runtimeClasspath
     testClassesDirs = sourceSets.test.get().output.classesDirs

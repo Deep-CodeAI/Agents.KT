@@ -62,6 +62,14 @@ class ToolsBuilder {
         val def = builder.build()
         defs.add(def)
     }
+
+    operator fun ToolDef.unaryPlus() {
+        require(defs.none { it.name == this.name }) {
+            "Tool \"${this.name}\" is already defined in this tools block. " +
+                "Tool names must be unique."
+        }
+        defs.add(this)
+    }
 }
 
 class ToolDefBuilder(private val name: String) {
