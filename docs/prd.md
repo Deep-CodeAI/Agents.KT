@@ -2730,9 +2730,103 @@ project.toAgentCard(url = "https://api.deep-code.ai/agents/project")
 
 ---
 
-## 13. Distribution
+## 13. Distributed Agents Framework
 
-Agent distribution (JAR bundles, folder-based assembly, hot deploy, ClassLoader isolation) is planned for Phase 3+. Current development focuses on the DSL, type system, and runtime engine.
+Agents.KT treats distribution as a property of *placement*, not of code. The same `Agent<IN, OUT>` definition can run in-process today and on a remote node tomorrow without changing call sites. A2A (§4) is the wire; the DSL is the API.
+
+JAR bundling, folder-based assembly, hot deploy, and ClassLoader isolation are the packaging substrate (§12) that makes this possible. The runtime is planned for Phase 3+.
+
+### 13.1 Locality Transparency
+
+Composition operators don't care where participants execute:
+
+```kotlin
+val local  = agent<Spec, Code>("coder") { ... }
+val remote = Agent.fromA2A<Code, Review>(
+    "https://review.example.com/.well-known/agent.json"
+)
+
+val pipeline = local then remote   // ✅ types align, transport is invisible
+```
+
+`fromA2A<IN, OUT>` reifies the remote's AgentCard into a typed proxy. The compiler validates type alignment on the caller side; the runtime cross-checks the resolved AgentCard schema on first call and fails fast on drift.
+
+### 13.2 Topologies Across Nodes
+
+| Operator | Local nodes | Remote nodes | Notes |
+|----------|------------|--------------|-------|
+| `then` (Pipeline) | ✓ | ✓ | each stage may live anywhere |
+| `*` (Forum) | ✓ | ✓ *(planned)* | participants discoverable via registry |
+| `/` (Parallel) | ✓ | ✓ *(planned)* | fan-out across nodes; framework gathers |
+| `.loop {}` | ✓ | ✓ | predicate runs at the orchestrator |
+| `.branch {}` | ✓ | ✓ | sealed-type routing dispatches per-branch placement |
+| `.spawn {}` *(planned)* | ✓ | ✓ | child may be placed on a different node |
+
+The orchestrator is whatever node owns the outer structure. Inner agents may be local function calls, in-process coroutines, or A2A round-trips — uniform.
+
+### 13.3 Discovery
+
+Three modes, in increasing dynamism:
+
+1. **Static URL** — `Agent.fromA2A<>("https://.../agent.json")`. No registry.
+2. **Catalog** — a project-scoped JSON catalog mapping logical name → URL, resolved at assembly time. Supports environment overrides (dev/staging/prod).
+3. **Registry** *(planned)* — A2A-compatible endpoint returning AgentCards by capability query (e.g., "produces ReviewResult, tag=kotlin"). The runtime caches results with TTL.
+
+### 13.4 Failure Model
+
+A2A calls are I/O — they fail. Remote-call errors are infrastructure errors (§17), routed through `onError`:
+
+| Failure | Detection | Default | Override |
+|---------|-----------|---------|----------|
+| Connect timeout | per-call deadline | retry with backoff (3×) | `onError { remoteUnreachable -> ... }` |
+| Response timeout | per-call deadline | fail fast | `timeout(...)` per skill |
+| Schema drift | AgentCard hash mismatch | fail at startup | warn + adapter *(planned, §23 OQ #7)* |
+| 5xx from remote | HTTP status | retry with backoff (3×) | classify per status |
+| 4xx from remote | HTTP status | fail fast | `onError` for tool-shaped errors |
+| Partial failure (parallel) | per-branch | gather successes, surface failures | `parallelPolicy { allOrNothing \| bestEffort }` |
+
+Circuit breaking and bulkheads land in Phase 4 alongside Forum/Parallel across nodes.
+
+### 13.5 Type Safety Across Node Boundaries
+
+Three validation layers:
+
+- **Compile-time (caller):** `Agent.fromA2A<IN, OUT>` requires explicit types. Pipelines composing remote agents are type-checked exactly like local ones.
+- **Assembly-time:** if the AgentCard is reachable at assembly, the framework cross-checks declared `IN`/`OUT` against the card's `defaultInputModes` / `defaultOutputModes` and `@Generable` schema fingerprints.
+- **First-call:** the runtime fetches the live AgentCard, validates the schema hash, and caches. Drift triggers `onError(SchemaDrift)`.
+
+### 13.6 Placement Manifest *(planned)*
+
+A declarative file pinning which agents in a Team Bundle (§12.4) run where:
+
+```yaml
+# placement.yaml
+agents:
+  spec-master: { node: orchestrator }
+  coder:       { node: gpu-pool, replicas: 4 }
+  reviewer:    { remote: "https://review.deepcode.ai/.well-known/agent.json" }
+```
+
+At boot the runtime wires local agents in-process and materializes A2A proxies for remote ones. The composition graph in Kotlin source is unchanged — placement is config.
+
+### 13.7 What This Framework Is Not
+
+- **Not a service mesh.** Agents.KT relies on A2A; it ships no discovery, mTLS, or load balancer of its own. Plug into existing infra (Consul, Istio, K8s services) at the URL layer.
+- **Not actor-style messaging.** Communication is request/response over A2A. Long-lived state belongs in `memory {}` (§8.5), not in node identity.
+- **Not RPC code-gen.** No `.proto` files. Types come from `@Generable` Kotlin classes; AgentCards are derived.
+
+### 13.8 Status
+
+| Capability | Phase |
+|------------|-------|
+| `Agent.fromA2A<>()` typed proxy | 3 |
+| Pipelines with remote stages | 3 |
+| Catalog-based discovery | 3 |
+| Placement manifest | 3 |
+| Schema drift detection | 3 |
+| Registry-based discovery | 4 |
+| Forum / Parallel across nodes | 4 |
+| Circuit breaker / bulkhead | 4 |
 
 ---
 
@@ -3797,10 +3891,13 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 - JAR distribution: agent bundles, assembly engine, Gradle plugin
 - CLI: `serve`, `inspect`, `validate`, `prompts`
 - GraalVM native binary + jlink runtime
+- Distributed agents framework (§13): `Agent.fromA2A<>()` typed proxies, locality-transparent pipelines, catalog discovery, placement manifest, schema drift detection
+- Custom tool deserializers: per-tool or per-server lambdas mapping raw MCP `content[]` (and future A2A skill outputs) to typed Kotlin values. Bridges the "tools are LLM-facing JSON" / "I want types in my Kotlin call sites" gap without forcing a `Tool<IN, OUT>` refactor on the local-tool path. Composable: a default deserializer per `McpClient`, overridable per tool via `mcp.tool("name").withDeserializer<T> { content -> ... }`.
 
 ### Phase 4: Ecosystem (Q4 2026)
 
 - Team DSL: swarm coordination, message passing (§9.2.2) — if hardware and demand justify
+- Distributed framework: registry-based discovery, Forum/Parallel across nodes, circuit breaker / bulkhead (§13)
 - AgentUnit: semantic tests, LLM-as-judge, skill coverage
 - Knowledge packs: battle-tested prompt libraries
 - Visual structure editor
