@@ -24,9 +24,17 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
     var serverVersion: String? = null
         private set
 
-    fun toolDefs(): List<ToolDef> = tools.map { t ->
+    /**
+     * Mint a [ToolDef] for each tool the server exposes.
+     *
+     * When [prefix] is non-null, display names become `"$prefix.$wireName"`. The wire
+     * name (sent on `tools/call`) is unchanged — only what the agent / LLM sees is
+     * namespaced. Use this to register tools from multiple MCP servers in the same
+     * agent without name collisions.
+     */
+    fun toolDefs(prefix: String? = null): List<ToolDef> = tools.map { t ->
         ToolDef(
-            name = t.name,
+            name = if (prefix != null) "$prefix.${t.name}" else t.name,
             description = describeForLlm(t),
             executor = { args -> call(t.name, args) },
         )
@@ -123,9 +131,10 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
         private const val CLIENT_NAME = "agents-kt"
         private const val CLIENT_VERSION = "0.1.3"
 
-        fun connect(url: String): McpClient = McpClient(HttpMcpTransport(url)).apply {
-            handshake(); loadTools()
-        }
+        fun connect(url: String, auth: McpAuth = McpAuth.None): McpClient =
+            McpClient(HttpMcpTransport(url, auth)).apply {
+                handshake(); loadTools()
+            }
 
         fun connectTcp(host: String, port: Int): McpClient =
             McpClient(TcpMcpTransport(Socket(host, port))).apply {

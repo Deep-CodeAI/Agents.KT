@@ -11,18 +11,30 @@ class MockMcpServer internal constructor(
     private val server: HttpServer,
     private val protocol: MockMcpProtocol,
     private val useSse: Boolean,
+    private val requiredBearer: String?,
 ) {
     private val seenSessionIds = CopyOnWriteArrayList<String>()
+    private val seenBearerTokens = CopyOnWriteArrayList<String>()
 
     val url: String get() = "http://localhost:${server.address.port}/mcp"
 
     fun sessionIdsReceived(): List<String> = seenSessionIds.toList()
+
+    /** Bearer tokens received in the `Authorization` header across all requests. */
+    fun bearerTokensReceived(): List<String> = seenBearerTokens.toList()
 
     fun stop() { server.stop(0) }
 
     internal fun handle(exchange: HttpExchange) {
         try {
             exchange.requestHeaders.getFirst("Mcp-Session-Id")?.let { seenSessionIds.add(it) }
+            val authHeader = exchange.requestHeaders.getFirst("Authorization")
+            val presentedToken = authHeader?.removePrefix("Bearer ")?.trim()?.takeIf { authHeader.startsWith("Bearer ") }
+            presentedToken?.let { seenBearerTokens.add(it) }
+            if (requiredBearer != null && presentedToken != requiredBearer) {
+                respond(exchange, 401, """{"error":"unauthorized: invalid or missing Bearer token"}""")
+                return
+            }
             val bodyText = exchange.requestBody.bufferedReader().use { it.readText() }
             val response = protocol.process(bodyText)
             if (response == null) {
@@ -60,6 +72,7 @@ class MockMcpServer internal constructor(
                 server = server,
                 protocol = builder.buildProtocol(),
                 useSse = builder.useSseResponses,
+                requiredBearer = builder.requiredBearerToken,
             )
             server.createContext("/mcp") { mock.handle(it) }
             server.executor = null
@@ -89,6 +102,8 @@ class MockMcpServerBuilder internal constructor() {
     var protocolVersion: String = MCP_PROTOCOL_VERSION
     var serverName: String = "mock-mcp"
     var serverVersion: String = "0.0.1"
+    internal var requiredBearerToken: String? = null
+        private set
     private val tools = linkedMapOf<String, MockToolBuilder>()
     private val errors = mutableMapOf<String, JsonRpcError>()
 
@@ -99,6 +114,9 @@ class MockMcpServerBuilder internal constructor() {
     fun jsonRpcError(forMethod: String, code: Int = -32603, message: String = "Internal error") {
         errors[forMethod] = JsonRpcError(code, message)
     }
+
+    /** Require this exact Bearer token on every request. Missing or wrong → HTTP 401. */
+    fun requireBearer(token: String) { requiredBearerToken = token }
 
     internal fun buildProtocol(): MockMcpProtocol = MockMcpProtocol(
         tools = tools.mapValues { (_, b) -> b.build() },

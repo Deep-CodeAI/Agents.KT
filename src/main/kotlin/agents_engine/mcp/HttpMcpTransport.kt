@@ -10,7 +10,10 @@ import java.net.http.HttpResponse
  * or an SSE stream (a single `data:` event). Captures `Mcp-Session-Id` from any response
  * header and replays it on subsequent requests.
  */
-internal class HttpMcpTransport(private val url: String) : McpTransport {
+internal class HttpMcpTransport(
+    private val url: String,
+    private val auth: McpAuth = McpAuth.None,
+) : McpTransport {
 
     private var sessionId: String? = null
 
@@ -26,6 +29,7 @@ internal class HttpMcpTransport(private val url: String) : McpTransport {
             .header("Content-Type", "application/json")
             .header("Accept", "application/json, text/event-stream")
             .also { if (sessionId != null) it.header("Mcp-Session-Id", sessionId!!) }
+            .also { applyAuth(it) }
             .POST(HttpRequest.BodyPublishers.ofString(envelope))
         val response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString())
         if (response.statusCode() !in 200..299) {
@@ -38,6 +42,13 @@ internal class HttpMcpTransport(private val url: String) : McpTransport {
             extractSseJson(response.body())
                 ?: error("MCP SSE response had no JSON data event: ${response.body()}")
         } else response.body()
+    }
+
+    private fun applyAuth(builder: HttpRequest.Builder) {
+        when (val a = auth) {
+            is McpAuth.None -> { /* no header */ }
+            is McpAuth.Bearer -> builder.header("Authorization", "Bearer ${a.token}")
+        }
     }
 
     companion object {
