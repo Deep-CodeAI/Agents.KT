@@ -8,10 +8,29 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlin.reflect.KClass
 
+/**
+ * One participant's contribution to a forum deliberation.
+ * `output` is `Any?` because participants are heterogeneously typed (`Agent<IN, *>`).
+ */
+data class ParticipantContribution(
+    val agentName: String,
+    val output: Any?,
+)
+
+/**
+ * The collected state a `transcriptCaptain` receives: the original forum input
+ * plus each participant's output, in registration order. The deliberation pattern.
+ */
+data class ForumTranscript<IN>(
+    val originalInput: IN,
+    val contributions: List<ParticipantContribution>,
+)
+
 class Forum<IN, OUT>(
     val agents: List<Agent<IN, *>>,
     private val outType: KClass<*>,
     private val castOut: (Any?) -> OUT,
+    private val captainTakesTranscript: Boolean = false,
 ) {
     private var mentionListener: ((agentName: String, output: Any?) -> Unit)? = null
 
@@ -23,19 +42,24 @@ class Forum<IN, OUT>(
     operator fun invoke(input: IN): OUT = try {
         runBlocking(Dispatchers.Default) {
             val participants = agents.dropLast(1)
-            val captain = agents.last() as Agent<IN, OUT>
+            val captain = agents.last()
 
             // All participants process the input concurrently
-            participants.map { agent ->
+            val contributions = participants.map { agent ->
                 async {
                     val output = (agent as Agent<IN, Any?>)(input)
                     mentionListener?.invoke(agent.name, output)
-                    output
+                    ParticipantContribution(agent.name, output)
                 }
             }.map { it.await() }
 
             // Captain delivers the final verdict
-            val verdict = captain(input)
+            val verdict: OUT = if (captainTakesTranscript) {
+                val transcript = ForumTranscript(originalInput = input, contributions = contributions)
+                (captain as Agent<ForumTranscript<IN>, OUT>)(transcript)
+            } else {
+                (captain as Agent<IN, OUT>)(input)
+            }
             mentionListener?.invoke(captain.name, verdict)
             verdict
         }
@@ -103,8 +127,9 @@ private fun <IN, OUT> Agent<IN, OUT>.prepareForForum(allowForumReturn: Boolean) 
 
 class ForumBuilder<IN, OUT> {
     private val participants = mutableListOf<Agent<IN, *>>()
-    private var captain: Agent<IN, OUT>? = null
-    private val forumReturnAllowed = mutableSetOf<Agent<IN, *>>()
+    private var captain: Agent<*, OUT>? = null
+    private var captainTakesTranscript = false
+    private val forumReturnAllowed = mutableSetOf<Agent<*, *>>()
 
     fun <T> participant(agent: Agent<IN, T>) {
         require(agent !in participants && agent !== captain) {
@@ -113,21 +138,37 @@ class ForumBuilder<IN, OUT> {
         participants += agent
     }
 
+    /** Legacy captain — receives the original forum input. Use [transcriptCaptain] for the deliberation pattern. */
     fun captain(agent: Agent<IN, OUT>) {
         require(captain == null) { "Forum already has a captain." }
         require(agent !in participants) {
             "Agent \"${agent.name}\" is already registered as a participant in this forum."
         }
         captain = agent
+        captainTakesTranscript = false
     }
 
-    fun <T> allowForumReturn(agent: Agent<IN, T>) {
+    /**
+     * Captain that receives a [ForumTranscript] containing the original input AND each
+     * participant's output. Use this when the captain needs to deliberate on what the
+     * participants said (the "deliberation" pattern). Issue #639.
+     */
+    fun transcriptCaptain(agent: Agent<ForumTranscript<IN>, OUT>) {
+        require(captain == null) { "Forum already has a captain." }
+        require(participants.none { it === agent }) {
+            "Agent \"${agent.name}\" is already registered as a participant in this forum."
+        }
+        captain = agent
+        captainTakesTranscript = true
+    }
+
+    fun <T> allowForumReturn(agent: Agent<*, T>) {
         forumReturnAllowed += agent
     }
 
     internal fun build(): Forum<IN, OUT> {
         val captainAgent = requireNotNull(captain) { "Forum must declare a captain." }
-        val allAgents = participants + captainAgent
+        val allAgents: List<Agent<IN, *>> = participants + (@Suppress("UNCHECKED_CAST") (captainAgent as Agent<IN, *>))
         require(forumReturnAllowed.all { it in allAgents }) {
             "allowForumReturn can only be used with agents registered in this forum."
         }
@@ -137,7 +178,7 @@ class ForumBuilder<IN, OUT> {
         }
         captainAgent.prepareForForum(true)
 
-        return Forum(allAgents, captainAgent.outType) { it as OUT }
+        return Forum(allAgents, captainAgent.outType, { it as OUT }, captainTakesTranscript)
     }
 }
 
@@ -150,11 +191,11 @@ fun <IN, OUT> forum(block: ForumBuilder<IN, OUT>.() -> Unit): Forum<IN, OUT> {
 operator fun <A, B, C> Agent<A, B>.times(other: Agent<A, C>): Forum<A, C> {
     this.prepareForForum(allowForumReturn = false)
     other.prepareForForum(allowForumReturn = true)
-    return Forum(listOf(this, other), other.outType) { it as C }
+    return Forum(agents = listOf(this, other), outType = other.outType, castOut = { it as C })
 }
 
 operator fun <A, B, C> Forum<A, B>.times(other: Agent<A, C>): Forum<A, C> {
     agents.last().setForumReturnPermission(false)
     other.prepareForForum(allowForumReturn = true)
-    return Forum(agents + other, other.outType) { it as C }
+    return Forum(agents = agents + other, outType = other.outType, castOut = { it as C })
 }

@@ -83,14 +83,15 @@ class BranchExecutionTest {
     }
 
     @Test
-    fun `unhandled variant throws at invocation`() {
-        val branch = classify.branch {
-            on<Circle>()    then agent<Circle, String>("c") { skills { skill<Circle, String>("c") { implementedBy { "circle" } } } }
-            on<Rectangle>() then agent<Rectangle, String>("r") { skills { skill<Rectangle, String>("r") { implementedBy { "rect" } } } }
-        }
-
-        assertThrows<IllegalStateException> {
-            branch("triangle")
+    fun `incomplete sealed coverage now throws at construction (#640)`() {
+        // Previously this threw at invocation when a Triangle arrived. With the
+        // sealed-completeness check from #640 it fails fast at branch construction.
+        assertThrows<IllegalArgumentException> {
+            classify.branch {
+                on<Circle>()    then agent<Circle, String>("c") { skills { skill<Circle, String>("c") { implementedBy { "circle" } } } }
+                on<Rectangle>() then agent<Rectangle, String>("r") { skills { skill<Rectangle, String>("r") { implementedBy { "rect" } } } }
+                // missing Triangle and no onElse → throws here, not at branch("triangle")
+            }
         }
     }
 

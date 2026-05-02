@@ -19,6 +19,7 @@ class ToolDef(
     val name: String,
     val description: String = "",
     val argsType: KClass<*>? = null,
+    val untrustedOutput: Boolean = false,
     val executor: (Map<String, Any?>) -> Any?,
 ) {
     var errorHandler: ToolErrorHandler? = null
@@ -146,6 +147,7 @@ class ToolDefBuilder(private val name: String) {
     private var desc: String = ""
     private var exec: ((Map<String, Any?>) -> Any?)? = null
     private var handler: ToolErrorHandler? = null
+    private var untrusted: Boolean = false
 
     fun description(text: String) { desc = text }
 
@@ -155,10 +157,20 @@ class ToolDefBuilder(private val name: String) {
         handler = OnErrorBuilder().apply(block).build()
     }
 
+    /**
+     * Mark this tool's output as originating outside the agent's trust boundary
+     * (network responses, user uploads, search results). The agentic loop will
+     * wrap the result in a `ToolResultEnvelope` JSON with `trusted: false` before
+     * injecting it into the LLM context, and the system prompt will warn the
+     * model to treat such content as data rather than instructions. See #642.
+     */
+    fun untrustedOutput() { untrusted = true }
+
     internal fun build(): ToolDef {
         val def = ToolDef(
             name = name,
             description = desc,
+            untrustedOutput = untrusted,
             executor = requireNotNull(exec) { "Tool \"$name\" must have an executor { } block." },
         )
         handler?.let { def.errorHandler = it }

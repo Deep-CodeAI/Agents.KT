@@ -237,7 +237,8 @@ class SkillSelectionTest {
             }
         }
 
-        assertThrows<IllegalStateException> { a("input") }
+        // After #641: router throws SkillRoutingException (more specific than IllegalStateException).
+        assertThrows<SkillRoutingException> { a("input") }
     }
 
     @Test

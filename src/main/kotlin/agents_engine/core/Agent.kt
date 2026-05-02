@@ -36,6 +36,10 @@ class Agent<IN, OUT>(
         private set
     var memoryBank: MemoryBank? = null
         private set
+    var routerRationaleListener: ((rationale: String) -> Unit)? = null
+        private set
+    var skillSelectionConfidenceThreshold: Double = 0.6
+        private set
     private var skillSelector: ((IN) -> String)? = null
     private val toolErrorHandlers: MutableMap<String, ToolErrorHandler> = mutableMapOf()
     internal var defaultToolErrorHandler: ToolErrorHandler? = null
@@ -70,6 +74,13 @@ class Agent<IN, OUT>(
 
     fun skillSelection(block: (IN) -> String) {
         skillSelector = block
+    }
+
+    fun routerRationale(block: (rationale: String) -> Unit) { routerRationaleListener = block }
+
+    fun skillSelectionConfidenceThreshold(threshold: Double) {
+        require(threshold in 0.0..1.0) { "Threshold must be in [0.0, 1.0]; got $threshold" }
+        skillSelectionConfidenceThreshold = threshold
     }
 
     fun memory(bank: MemoryBank) {
@@ -154,12 +165,20 @@ class Agent<IN, OUT>(
             )
             candidates.size == 1 -> candidates.single()
             modelConfig != null -> {
-                val chosenName = selectSkillByLlm(this, candidates, input)
-                candidates.find { it.name == chosenName }
-                    ?: error(
-                        "LLM selected unknown skill \"$chosenName\". " +
-                            "Available: ${candidates.map { it.name }}"
+                val route = selectSkillByLlm(this, candidates, input)
+                if (route.confidence < skillSelectionConfidenceThreshold) {
+                    throw SkillRoutingException(
+                        "Router uncertain (confidence=${route.confidence}, threshold=$skillSelectionConfidenceThreshold). " +
+                            "Rationale: ${route.rationale}"
                     )
+                }
+                val selected = candidates.find { it.name == route.skillName }
+                    ?: throw SkillRoutingException(
+                        "LLM router selected unknown skill \"${route.skillName}\". " +
+                            "Available: ${candidates.map { it.name }}. Rationale: ${route.rationale}"
+                    )
+                if (route.rationale.isNotEmpty()) routerRationaleListener?.invoke(route.rationale)
+                selected
             }
             else -> candidates.first()
         }
