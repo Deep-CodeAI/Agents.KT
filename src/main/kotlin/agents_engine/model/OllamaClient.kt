@@ -96,9 +96,17 @@ class OllamaClient(
         return """{"model":"$model","stream":false,"temperature":$temperature,"messages":[$messagesJson]$toolsJson}"""
     }
 
-    private fun parseResponse(body: String): LlmResponse {
+    internal fun parseResponse(body: String): LlmResponse {
         val root = LenientJsonParser.parse(body) as? Map<*, *>
             ?: return LlmResponse.Text(body)
+        // Provider-error envelope (#702): when Ollama rejects the request — capability
+        // mismatch, model-not-found, malformed input — it responds with a top-level
+        // {"error":"..."} shape. Surface as LlmProviderException so the caller sees a
+        // clean provider-boundary error instead of letting the JSON flow into the
+        // user's transformOutput as if it were model output.
+        (root["error"] as? String)?.let { errorText ->
+            throw LlmProviderException("Ollama returned an error: $errorText")
+        }
         val message = root["message"] as? Map<*, *>
             ?: return LlmResponse.Text(body)
         val content = message["content"] as? String ?: ""
