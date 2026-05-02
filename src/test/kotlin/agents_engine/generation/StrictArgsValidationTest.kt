@@ -60,6 +60,28 @@ class StrictArgsValidationTest {
     }
 
     @Test
+    fun `mismatched sealed discriminator returns null (#699)`() {
+        val result = Geometry.CircleStrict::class.constructFromMap(
+            mapOf("type" to "SquareStrict", "radius" to 5.0),
+        )
+        assertNull(result, "must reject when discriminator names a different variant")
+    }
+
+    @Test
+    fun `matching sealed discriminator constructs (regression #699)`() {
+        val result = Geometry.CircleStrict::class.constructFromMap(
+            mapOf("type" to "CircleStrict", "radius" to 5.0),
+        )
+        assertEquals(Geometry.CircleStrict(radius = 5.0), result)
+    }
+
+    @Test
+    fun `absent discriminator constructs sealed variant fine (regression #699)`() {
+        val result = Geometry.CircleStrict::class.constructFromMap(mapOf("radius" to 5.0))
+        assertEquals(Geometry.CircleStrict(radius = 5.0), result)
+    }
+
+    @Test
     fun `non-sealed data class rejects type key as extra (#669)`() {
         // 'type' is a discriminator — only legal for sealed variants. For plain
         // data classes it's an extra and must be rejected.

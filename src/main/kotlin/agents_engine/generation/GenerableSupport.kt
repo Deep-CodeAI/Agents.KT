@@ -263,10 +263,18 @@ internal fun <T : Any> KClass<T>.constructFromMap(fields: Map<*, Any?>): T? {
     // is allowed ONLY for sealed-variant construction (#669) — for plain data classes
     // an extra "type" key is a real extra and must be rejected.
     val allowedKeys = ctor.parameters.mapNotNull { it.name }.toMutableSet()
-    if (this.allSuperclasses.any { it.isSealed }) allowedKeys.add("type")
+    val isSealedVariant = this.allSuperclasses.any { it.isSealed }
+    if (isSealedVariant) allowedKeys.add("type")
     val incomingKeys = fields.keys.mapNotNull { it?.toString() }
     val extraKeys = incomingKeys.filter { it !in allowedKeys }
     if (extraKeys.isNotEmpty()) return null
+    // #699: when "type" is present on a sealed variant, verify the discriminator
+    // value matches this variant. Prevents constructing CircleStrict from a JSON
+    // shaped {"type":"SquareStrict", ...}.
+    if (isSealedVariant) {
+        val discriminator = fields["type"] as? String
+        if (discriminator != null && discriminator != simpleName) return null
+    }
     return try {
         val args = mutableMapOf<KParameter, Any?>()
         for (param in ctor.parameters) {

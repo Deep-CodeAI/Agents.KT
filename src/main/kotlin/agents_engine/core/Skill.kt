@@ -21,6 +21,7 @@ class Skill<IN, OUT>(
     val outType: kotlin.reflect.KClass<*>,
 ) {
     var implementation: ((IN) -> OUT)? = null
+        private set
     var isAgentic: Boolean = false
         private set
     var toolNames: List<String>? = null

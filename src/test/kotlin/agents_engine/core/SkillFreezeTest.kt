@@ -67,6 +67,23 @@ class SkillFreezeTest {
     }
 
     @Test
+    fun `Skill implementation setter is private (#698)`() {
+        val (s, _) = trivialAgent()
+        // The setter must be private — the only legitimate path to mutate
+        // is implementedBy(), which is freeze-checked.
+        val prop = Skill::class.members.first { it.name == "implementation" } as kotlin.reflect.KMutableProperty<*>
+        assertTrue(
+            prop.setter.visibility == kotlin.reflect.KVisibility.PRIVATE,
+            "Skill.implementation setter must be private; got ${prop.setter.visibility}",
+        )
+        // Sanity: implementedBy is still the legitimate path AND is now freeze-checked
+        try { s.implementedBy { "via legit path" }; fail("expected freeze rejection") }
+        catch (e: IllegalStateException) {
+            assertTrue(e.message!!.contains("frozen", ignoreCase = true))
+        }
+    }
+
+    @Test
     fun `mutation inside skills block still works (regression)`() {
         val a = agent<String, String>("ok") {
             skills {

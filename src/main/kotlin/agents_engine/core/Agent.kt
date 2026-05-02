@@ -90,15 +90,33 @@ class Agent<IN, OUT>(
         private set
     internal val autoToolNames: MutableSet<String> = mutableSetOf()
 
-    fun prompt(text: String) { prompt = text }
+    /**
+     * Set true at end of [validate] (#697). Structural mutators (skills, tools,
+     * memory, model, budget, prompt, error handlers, routing config) check this
+     * and refuse post-construction mutation. Listeners (onToolUse, onKnowledgeUsed,
+     * onSkillChosen, routerRationale) intentionally remain settable for
+     * tracing / instrumentation use cases.
+     */
+    @PublishedApi internal var frozen: Boolean = false
+
+    private fun checkNotFrozen() {
+        check(!frozen) {
+            "Agent \"$name\" is frozen — cannot mutate after construction. " +
+                "Configure inside the agent { } block, not after."
+        }
+    }
+
+    fun prompt(text: String) { checkNotFrozen(); prompt = text }
 
     fun model(block: ModelBuilder.() -> Unit) {
+        checkNotFrozen()
         val builder = ModelBuilder()
         builder.block()
         modelConfig = builder.build()
     }
 
     fun budget(block: BudgetBuilder.() -> Unit) {
+        checkNotFrozen()
         val builder = BudgetBuilder()
         builder.block()
         budgetConfig = builder.build()
@@ -117,17 +135,20 @@ class Agent<IN, OUT>(
     }
 
     fun skillSelection(block: (IN) -> String) {
+        checkNotFrozen()
         skillSelector = block
     }
 
     fun routerRationale(block: (rationale: String) -> Unit) { routerRationaleListener = block }
 
     fun skillSelectionConfidenceThreshold(threshold: Double) {
+        checkNotFrozen()
         require(threshold in 0.0..1.0) { "Threshold must be in [0.0, 1.0]; got $threshold" }
         skillSelectionConfidenceThreshold = threshold
     }
 
     fun memory(bank: MemoryBank) {
+        checkNotFrozen()
         memoryBank = bank
         for (tool in buildMemoryTools(bank, name)) {
             registerBuiltInTool(tool)
@@ -135,6 +156,7 @@ class Agent<IN, OUT>(
     }
 
     fun tools(block: ToolsBuilder.() -> Unit) {
+        checkNotFrozen()
         val builder = ToolsBuilder()
         builder.block()
         builder.defs.forEach { registerTool(it) }
@@ -142,6 +164,7 @@ class Agent<IN, OUT>(
     }
 
     fun onToolError(toolName: String, block: OnErrorBuilder.() -> Unit) {
+        checkNotFrozen()
         val builder = OnErrorBuilder()
         builder.block()
         toolErrorHandlers[toolName] = builder.build()
@@ -223,6 +246,7 @@ class Agent<IN, OUT>(
     }
 
     fun skills(block: SkillsBuilder.() -> Unit) {
+        checkNotFrozen()
         val builder = SkillsBuilder()
         builder.block()
         builder.entries.forEach { (skill, exec) ->
@@ -259,6 +283,10 @@ class Agent<IN, OUT>(
         // Freeze skills so the agent's contract (allowlist composition, dispatch)
         // can't drift after construction via a held Skill reference. See #668.
         skills.values.forEach { it.frozen = true }
+        // Freeze the agent itself so structural mutators (skills, tools, memory,
+        // model, budget, prompt, error handlers, routing config) can't be
+        // re-invoked post-construction via the agent reference. See #697.
+        frozen = true
     }
 }
 
