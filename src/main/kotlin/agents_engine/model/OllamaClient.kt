@@ -137,11 +137,11 @@ open class OllamaClient(
     internal fun buildRequestJson(messages: List<LlmMessage>, includeTools: Boolean = true): String {
         val messagesJson = messages.joinToString(",") { msg ->
             buildString {
-                append("""{"role":"${msg.role}","content":${msg.content.toJsonString()}""")
+                append("""{"role":${msg.role.toJsonString()},"content":${msg.content.toJsonString()}""")
                 if (!msg.toolCalls.isNullOrEmpty()) {
                     append(""","tool_calls":[""")
                     append(msg.toolCalls.joinToString(",") { tc ->
-                        """{"function":{"name":"${tc.name}","arguments":${InlineToolCallParser.argsToJson(tc.arguments)}}}"""
+                        """{"function":{"name":${tc.name.toJsonString()},"arguments":${InlineToolCallParser.argsToJson(tc.arguments)}}}"""
                     })
                     append("]")
                 }
@@ -152,11 +152,11 @@ open class OllamaClient(
             val defs = tools.joinToString(",") { t ->
                 val parametersJson = t.argsType?.jsonSchema()
                     ?: """{"type":"object","properties":{},"additionalProperties":true}"""
-                """{"type":"function","function":{"name":"${t.name}","description":${t.description.toJsonString()},"parameters":$parametersJson}}"""
+                """{"type":"function","function":{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"parameters":$parametersJson}}"""
             }
             ""","tools":[$defs]"""
         } else ""
-        return """{"model":"$model","stream":false,"temperature":$temperature,"messages":[$messagesJson]$toolsJson}"""
+        return """{"model":${model.toJsonString()},"stream":false,"temperature":$temperature,"messages":[$messagesJson]$toolsJson}"""
     }
 
     internal fun parseResponse(body: String): LlmResponse {
