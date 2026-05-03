@@ -33,6 +33,7 @@ class McpServer private constructor(
     private val agent: Agent<*, *>,
     private val exposedSkills: List<ExposedSkill>,
     private val portRequest: Int,
+    private val maxRequestBytes: Long = DEFAULT_MAX_REQUEST_BYTES,
 ) {
     private var http: HttpServer? = null
     private val sessionId: String = java.util.UUID.randomUUID().toString()
@@ -66,7 +67,21 @@ class McpServer private constructor(
                 respond(exchange, 415, """{"error":"Unsupported Media Type — expected application/json"}""")
                 return
             }
-            val bodyText = exchange.requestBody.bufferedReader().use { it.readText() }
+            // #851 — bound the request body before reading. Honors Content-Length when
+            // present; falls back to a length-bounded read otherwise. Avoids OOM from
+            // a same-host process posting a multi-GB body to the loopback server.
+            val declaredLength = exchange.requestHeaders.getFirst("Content-Length")?.toLongOrNull()
+            if (declaredLength != null && declaredLength > maxRequestBytes) {
+                respond(exchange, 413, """{"error":"Payload Too Large — limit is $maxRequestBytes bytes"}""")
+                return
+            }
+            val cap = maxRequestBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            val bodyBytes = exchange.requestBody.use { it.readNBytes(cap + 1) }
+            if (bodyBytes.size > cap) {
+                respond(exchange, 413, """{"error":"Payload Too Large — limit is $maxRequestBytes bytes"}""")
+                return
+            }
+            val bodyText = String(bodyBytes, Charsets.UTF_8)
             val request = LenientJsonParser.parse(bodyText) as? Map<*, *>
                 ?: return respond(exchange, 400, "{}")
             val method = request["method"] as? String ?: return respond(exchange, 400, "{}")
@@ -150,6 +165,10 @@ class McpServer private constructor(
     }
 
     companion object {
+        // 8 MiB — generous for tools/call payloads, far short of OOM on a typical
+        // JVM heap. See #851.
+        const val DEFAULT_MAX_REQUEST_BYTES: Long = 8L * 1024 * 1024
+
         fun from(agent: Agent<*, *>, block: McpExposeBuilder.() -> Unit): McpServer {
             val builder = McpExposeBuilder().apply(block)
             require(builder.exposedNames.isNotEmpty()) {
@@ -165,13 +184,15 @@ class McpServer private constructor(
                 }
                 ExposedSkill.of(skill)
             }
-            return McpServer(agent, exposed, builder.port)
+            return McpServer(agent, exposed, builder.port, builder.maxRequestBytes)
         }
     }
 }
 
 class McpExposeBuilder internal constructor() {
     var port: Int = 0  // 0 = auto-assign
+    /** Hard cap on inbound request body size. See #851. */
+    var maxRequestBytes: Long = McpServer.DEFAULT_MAX_REQUEST_BYTES
     internal val exposedNames = mutableListOf<String>()
 
     fun expose(skillName: String) { exposedNames += skillName }

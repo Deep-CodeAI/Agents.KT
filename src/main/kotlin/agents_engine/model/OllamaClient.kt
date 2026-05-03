@@ -6,6 +6,9 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.toJavaDuration
 
 internal data class ParsedToolArguments(
     val arguments: Map<String, Any?>,
@@ -55,10 +58,18 @@ open class OllamaClient(
     private val model: String,
     private val temperature: Double = 0.7,
     private val tools: List<ToolDef> = emptyList(),
+    /** Per-request wall-clock cap. See #852. */
+    private val requestTimeout: Duration = DEFAULT_REQUEST_TIMEOUT,
+    /** TCP connect timeout for the underlying HttpClient. See #852. */
+    private val connectTimeout: Duration = DEFAULT_CONNECT_TIMEOUT,
+    /** Hard cap on response body size — anything bigger throws. See #853. */
+    private val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
 ) : ModelClient {
     private val baseUrl = "http://$host:$port"
 
-    private val http = HttpClient.newHttpClient()
+    private val http: HttpClient = HttpClient.newBuilder()
+        .connectTimeout(connectTimeout.toJavaDuration())
+        .build()
 
     /**
      * #706: Once a model has been observed to reject native tools, skip the native
@@ -99,9 +110,33 @@ open class OllamaClient(
         val request = HttpRequest.newBuilder()
             .uri(URI.create("$baseUrl/api/chat"))
             .header("Content-Type", "application/json")
+            .timeout(requestTimeout.toJavaDuration())
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build()
-        return http.send(request, HttpResponse.BodyHandlers.ofString()).body()
+        // #853 — bounded read so a malicious or buggy upstream can't OOM us.
+        val response = http.send(request, HttpResponse.BodyHandlers.ofInputStream())
+        val cap = maxResponseBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val bytes = response.body().use { it.readNBytes(cap + 1) }
+        if (bytes.size > cap) {
+            throw LlmProviderException(
+                "Ollama response exceeded $maxResponseBytes bytes; aborting to prevent OOM",
+            )
+        }
+        return String(bytes, Charsets.UTF_8)
+    }
+
+    companion object {
+        // 60s — chat completions can be slow; large enough not to false-trip on
+        // legitimate long responses, small enough to bound a hung Ollama instance.
+        // See #852.
+        val DEFAULT_REQUEST_TIMEOUT: Duration = 60.seconds
+
+        // 10s — TCP connect should never take this long on a healthy network.
+        val DEFAULT_CONNECT_TIMEOUT: Duration = 10.seconds
+
+        // 16 MiB — LLM responses can be large but not THAT large; cap keeps OOM
+        // off the table when the upstream is malicious or buggy. See #853.
+        const val DEFAULT_MAX_RESPONSE_BYTES: Long = 16L * 1024 * 1024
     }
 
     private fun isNativeToolCapabilityError(msg: String?): Boolean =
