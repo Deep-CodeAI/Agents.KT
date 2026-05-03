@@ -62,6 +62,8 @@ open class OllamaClient(
     private val requestTimeout: Duration = DEFAULT_REQUEST_TIMEOUT,
     /** TCP connect timeout for the underlying HttpClient. See #852. */
     private val connectTimeout: Duration = DEFAULT_CONNECT_TIMEOUT,
+    /** Hard cap on response body size — anything bigger throws. See #853. */
+    private val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
 ) : ModelClient {
     private val baseUrl = "http://$host:$port"
 
@@ -111,7 +113,16 @@ open class OllamaClient(
             .timeout(requestTimeout.toJavaDuration())
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build()
-        return http.send(request, HttpResponse.BodyHandlers.ofString()).body()
+        // #853 — bounded read so a malicious or buggy upstream can't OOM us.
+        val response = http.send(request, HttpResponse.BodyHandlers.ofInputStream())
+        val cap = maxResponseBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val bytes = response.body().use { it.readNBytes(cap + 1) }
+        if (bytes.size > cap) {
+            throw LlmProviderException(
+                "Ollama response exceeded $maxResponseBytes bytes; aborting to prevent OOM",
+            )
+        }
+        return String(bytes, Charsets.UTF_8)
     }
 
     companion object {
@@ -122,6 +133,10 @@ open class OllamaClient(
 
         // 10s — TCP connect should never take this long on a healthy network.
         val DEFAULT_CONNECT_TIMEOUT: Duration = 10.seconds
+
+        // 16 MiB — LLM responses can be large but not THAT large; cap keeps OOM
+        // off the table when the upstream is malicious or buggy. See #853.
+        const val DEFAULT_MAX_RESPONSE_BYTES: Long = 16L * 1024 * 1024
     }
 
     private fun isNativeToolCapabilityError(msg: String?): Boolean =

@@ -17,6 +17,7 @@ internal class HttpMcpTransport(
     private val url: String,
     private val auth: McpAuth = McpAuth.None,
     private val requestTimeout: Duration = DEFAULT_REQUEST_TIMEOUT,
+    private val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
 ) : McpTransport {
 
     private var sessionId: String? = null
@@ -36,17 +37,24 @@ internal class HttpMcpTransport(
             .also { if (sessionId != null) it.header("Mcp-Session-Id", sessionId!!) }
             .also { applyAuth(it) }
             .POST(HttpRequest.BodyPublishers.ofString(envelope))
-        val response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString())
+        // #853 — bounded read so a malicious upstream MCP server can't OOM us.
+        val response = http.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream())
+        val cap = maxResponseBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val bytes = response.body().use { it.readNBytes(cap + 1) }
+        if (bytes.size > cap) {
+            error("MCP response exceeded $maxResponseBytes bytes; aborting to prevent OOM")
+        }
+        val bodyStr = String(bytes, Charsets.UTF_8)
         if (response.statusCode() !in 200..299) {
-            error("MCP HTTP ${response.statusCode()}: ${response.body()}")
+            error("MCP HTTP ${response.statusCode()}: $bodyStr")
         }
         response.headers().firstValue("mcp-session-id").ifPresent { sessionId = it }
         if (!expectBody) return ""
         val ct = response.headers().firstValue("content-type").orElse("")
         return if (ct.startsWith("text/event-stream")) {
-            extractSseJson(response.body())
-                ?: error("MCP SSE response had no JSON data event: ${response.body()}")
-        } else response.body()
+            extractSseJson(bodyStr)
+                ?: error("MCP SSE response had no JSON data event: $bodyStr")
+        } else bodyStr
     }
 
     private fun applyAuth(builder: HttpRequest.Builder) {
@@ -60,6 +68,9 @@ internal class HttpMcpTransport(
         // See #852.
         val DEFAULT_REQUEST_TIMEOUT: Duration = 60.seconds
         val DEFAULT_CONNECT_TIMEOUT: Duration = 10.seconds
+
+        // 8 MiB — MCP responses are typically small JSON-RPC envelopes. See #853.
+        const val DEFAULT_MAX_RESPONSE_BYTES: Long = 8L * 1024 * 1024
 
         private val http: HttpClient = HttpClient.newBuilder()
             .connectTimeout(DEFAULT_CONNECT_TIMEOUT.toJavaDuration())
