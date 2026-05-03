@@ -2,6 +2,7 @@ plugins {
     kotlin("jvm") version "2.3.21"
     `maven-publish`
     signing
+    id("info.solidsoft.pitest") version "1.19.0"
 }
 
 group = "ai.deep-code"
@@ -26,6 +27,23 @@ tasks.test {
     useJUnitPlatform {
         excludeTags("live-llm", "live-mcp")
     }
+}
+
+// Mutation testing — perturbs the source (flips operators, swaps return values,
+// removes statements) and re-runs the suite. Surviving mutants identify code paths
+// the tests touch but don't actually verify. See #836.
+//
+// Run: `./gradlew pitest`. HTML report: build/reports/pitest/index.html
+// Uses the default `test` task (which already excludes live-llm / live-mcp tags).
+pitest {
+    junit5PluginVersion.set("1.2.1")
+    targetClasses.set(setOf("agents_engine.*"))
+    targetTests.set(setOf("agents_engine.*"))
+    threads.set(Runtime.getRuntime().availableProcessors())
+    outputFormats.set(setOf("HTML", "XML"))
+    timestampedReports.set(false)
+    // Match the default `test` task: skip tests that need a live Ollama or MCP server.
+    excludedGroups.set(setOf("live-llm", "live-mcp"))
 }
 
 tasks.register<Test>("integrationTest") {
