@@ -3922,7 +3922,8 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [x] DDD package structure: `agents_engine.core` (entities) + `agents_engine.composition` (operators)
 - [x] Single-placement rule — each agent instance participates in at most one structure
 - [x] `model { }` — Ollama backend; `host`, `port`, `temperature`; injectable `ModelClient` for tests; auto-fallback to inline JSON tool-call format for models without native tool support (#706)
-- [x] Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`, `maxToolCalls`, `maxDuration`, `perToolTimeout`) + `onToolUse` observability hook (#637)
+- [x] Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`, `maxToolCalls`, `maxDuration`, `perToolTimeout`, `maxTokens`) + `onToolUse` observability hook (#637, #963)
+- [x] `TokenUsage` on `LlmResponse` — `prompt_eval_count` + `eval_count` parsed from Ollama; cumulative across turns, surfaces `BudgetReason.TOKENS` on overrun (#963)
 - [x] Skill selection — manual `skillSelection {}` + automatic LLM routing when multiple skills match
 - [x] `onSkillChosen { name -> }` — fires when an agent selects a skill to execute
 - [x] `onKnowledgeUsed { name, content -> }` — fires when the LLM fetches a knowledge entry (tools model)
@@ -3946,7 +3947,7 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [ ] KSP annotation processor for compile-time `@Generable` (replaces runtime reflection); constrained decoding (Ollama/vLLM) + guided JSON mode (Anthropic/OpenAI)
 - [ ] Native CLI binary (GraalVM — no JRE required); `brew`, npm, pip, curl, apt
 - [ ] jlink minimal JRE bundle for runtime (~35 MB)
-- [ ] Agentic execution loop — extend budget controls with `maxTokens` + structure-level budgets (§5.6)
+- [ ] Structure-level budgets — `budget { }` on Pipeline / Forum / Parallel / Loop (§5.6)
 
 **Secondary (stretch):**
 - [ ] `Prompt<IN, OUT>` entity definition and DSL — typed public interface for agents (§8.6)
