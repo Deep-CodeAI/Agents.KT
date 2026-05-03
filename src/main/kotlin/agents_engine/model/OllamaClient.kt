@@ -6,6 +6,9 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.toJavaDuration
 
 internal data class ParsedToolArguments(
     val arguments: Map<String, Any?>,
@@ -55,10 +58,16 @@ open class OllamaClient(
     private val model: String,
     private val temperature: Double = 0.7,
     private val tools: List<ToolDef> = emptyList(),
+    /** Per-request wall-clock cap. See #852. */
+    private val requestTimeout: Duration = DEFAULT_REQUEST_TIMEOUT,
+    /** TCP connect timeout for the underlying HttpClient. See #852. */
+    private val connectTimeout: Duration = DEFAULT_CONNECT_TIMEOUT,
 ) : ModelClient {
     private val baseUrl = "http://$host:$port"
 
-    private val http = HttpClient.newHttpClient()
+    private val http: HttpClient = HttpClient.newBuilder()
+        .connectTimeout(connectTimeout.toJavaDuration())
+        .build()
 
     /**
      * #706: Once a model has been observed to reject native tools, skip the native
@@ -99,9 +108,20 @@ open class OllamaClient(
         val request = HttpRequest.newBuilder()
             .uri(URI.create("$baseUrl/api/chat"))
             .header("Content-Type", "application/json")
+            .timeout(requestTimeout.toJavaDuration())
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build()
         return http.send(request, HttpResponse.BodyHandlers.ofString()).body()
+    }
+
+    companion object {
+        // 60s — chat completions can be slow; large enough not to false-trip on
+        // legitimate long responses, small enough to bound a hung Ollama instance.
+        // See #852.
+        val DEFAULT_REQUEST_TIMEOUT: Duration = 60.seconds
+
+        // 10s — TCP connect should never take this long on a healthy network.
+        val DEFAULT_CONNECT_TIMEOUT: Duration = 10.seconds
     }
 
     private fun isNativeToolCapabilityError(msg: String?): Boolean =

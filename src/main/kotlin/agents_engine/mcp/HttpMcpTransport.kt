@@ -4,6 +4,9 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.toJavaDuration
 
 /**
  * Streamable HTTP transport. Each `rpc()` is a POST whose response is either a JSON body
@@ -13,6 +16,7 @@ import java.net.http.HttpResponse
 internal class HttpMcpTransport(
     private val url: String,
     private val auth: McpAuth = McpAuth.None,
+    private val requestTimeout: Duration = DEFAULT_REQUEST_TIMEOUT,
 ) : McpTransport {
 
     private var sessionId: String? = null
@@ -28,6 +32,7 @@ internal class HttpMcpTransport(
             .uri(URI.create(url))
             .header("Content-Type", "application/json")
             .header("Accept", "application/json, text/event-stream")
+            .timeout(requestTimeout.toJavaDuration())
             .also { if (sessionId != null) it.header("Mcp-Session-Id", sessionId!!) }
             .also { applyAuth(it) }
             .POST(HttpRequest.BodyPublishers.ofString(envelope))
@@ -52,7 +57,13 @@ internal class HttpMcpTransport(
     }
 
     companion object {
-        private val http: HttpClient = HttpClient.newHttpClient()
+        // See #852.
+        val DEFAULT_REQUEST_TIMEOUT: Duration = 60.seconds
+        val DEFAULT_CONNECT_TIMEOUT: Duration = 10.seconds
+
+        private val http: HttpClient = HttpClient.newBuilder()
+            .connectTimeout(DEFAULT_CONNECT_TIMEOUT.toJavaDuration())
+            .build()
 
         private fun extractSseJson(body: String): String? =
             body.lineSequence()
