@@ -18,12 +18,17 @@ import kotlin.time.Duration.Companion.minutes
  * @property maxDuration wall-clock cap from agentic invocation start.
  *   Default 5 minutes.
  * @property perToolTimeout per-tool wall-clock cap. Null = no per-tool cap.
+ * @property maxTokens hard cap on cumulative LLM tokens (prompt + completion)
+ *   across all turns of the invocation. Null = no token cap. Tokens are only
+ *   accumulated when the provider reports usage on the response (#963); turns
+ *   with null `tokenUsage` count zero toward the cap.
  */
 data class BudgetConfig(
     val maxTurns: Int = 8,
     val maxToolCalls: Int = 32,
     val maxDuration: Duration = 5.minutes,
     val perToolTimeout: Duration? = null,
+    val maxTokens: Int? = null,
 )
 
 class BudgetBuilder {
@@ -31,16 +36,18 @@ class BudgetBuilder {
     var maxToolCalls: Int = 32
     var maxDuration: Duration = 5.minutes
     var perToolTimeout: Duration? = null
+    var maxTokens: Int? = null
 
     internal fun build() = BudgetConfig(
         maxTurns = maxTurns,
         maxToolCalls = maxToolCalls,
         maxDuration = maxDuration,
         perToolTimeout = perToolTimeout,
+        maxTokens = maxTokens,
     )
 }
 
-enum class BudgetReason { TURNS, TOOL_CALLS, DURATION, PER_TOOL_TIMEOUT }
+enum class BudgetReason { TURNS, TOOL_CALLS, DURATION, PER_TOOL_TIMEOUT, TOKENS }
 
 class BudgetExceededException(
     message: String,

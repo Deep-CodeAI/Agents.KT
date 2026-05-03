@@ -103,6 +103,7 @@ suspend fun <IN> executeAgentic(
 
     var turns = 0
     var toolCalls = 0
+    var totalTokens = 0
     val invocationStartNanos = System.nanoTime()
     while (true) {
         val elapsedNanos = System.nanoTime() - invocationStartNanos
@@ -120,6 +121,21 @@ suspend fun <IN> executeAgentic(
 
         val response = withContext(Dispatchers.IO) { client.chat(messages) }
         turns++
+
+        // #963: accumulate tokens only when the provider reported usage —
+        // a missing `tokenUsage` does NOT count as zero toward the cap.
+        // Check after the round-trip so the LAST turn's tokens are counted
+        // even if it tips us over: the throw still surfaces the breach.
+        response.tokenUsage?.let { usage ->
+            totalTokens += usage.total
+            val cap = budget.maxTokens
+            if (cap != null && totalTokens > cap) {
+                throw BudgetExceededException(
+                    "Agent '${agent.name}' exceeded token budget of $cap (used $totalTokens)",
+                    BudgetReason.TOKENS,
+                )
+            }
+        }
 
         when (response) {
             is LlmResponse.Text -> {

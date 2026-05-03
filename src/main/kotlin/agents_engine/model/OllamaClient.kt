@@ -205,8 +205,14 @@ open class OllamaClient(
         (root["error"] as? String)?.let { errorText ->
             throw LlmProviderException("Ollama returned an error: $errorText")
         }
+        // #963: Ollama reports prompt + completion token counts at the response root.
+        // Both must be present for the count to be trustworthy — partial reports get
+        // dropped (null) so the loop's accumulator can distinguish "0 tokens used"
+        // from "provider didn't say."
+        val tokenUsage = extractOllamaTokenUsage(root)
+
         val message = root["message"] as? Map<*, *>
-            ?: return LlmResponse.Text(body)
+            ?: return LlmResponse.Text(body, tokenUsage)
         val content = message["content"] as? String ?: ""
 
         // Native Ollama tool_calls field (models with built-in tool support)
@@ -223,14 +229,20 @@ open class OllamaClient(
                     invalidArgumentsError = parsedArgs.parseError,
                 )
             }
-            if (calls.isNotEmpty()) return LlmResponse.ToolCalls(calls)
+            if (calls.isNotEmpty()) return LlmResponse.ToolCalls(calls, tokenUsage)
         }
 
         // Inline JSON tool call in content (models without native tool support)
         val toolCall = InlineToolCallParser.parse(content)
-        if (toolCall != null) return LlmResponse.ToolCalls(listOf(toolCall))
+        if (toolCall != null) return LlmResponse.ToolCalls(listOf(toolCall), tokenUsage)
 
-        return LlmResponse.Text(content)
+        return LlmResponse.Text(content, tokenUsage)
+    }
+
+    private fun extractOllamaTokenUsage(root: Map<*, *>): TokenUsage? {
+        val prompt = (root["prompt_eval_count"] as? Number)?.toInt()
+        val completion = (root["eval_count"] as? Number)?.toInt()
+        return if (prompt != null && completion != null) TokenUsage(prompt, completion) else null
     }
 }
 

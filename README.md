@@ -91,7 +91,7 @@ These APIs work in `main`, are unit-tested, and are exercised by integration tes
 - **Memory bank** — `memory(MemoryBank())` auto-injects `memory_read` / `memory_write` / `memory_search` tools. See [Agent Memory](#agent-memory).
 - **LLM skill routing** — manual `skillSelection { }` or LLM router with `skillSelectionConfidenceThreshold`; `SkillRoute(name, confidence, rationale)` is structured (#641). See [Skill Selection](#skill-selection).
 - **Tool error recovery** — per-tool `onError`, per-skill default, agent default; built-in `escalate` and `throwException` agents. See [Tool Error Recovery](#tool-error-recovery).
-- **Budget controls** — `budget { maxTurns; maxToolCalls; maxDuration; perToolTimeout }` (sacrificial-thread enforcement) (#637).
+- **Budget controls** — `budget { maxTurns; maxToolCalls; maxDuration; perToolTimeout; maxTokens }` (sacrificial-thread enforcement; token counts cumulative across turns when the provider reports usage) (#637, #963).
 - **MCP client** — `mcp { server() }` over HTTP / stdio / TCP; Bearer auth; namespaced tools (`server.tool`). See [MCP Integration](#mcp-integration).
 - **MCP server** — `McpServer.from(agent)` exposes an agent as an MCP-conformant server with explicit `tools/listChanged: false` capability (#619).
 - **`McpRunner` standalone** — picocli-style one-liner main for shipping agents as MCP services.
@@ -121,7 +121,7 @@ What the framework enforces today:
 | Repaired args | Re-validated through the typed schema before reaching the executor | #658 |
 | Tool output trust | Tool results wrapped in untrusted envelope so the model can't forge framework messages | #642 |
 | Provider errors | Surface as `LlmProviderException` — never confused with model output | #702 |
-| Budget caps | `maxTurns`, `maxToolCalls`, `maxDuration`, `perToolTimeout` (sacrificial-thread enforced) | #637 |
+| Budget caps | `maxTurns`, `maxToolCalls`, `maxDuration`, `perToolTimeout`, `maxTokens` (sacrificial-thread enforced; token cap is cumulative across turns when provider reports usage) | #637, #963 |
 
 What the framework does **not** enforce — your responsibility:
 
@@ -1193,7 +1193,7 @@ For the full contributor guide — running the live-LLM and MCP integration test
 - [x] `.branch {}` — conditional routing on sealed types, composable with `then`
 - [x] `@Generable("desc")` / `@Guide` / `@LlmDescription` — runtime reflection: `toLlmDescription()`, `jsonSchema()`, `promptFragment()`, `fromLlmOutput<T>()`, `PartiallyGenerated<T>`
 - [x] `model { }` — Ollama backend; `host`, `port`, `temperature`; injectable `ModelClient` for tests; auto-fallback to inline JSON tool-call format for models without native tool support (#706)
-- [x] Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`, `maxToolCalls`, `maxDuration`, `perToolTimeout`) + `onToolUse` observability hook (#637)
+- [x] Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`, `maxToolCalls`, `maxDuration`, `perToolTimeout`, `maxTokens`) + `onToolUse` observability hook (#637, #963)
 - [x] Skill selection — manual `skillSelection {}` + automatic LLM routing when multiple skills match
 - [ ] `>>` — security/education wrap
 

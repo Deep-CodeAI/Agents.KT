@@ -13,9 +13,31 @@ data class ToolCall(
     val invalidArgumentsError: String? = null,
 )
 
+/**
+ * Token consumption for one LLM round-trip — null on the response when the
+ * provider doesn't report it. Sum of prompt + completion is what counts toward
+ * [BudgetConfig.maxTokens]. See #963.
+ */
+data class TokenUsage(
+    val promptTokens: Int,
+    val completionTokens: Int,
+) {
+    val total: Int get() = promptTokens + completionTokens
+}
+
 sealed interface LlmResponse {
-    data class Text(val content: String) : LlmResponse
-    data class ToolCalls(val calls: List<ToolCall>) : LlmResponse
+    /** Token usage for this response, or null if the provider didn't report it. */
+    val tokenUsage: TokenUsage?
+
+    data class Text(
+        val content: String,
+        override val tokenUsage: TokenUsage? = null,
+    ) : LlmResponse
+
+    data class ToolCalls(
+        val calls: List<ToolCall>,
+        override val tokenUsage: TokenUsage? = null,
+    ) : LlmResponse
 }
 
 fun interface ModelClient {
