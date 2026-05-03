@@ -9,6 +9,19 @@ sealed interface McpAuth {
     /** No credentials sent. Default. */
     object None : McpAuth
 
-    /** Sends `Authorization: Bearer <token>` on every request. */
-    data class Bearer(val token: String) : McpAuth
+    /**
+     * Sends `Authorization: Bearer <token>` on every request.
+     *
+     * The token is held as a `String` for compatibility with `data class`
+     * equality. **toString() is overridden to redact the token** so a
+     * `println(auth)` or `Throwable.message` referencing this instance
+     * doesn't leak the credential into logs (#857).
+     *
+     * Future work: store the token as `CharArray` and add an explicit
+     * `close()` that wipes it. That requires a richer API surface (the
+     * transport must know when to wipe) and is left as a follow-up.
+     */
+    data class Bearer(val token: String) : McpAuth {
+        override fun toString(): String = "Bearer(token=<redacted>)"
+    }
 }
