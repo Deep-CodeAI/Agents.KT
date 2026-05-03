@@ -1,0 +1,4 @@
+# Lock line endings on the Gradle wrapper scripts so they work on every
+# platform regardless of contributor `core.autocrlf` settings.
+gradlew         text eol=lf
+gradlew.bat     text eol=crlf
