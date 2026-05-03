@@ -2,6 +2,7 @@ package agents_engine.core
 
 import agents_engine.model.BudgetBuilder
 import agents_engine.model.BudgetConfig
+import agents_engine.model.BudgetReason
 import agents_engine.model.ModelBuilder
 import agents_engine.model.ModelConfig
 import agents_engine.model.OnErrorBuilder
@@ -97,6 +98,20 @@ class Agent<IN, OUT>(
      */
     var errorListener: ((Throwable) -> Unit)? = null
         private set
+    /**
+     * Pre-cap warning hook (#966). Fires once per [BudgetReason] when cumulative
+     * usage of that cap crosses [budgetThreshold]. Lets the user wrap up
+     * gracefully before [agents_engine.model.BudgetExceededException] gets thrown.
+     *
+     * Cumulative reasons only — TURNS, TOOL_CALLS, DURATION, TOKENS.
+     * `PER_TOOL_TIMEOUT` is per-call so a percentage doesn't apply.
+     * TOKENS only fires when both `budget.maxTokens` is set AND the provider
+     * reports `tokenUsage` on the response.
+     */
+    var budgetThreshold: Double = 0.8
+        private set
+    var budgetThresholdListener: ((reason: BudgetReason, usedPercent: Double) -> Unit)? = null
+        private set
     var skillSelectionConfidenceThreshold: Double = 0.6
         private set
     private var skillSelector: ((IN) -> String)? = null
@@ -151,6 +166,19 @@ class Agent<IN, OUT>(
 
     fun onError(block: (Throwable) -> Unit) {
         errorListener = block
+    }
+
+    /**
+     * Register a pre-cap budget warning. Fires once per [BudgetReason] when
+     * cumulative usage crosses [threshold] (a fraction in `[0.0, 1.0]`).
+     * Default threshold is 0.8. See #966.
+     */
+    fun onBudgetThreshold(threshold: Double = 0.8, block: (reason: BudgetReason, usedPercent: Double) -> Unit) {
+        require(threshold in 0.0..1.0) {
+            "onBudgetThreshold threshold must be in [0.0, 1.0]; got $threshold"
+        }
+        budgetThreshold = threshold
+        budgetThresholdListener = block
     }
 
     fun skillSelection(block: (IN) -> String) {

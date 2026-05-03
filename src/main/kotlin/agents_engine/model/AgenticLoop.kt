@@ -107,6 +107,18 @@ suspend fun <IN> executeAgentic(
     var lastToolName: String? = null
     var consecutiveSameTool = 0
     val invocationStartNanos = System.nanoTime()
+
+    // #966: pre-cap warning hook. Tracks which reasons already crossed the
+    // threshold this invocation so we fire at most once per reason.
+    val firedThresholds = mutableSetOf<BudgetReason>()
+    fun maybeFireThreshold(reason: BudgetReason, usedPercent: Double) {
+        val listener = agent.budgetThresholdListener ?: return
+        if (reason in firedThresholds) return
+        if (usedPercent < agent.budgetThreshold) return
+        firedThresholds += reason
+        listener(reason, usedPercent)
+    }
+
     while (true) {
         val elapsedNanos = System.nanoTime() - invocationStartNanos
         if (elapsedNanos >= budget.maxDuration.inWholeNanoseconds) {
@@ -121,8 +133,18 @@ suspend fun <IN> executeAgentic(
                 BudgetReason.TURNS,
             )
 
+        // Threshold check before the next chat — DURATION is wall-clock, so
+        // it can cross the threshold purely by waiting (e.g., on a slow tool).
+        // TURNS / TOOL_CALLS / TOKENS thresholds get checked just after their
+        // accumulator updates below.
+        maybeFireThreshold(
+            BudgetReason.DURATION,
+            elapsedNanos.toDouble() / budget.maxDuration.inWholeNanoseconds,
+        )
+
         val response = withContext(Dispatchers.IO) { client.chat(messages) }
         turns++
+        maybeFireThreshold(BudgetReason.TURNS, turns.toDouble() / budget.maxTurns)
 
         // #963: accumulate tokens only when the provider reported usage —
         // a missing `tokenUsage` does NOT count as zero toward the cap.
@@ -131,11 +153,14 @@ suspend fun <IN> executeAgentic(
         response.tokenUsage?.let { usage ->
             totalTokens += usage.total
             val cap = budget.maxTokens
-            if (cap != null && totalTokens > cap) {
-                throw BudgetExceededException(
-                    "Agent '${agent.name}' exceeded token budget of $cap (used $totalTokens)",
-                    BudgetReason.TOKENS,
-                )
+            if (cap != null) {
+                maybeFireThreshold(BudgetReason.TOKENS, totalTokens.toDouble() / cap)
+                if (totalTokens > cap) {
+                    throw BudgetExceededException(
+                        "Agent '${agent.name}' exceeded token budget of $cap (used $totalTokens)",
+                        BudgetReason.TOKENS,
+                    )
+                }
             }
         }
 
@@ -155,6 +180,10 @@ suspend fun <IN> executeAgentic(
                         )
                     }
                     toolCalls++
+                    maybeFireThreshold(
+                        BudgetReason.TOOL_CALLS,
+                        toolCalls.toDouble() / budget.maxToolCalls,
+                    )
                     // #969: trip on repeated invocation of the same tool. Counter
                     // tracks consecutive calls regardless of turn boundary — what
                     // matters is "no other tool came between," not "in the same turn."
