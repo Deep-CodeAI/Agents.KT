@@ -16,6 +16,22 @@ dependencyLocking {
     lockAllConfigurations()
 }
 
+// #883 — Dependabot flagged high-severity CVEs in BouncyCastle 1.80, which the
+// Kotlin Gradle plugin pulls transitively (kotlinBouncyCastleConfiguration, used
+// for JAR signing). We don't declare BC directly. Force 1.84 across every
+// resolved configuration so the lockfile and verification metadata pin the
+// patched version.
+configurations.all {
+    resolutionStrategy {
+        force(
+            "org.bouncycastle:bcprov-jdk18on:1.84",
+            "org.bouncycastle:bcpg-jdk18on:1.84",
+            "org.bouncycastle:bcpkix-jdk18on:1.84",
+            "org.bouncycastle:bcutil-jdk18on:1.84",
+        )
+    }
+}
+
 dependencies {
     implementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
