@@ -1,7 +1,9 @@
 ### Gradle ###
 .gradle/
 build/
-gradle/
+gradle/*
+!gradle/wrapper/
+!gradle/verification-metadata.xml
 gradlew
 gradlew.bat
 

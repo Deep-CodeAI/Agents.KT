@@ -1,16 +1,14 @@
-name: CI
+name: Dependency Submission
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build:
+  dependency-submission:
     runs-on: ubuntu-latest
 
     steps:
@@ -24,13 +22,5 @@ jobs:
           java-version: '21'
           distribution: 'corretto'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a  # v4.4.3
-        with:
-          gradle-version: '8.13'
-
-      - name: Build
-        run: gradle build -x test
-
-      - name: Test
-        run: gradle test
+      - name: Submit dependency graph
+        uses: gradle/actions/dependency-submission@ed408507eac070d1f99cc633dbcf757c94c7933a  # v4.4.3
