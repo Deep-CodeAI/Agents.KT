@@ -308,6 +308,60 @@ class Agent<IN, OUT>(
         }
     }
 
+    /**
+     * Single-line identifier used in logs and stack traces. See #970.
+     * Replaces the default JVM `Object#toString` (`Agent@5e91993f`) with
+     * something a reader can parse at a glance.
+     */
+    override fun toString(): String = "Agent<$name>"
+
+    /**
+     * Multi-line human-readable summary of this agent's configuration.
+     * Useful for log dumps when an agent misbehaves and you want to see its
+     * full state in one shot. Format is intentionally informal — read it,
+     * don't parse it. See #970.
+     */
+    fun describe(): String = buildString {
+        appendLine("Agent<$name> : ${outType.simpleName ?: "?"}")
+        appendLine("  prompt: ${describePrompt()}")
+        appendLine("  model: ${describeModel()}")
+        appendLine("  budget: ${describeBudget()}")
+        appendLine("  skills (${skills.size}): ${skills.keys.sorted().joinToString(", ")}")
+        appendLine("  tools (${toolMap.size}): ${toolMap.keys.sorted().joinToString(", ")}")
+        append("  memory: ${if (memoryBank != null) "configured" else "(none)"}")
+    }
+
+    private fun describePrompt(): String = when {
+        prompt.isBlank() -> "(none)"
+        prompt.length <= 80 -> prompt
+        else -> prompt.take(77) + "..."
+    }
+
+    private fun describeModel(): String {
+        val cfg = modelConfig ?: return "(none)"
+        return "${cfg.provider.name.lowercase()} (${cfg.host}:${cfg.port}, ${cfg.name}, T=${cfg.temperature})"
+    }
+
+    private fun describeBudget(): String {
+        val b = budgetConfig
+        // Show only fields that diverge from BudgetConfig() defaults so the
+        // user sees what they actually overrode. Empty list means "all defaults."
+        // (Iterates the data class component fields generically so future
+        // additions to BudgetConfig pick up automatically — keeps describe() in
+        // sync with new caps without a manual list update each time.)
+        val defaults = BudgetConfig()
+        val defaultValues = defaults::class.members
+            .filterIsInstance<kotlin.reflect.KProperty1<BudgetConfig, *>>()
+            .associate { it.name to it.get(defaults) }
+        val overrides = b::class.members
+            .filterIsInstance<kotlin.reflect.KProperty1<BudgetConfig, *>>()
+            .mapNotNull { prop ->
+                val current = prop.get(b)
+                if (current != defaultValues[prop.name]) "${prop.name}=$current" else null
+            }
+        return if (overrides.isEmpty()) "(defaults)" else overrides.joinToString(", ")
+    }
+
     fun validate() {
         require(skills.isNotEmpty()) {
             "Agent \"$name\" must declare at least one skill."
