@@ -28,12 +28,19 @@ suspend fun <IN> executeAgentic(
 
     val messages = mutableListOf<LlmMessage>()
 
-    // Action tools: tools the skill explicitly lists + agent capabilities + auto-injected memory tools
+    // Action tools: tools the skill explicitly lists + agent capabilities + memory tools
     val skillToolDefs = skill.toolNames?.mapNotNull { agent.toolMap[it] } ?: emptyList()
     val autoToolDefs = agent.autoToolNames.mapNotNull { agent.toolMap[it] }
-    val memoryToolDefs = if (agent.memoryBank != null)
-        agent.toolMap.values.filter { it.name in setOf("memory_read", "memory_write", "memory_search") }
-    else emptyList()
+    // #856 — memory-tool authorization is per-skill when ANY skill opts in via
+    // `useMemory()`. If none opt in, fall back to the legacy default-on behavior
+    // (every skill gets memory tools when memoryBank is set) so existing
+    // single-skill agents don't break.
+    val anySkillOptedIntoMemory = agent.skills.values.any { it.useMemory }
+    val memoryToolDefs = when {
+        agent.memoryBank == null -> emptyList()
+        anySkillOptedIntoMemory && !skill.useMemory -> emptyList()
+        else -> agent.toolMap.values.filter { it.name in setOf("memory_read", "memory_write", "memory_search") }
+    }
     val actionToolDefs = (skillToolDefs + autoToolDefs + memoryToolDefs).distinctBy { it.name }
 
     // Knowledge tools: exposed lazily — LLM calls them to load context on demand

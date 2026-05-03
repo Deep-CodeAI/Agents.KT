@@ -82,6 +82,21 @@ class Skill<IN, OUT>(
         outputTransformer = block
     }
 
+    /**
+     * #856 — opt-in for memory tools. When ANY skill on an agent calls `useMemory()`,
+     * the agentic loop respects the opt-in: only skills that called this get
+     * `memory_read` / `memory_write` / `memory_search` in their allowlist. When NO
+     * skill opts in, the legacy auto-inject (every skill gets memory if memoryBank
+     * is set) is preserved for backward compatibility.
+     */
+    var useMemory: Boolean = false
+        private set
+
+    fun useMemory() {
+        checkNotFrozen()
+        useMemory = true
+    }
+
     fun execute(input: IN): OUT {
         val impl = checkNotNull(implementation) {
             "Skill \"$name\" has no implementation. Add implementedBy { } block."
