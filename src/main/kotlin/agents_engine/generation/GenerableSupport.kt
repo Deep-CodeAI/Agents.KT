@@ -220,6 +220,100 @@ private fun KType.promptTypeName(): String = when (val cls = classifier) {
     else -> "String"
 }
 
+// ─── LLM Input Serialization (typed → wire format) ──────────────────────────
+
+/**
+ * Serializes an agent input value to the form the LLM should see in a user message.
+ *
+ * Symmetric with [fromLlmOutput]: that takes JSON the model produced and reconstructs
+ * a typed instance; this takes a typed instance and emits the wire format the model
+ * should see.
+ *
+ * Rules:
+ * - `null` → `"null"`
+ * - `String` → the string as-is (no JSON quoting; matches the current behavior of
+ *   passing a free-form question/instruction to a model).
+ * - `Boolean` / `Number` → JSON literal.
+ * - `List<*>` → JSON array, recursing on each element.
+ * - `Map<*, *>` → JSON object, recursing on each value.
+ * - `@Generable` data class → JSON object with each constructor param as a field.
+ *   Sealed-class variants get a `"type":"VariantName"` discriminator (matches
+ *   [fromLlmOutput]'s expected shape).
+ * - Anything else → `value.toString()` (backward-compatible fallback for plain
+ *   classes that don't opt into `@Generable`).
+ *
+ * See #937.
+ */
+fun toLlmInput(value: Any?): String = when (value) {
+    null -> "null"
+    is String -> value
+    is Boolean -> value.toString()
+    is Number -> value.toString()
+    is List<*> -> value.joinToString(",", "[", "]") { jsonSerialize(it) }
+    is Map<*, *> -> value.entries.joinToString(",", "{", "}") { (k, v) ->
+        "\"${k.toString().escapeJson()}\":${jsonSerialize(v)}"
+    }
+    else -> {
+        val cls = value::class
+        if (cls.findAnnotation<Generable>() != null) {
+            generableToJson(value, cls)
+        } else {
+            value.toString()
+        }
+    }
+}
+
+/**
+ * Internal recursive serializer — used by collections and Generable field
+ * walking. Differs from [toLlmInput] in that strings get JSON-quoted (since
+ * they're nested inside a JSON value).
+ */
+private fun jsonSerialize(value: Any?): String = when (value) {
+    null -> "null"
+    is String -> "\"${value.escapeJson()}\""
+    is Boolean -> value.toString()
+    is Number -> value.toString()
+    is List<*> -> value.joinToString(",", "[", "]") { jsonSerialize(it) }
+    is Map<*, *> -> value.entries.joinToString(",", "{", "}") { (k, v) ->
+        "\"${k.toString().escapeJson()}\":${jsonSerialize(v)}"
+    }
+    else -> {
+        val cls = value::class
+        if (cls.findAnnotation<Generable>() != null) {
+            generableToJson(value, cls)
+        } else {
+            // Non-Generable, non-primitive nested value — render via toString
+            // and JSON-quote it. Lossy but consistent with falling back to
+            // toString at the top level.
+            "\"${value.toString().escapeJson()}\""
+        }
+    }
+}
+
+private fun generableToJson(value: Any, cls: KClass<*>): String {
+    val ctor = cls.primaryConstructor
+        ?: return "\"${value.toString().escapeJson()}\""
+    val isSealedVariant = cls.allSuperclasses.any { it.isSealed }
+    return buildString {
+        append("{")
+        var first = true
+        if (isSealedVariant) {
+            append("\"type\":\"${cls.simpleName}\"")
+            first = false
+        }
+        ctor.parameters.forEach { param ->
+            val name = param.name ?: return@forEach
+            val prop = cls.memberProperties.find { it.name == name } ?: return@forEach
+            if (!first) append(",")
+            first = false
+            @Suppress("UNCHECKED_CAST")
+            val fieldValue = (prop as kotlin.reflect.KProperty1<Any, *>).get(value)
+            append("\"${name.escapeJson()}\":${jsonSerialize(fieldValue)}")
+        }
+        append("}")
+    }
+}
+
 // ─── Lenient Deserialization ──────────────────────────────────────────────────
 
 /**

@@ -5,6 +5,7 @@ import agents_engine.core.Skill
 import agents_engine.core.SkillRoute
 import agents_engine.generation.constructFromMap
 import agents_engine.generation.fromLlmOutput
+import agents_engine.generation.toLlmInput
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.reflect.KClass
 import kotlinx.coroutines.Dispatchers
@@ -95,8 +96,10 @@ suspend fun <IN> executeAgentic(
     }
     if (systemContent.isNotBlank()) messages.add(LlmMessage("system", systemContent))
 
-    // User: serialized input
-    messages.add(LlmMessage("user", input.toString()))
+    // User: serialized input. Typed @Generable inputs become JSON; primitives
+    // and Strings render literally; non-Generable types fall back to toString.
+    // See #937 / GenerableSupport.toLlmInput.
+    messages.add(LlmMessage("user", toLlmInput(input)))
 
     var turns = 0
     var toolCalls = 0
@@ -185,7 +188,7 @@ suspend fun <IN> selectSkillByLlm(
 
     val messages = listOf(
         LlmMessage("system", systemPrompt),
-        LlmMessage("user", input.toString()),
+        LlmMessage("user", toLlmInput(input)),  // #937 — typed Generable inputs as JSON
     )
 
     val client = config.client ?: OllamaClient(config.host, config.port, config.name, config.temperature)
