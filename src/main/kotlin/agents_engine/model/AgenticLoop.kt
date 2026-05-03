@@ -104,6 +104,8 @@ suspend fun <IN> executeAgentic(
     var turns = 0
     var toolCalls = 0
     var totalTokens = 0
+    var lastToolName: String? = null
+    var consecutiveSameTool = 0
     val invocationStartNanos = System.nanoTime()
     while (true) {
         val elapsedNanos = System.nanoTime() - invocationStartNanos
@@ -153,6 +155,19 @@ suspend fun <IN> executeAgentic(
                         )
                     }
                     toolCalls++
+                    // #969: trip on repeated invocation of the same tool. Counter
+                    // tracks consecutive calls regardless of turn boundary — what
+                    // matters is "no other tool came between," not "in the same turn."
+                    if (call.name == lastToolName) consecutiveSameTool++
+                    else { lastToolName = call.name; consecutiveSameTool = 1 }
+                    budget.maxConsecutiveSameTool?.let { cap ->
+                        if (consecutiveSameTool > cap) {
+                            throw BudgetExceededException(
+                                "Agent '${agent.name}' invoked tool '${call.name}' $consecutiveSameTool times in a row (cap: $cap)",
+                                BudgetReason.CONSECUTIVE_TOOL,
+                            )
+                        }
+                    }
                     val isKnowledge = call.name in knowledgeToolMap
                     val tool = allowedToolMap[call.name]
                         ?: error(

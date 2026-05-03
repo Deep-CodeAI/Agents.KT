@@ -3922,7 +3922,7 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [x] DDD package structure: `agents_engine.core` (entities) + `agents_engine.composition` (operators)
 - [x] Single-placement rule — each agent instance participates in at most one structure
 - [x] `model { }` — Ollama backend; `host`, `port`, `temperature`; injectable `ModelClient` for tests; auto-fallback to inline JSON tool-call format for models without native tool support (#706)
-- [x] Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`, `maxToolCalls`, `maxDuration`, `perToolTimeout`, `maxTokens`) + `onToolUse` observability hook (#637, #963)
+- [x] Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`, `maxToolCalls`, `maxDuration`, `perToolTimeout`, `maxTokens`, `maxConsecutiveSameTool`) + `onToolUse` observability hook (#637, #963, #969)
 - [x] `TokenUsage` on `LlmResponse` — `prompt_eval_count` + `eval_count` parsed from Ollama; cumulative across turns, surfaces `BudgetReason.TOKENS` on overrun (#963)
 - [x] Skill selection — manual `skillSelection {}` + automatic LLM routing when multiple skills match
 - [x] `onSkillChosen { name -> }` — fires when an agent selects a skill to execute
