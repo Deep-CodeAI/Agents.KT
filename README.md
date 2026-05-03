@@ -1196,6 +1196,7 @@ For the full contributor guide — running the live-LLM and MCP integration test
 - [x] Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`, `maxToolCalls`, `maxDuration`, `perToolTimeout`, `maxTokens`) + `onToolUse` observability hook (#637, #963)
 - [x] Skill selection — manual `skillSelection {}` + automatic LLM routing when multiple skills match
 - [x] `onError { Throwable -> }` — infrastructure-error observability hook (LLM transport, response parse, budget); pure observability — original exception always rethrows (#962)
+- [x] `Agent.observe { event -> }` — sealed `PipelineEvent` bridges the four hooks (skill / tool / knowledge / error) into one typed stream; composes additively (#965)
 - [ ] `>>` — security/education wrap
 
 **Phase 2 — Runtime + Distribution** *(Q2 2026)*
@@ -1214,7 +1215,7 @@ For the full contributor guide — running the live-LLM and MCP integration test
 - [ ] Reactive context hooks — `beforeInference`, `afterToolCall`, `onBudgetThreshold`
 - [x] Agent memory — `MemoryBank`, `memory_read`/`memory_write`/`memory_search` auto-injected tools
 - [ ] `.spawn {}` — independent sub-agent lifecycle, `AgentHandle<OUT>`, parent-managed join
-- [ ] Pipeline observability — `observe {}` event handler, `Flow<PipelineEvent>` for streaming UIs
+- [ ] `Flow<PipelineEvent>` for reactive UIs + Pipeline-level events (`StageStarted`, `PipelineCompleted`, etc) — depends on streaming, sub-agents, sessions
 - [ ] Serialization — `agent.json`, A2A AgentCard
 - [ ] JAR bundles and folder-based assembly
 - [ ] Gradle plugin
