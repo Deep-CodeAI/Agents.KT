@@ -3927,6 +3927,7 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [x] `onSkillChosen { name -> }` — fires when an agent selects a skill to execute
 - [x] `onKnowledgeUsed { name, content -> }` — fires when the LLM fetches a knowledge entry (tools model)
 - [x] Tool error recovery — `onToolError { invalidArgs / deserializationError / executionError { ... } }` with `RepairResult.Fixed / Retry / Escalated / Unrecoverable`
+- [x] `onError { Throwable -> }` — infrastructure-error observability hook (LLM transport, response parse, budget); pure observability — original exception always rethrows; listener exceptions are attached as suppressed (#962)
 - [x] MCP client — `mcp { server() }` agent DSL with HTTP / stdio / TCP transports, Bearer auth, namespacing
 - [x] MCP server — `McpServer.from(agent) { expose() }` exposes agent skills as MCP tools; 2025-03-26 spec conformance (ping, capabilities, protocolVersion negotiation, cursor/nextCursor, Content-Type/415, 405 with Allow, Mcp-Session-Id)
 - [x] MCP runner — `McpRunner.serve(agent, args)` picocli-style one-line `main` for standalone agent JARs
@@ -3942,7 +3943,6 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [ ] MCP client integration — `McpTool` instances consumable alongside local tools
 - [ ] `grants { tools(...) }` — Layer 2 permissions use actual `Tool<*,*>` references
 - [ ] Permission model: 3 states — Granted (auto-runs), Confirmed (user approval), Absent (unavailable)
-- [ ] `onError` callback for infrastructure error handling
 - [ ] KSP annotation processor for compile-time `@Generable` (replaces runtime reflection); constrained decoding (Ollama/vLLM) + guided JSON mode (Anthropic/OpenAI)
 - [ ] Native CLI binary (GraalVM — no JRE required); `brew`, npm, pip, curl, apt
 - [ ] jlink minimal JRE bundle for runtime (~35 MB)

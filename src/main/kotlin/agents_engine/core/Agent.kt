@@ -86,6 +86,17 @@ class Agent<IN, OUT>(
         private set
     var routerRationaleListener: ((rationale: String) -> Unit)? = null
         private set
+    /**
+     * Fires when an infrastructure error is about to propagate out of an agentic
+     * invocation — LLM transport failures, response parse failures, budget
+     * exceptions, skill-routing failures, etc. Pure observability: the original
+     * exception is always rethrown after the listener runs. See #962.
+     *
+     * Distinct from [onToolError], which is per-tool *semantic* recovery and
+     * can substitute a value or repaired arguments for the failure.
+     */
+    var errorListener: ((Throwable) -> Unit)? = null
+        private set
     var skillSelectionConfidenceThreshold: Double = 0.6
         private set
     private var skillSelector: ((IN) -> String)? = null
@@ -136,6 +147,10 @@ class Agent<IN, OUT>(
 
     fun onSkillChosen(block: (name: String) -> Unit) {
         skillChosenListener = block
+    }
+
+    fun onError(block: (Throwable) -> Unit) {
+        errorListener = block
     }
 
     fun skillSelection(block: (IN) -> String) {
@@ -210,12 +225,28 @@ class Agent<IN, OUT>(
      * the agentic loop. The blocking [invoke] is a thin shim over this.
      */
     suspend fun invokeSuspend(input: IN): OUT {
-        val skill = resolveSkill(input)
-        skillChosenListener?.invoke(skill.name)
-        return if (skill.isAgentic) {
-            castOut(executeAgentic(this, skill, input))
-        } else {
-            castOut(executors[skill.name]!!(input))
+        try {
+            val skill = resolveSkill(input)
+            skillChosenListener?.invoke(skill.name)
+            return if (skill.isAgentic) {
+                castOut(executeAgentic(this, skill, input))
+            } else {
+                castOut(executors[skill.name]!!(input))
+            }
+        } catch (t: Throwable) {
+            // #962: observability hook for infrastructure errors. Fires on
+            // *anything* that escapes the agentic invocation — LLM transport
+            // failures, response parse failures, budget exceptions, skill
+            // routing errors. Listener exceptions are attached as suppressed
+            // so they can never swallow the original error.
+            errorListener?.let { listener ->
+                try {
+                    listener(t)
+                } catch (callbackError: Throwable) {
+                    t.addSuppressed(callbackError)
+                }
+            }
+            throw t
         }
     }
 
