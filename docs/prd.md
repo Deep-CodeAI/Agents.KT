@@ -3898,91 +3898,99 @@ Bidirectional: draw UML → generate DSL, write DSL → visualize as UML.
 
 ## 22. Roadmap
 
-### Phase 1: Core DSL (Q1 2026)
+Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contributors see the same source of truth in either document.
 
-**Implemented:**
-- `Agent<IN, OUT>` typed definitions with SRP enforcement — `agent<IN,OUT>("name") { }`
-- `Agent.prompt` — base context string for the LLM
-- Skills-only execution path — all agents run through `skills { }`, `implementedBy { kotlinLambda }`
-- `Skill.description` — sells the skill to the LLM alongside its type signature
-- `Skill.knowledge("key", "description") { "..." }` — unlimited named lazy providers; description tells LLM what the entry contains before it calls it
-- `Skill.toLlmDescription()` — auto-generated markdown: `## Skill`, `**Input:**`/`**Output:**` with inline `@Generable` type shape (description + fields + `@Guide` texts), description prose, `**Knowledge:**` index; override with `llmDescription("...")` when needed
-- `Skill.toLlmContext()` — full context: `toLlmDescription()` + all knowledge entry contents (separator: `--- key ---\ncontent`); loaded lazily
-- `Skill.knowledgeTools()` → `List<KnowledgeTool(name, description, call)>` — tools model: LLM reads `description` to decide which entries to pull; each `call()` is lazy
-- `@Generable("desc")` / `@Guide` / `@LlmDescription` — runtime reflection: `toLlmDescription()` (convention-over-configuration markdown for any `@Generable` class), `jsonSchema()`, `promptFragment()`, `fromLlmOutput<T>()`, `PartiallyGenerated<T>`; sealed types via `"type"` discriminator
-- `Pipeline` execution via composed functions — no runtime casts, no reflection
-- Composition operators: `then` (pipeline), `*` (forum shorthand), `/` (parallel), `.loop {}` (iterative + plain `while`), `.branch {}` (sealed type routing)
-- DDD package structure: `agents_engine.core` (entities) + `agents_engine.composition` (operators)
-- Single-placement rule: each agent instance participates in at most one structure
-- `model { }` — Ollama backend; `host`, `port`, `temperature`; injectable `ModelClient` for tests; auto-fallback to inline JSON tool-call format for models without native tool support — `gemma3` and similar (#706)
-- Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`) + `onToolUse` observability callback
-- `onSkillChosen { name -> }` — fires when agent selects a skill to execute
-- `onKnowledgeUsed { name, content -> }` — fires when LLM fetches a knowledge entry (tools model)
+### Phase 1: Core DSL *(Q1 2026)*
 
-**Planned:**
-- `model { }` — extend to multi-provider (Anthropic, OpenAI, Google) via ChatModel abstraction
-- KSP annotation processor for compile-time `@Generable` schema generation; constrained decoding (Ollama) + guided JSON mode (Anthropic/OpenAI) enforcement tiers
-- ~~Skill routing: predefined rules + `RoutingStrategy.LLM_DECISION`~~ ✓ done
-- Layer 2: Structure DSL with delegates, grants, authority, routing, escalation
-- All validations from §11 catalog
-- CLI: `agents new`, `generate`, `validate`
-- Project structure conventions
+- [x] `Agent<IN, OUT>` typed definitions with SRP enforcement — `agent<IN,OUT>("name") { }`
+- [x] `Agent.prompt` — base context string for the LLM
+- [x] Skills-only execution path — all agents run through `skills { implementedBy { kotlinLambda } }`
+- [x] `Skill.description` — sells the skill to the LLM alongside its type signature
+- [x] `Skill.knowledge("key", "description") { "..." }` — unlimited named lazy providers; description tells the LLM what the entry contains before it calls it
+- [x] `Skill.toLlmDescription()` — auto-generated markdown: `## Skill`, `**Input:**` / `**Output:**` with inline `@Generable` type shape (description + fields + `@Guide` texts), description prose, `**Knowledge:**` index; `llmDescription("...")` override
+- [x] `Skill.toLlmContext()` — full context: `toLlmDescription()` + all knowledge entry contents (separator: `--- key ---\ncontent`); loaded lazily
+- [x] `Skill.knowledgeTools()` → `List<KnowledgeTool(name, description, call)>` — tools model: LLM reads `description` to decide which entries to pull; each `call()` is lazy
+- [x] `@Generable("desc")` / `@Guide` / `@LlmDescription` — runtime reflection: `toLlmDescription()`, `jsonSchema()`, `promptFragment()`, `fromLlmOutput<T>()`, `PartiallyGenerated<T>`; sealed types via `"type"` discriminator
+- [x] `toLlmInput(value)` — typed `@Generable` agent input serialized as JSON instead of `toString()` (#937); symmetric with `fromLlmOutput<T>`
+- [x] `Pipeline` execution via composed functions — no runtime casts, no reflection
+- [x] `then` — sequential pipeline composition with composed execution
+- [x] `/` — parallel fan-out with coroutine concurrency
+- [x] `*` — forum shorthand (multi-agent debate, last agent is captain)
+- [x] `forum { participant(...); captain(...); allowForumReturn(...) }` — explicit forum roles, finalization permissions, concurrent participants, `onMentionEmitted` output tracking
+- [x] `.loop {}` — iterative execution with `(OUT) -> IN?` feedback block + `maxIterations` cap
+- [x] `.branch {}` — conditional routing on sealed types, composable with `then`
+- [x] DDD package structure: `agents_engine.core` (entities) + `agents_engine.composition` (operators)
+- [x] Single-placement rule — each agent instance participates in at most one structure
+- [x] `model { }` — Ollama backend; `host`, `port`, `temperature`; injectable `ModelClient` for tests; auto-fallback to inline JSON tool-call format for models without native tool support (#706)
+- [x] Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`, `maxToolCalls`, `maxDuration`, `perToolTimeout`) + `onToolUse` observability hook (#637)
+- [x] Skill selection — manual `skillSelection {}` + automatic LLM routing when multiple skills match
+- [x] `onSkillChosen { name -> }` — fires when an agent selects a skill to execute
+- [x] `onKnowledgeUsed { name, content -> }` — fires when the LLM fetches a knowledge entry (tools model)
+- [x] Tool error recovery — `onToolError { invalidArgs / deserializationError / executionError { ... } }` with `RepairResult.Fixed / Retry / Escalated / Unrecoverable`
+- [x] MCP client — `mcp { server() }` agent DSL with HTTP / stdio / TCP transports, Bearer auth, namespacing
+- [x] MCP server — `McpServer.from(agent) { expose() }` exposes agent skills as MCP tools; 2025-03-26 spec conformance (ping, capabilities, protocolVersion negotiation, cursor/nextCursor, Content-Type/415, 405 with Allow, Mcp-Session-Id)
+- [x] MCP runner — `McpRunner.serve(agent, args)` picocli-style one-line `main` for standalone agent JARs
+- [x] Memory bank — `MemoryBank`, `memory_read` / `memory_write` / `memory_search` tools with per-skill `useMemory()` opt-in (#856)
+- [x] Supply-chain hygiene — pinned Gradle wrapper, dependency-locking via `gradle.lockfile`, `gradle/verification-metadata.xml` SHA-256 verification, `updateVerificationMetadata` cross-platform Gradle task (#858, #872, #883)
+- [ ] `>>` — security/education wrap
 
-### Phase 2: Runtime + Distribution (Q2 2026)
+### Phase 2: Runtime + Distribution *(Q2 2026)*
 
 **Priority (must-ship):**
-- `model { }` — extend beyond Ollama: ChatModel interface, provider abstraction (Anthropic, OpenAI, Google), `suspend fun` + Flow streaming
-- Agentic execution loop: extend budget controls (`maxToolCalls`, `maxTokens`, `maxTime`) + structure-level budgets (§5.6)
-- `Tool<IN, OUT>` base + `McpTool<IN, OUT>` with MCP client connectivity (§5.8)
-- `onError` callback for infrastructure error handling
-- KSP annotation processor for compile-time `@Generable` (replaces runtime reflection)
-- Constrained decoding (Ollama/vLLM) + guided JSON mode (Anthropic/OpenAI)
+- [ ] `model { }` — extend beyond Ollama: ChatModel interface, provider abstraction (Anthropic, OpenAI, Google), `suspend fun` + Flow streaming
+- [ ] `Tool<IN, OUT>` base + `McpTool<IN, OUT>` — MCP as native Tool inheritance, not a wrapper (§5.8)
+- [ ] MCP client integration — `McpTool` instances consumable alongside local tools
+- [ ] `grants { tools(...) }` — Layer 2 permissions use actual `Tool<*,*>` references
+- [ ] Permission model: 3 states — Granted (auto-runs), Confirmed (user approval), Absent (unavailable)
+- [ ] `onError` callback for infrastructure error handling
+- [ ] KSP annotation processor for compile-time `@Generable` (replaces runtime reflection); constrained decoding (Ollama/vLLM) + guided JSON mode (Anthropic/OpenAI)
+- [ ] Native CLI binary (GraalVM — no JRE required); `brew`, npm, pip, curl, apt
+- [ ] jlink minimal JRE bundle for runtime (~35 MB)
+- [ ] Agentic execution loop — extend budget controls with `maxTokens` + structure-level budgets (§5.6)
 
 **Secondary (stretch):**
-- `Prompt<IN, OUT>` entity definition and DSL — typed public interface for agents (§8.6)
-- Prompt → Skill routing via `triggeredBy`, knowledge slot binding and validation (§8.6.4–§8.6.6)
-- Compile-time validations #27–#34 for prompts (§8.6.11)
-- Prompt serialization in agent.json; A2A AgentCard generation from prompts (§8.6.9)
-- Tool constraints: `constraints {}` DSL with `ToolConstraint` sealed hierarchy — visibility control per turn (§5.6)
-- Typed hook payloads: `onSkillStart<T>`, `onToolCall<T>`, `onToolResult<T>` (§8.4)
-- Typed memory strategies: `sliding<T>`, `tokenBudget<T>`, `summarized<T>` namespaces (§8.5)
-- Human-in-the-loop: `confirm()` with message templates, timeouts, fallback behavior (§9.2.1)
-- Session model: multi-turn conversation, compaction strategies (§5.7)
-- Reactive context hooks: `beforeInference`, `afterToolCall`, `onBudgetThreshold` (§8.4)
-- ~~Skill routing: predefined rules + `RoutingStrategy.LLM_DECISION`~~ ✓ done
-- ~~MCP client: `mcp { server() }` agent DSL with HTTP / stdio / TCP transports, Bearer auth, namespacing~~ ✓ done
-- ~~MCP server: `McpServer.from(agent) { expose() }` exposes agent skills as MCP tools~~ ✓ done
-- ~~MCP server: 2025-03-26 spec conformance (ping, capabilities, protocolVersion negotiation, cursor/nextCursor, Content-Type/415, 405 with Allow, Mcp-Session-Id, plain description)~~ ✓ done
-- ~~MCP runner: `McpRunner.serve(agent, args)` picocli-style one-line `main` for standalone agent JARs~~ ✓ done
-- Pipeline observability: `observe {}`, `Flow<PipelineEvent>` (§10.2)
-- ~~Forum coordination runtime and Parallel coroutine execution~~ ✓ done — Forum.invoke() with concurrent participants + captain, `onMentionEmitted` output tracking
+- [ ] `Prompt<IN, OUT>` entity definition and DSL — typed public interface for agents (§8.6)
+- [ ] Prompt → Skill routing via `triggeredBy`, knowledge slot binding and validation (§8.6.4–§8.6.6)
+- [ ] Compile-time validations #27–#34 for prompts (§8.6.11)
+- [ ] Prompt serialization in agent.json; A2A AgentCard generation from prompts (§8.6.9)
+- [ ] Tool constraints: `constraints {}` DSL with `ToolConstraint` sealed hierarchy — visibility control per turn (§5.6)
+- [ ] Typed hook payloads: `onSkillStart<T>`, `onToolCall<T>`, `onToolResult<T>` (§8.4)
+- [ ] Typed memory strategies: `sliding<T>`, `tokenBudget<T>`, `summarized<T>` namespaces (§8.5)
+- [ ] Human-in-the-loop: `confirm()` with message templates, timeouts, fallback behavior (§9.2.1)
+- [ ] Session model — multi-turn `AgentSession`, automatic compaction (`SUMMARIZE`, `SLIDING_WINDOW`, `CUSTOM`) (§5.7)
+- [ ] Reactive context hooks: `beforeInference`, `afterToolCall`, `onBudgetThreshold` (§8.4)
+- [ ] `.spawn {}` — independent sub-agent lifecycle, `AgentHandle<OUT>`, parent-managed join
+- [ ] Pipeline observability — `observe {}` event handler, `Flow<PipelineEvent>` for streaming UIs (§10.2)
+- [ ] Serialization — `agent.json`, A2A AgentCard
+- [ ] JAR bundles and folder-based assembly
+- [ ] Gradle plugin
 
-### Phase 3: Production (Q3 2026)
+### Phase 3: Production *(Q3 2026)*
 
-- Agent memory: project/user/global scopes (§8.5)
-- `.spawn {}` operator: independent sub-agent lifecycle (§10.1)
-- Layer 2: Structure DSL with delegates, grants, authority, routing
-- Runtime permission model (§9.2.1)
-- MCP prompt compatibility: `prompts/list`, `prompts/get` (§8.6.9)
-- Prompt composition operators: `then`, `refine`, `variant` (§8.6.10)
-- Shared prompt libraries — Maven distribution (§8.6.13)
-- A2A server + client
-- JAR distribution: agent bundles, assembly engine, Gradle plugin
-- CLI: `serve`, `inspect`, `validate`, `prompts`
-- GraalVM native binary + jlink runtime
-- Distributed agents framework (§13): `Agent.fromA2A<>()` typed proxies, locality-transparent pipelines, catalog discovery, placement manifest, schema drift detection
-- Custom tool deserializers: per-tool or per-server lambdas mapping raw MCP `content[]` (and future A2A skill outputs) to typed Kotlin values. Bridges the "tools are LLM-facing JSON" / "I want types in my Kotlin call sites" gap without forcing a `Tool<IN, OUT>` refactor on the local-tool path. Composable: a default deserializer per `McpClient`, overridable per tool via `mcp.tool("name").withDeserializer<T> { content -> ... }`.
+- [ ] Layer 2: Full Structure DSL with delegates, grants, authority, routing, escalation
+- [ ] Runtime permission model (§9.2.1)
+- [ ] All 37 compile-time validations enforced by the Gradle plugin (§11)
+- [ ] AgentUnit testing framework — unit tests, semantic tests (LLM-as-judge), Skill Coverage metrics
+- [ ] A2A server + client
+- [ ] MCP prompt compatibility — `prompts/list`, `prompts/get` (§8.6.9)
+- [ ] Prompt composition operators — `then`, `refine`, `variant` (§8.6.10)
+- [ ] Shared prompt libraries — Maven distribution (§8.6.13)
+- [ ] File-based knowledge — `skill.md`, `reference`, `examples`, `checklist` + RAG pipeline
+- [ ] Custom tool deserializers — per-tool or per-server lambdas mapping raw MCP `content[]` (and future A2A skill outputs) to typed Kotlin values. Composable: default deserializer per `McpClient`, overridable per tool via `mcp.tool("name").withDeserializer<T> { content -> ... }`
+- [ ] CLI — `serve`, `inspect`, `validate`, `prompts`
+- [ ] Distributed agents framework (§13) — `Agent.fromA2A<>()` typed proxies, locality-transparent pipelines, catalog discovery, placement manifest, schema drift detection
+- [ ] Production observability — OpenTelemetry traces
 
-### Phase 4: Ecosystem (Q4 2026)
+### Phase 4: Ecosystem *(Q4 2026)*
 
-- Team DSL: swarm coordination, message passing (§9.2.2) — if hardware and demand justify
-- Distributed framework: registry-based discovery, Forum/Parallel across nodes, circuit breaker / bulkhead (§13)
-- AgentUnit: semantic tests, LLM-as-judge, skill coverage
-- Knowledge packs: battle-tested prompt libraries
-- Visual structure editor
-- UML bidirectional conversion (Deep-Code.AI integration)
-- Maven Central publishing for agent bundles
-- Production observability: OpenTelemetry traces
+- [ ] Team DSL — swarm coordination, message passing (§9.2.2) — if hardware and demand justify
+- [ ] Distributed framework — registry-based discovery, Forum/Parallel across nodes, circuit breaker / bulkhead (§13)
+- [ ] Knowledge packs — battle-tested prompt libraries for common domains
+- [ ] Agent generation from natural language (NL → Kotlin DSL)
+- [ ] Skillify — extract reusable skills from session transcripts
+- [ ] Visual structure editor; UML bidirectional conversion (Deep-Code.AI integration)
+- [ ] Knowledge marketplace
+- [ ] Maven Central publishing for agent bundles
 
 ---
 
