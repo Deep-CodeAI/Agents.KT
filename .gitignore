@@ -4,8 +4,10 @@ build/
 gradle/*
 !gradle/wrapper/
 !gradle/verification-metadata.xml
-gradlew
-gradlew.bat
+# gradlew and gradlew.bat are intentionally tracked — they're the Gradle
+# wrapper scripts that let `./gradlew build` work on a fresh clone without
+# a global Gradle install. CI also needs them. See #872.
+
 
 ### IntelliJ IDEA ###
 .idea/
