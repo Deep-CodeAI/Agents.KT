@@ -8,6 +8,16 @@ package agents_engine.generation
  */
 internal object LenientJsonParser {
 
+    /**
+     * Hard cap on nesting depth — see #854. Without it, input like
+     * `{"a":{"a":{...nested 10000 times...}}}` overflows the JVM stack
+     * (`StackOverflowError` is an `Error`, not an `Exception` — it's NOT
+     * caught by the try/catch in [parse]). 64 levels is comfortably more
+     * than any legitimate LLM-emitted structure and keeps stack usage in
+     * the kilobytes.
+     */
+    const val MAX_NESTING_DEPTH: Int = 64
+
     fun parse(input: String): Any? {
         val block = extractJsonBlock(input)
         if (block.isEmpty() || (block[0] != '{' && block[0] != '[')) return null
@@ -55,17 +65,30 @@ internal object LenientJsonParser {
 
     private class Parser(private val s: String) {
         private var pos = 0
+        private var depth = 0
 
         fun parseValue(): Any? {
             skipWs()
             if (pos >= s.length) return null
             return when (s[pos]) {
-                '{' -> parseObject()
-                '[' -> parseArray()
+                '{' -> withDepth { parseObject() }
+                '[' -> withDepth { parseArray() }
                 '"' -> parseString()
                 't', 'f' -> parseBoolean()
                 'n' -> parseNull()
                 else -> parseNumber()
+            }
+        }
+
+        private inline fun <T> withDepth(block: () -> T): T {
+            if (depth >= MAX_NESTING_DEPTH) {
+                throw IllegalStateException("JSON nesting exceeds $MAX_NESTING_DEPTH")
+            }
+            depth++
+            try {
+                return block()
+            } finally {
+                depth--
             }
         }
 

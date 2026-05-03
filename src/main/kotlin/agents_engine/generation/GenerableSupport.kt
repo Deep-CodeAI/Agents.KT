@@ -297,8 +297,13 @@ private fun coerceValue(value: Any?, type: KType): Any? {
     if (value == null) return null
     return when (type.classifier) {
         String::class -> value.toString()
-        Int::class -> (value as? Number)?.toInt()
-        Long::class -> (value as? Number)?.toLong()
+        // #855 — `Number.toInt()` and `Number.toLong()` truncate silently on overflow.
+        // Reject out-of-range values so the LLM can't slip a 99_999_999_999 into an
+        // `Int` field and end up with garbage. Returning null routes through
+        // `constructFromMap` → `onToolError.invalidArgs`, which is the right
+        // recovery path for "this value didn't match the type contract".
+        Int::class -> coerceToInt(value)
+        Long::class -> coerceToLong(value)
         Double::class -> (value as? Number)?.toDouble()
         Float::class -> (value as? Number)?.toFloat()
         Boolean::class -> value as? Boolean
@@ -315,5 +320,55 @@ private fun coerceValue(value: Any?, type: KType): Any? {
                 value
             }
         }
+    }
+}
+
+/**
+ * Coerce a JSON-decoded value to `Int` without silent truncation. Returns null when
+ * the input is not a `Number`, when a fractional part would be lost, or when the
+ * value is outside `Int.MIN_VALUE..Int.MAX_VALUE`. See #855.
+ */
+private fun coerceToInt(value: Any): Int? {
+    val n = value as? Number ?: return null
+    val asLong = when (n) {
+        is Long, is Int, is Short, is Byte -> n.toLong()
+        is Double -> {
+            if (n.isNaN() || n.isInfinite() || n != Math.floor(n)) return null
+            if (n < Int.MIN_VALUE.toDouble() || n > Int.MAX_VALUE.toDouble()) return null
+            n.toLong()
+        }
+        is Float -> {
+            val d = n.toDouble()
+            if (d.isNaN() || d.isInfinite() || d != Math.floor(d)) return null
+            if (d < Int.MIN_VALUE.toDouble() || d > Int.MAX_VALUE.toDouble()) return null
+            d.toLong()
+        }
+        else -> n.toLong()
+    }
+    if (asLong !in Int.MIN_VALUE..Int.MAX_VALUE) return null
+    return asLong.toInt()
+}
+
+/**
+ * Coerce a JSON-decoded value to `Long` without silent truncation. Returns null on
+ * non-numeric input, fractional input, or out-of-range floating-point input. See #855.
+ */
+private fun coerceToLong(value: Any): Long? {
+    val n = value as? Number ?: return null
+    return when (n) {
+        is Long -> n
+        is Int, is Short, is Byte -> n.toLong()
+        is Double -> {
+            if (n.isNaN() || n.isInfinite() || n != Math.floor(n)) return null
+            if (n < Long.MIN_VALUE.toDouble() || n > Long.MAX_VALUE.toDouble()) return null
+            n.toLong()
+        }
+        is Float -> {
+            val d = n.toDouble()
+            if (d.isNaN() || d.isInfinite() || d != Math.floor(d)) return null
+            if (d < Long.MIN_VALUE.toDouble() || d > Long.MAX_VALUE.toDouble()) return null
+            d.toLong()
+        }
+        else -> n.toLong()
     }
 }
