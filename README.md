@@ -99,6 +99,7 @@ These APIs work in `main`, are unit-tested, and are exercised by integration tes
 - **Encapsulated tool/skill maps** — `Agent.toolMap` and `Agent.skills` are read-only `Map` views; mutation only via DSL or framework-internal escape hatches (#659, #667).
 - **`LlmProviderException`** — provider-boundary errors (auth, model-not-found, capability mismatch) surface distinctly from output-parse errors (#702).
 - **Untrusted tool-output wrapping** — tool results carry an envelope so the model can't impersonate framework messages (#642).
+- **`loadResource(path)`** — read agent system prompts (or any other context) from `src/main/resources/...` instead of inline string literals; fail-fast at construction if the path is wrong. `loadResourceOrNull` for the optional case (#980).
 
 ### Experimental
 
