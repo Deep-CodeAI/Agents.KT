@@ -171,7 +171,7 @@ Topical guides:
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("ai.deep-code:agents-kt:0.2.2")
+    implementation("ai.deep-code:agents-kt:0.2.3")
 }
 ```
 
