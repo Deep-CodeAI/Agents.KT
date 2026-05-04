@@ -3935,6 +3935,7 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [x] MCP runner — `McpRunner.serve(agent, args)` picocli-style one-line `main` for standalone agent JARs
 - [x] Memory bank — `MemoryBank`, `memory_read` / `memory_write` / `memory_search` tools with per-skill `useMemory()` opt-in (#856)
 - [x] Supply-chain hygiene — pinned Gradle wrapper, dependency-locking via `gradle.lockfile`, `gradle/verification-metadata.xml` SHA-256 verification, `updateVerificationMetadata` cross-platform Gradle task (#858, #872, #883)
+- [x] `loadResource(path)` / `loadResourceOrNull(path)` — read agent system prompts from classpath resources; fail-fast at agent construction when path is missing; UTF-8 decoded; leading-slash normalized (#980)
 - [ ] `>>` — security/education wrap
 
 ### Phase 2: Runtime + Distribution *(Q2 2026)*
