@@ -13,13 +13,15 @@ import kotlin.system.exitProcess
 //
 // Prerequisites:
 //   1. Ollama running locally on http://localhost:11434
-//   2. `ollama pull gpt-oss:20b`
+//   2. Logged in to ollama.com so the cloud model is reachable:
+//      `ollama signin`  (or run `ollama run gpt-oss:120b-cloud` once)
 //
-// Note: this demo uses gpt-oss:20b instead of gemma3:4b because two-stage
-// pipelines need the LLM to keep a structured QUESTION/PLAN format across
-// turns. README §Known Limitations explicitly notes that small models
-// (gemma3:4b) are unreliable for multi-step reasoning of this shape, while
-// tool-native models (gpt-oss:20b) handle it cleanly.
+// Note: this demo uses the cloud variant gpt-oss:120b-cloud rather than a
+// local model because two-stage pipelines need the LLM to keep a structured
+// QUESTION/PLAN format across turns. README §Known Limitations explicitly
+// notes small local models (gemma3:4b) are unreliable for multi-step
+// reasoning of this shape; the cloud variant runs server-side and avoids
+// local-VRAM pressure.
 //
 // Run:
 //   ./gradlew interactivePipeline --console=plain -q
@@ -39,7 +41,7 @@ import kotlin.system.exitProcess
 // (string-concat) prepends prior turns to the planner's input, same as
 // the single-agent demo.
 
-private const val MODEL = "gpt-oss:20b"
+private const val MODEL = "gpt-oss:120b-cloud"
 private const val HOST  = "localhost"
 private const val PORT  = 11434
 
