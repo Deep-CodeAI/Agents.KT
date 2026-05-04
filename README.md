@@ -1198,6 +1198,7 @@ For the full contributor guide — running the live-LLM and MCP integration test
 - [x] Skill selection — manual `skillSelection {}` + automatic LLM routing when multiple skills match
 - [x] `onError { Throwable -> }` — infrastructure-error observability hook (LLM transport, response parse, budget); pure observability — original exception always rethrows (#962)
 - [x] `Agent.observe { event -> }` — sealed `PipelineEvent` bridges the four hooks (skill / tool / knowledge / error) into one typed stream; composes additively (#965)
+- [x] `onBudgetThreshold(threshold) { reason, usedPercent -> }` — pre-cap warning hook; fires once per `BudgetReason` when cumulative usage crosses the fraction, before the cap throws (#966)
 - [ ] `>>` — security/education wrap
 
 **Phase 2 — Runtime + Distribution** *(Q2 2026)*
@@ -1213,7 +1214,7 @@ For the full contributor guide — running the live-LLM and MCP integration test
 
 *Secondary:*
 - [ ] Session model — multi-turn `AgentSession`, automatic compaction (`SUMMARIZE`, `SLIDING_WINDOW`, `CUSTOM`)
-- [ ] Reactive context hooks — `beforeInference`, `afterToolCall`, `onBudgetThreshold`
+- [ ] Reactive context hooks — `beforeInference`, `afterToolCall` (context-mutating hooks)
 - [x] Agent memory — `MemoryBank`, `memory_read`/`memory_write`/`memory_search` auto-injected tools
 - [ ] `.spawn {}` — independent sub-agent lifecycle, `AgentHandle<OUT>`, parent-managed join
 - [ ] `Flow<PipelineEvent>` for reactive UIs + Pipeline-level events (`StageStarted`, `PipelineCompleted`, etc) — depends on streaming, sub-agents, sessions

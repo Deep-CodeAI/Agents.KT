@@ -3930,6 +3930,7 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [x] Tool error recovery — `onToolError { invalidArgs / deserializationError / executionError { ... } }` with `RepairResult.Fixed / Retry / Escalated / Unrecoverable`
 - [x] `onError { Throwable -> }` — infrastructure-error observability hook (LLM transport, response parse, budget); pure observability — original exception always rethrows; listener exceptions are attached as suppressed (#962)
 - [x] `Agent.observe { event -> }` — sealed `PipelineEvent` (`SkillChosen` / `ToolCalled` / `KnowledgeLoaded` / `ErrorOccurred`) bridges the four hooks into one typed stream; composes additively with prior listeners (#965)
+- [x] `onBudgetThreshold(threshold) { reason, usedPercent -> }` — pre-cap warning hook; fires once per `BudgetReason` (TURNS / TOOL_CALLS / DURATION / TOKENS) when cumulative usage crosses the configured fraction, before the corresponding cap throws (#966)
 - [x] MCP client — `mcp { server() }` agent DSL with HTTP / stdio / TCP transports, Bearer auth, namespacing
 - [x] MCP server — `McpServer.from(agent) { expose() }` exposes agent skills as MCP tools; 2025-03-26 spec conformance (ping, capabilities, protocolVersion negotiation, cursor/nextCursor, Content-Type/415, 405 with Allow, Mcp-Session-Id)
 - [x] MCP runner — `McpRunner.serve(agent, args)` picocli-style one-line `main` for standalone agent JARs
@@ -3961,7 +3962,7 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [ ] Typed memory strategies: `sliding<T>`, `tokenBudget<T>`, `summarized<T>` namespaces (§8.5)
 - [ ] Human-in-the-loop: `confirm()` with message templates, timeouts, fallback behavior (§9.2.1)
 - [ ] Session model — multi-turn `AgentSession`, automatic compaction (`SUMMARIZE`, `SLIDING_WINDOW`, `CUSTOM`) (§5.7)
-- [ ] Reactive context hooks: `beforeInference`, `afterToolCall`, `onBudgetThreshold` (§8.4)
+- [ ] Reactive context hooks: `beforeInference`, `afterToolCall` — context-mutating hooks that inject system reminders (§8.4)
 - [ ] `.spawn {}` — independent sub-agent lifecycle, `AgentHandle<OUT>`, parent-managed join
 - [ ] `Flow<PipelineEvent>` for reactive UIs + Pipeline-level events (`StageStarted`, `PipelineCompleted`, etc) — depends on streaming, sub-agents, sessions (§10.2)
 - [ ] Serialization — `agent.json`, A2A AgentCard
