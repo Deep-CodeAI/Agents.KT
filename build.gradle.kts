@@ -252,23 +252,61 @@ val jarSwarmExit = registerSwarmDemoJar(
     resourcesPath = "src/test/swarm-jar-resources/exit",
 )
 
-// Stage the framework JAR + every runtime dependency next to the demo
-// JARs so the swarm demo is launchable with a pure `java -cp ...` command,
-// no Gradle needed. Output goes to build/tmp/jars_swarm_demo_lib/.
+// Stage the framework JAR + every runtime dependency inside the demo
+// folder under lib/, so the entire swarm is one self-contained directory.
+//
+// Layout after the build:
+//   build/tmp/jars_swarm_demo/
+//   ├── fib.jar           ← the agent JARs sit at the top level …
+//   ├── factor.jar
+//   ├── exit.jar
+//   ├── run.sh            ← … so does a launch script that handles classpath
+//   └── lib/              ← framework + runtime deps live in a sibling subdir
+//       ├── agents-kt-<version>.jar
+//       ├── kotlin-stdlib-<version>.jar
+//       ├── kotlin-reflect-<version>.jar
+//       └── kotlinx-coroutines-core-jvm-<version>.jar
 tasks.register<Copy>("copySwarmDemoLibs") {
-    description = "Stage framework + runtime libs next to the swarm demo JARs"
+    description = "Stage framework + runtime libs into the demo folder's lib/"
     group = "build"
-    dependsOn("jar")  // produces build/libs/agents-kt-<version>.jar
+    dependsOn("jar")
     from(tasks.named("jar"))
     from(configurations.runtimeClasspath)
-    into(layout.buildDirectory.dir("tmp/jars_swarm_demo_lib"))
+    into(swarmDemoJarsDir.map { it.dir("lib") })
 }
 
-// Aggregate task — builds all three demo JARs and stages their runtime deps.
-tasks.register("buildSwarmDemoJars") {
-    description = "Build the three swarm demo JARs (and stage runtime libs) so the demo can be launched with bare `java`"
+// Drop a self-contained launcher next to the agent JARs. With this in place
+// the user can: cd build/tmp/jars_swarm_demo && ./run.sh
+// or run from anywhere via path/to/jars_swarm_demo/run.sh.
+tasks.register("writeSwarmDemoRunScript") {
+    description = "Generate run.sh launcher next to the swarm demo JARs"
     group = "build"
-    dependsOn(jarSwarmFib, jarSwarmFactor, jarSwarmExit, "copySwarmDemoLibs")
+    val outputFile = swarmDemoJarsDir.map { it.file("run.sh") }
+    outputs.file(outputFile)
+    doLast {
+        val file = outputFile.get().asFile
+        file.parentFile.mkdirs()
+        file.writeText(
+            """
+            #!/bin/sh
+            # Launches the swarm demo from inside its own folder.
+            # Resolves the absolute folder path so the script works whether
+            # invoked from inside the folder, by absolute path, or via a symlink.
+            SCRIPT_DIR="${'$'}(cd "${'$'}(dirname "${'$'}0")" && pwd)"
+            exec java -cp "${'$'}SCRIPT_DIR/lib/*:${'$'}SCRIPT_DIR/*" \
+                agents_engine.runtime.swarmdemo.fib.FibAgentKt "${'$'}@"
+            """.trimIndent() + "\n"
+        )
+        file.setExecutable(true, /* ownerOnly = */ false)
+    }
+}
+
+// Aggregate task — builds all three demo JARs, stages runtime deps, drops
+// the launcher script.
+tasks.register("buildSwarmDemoJars") {
+    description = "Build the three swarm demo JARs + lib/ + run.sh — one self-contained folder"
+    group = "build"
+    dependsOn(jarSwarmFib, jarSwarmFactor, jarSwarmExit, "copySwarmDemoLibs", "writeSwarmDemoRunScript")
 }
 
 tasks.register<JavaExec>("swarmDemo") {
