@@ -45,7 +45,7 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform {
-        excludeTags("live-llm", "live-mcp")
+        excludeTags("live-llm", "live-mcp", "interactive")
     }
 }
 
@@ -175,6 +175,21 @@ tasks.register<Test>("mcpIntegrationTest") {
     }
     classpath = sourceSets.test.get().runtimeClasspath
     testClassesDirs = sourceSets.test.get().output.classesDirs
+}
+
+// #981 — manually drive a LiveShow REPL from your terminal. The Gradle Test
+// task does not forward stdin, so we use JavaExec pointing at a main() under
+// the test sourceset. The demo class never ships in the published JAR.
+//
+// Run: `./gradlew interactiveLiveShow --console=plain -q`
+//   (`--console=plain` keeps Gradle's progress bar from interleaving with the
+//    REPL prompt; `-q` silences task lifecycle noise.)
+tasks.register<JavaExec>("interactiveLiveShow") {
+    description = "Manually drive a LiveShow REPL with an echo agent"
+    group = "verification"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("agents_engine.runtime.InteractiveLiveShowDemoKt")
+    standardInput = System.`in`
 }
 
 java {
