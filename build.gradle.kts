@@ -252,11 +252,23 @@ val jarSwarmExit = registerSwarmDemoJar(
     resourcesPath = "src/test/swarm-jar-resources/exit",
 )
 
-// Aggregate task to build all three.
-tasks.register("buildSwarmDemoJars") {
-    description = "Build all three swarm demo JARs into build/tmp/jars_swarm_demo/"
+// Stage the framework JAR + every runtime dependency next to the demo
+// JARs so the swarm demo is launchable with a pure `java -cp ...` command,
+// no Gradle needed. Output goes to build/tmp/jars_swarm_demo_lib/.
+tasks.register<Copy>("copySwarmDemoLibs") {
+    description = "Stage framework + runtime libs next to the swarm demo JARs"
     group = "build"
-    dependsOn(jarSwarmFib, jarSwarmFactor, jarSwarmExit)
+    dependsOn("jar")  // produces build/libs/agents-kt-<version>.jar
+    from(tasks.named("jar"))
+    from(configurations.runtimeClasspath)
+    into(layout.buildDirectory.dir("tmp/jars_swarm_demo_lib"))
+}
+
+// Aggregate task — builds all three demo JARs and stages their runtime deps.
+tasks.register("buildSwarmDemoJars") {
+    description = "Build the three swarm demo JARs (and stage runtime libs) so the demo can be launched with bare `java`"
+    group = "build"
+    dependsOn(jarSwarmFib, jarSwarmFactor, jarSwarmExit, "copySwarmDemoLibs")
 }
 
 tasks.register<JavaExec>("swarmDemo") {
