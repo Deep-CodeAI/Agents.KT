@@ -26,6 +26,13 @@ private const val PORT  = 11434
 /** The three demo agent names — used to filter Swarm.discover output. */
 internal val SWARM_DEMO_NAMES = setOf("fib", "factor", "exit")
 
+/** Compact tool-trace formatter shared by all three demo agents. */
+private fun traceTool(agentName: String, toolName: String, args: Map<String, Any?>, result: Any?) {
+    val argsStr = if (args.isEmpty()) "" else args.entries.joinToString(", ") { "${it.key}=${it.value}" }
+    val resultStr = result?.toString()?.let { if (it.length > 80) it.take(77) + "..." else it } ?: "null"
+    System.err.println("  [$agentName] $toolName($argsStr) → $resultStr")
+}
+
 internal fun buildFibAgent(): Agent<String, String> = agent("fib") {
     prompt("""
         You are a router-style assistant. Inspect the user's request
@@ -59,6 +66,7 @@ internal fun buildFibAgent(): Agent<String, String> = agent("fib") {
             tools("fibonacci")
         }
     }
+    onToolUse { name, args, result -> traceTool("fib", name, args, result) }
 }
 
 internal fun buildFactorAgent(): Agent<String, String> = agent("factor") {
@@ -80,6 +88,7 @@ internal fun buildFactorAgent(): Agent<String, String> = agent("factor") {
             tools("factor_number")
         }
     }
+    onToolUse { name, args, result -> traceTool("factor", name, args, result) }
 }
 
 internal fun buildExitAgent(): Agent<String, String> = agent("exit") {
@@ -101,6 +110,7 @@ internal fun buildExitAgent(): Agent<String, String> = agent("exit") {
             tools("exit_app")
         }
     }
+    onToolUse { name, args, result -> traceTool("exit", name, args, result) }
 }
 
 private fun fib(n: Int): Long {
