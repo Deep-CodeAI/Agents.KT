@@ -24,14 +24,15 @@ class RepairedArgsValidationTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var greet: Tool<GreetArgs, GreetResult>
             model { ollama("llama3"); client = mock }
             tools {
-                tool<GreetArgs, GreetResult>("greet", "Greets") { args ->
+                greet = tool<GreetArgs, GreetResult>("greet", "Greets") { args ->
                     capturedName = args.name
                     GreetResult("hi")
                 }
             }
-            skills { skill<String, String>("s", "stub") { tools("greet") } }
+            skills { skill<String, String>("s", "stub") { tools(greet) } }
             onToolError("greet") {
                 invalidArgs { _, _ -> RepairResult.Fixed("""{"name":"world"}""") }
             }
@@ -52,14 +53,15 @@ class RepairedArgsValidationTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var greet: Tool<GreetArgs, GreetResult>
             model { ollama("llama3"); client = mock }
             tools {
-                tool<GreetArgs, GreetResult>("greet", "Greets") { _ ->
+                greet = tool<GreetArgs, GreetResult>("greet", "Greets") { _ ->
                     executorCallCount++
                     GreetResult("never")
                 }
             }
-            skills { skill<String, String>("s", "stub") { tools("greet") } }
+            skills { skill<String, String>("s", "stub") { tools(greet) } }
             onToolError("greet") {
                 invalidArgs { _, _ ->
                     invalidArgsHandlerCallCount++
@@ -92,14 +94,15 @@ class RepairedArgsValidationTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var greet: Tool<GreetArgs, GreetResult>
             model { ollama("llama3"); client = mock }
             tools {
-                tool<GreetArgs, GreetResult>("greet", "Greets") { args ->
+                greet = tool<GreetArgs, GreetResult>("greet", "Greets") { args ->
                     executorCalls++
                     GreetResult("hi ${args.name}")
                 }
             }
-            skills { skill<String, String>("s", "stub") { tools("greet") } }
+            skills { skill<String, String>("s", "stub") { tools(greet) } }
             onToolError("greet") {
                 invalidArgs { _, _ ->
                     invalidArgsCalls++

@@ -43,9 +43,10 @@ class AgenticLoopCoverageTest {
 
         var executorCalls = 0
         val a = agent<String, String>("a") {
+            lateinit var double: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("double", "doubles") { args ->
+                double = tool("double", "doubles") { args ->
                     executorCalls++
                     ((args["value"] as Number).toInt() * 2).toString()
                 }
@@ -53,7 +54,7 @@ class AgenticLoopCoverageTest {
             onToolError("double") {
                 invalidArgs { _, _ -> retry(maxAttempts = 2) }
             }
-            skills { skill<String, String>("s", "s") { tools("double") } }
+            skills { skill<String, String>("s", "s") { tools(double) } }
         }
 
         assertEquals("done", a("input"))
@@ -80,12 +81,13 @@ class AgenticLoopCoverageTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var double: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
-            tools { tool("double", "") { _ -> "x" } }
+            tools { double = tool("double", "") { _ -> "x" } }
             onToolError("double") {
                 invalidArgs { _, _ -> retry(maxAttempts = 3) }
             }
-            skills { skill<String, String>("s", "s") { tools("double") } }
+            skills { skill<String, String>("s", "s") { tools(double) } }
         }
 
         val ex = assertThrows<ToolExecutionException> { a("input") }
@@ -106,12 +108,13 @@ class AgenticLoopCoverageTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var boom: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
-            tools { tool("boom", "") { _ -> throw RuntimeException("real-failure") } }
+            tools { boom = tool("boom", "") { _ -> throw RuntimeException("real-failure") } }
             onToolError("boom") {
                 executionError { _ -> RepairResult.Unrecoverable }
             }
-            skills { skill<String, String>("s", "s") { tools("boom") } }
+            skills { skill<String, String>("s", "s") { tools(boom) } }
         }
 
         val ex = assertThrows<ToolExecutionException> { a("input") }
@@ -135,13 +138,14 @@ class AgenticLoopCoverageTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var boom: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
-            tools { tool("boom", "") { _ -> throw RuntimeException("original-failure") } }
+            tools { boom = tool("boom", "") { _ -> throw RuntimeException("original-failure") } }
             onToolError("boom") {
                 // Handler scope returns null → null → executionError returns null
                 executionError { _ -> null }
             }
-            skills { skill<String, String>("s", "s") { tools("boom") } }
+            skills { skill<String, String>("s", "s") { tools(boom) } }
         }
 
         // The original RuntimeException should propagate — NOT wrapped as

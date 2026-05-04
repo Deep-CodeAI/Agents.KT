@@ -24,8 +24,9 @@ fun buildExitAgent(): Agent<String, String> = agent("exit") {
         session. Do NOT call it for other requests.
     """.trimIndent())
     model { ollama(MODEL); host = HOST; port = PORT; temperature = 0.0 }
+    lateinit var exitApp: agents_engine.model.Tool<Map<String, Any?>, Any?>
     tools {
-        tool("exit_app", "Close the application. Use when the user asks to exit, quit, or end.") { _ ->
+        exitApp = tool("exit_app", "Close the application. Use when the user asks to exit, quit, or end.") { _ ->
             println()
             println("(exit agent — shutting down)")
             exitProcess(0)
@@ -33,7 +34,7 @@ fun buildExitAgent(): Agent<String, String> = agent("exit") {
     }
     skills {
         skill<String, String>("close", "End the session on user request") {
-            tools("exit_app")
+            tools(exitApp)
         }
     }
     onToolUse { name, args, result -> traceTool("exit", name, args, result) }

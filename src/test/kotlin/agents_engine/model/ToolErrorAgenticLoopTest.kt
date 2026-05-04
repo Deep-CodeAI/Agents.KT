@@ -17,9 +17,10 @@ class ToolErrorAgenticLoopTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var flaky: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("flaky", "A flaky tool") { _ ->
+                flaky = tool("flaky", "A flaky tool") { _ ->
                     callCount++
                     if (callCount == 1) throw RuntimeException("Network error")
                     "success"
@@ -28,7 +29,7 @@ class ToolErrorAgenticLoopTest {
             onToolError("flaky") {
                 executionError { _ -> retry(maxAttempts = 3) }
             }
-            skills { skill<String, String>("s", "s") { tools("flaky") } }
+            skills { skill<String, String>("s", "s") { tools(flaky) } }
         }
 
         val result = a("input")
@@ -43,11 +44,12 @@ class ToolErrorAgenticLoopTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var broken: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("broken", "Always fails") { _ -> throw RuntimeException("Boom") }
+                broken = tool("broken", "Always fails") { _ -> throw RuntimeException("Boom") }
             }
-            skills { skill<String, String>("s", "s") { tools("broken") } }
+            skills { skill<String, String>("s", "s") { tools(broken) } }
         }
 
         var caught = false
@@ -67,14 +69,15 @@ class ToolErrorAgenticLoopTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var alwaysFail: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("always-fail", "Never works") { _ -> throw RuntimeException("Fail") }
+                alwaysFail = tool("always-fail", "Never works") { _ -> throw RuntimeException("Fail") }
             }
             onToolError("always-fail") {
                 executionError { _ -> retry(maxAttempts = 2) }
             }
-            skills { skill<String, String>("s", "s") { tools("always-fail") } }
+            skills { skill<String, String>("s", "s") { tools(alwaysFail) } }
         }
 
         var caught = false
@@ -97,9 +100,10 @@ class ToolErrorAgenticLoopTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var flaky: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("flaky", "Flaky tool") { _ ->
+                flaky = tool("flaky", "Flaky tool") { _ ->
                     callCount++
                     if (callCount == 1) throw RuntimeException("Fail")
                     "recovered"
@@ -108,7 +112,7 @@ class ToolErrorAgenticLoopTest {
             onToolError("flaky") {
                 executionError { _ -> retry(maxAttempts = 2) }
             }
-            skills { skill<String, String>("s", "s") { tools("flaky") } }
+            skills { skill<String, String>("s", "s") { tools(flaky) } }
             onToolUse { name, _, result -> toolEvents.add("$name=$result") }
         }
 
@@ -125,6 +129,7 @@ class ToolErrorAgenticLoopTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var retryMe: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
                 defaults {
@@ -132,13 +137,13 @@ class ToolErrorAgenticLoopTest {
                         executionError { _ -> retry(maxAttempts = 3) }
                     }
                 }
-                tool("retry-me", "Needs retry") { _ ->
+                retryMe = tool("retry-me", "Needs retry") { _ ->
                     callCount++
                     if (callCount == 1) throw RuntimeException("Transient")
                     "ok"
                 }
             }
-            skills { skill<String, String>("s", "s") { tools("retry-me") } }
+            skills { skill<String, String>("s", "s") { tools(retryMe) } }
         }
 
         assertEquals("done", a("input"))
@@ -162,14 +167,15 @@ class ToolErrorAgenticLoopTest {
         val mock = ModelClient { msgs -> captured.add(msgs.toList()); responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var strict: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("strict", "Strict tool") { _ -> throw RuntimeException("Bad args") }
+                strict = tool("strict", "Strict tool") { _ -> throw RuntimeException("Bad args") }
             }
             onToolError("strict") {
                 executionError { _ -> fix(agent = fixer, retries = 1) }
             }
-            skills { skill<String, String>("s", "s") { tools("strict") } }
+            skills { skill<String, String>("s", "s") { tools(strict) } }
         }
 
         val result = a("input")
@@ -209,16 +215,17 @@ class ToolErrorAgenticLoopTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var double: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("double", "Double the value argument") { args ->
+                double = tool("double", "Double the value argument") { args ->
                     ((args["value"] as Number).toInt() * 2).toString()
                 }
             }
             onToolError("double") {
                 invalidArgs { _, _ -> fix(agent = fixer) }
             }
-            skills { skill<String, String>("s", "s") { tools("double") } }
+            skills { skill<String, String>("s", "s") { tools(double) } }
             onToolUse { _, _, result -> toolResults.add(result) }
         }
 
@@ -245,9 +252,10 @@ class ToolErrorAgenticLoopTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var double: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("double", "Double the value argument") { args ->
+                double = tool("double", "Double the value argument") { args ->
                     ((args["value"] as Number).toInt() * 2).toString()
                 }
             }
@@ -255,7 +263,7 @@ class ToolErrorAgenticLoopTest {
                 invalidArgs { _, _ -> RepairResult.Fixed("still not json") }
                 deserializationError { _, _ -> RepairResult.Fixed("""{"value": 9}""") }
             }
-            skills { skill<String, String>("s", "s") { tools("double") } }
+            skills { skill<String, String>("s", "s") { tools(double) } }
             onToolUse { _, _, result -> toolResults.add(result) }
         }
 

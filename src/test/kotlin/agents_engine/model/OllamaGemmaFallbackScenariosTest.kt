@@ -32,13 +32,14 @@ class OllamaGemmaFallbackScenariosTest {
         val callsLog = mutableListOf<String>()
 
         val a = agent<String, String>("calc") {
+            lateinit var evaluate: Tool<Map<String, Any?>, Any?>
             prompt(
                 "To answer any math question, call the `evaluate` tool ONCE with the full " +
                     "arithmetic expression as the `expression` argument. Then reply with the result."
             )
             model { ollama("gemma3:4b"); host = "localhost"; port = 11434; temperature = 0.0 }
             tools {
-                tool(
+                evaluate = tool(
                     "evaluate",
                     "Evaluate an arithmetic expression with + - * / and parentheses. Arguments: {expression: string}",
                 ) { args ->
@@ -48,7 +49,7 @@ class OllamaGemmaFallbackScenariosTest {
                 }
             }
             skills {
-                skill<String, String>("calc", "Compute arithmetic via the evaluate tool") { tools("evaluate") }
+                skill<String, String>("calc", "Compute arithmetic via the evaluate tool") { tools(evaluate) }
             }
         }
 
@@ -69,6 +70,7 @@ class OllamaGemmaFallbackScenariosTest {
         val nsAsked = mutableListOf<Int>()
 
         val a = agent<String, String>("fib") {
+            lateinit var fibTool: Tool<Map<String, Any?>, Any?>
             prompt(
                 "To compute a Fibonacci number, call the `fib` tool ONCE with the index as " +
                     "the `n` argument. Then reply with the result. " +
@@ -76,7 +78,7 @@ class OllamaGemmaFallbackScenariosTest {
             )
             model { ollama("gemma3:4b"); host = "localhost"; port = 11434; temperature = 0.0 }
             tools {
-                tool(
+                fibTool = tool(
                     "fib",
                     "Compute the Nth Fibonacci number (0-indexed). Arguments: {n: integer}",
                 ) { args ->
@@ -86,7 +88,7 @@ class OllamaGemmaFallbackScenariosTest {
                 }
             }
             skills {
-                skill<String, String>("fib", "Compute Fibonacci via the fib tool") { tools("fib") }
+                skill<String, String>("fib", "Compute Fibonacci via the fib tool") { tools(fibTool) }
             }
         }
 

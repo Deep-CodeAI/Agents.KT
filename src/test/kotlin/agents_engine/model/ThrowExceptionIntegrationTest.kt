@@ -18,6 +18,7 @@ class ThrowExceptionIntegrationTest {
     // -- Unit test with mock LLM --
 
     @Test
+    @Suppress("DEPRECATION") // mixes built-in throwException with user decode tool — typed overload requires uniform refs
     fun `throwException via tool in agentic loop kills the run`() {
         val fixerResponses = ArrayDeque<LlmResponse>()
         fixerResponses.add(LlmResponse.ToolCalls(listOf(
@@ -36,9 +37,10 @@ class ThrowExceptionIntegrationTest {
         val mainMock = ModelClient { _ -> mainResponses.removeFirst() }
 
         val a = agent<String, String>("decoder") {
+            lateinit var decode: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mainMock }
             tools {
-                tool("decode") {
+                decode = tool("decode") {
                     description("Decode input data")
                     executor { _ -> throw RuntimeException("Cannot decode binary") }
                     onError {
@@ -46,7 +48,7 @@ class ThrowExceptionIntegrationTest {
                     }
                 }
             }
-            skills { skill<String, String>("s", "s") { tools("decode") } }
+            skills { skill<String, String>("s", "s") { tools(decode) } }
         }
 
         val ex = assertThrows<ToolExecutionException> { a("Decode this: \u0000\u0001\u0002") }
@@ -54,6 +56,7 @@ class ThrowExceptionIntegrationTest {
     }
 
     @Test
+    @Suppress("DEPRECATION") // mixes built-in throwException with user process tool — typed overload requires uniform refs
     fun `throwException propagates even when retries remain`() {
         val fixerResponses = ArrayDeque<LlmResponse>()
         fixerResponses.add(LlmResponse.ToolCalls(listOf(
@@ -72,9 +75,10 @@ class ThrowExceptionIntegrationTest {
         val mainMock = ModelClient { _ -> mainResponses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var process: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mainMock }
             tools {
-                tool("process") {
+                process = tool("process") {
                     description("Process data")
                     executor { _ -> throw RuntimeException("Broken") }
                     onError {
@@ -82,7 +86,7 @@ class ThrowExceptionIntegrationTest {
                     }
                 }
             }
-            skills { skill<String, String>("s", "s") { tools("process") } }
+            skills { skill<String, String>("s", "s") { tools(process) } }
         }
 
         // throwException kills the run on first attempt — doesn't use remaining retries
@@ -91,6 +95,7 @@ class ThrowExceptionIntegrationTest {
     }
 
     @Test
+    @Suppress("DEPRECATION") // mixes built-in throwException with user broken tool — typed overload requires uniform refs
     fun `throwException does not fire onToolUse`() {
         val fixerResponses = ArrayDeque<LlmResponse>()
         fixerResponses.add(LlmResponse.ToolCalls(listOf(
@@ -109,9 +114,10 @@ class ThrowExceptionIntegrationTest {
         val mainMock = ModelClient { _ -> mainResponses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var broken: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mainMock }
             tools {
-                tool("broken") {
+                broken = tool("broken") {
                     description("Broken tool")
                     executor { _ -> throw RuntimeException("Fail") }
                     onError {
@@ -119,7 +125,7 @@ class ThrowExceptionIntegrationTest {
                     }
                 }
             }
-            skills { skill<String, String>("s", "s") { tools("broken") } }
+            skills { skill<String, String>("s", "s") { tools(broken) } }
             onToolUse { name, _, _ -> toolUses.add(name) }
         }
 
@@ -142,9 +148,10 @@ class ThrowExceptionIntegrationTest {
         val mainMock = ModelClient { _ -> mainResponses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var ingest: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mainMock }
             tools {
-                tool("ingest") {
+                ingest = tool("ingest") {
                     description("Ingest data")
                     executor { _ -> throw RuntimeException("Bad data") }
                     onError {
@@ -152,7 +159,7 @@ class ThrowExceptionIntegrationTest {
                     }
                 }
             }
-            skills { skill<String, String>("s", "s") { tools("ingest") } }
+            skills { skill<String, String>("s", "s") { tools(ingest) } }
         }
 
         val ex = assertThrows<ToolExecutionException> { a("input") }
@@ -178,6 +185,7 @@ class ThrowExceptionIntegrationTest {
         val toolUses = mutableListOf<String>()
 
         val a = agent<String, String>("decoder") {
+            lateinit var decode: Tool<Map<String, Any?>, Any?>
             prompt(
                 "You MUST use the decode tool to decode the input. " +
                 "Reply with the decoded text. Args: data (string)."
@@ -185,7 +193,7 @@ class ThrowExceptionIntegrationTest {
             model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
             budget { maxTurns = 5 }
             tools {
-                tool("decode") {
+                decode = tool("decode") {
                     description("Decode text input. Args: data (string)")
                     executor { _ ->
                         throw RuntimeException("Invalid UTF-8 sequence: null bytes detected")
@@ -195,7 +203,7 @@ class ThrowExceptionIntegrationTest {
                     }
                 }
             }
-            skills { skill<String, String>("s", "Decode data") { tools("decode") } }
+            skills { skill<String, String>("s", "Decode data") { tools(decode) } }
             onToolUse { name, _, _ -> toolUses.add(name) }
         }
 

@@ -92,6 +92,7 @@ class AgentMemoryTest {
     }
 
     @Test
+    @Suppress("DEPRECATION") // built-in memory_read — no user tool handle to capture
     fun `user attempts to register a reserved memory tool name are rejected (#644)`() {
         try {
             agent<String, String>("a") {

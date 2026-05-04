@@ -123,10 +123,11 @@ class MaxTokensBudgetTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var noop: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             budget { maxTokens = 100 }
-            tools { tool("noop", "") { _ -> "ok" } }
-            skills { skill<String, String>("s", "s") { tools("noop") } }
+            tools { noop = tool("noop", "") { _ -> "ok" } }
+            skills { skill<String, String>("s", "s") { tools(noop) } }
         }
 
         val out = a("input")
@@ -172,10 +173,11 @@ class MaxTokensBudgetTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var noop: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             budget { maxTokens = 15 }
-            tools { tool("noop", "") { _ -> "ok" } }
-            skills { skill<String, String>("s", "s") { tools("noop") } }
+            tools { noop = tool("noop", "") { _ -> "ok" } }
+            skills { skill<String, String>("s", "s") { tools(noop) } }
         }
 
         val ex = assertThrows<BudgetExceededException> { a("input") }

@@ -24,14 +24,15 @@ class TypedToolValidationRoutingTest {
 
         var executorCalls = 0
         val a = agent<String, String>("a") {
+            lateinit var greet: Tool<GreetArgs, GreetResult>
             model { ollama("llama3"); client = mock }
             tools {
-                tool<GreetArgs, GreetResult>("greet", "Greets") { args ->
+                greet = tool<GreetArgs, GreetResult>("greet", "Greets") { args ->
                     executorCalls++
                     GreetResult("hi ${args.name}")
                 }
             }
-            skills { skill<String, String>("s", "stub") { tools("greet") } }
+            skills { skill<String, String>("s", "stub") { tools(greet) } }
             onToolError("greet") {
                 invalidArgs { _, error ->
                     capturedErrors.add(error)
@@ -59,11 +60,12 @@ class TypedToolValidationRoutingTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var greet: Tool<GreetArgs, GreetResult>
             model { ollama("llama3"); client = mock }
             tools {
-                tool<GreetArgs, GreetResult>("greet", "Greets") { args -> GreetResult(args.name) }
+                greet = tool<GreetArgs, GreetResult>("greet", "Greets") { args -> GreetResult(args.name) }
             }
-            skills { skill<String, String>("s", "stub") { tools("greet") } }
+            skills { skill<String, String>("s", "stub") { tools(greet) } }
         }
 
         try {
@@ -88,14 +90,15 @@ class TypedToolValidationRoutingTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var greet: Tool<GreetArgs, GreetResult>
             model { ollama("llama3"); client = mock }
             tools {
-                tool<GreetArgs, GreetResult>("greet", "Greets") { args ->
+                greet = tool<GreetArgs, GreetResult>("greet", "Greets") { args ->
                     captured = args
                     GreetResult("hi")
                 }
             }
-            skills { skill<String, String>("s", "stub") { tools("greet") } }
+            skills { skill<String, String>("s", "stub") { tools(greet) } }
         }
         a("input")
         assertEquals("ok", captured?.name)
@@ -115,9 +118,10 @@ class TypedToolValidationRoutingTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var echo: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("echo", "echo untyped") { args -> "got ${args["x"]}" } }
-            skills { skill<String, String>("s", "stub") { tools("echo") } }
+            tools { echo = tool("echo", "echo untyped") { args -> "got ${args["x"]}" } }
+            skills { skill<String, String>("s", "stub") { tools(echo) } }
             onToolError("echo") {
                 invalidArgs { _, _ ->
                     capturedErrors++

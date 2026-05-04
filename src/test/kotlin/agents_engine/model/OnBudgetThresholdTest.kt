@@ -51,10 +51,11 @@ class OnBudgetThresholdTest {
 
         val fired = mutableListOf<Pair<BudgetReason, Double>>()
         val a = agent<String, String>("a") {
+            lateinit var noop: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             budget { maxTurns = 4 }
-            tools { tool("noop", "") { _ -> "ok" } }
-            skills { skill<String, String>("s", "s") { tools("noop") } }
+            tools { noop = tool("noop", "") { _ -> "ok" } }
+            skills { skill<String, String>("s", "s") { tools(noop) } }
             onBudgetThreshold(threshold = 0.5) { reason, used -> fired += reason to used }
         }
 
@@ -78,10 +79,11 @@ class OnBudgetThresholdTest {
 
         val fired = mutableListOf<Pair<BudgetReason, Double>>()
         val a = agent<String, String>("a") {
+            lateinit var noop: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             budget { maxToolCalls = 4 }
-            tools { tool("noop", "") { _ -> "ok" } }
-            skills { skill<String, String>("s", "s") { tools("noop") } }
+            tools { noop = tool("noop", "") { _ -> "ok" } }
+            skills { skill<String, String>("s", "s") { tools(noop) } }
             onBudgetThreshold(threshold = 0.5) { r, p -> fired += r to p }
         }
 
@@ -136,10 +138,11 @@ class OnBudgetThresholdTest {
 
         val fired = mutableListOf<Pair<BudgetReason, Double>>()
         val a = agent<String, String>("a") {
+            lateinit var noop: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             budget { maxDuration = 200.milliseconds }
-            tools { tool("noop", "") { _ -> "ok" } }
-            skills { skill<String, String>("s", "s") { tools("noop") } }
+            tools { noop = tool("noop", "") { _ -> "ok" } }
+            skills { skill<String, String>("s", "s") { tools(noop) } }
             onBudgetThreshold(threshold = 0.3) { r, p -> fired += r to p }
         }
 
@@ -216,10 +219,11 @@ class OnBudgetThresholdTest {
 
         var turnsFireCount = 0
         val a = agent<String, String>("a") {
+            lateinit var noop: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             budget { maxTurns = 10; maxToolCalls = 100 }
-            tools { tool("noop", "") { _ -> "ok" } }
-            skills { skill<String, String>("s", "s") { tools("noop") } }
+            tools { noop = tool("noop", "") { _ -> "ok" } }
+            skills { skill<String, String>("s", "s") { tools(noop) } }
             onBudgetThreshold(threshold = 0.1) { reason, _ ->
                 if (reason == BudgetReason.TURNS) turnsFireCount++
             }
@@ -242,10 +246,11 @@ class OnBudgetThresholdTest {
 
         val firedReasons = mutableSetOf<BudgetReason>()
         val a = agent<String, String>("a") {
+            lateinit var noop: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             budget { maxTurns = 4; maxToolCalls = 4 }
-            tools { tool("noop", "") { _ -> "ok" } }
-            skills { skill<String, String>("s", "s") { tools("noop") } }
+            tools { noop = tool("noop", "") { _ -> "ok" } }
+            skills { skill<String, String>("s", "s") { tools(noop) } }
             onBudgetThreshold(threshold = 0.5) { reason, _ -> firedReasons += reason }
         }
 

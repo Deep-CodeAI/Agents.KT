@@ -33,13 +33,14 @@ class OllamaProviderErrorIntegrationTest {
         var greetedName: String? = null
 
         val a = agent<String, String>("repro") {
+            lateinit var greet: Tool<Map<String, Any?>, Any?>
             prompt(
                 "You are a tool-calling agent. To greet someone, call the greet tool. " +
                     "After getting the tool result, repeat it verbatim as your final answer."
             )
             model { ollama("gemma3:4b"); host = "localhost"; port = 11434; temperature = 0.0 }
             tools {
-                tool("greet", "Greet a person by name. Arguments: {name: string}") { args ->
+                greet = tool("greet", "Greet a person by name. Arguments: {name: string}") { args ->
                     toolCalled = true
                     greetedName = args["name"] as? String
                     "Hello, ${args["name"]}!"
@@ -47,7 +48,7 @@ class OllamaProviderErrorIntegrationTest {
             }
             skills {
                 skill<String, String>("s", "Greet someone using the greet tool") {
-                    tools("greet")
+                    tools(greet)
                 }
             }
         }

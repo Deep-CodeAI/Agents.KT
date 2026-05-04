@@ -172,9 +172,10 @@ class ToolLevelOnErrorTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var flaky: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("flaky", "Flaky tool", onError = {
+                flaky = tool("flaky", "Flaky tool", onError = {
                     executionError { _ -> retry(maxAttempts = 3) }
                 }) { _ ->
                     callCount++
@@ -182,7 +183,7 @@ class ToolLevelOnErrorTest {
                     "recovered"
                 }
             }
-            skills { skill<String, String>("s", "s") { tools("flaky") } }
+            skills { skill<String, String>("s", "s") { tools(flaky) } }
         }
 
         assertEquals("done", a("input"))
@@ -206,13 +207,14 @@ class ToolLevelOnErrorTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var broken: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("broken", "Always breaks", onError = {
+                broken = tool("broken", "Always breaks", onError = {
                     executionError { _ -> fix(agent = fixer, retries = 1) }
                 }) { _ -> throw RuntimeException("broken") }
             }
-            skills { skill<String, String>("s", "s") { tools("broken") } }
+            skills { skill<String, String>("s", "s") { tools(broken) } }
             onToolUse { _, _, result -> toolResults.add(result) }
         }
 
@@ -234,6 +236,9 @@ class ToolLevelOnErrorTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var fetch: Tool<Map<String, Any?>, Any?>
+            lateinit var compile: Tool<Map<String, Any?>, Any?>
+            lateinit var log: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
                 defaults {
@@ -242,7 +247,7 @@ class ToolLevelOnErrorTest {
                     }
                 }
                 // Tool-level onError
-                tool("fetch", "Fetch", onError = {
+                fetch = tool("fetch", "Fetch", onError = {
                     executionError { _ -> retry(maxAttempts = 5) }
                 }) { _ ->
                     fetchCalls++
@@ -250,15 +255,15 @@ class ToolLevelOnErrorTest {
                     "fetched"
                 }
                 // No tool-level onError — uses defaults
-                tool("compile", "Compile") { _ ->
+                compile = tool("compile", "Compile") { _ ->
                     compileCalls++
                     if (compileCalls == 1) throw RuntimeException("flaky compile")
                     "compiled"
                 }
                 // Bare tool — no error handling at all
-                tool("log", "Log") { _ -> "logged" }
+                log = tool("log", "Log") { _ -> "logged" }
             }
-            skills { skill<String, String>("s", "s") { tools("fetch", "compile", "log") } }
+            skills { skill<String, String>("s", "s") { tools(fetch, compile, log) } }
         }
 
         assertEquals("done", a("input"))
@@ -285,13 +290,14 @@ class ToolLevelOnErrorTest {
         val mock = ModelClient { msgs -> captured.add(msgs.toList()); responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var strict: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("strict", "Strict tool", onError = {
+                strict = tool("strict", "Strict tool", onError = {
                     executionError { _ -> fix(agent = escalatingFixer, retries = 1) }
                 }) { _ -> throw RuntimeException("Bad input") }
             }
-            skills { skill<String, String>("s", "s") { tools("strict") } }
+            skills { skill<String, String>("s", "s") { tools(strict) } }
         }
 
         val result = a("input")
@@ -316,13 +322,14 @@ class ToolLevelOnErrorTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var doomed: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("doomed", "Doomed tool", onError = {
+                doomed = tool("doomed", "Doomed tool", onError = {
                     executionError { _ -> fix(agent = hardFailFixer, retries = 2) }
                 }) { _ -> throw RuntimeException("Broken") }
             }
-            skills { skill<String, String>("s", "s") { tools("doomed") } }
+            skills { skill<String, String>("s", "s") { tools(doomed) } }
         }
 
         var caught = false
@@ -342,13 +349,14 @@ class ToolLevelOnErrorTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var alwaysFail: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("always-fail", "Never works", onError = {
+                alwaysFail = tool("always-fail", "Never works", onError = {
                     executionError { _ -> retry(maxAttempts = 2) }
                 }) { _ -> throw RuntimeException("Permanent failure") }
             }
-            skills { skill<String, String>("s", "s") { tools("always-fail") } }
+            skills { skill<String, String>("s", "s") { tools(alwaysFail) } }
         }
 
         var caught = false

@@ -46,8 +46,9 @@ fun buildFactorAgent(): Agent<String, String> = agent("factor") {
         Reply with the comma-separated prime factors, nothing else.
     """.trimIndent())
     model { ollama(MODEL); host = HOST; port = PORT; temperature = 0.0 }
+    lateinit var factorNumber: agents_engine.model.Tool<Map<String, Any?>, Any?>
     tools {
-        tool("factor_number", "Compute the prime factors of n. Argument: n (integer ≥ 2).") { args ->
+        factorNumber = tool("factor_number", "Compute the prime factors of n. Argument: n (integer ≥ 2).") { args ->
             val n = readInt(args, "n")
             require(n >= 2) { "n must be ≥ 2 to factor" }
             primeFactors(n).joinToString(", ")
@@ -55,7 +56,7 @@ fun buildFactorAgent(): Agent<String, String> = agent("factor") {
     }
     skills {
         skill<String, String>("factor", "Prime-factor an integer") {
-            tools("factor_number")
+            tools(factorNumber)
         }
     }
     onToolUse { name, args, result -> traceTool("factor", name, args, result) }

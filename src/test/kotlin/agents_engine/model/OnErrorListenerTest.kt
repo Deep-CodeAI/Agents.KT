@@ -67,10 +67,11 @@ class OnErrorListenerTest {
 
         val captured = mutableListOf<Throwable>()
         val a = agent<String, String>("a") {
+            lateinit var noop: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             budget { maxTurns = 1 }
-            tools { tool("noop", "") { _ -> "ok" } }
-            skills { skill<String, String>("s", "s") { tools("noop") } }
+            tools { noop = tool("noop", "") { _ -> "ok" } }
+            skills { skill<String, String>("s", "s") { tools(noop) } }
             onError { captured += it }
         }
 

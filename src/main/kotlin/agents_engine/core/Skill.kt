@@ -66,7 +66,30 @@ class Skill<IN, OUT>(
         isAgentic = false
     }
 
-    /** Marks this skill as LLM-driven; [names] are the tools the LLM may call. */
+    /**
+     * No-arg form — marks the skill agentic with no allowlisted tools (the LLM
+     * is restricted to memory and built-in tools only). Not deprecated; useful
+     * for skills that derive output via `transformOutput { }` or pure prompting.
+     */
+    fun tools() {
+        checkNotFrozen()
+        isAgentic = true
+        toolNames = emptyList()
+        implementation = null
+    }
+
+    /**
+     * Marks this skill as LLM-driven; [names] are the tools the LLM may call.
+     *
+     * Soft-deprecated in favor of the typed `tools(first: Tool<*, *>, vararg rest)`
+     * overload (#1016) — the typed form catches typos at compile time. The string
+     * form remains for built-in tools (`escalate`, `throwException`, `memory_*`)
+     * that have no user-declared `Tool<*, *>` handle to capture.
+     */
+    @Deprecated(
+        message = "Use the typed `tools(first, vararg rest)` overload that takes Tool<*, *> handles returned by `tool(...)` builders. The string form is kept for built-in tools (escalate, throwException, memory_*) and negative tests of validate().",
+        level = DeprecationLevel.WARNING,
+    )
     fun tools(vararg names: String) {
         checkNotFrozen()
         isAgentic = true

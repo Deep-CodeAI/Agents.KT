@@ -138,9 +138,10 @@ class ParallelExecutionTest {
         val mockB = ModelClient { _ -> LlmResponse.Text("plain") }
 
         val a = agent<String, String>("a") {
+            lateinit var reverse: agents_engine.model.Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mockA }
-            tools { tool("reverse", "") { args -> args["t"].toString().reversed() } }
-            skills { skill<String, String>("sa", "Reverse") { tools("reverse") } }
+            tools { reverse = tool("reverse", "") { args -> args["t"].toString().reversed() } }
+            skills { skill<String, String>("sa", "Reverse") { tools(reverse) } }
         }
         val b = agent<String, String>("b") {
             model { ollama("llama3"); client = mockB }

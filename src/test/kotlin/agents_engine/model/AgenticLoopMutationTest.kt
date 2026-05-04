@@ -25,10 +25,11 @@ class AgenticLoopMutationTest {
             LlmResponse.ToolCalls(listOf(ToolCall(name = "noop", arguments = emptyMap())))
         }
         val a = agent<String, String>("a") {
+            lateinit var noop: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             budget { maxTurns = 3 }
-            tools { tool("noop", "") { _ -> "ok" } }
-            skills { skill<String, String>("s", "s") { tools("noop") } }
+            tools { noop = tool("noop", "") { _ -> "ok" } }
+            skills { skill<String, String>("s", "s") { tools(noop) } }
         }
 
         val ex = assertThrows<BudgetExceededException> { a("input") }
@@ -45,10 +46,11 @@ class AgenticLoopMutationTest {
         }
         val mock = ModelClient { _ -> responses.removeFirst() }
         val a = agent<String, String>("a") {
+            lateinit var tick: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             budget { maxToolCalls = 2 }
-            tools { tool("tick", "") { _ -> toolInvocations++; "t" } }
-            skills { skill<String, String>("s", "s") { tools("tick") } }
+            tools { tick = tool("tick", "") { _ -> toolInvocations++; "t" } }
+            skills { skill<String, String>("s", "s") { tools(tick) } }
         }
 
         val ex = assertThrows<BudgetExceededException> { a("input") }
@@ -69,15 +71,16 @@ class AgenticLoopMutationTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var probe: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             budget { perToolTimeout = 5_000.milliseconds }
             tools {
-                tool("probe", "") { _ ->
+                probe = tool("probe", "") { _ ->
                     workerWasDaemon.set(Thread.currentThread().isDaemon)
                     "ok"
                 }
             }
-            skills { skill<String, String>("s", "s") { tools("probe") } }
+            skills { skill<String, String>("s", "s") { tools(probe) } }
         }
 
         a("input")
@@ -95,10 +98,11 @@ class AgenticLoopMutationTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var slow: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             budget { perToolTimeout = 50.milliseconds }
             tools {
-                tool("slow", "") { _ ->
+                slow = tool("slow", "") { _ ->
                     try {
                         Thread.sleep(10_000)
                     } catch (_: InterruptedException) {
@@ -107,7 +111,7 @@ class AgenticLoopMutationTest {
                     "should-never-arrive"
                 }
             }
-            skills { skill<String, String>("s", "s") { tools("slow") } }
+            skills { skill<String, String>("s", "s") { tools(slow) } }
         }
 
         val ex = assertThrows<BudgetExceededException> { a("input") }
@@ -136,16 +140,17 @@ class AgenticLoopMutationTest {
 
         var callNumber = 0
         val a = agent<String, String>("a") {
+            lateinit var flaky: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("flaky", "") { _ ->
+                flaky = tool("flaky", "") { _ ->
                     callNumber++
                     if (callNumber == 1) throw RuntimeException("boom")
                     "RECOVERED-VALUE"
                 }
             }
             onToolError("flaky") { executionError { _ -> retry(maxAttempts = 2) } }
-            skills { skill<String, String>("s", "s") { tools("flaky") } }
+            skills { skill<String, String>("s", "s") { tools(flaky) } }
         }
 
         a("input")
@@ -172,10 +177,11 @@ class AgenticLoopMutationTest {
         val mock = ModelClient { msgs -> captured.add(msgs.toList()); responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var fast: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             budget { perToolTimeout = 5_000.milliseconds }
-            tools { tool("fast", "") { _ -> "FAST-OK" } }
-            skills { skill<String, String>("s", "s") { tools("fast") } }
+            tools { fast = tool("fast", "") { _ -> "FAST-OK" } }
+            skills { skill<String, String>("s", "s") { tools(fast) } }
         }
 
         a("input")
@@ -196,10 +202,11 @@ class AgenticLoopMutationTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var boom: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             budget { perToolTimeout = 5_000.milliseconds }
-            tools { tool("boom", "") { _ -> throw RuntimeException("explicit failure") } }
-            skills { skill<String, String>("s", "s") { tools("boom") } }
+            tools { boom = tool("boom", "") { _ -> throw RuntimeException("explicit failure") } }
+            skills { skill<String, String>("s", "s") { tools(boom) } }
         }
 
         val ex = assertThrows<RuntimeException> { a("input") }
@@ -238,14 +245,15 @@ class AgenticLoopMutationTest {
         val mock = ModelClient { msgs -> captured.add(msgs.toList()); responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var greet: Tool<GreetArgs, GreetResult>
             model { ollama("test"); client = mock }
             tools {
-                tool<GreetArgs, GreetResult>("greet", "Greets") { args -> GreetResult("hi ${args.name}") }
+                greet = tool<GreetArgs, GreetResult>("greet", "Greets") { args -> GreetResult("hi ${args.name}") }
             }
             onToolError("greet") {
                 invalidArgs { _, _ -> RepairResult.Fixed("""{"name":"alice","language":"en"}""") }
             }
-            skills { skill<String, String>("s", "s") { tools("greet") } }
+            skills { skill<String, String>("s", "s") { tools(greet) } }
         }
 
         a("input")
@@ -276,12 +284,13 @@ class AgenticLoopMutationTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var toolH: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
-            tools { tool("tool", "") { _ -> "x" } }
+            tools { toolH = tool("tool", "") { _ -> "x" } }
             onToolError("tool") {
                 invalidArgs { _, _ -> RepairResult.Unrecoverable }
             }
-            skills { skill<String, String>("s", "s") { tools("tool") } }
+            skills { skill<String, String>("s", "s") { tools(toolH) } }
         }
 
         val ex = assertThrows<ToolExecutionException> { a("input") }
@@ -310,13 +319,14 @@ class AgenticLoopMutationTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var toolH: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
-            tools { tool("tool", "") { _ -> "x" } }
+            tools { toolH = tool("tool", "") { _ -> "x" } }
             onToolError("tool") {
                 invalidArgs { _, _ -> handlerCalls++; RepairResult.Fixed("still not json") }
                 deserializationError { _, _ -> handlerCalls++; RepairResult.Fixed("still not json") }
             }
-            skills { skill<String, String>("s", "s") { tools("tool") } }
+            skills { skill<String, String>("s", "s") { tools(toolH) } }
         }
 
         assertThrows<ToolExecutionException> { a("input") }
@@ -331,12 +341,14 @@ class AgenticLoopMutationTest {
         val captured = mutableListOf<List<LlmMessage>>()
         val mock = ModelClient { msgs -> captured.add(msgs.toList()); LlmResponse.Text("done") }
         val a = agent<String, String>("a") {
+            lateinit var withDesc: Tool<Map<String, Any?>, Any?>
+            lateinit var noDesc: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("with-desc", "Helpful tool") { _ -> "x" }
-                tool("no-desc", "") { _ -> "y" }
+                withDesc = tool("with-desc", "Helpful tool") { _ -> "x" }
+                noDesc = tool("no-desc", "") { _ -> "y" }
             }
-            skills { skill<String, String>("s", "s") { tools("with-desc", "no-desc") } }
+            skills { skill<String, String>("s", "s") { tools(withDesc, noDesc) } }
         }
         a("input")
 
@@ -371,12 +383,13 @@ class AgenticLoopMutationTest {
         val mock = ModelClient { msgs -> captured.add(msgs.toList()); responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var toolH: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
-            tools { tool("tool", "") { _ -> "x" } }
+            tools { toolH = tool("tool", "") { _ -> "x" } }
             onToolError("tool") {
                 invalidArgs { _, _ -> RepairResult.Escalated("schema mismatch", Severity.HIGH) }
             }
-            skills { skill<String, String>("s", "s") { tools("tool") } }
+            skills { skill<String, String>("s", "s") { tools(toolH) } }
         }
 
         assertEquals("handled", a("input"))

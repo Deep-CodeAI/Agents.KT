@@ -22,16 +22,18 @@ class ToolErrorIntegrationTest {
         val toolUses = mutableListOf<String>()
 
         val a = agent<String, String>("calculator") {
+            lateinit var add: Tool<Map<String, Any?>, Any?>
+            lateinit var multiply: Tool<Map<String, Any?>, Any?>
             prompt("You are a calculator. Use the provided tools to evaluate expressions step by step. Reply with ONLY the final number.")
             model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
             tools {
-                tool("add", "Add two numbers. Args: a, b") { args ->
+                add = tool("add", "Add two numbers. Args: a, b") { args ->
                     addCallCount++
                     // Fail on first call, succeed on retry
                     if (addCallCount == 1) throw RuntimeException("Transient network error")
                     num(args, "a") + num(args, "b")
                 }
-                tool("multiply", "Multiply two numbers. Args: a, b") { args ->
+                multiply = tool("multiply", "Multiply two numbers. Args: a, b") { args ->
                     num(args, "a") * num(args, "b")
                 }
             }
@@ -39,7 +41,7 @@ class ToolErrorIntegrationTest {
                 executionError { _ -> retry(maxAttempts = 3) }
             }
             skills { skill<String, String>("solve", "Evaluate arithmetic expressions using tools") {
-                tools("add", "multiply")
+                tools(add, multiply)
             }}
             onToolUse { name, args, result ->
                 toolUses.add(name)
@@ -61,10 +63,11 @@ class ToolErrorIntegrationTest {
     @Test
     fun `retry exhaustion throws ToolExecutionException during live agentic loop`() {
         val a = agent<String, String>("calculator") {
+            lateinit var add: Tool<Map<String, Any?>, Any?>
             prompt("You are a calculator. Use the add tool. Reply with ONLY the final number.")
             model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
             tools {
-                tool("add", "Add two numbers. Args: a, b") { _ ->
+                add = tool("add", "Add two numbers. Args: a, b") { _ ->
                     throw RuntimeException("Service permanently down")
                 }
             }
@@ -72,7 +75,7 @@ class ToolErrorIntegrationTest {
                 executionError { _ -> retry(maxAttempts = 2) }
             }
             skills { skill<String, String>("solve", "Evaluate arithmetic expressions using tools") {
-                tools("add")
+                tools(add)
             }}
         }
 
@@ -96,11 +99,12 @@ class ToolErrorIntegrationTest {
         }
 
         val a = agent<String, String>("calculator") {
+            lateinit var add: Tool<Map<String, Any?>, Any?>
             prompt("You are a calculator. Use the add tool. If a tool returns an error, reply with the error description — do NOT retry the tool.")
             model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
             budget { maxTurns = 5 }
             tools {
-                tool("add", "Add two numbers. Args: a, b") { _ ->
+                add = tool("add", "Add two numbers. Args: a, b") { _ ->
                     throw RuntimeException("Hardware fault")
                 }
             }
@@ -108,7 +112,7 @@ class ToolErrorIntegrationTest {
                 executionError { _ -> fix(agent = fixer, retries = 1) }
             }
             skills { skill<String, String>("solve", "Evaluate arithmetic expressions using tools") {
-                tools("add")
+                tools(add)
             }}
         }
 
@@ -136,17 +140,19 @@ class ToolErrorIntegrationTest {
         }
 
         val a = agent<String, String>("calculator") {
+            lateinit var add: Tool<Map<String, Any?>, Any?>
+            lateinit var multiply: Tool<Map<String, Any?>, Any?>
             prompt(
                 "You are a calculator. You MUST use the provided tools for every operation — never compute mentally. " +
                 "After all tool calls, reply with ONLY the final number — no explanation, no units."
             )
             model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
             tools {
-                tool("add", "Add two numbers. Args: a, b") { _ ->
+                add = tool("add", "Add two numbers. Args: a, b") { _ ->
                     addCallCount++
                     throw RuntimeException("add service unavailable")
                 }
-                tool("multiply", "Multiply two numbers. Args: a, b") { args ->
+                multiply = tool("multiply", "Multiply two numbers. Args: a, b") { args ->
                     num(args, "a") * num(args, "b")
                 }
             }
@@ -154,7 +160,7 @@ class ToolErrorIntegrationTest {
                 executionError { _ -> fix(agent = repairAgent, retries = 1) }
             }
             skills { skill<String, String>("solve", "Evaluate arithmetic expressions using tools") {
-                tools("add", "multiply")
+                tools(add, multiply)
             }}
             onToolUse { name, _, result ->
                 toolUses.add(name to result)
@@ -184,6 +190,8 @@ class ToolErrorIntegrationTest {
         var multiplyFailed = false
 
         val a = agent<String, String>("calculator") {
+            lateinit var add: Tool<Map<String, Any?>, Any?>
+            lateinit var multiply: Tool<Map<String, Any?>, Any?>
             prompt("You are a calculator. Use the provided tools. Reply with ONLY the final number.")
             model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
             tools {
@@ -192,17 +200,17 @@ class ToolErrorIntegrationTest {
                         executionError { _ -> retry(maxAttempts = 3) }
                     }
                 }
-                tool("add", "Add two numbers. Args: a, b") { args ->
+                add = tool("add", "Add two numbers. Args: a, b") { args ->
                     if (!addFailed) { addFailed = true; throw RuntimeException("Transient") }
                     num(args, "a") + num(args, "b")
                 }
-                tool("multiply", "Multiply two numbers. Args: a, b") { args ->
+                multiply = tool("multiply", "Multiply two numbers. Args: a, b") { args ->
                     if (!multiplyFailed) { multiplyFailed = true; throw RuntimeException("Transient") }
                     num(args, "a") * num(args, "b")
                 }
             }
             skills { skill<String, String>("solve", "Evaluate arithmetic expressions using tools") {
-                tools("add", "multiply")
+                tools(add, multiply)
             }}
             onToolUse { name, args, result ->
                 println("  $name(${args.values.joinToString(", ")}) = $result")

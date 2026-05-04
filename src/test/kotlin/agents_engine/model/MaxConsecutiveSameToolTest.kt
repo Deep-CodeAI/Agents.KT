@@ -33,10 +33,11 @@ class MaxConsecutiveSameToolTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var noop: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             budget { maxConsecutiveSameTool = 2; maxToolCalls = 100; maxTurns = 100 }
-            tools { tool("noop", "") { _ -> "ok" } }
-            skills { skill<String, String>("s", "s") { tools("noop") } }
+            tools { noop = tool("noop", "") { _ -> "ok" } }
+            skills { skill<String, String>("s", "s") { tools(noop) } }
         }
 
         val ex = assertThrows<BudgetExceededException> { a("input") }
@@ -56,10 +57,11 @@ class MaxConsecutiveSameToolTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var noop: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             budget { maxConsecutiveSameTool = 1; maxToolCalls = 100; maxTurns = 100 }
-            tools { tool("noop", "") { _ -> "ok" } }
-            skills { skill<String, String>("s", "s") { tools("noop") } }
+            tools { noop = tool("noop", "") { _ -> "ok" } }
+            skills { skill<String, String>("s", "s") { tools(noop) } }
         }
 
         val ex = assertThrows<BudgetExceededException> { a("input") }
@@ -81,13 +83,15 @@ class MaxConsecutiveSameToolTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var noop: Tool<Map<String, Any?>, Any?>
+            lateinit var other: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             budget { maxConsecutiveSameTool = 2; maxToolCalls = 100; maxTurns = 100 }
             tools {
-                tool("noop", "") { _ -> "ok" }
-                tool("other", "") { _ -> "ok" }
+                noop = tool("noop", "") { _ -> "ok" }
+                other = tool("other", "") { _ -> "ok" }
             }
-            skills { skill<String, String>("s", "s") { tools("noop", "other") } }
+            skills { skill<String, String>("s", "s") { tools(noop, other) } }
         }
 
         // Should NOT throw: the counter resets across the OTHER call.
@@ -104,11 +108,12 @@ class MaxConsecutiveSameToolTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var noop: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             budget { maxToolCalls = 100; maxTurns = 100 }
             // No maxConsecutiveSameTool set — uncapped.
-            tools { tool("noop", "") { _ -> "ok" } }
-            skills { skill<String, String>("s", "s") { tools("noop") } }
+            tools { noop = tool("noop", "") { _ -> "ok" } }
+            skills { skill<String, String>("s", "s") { tools(noop) } }
         }
 
         assertEquals("done", a("input"))
@@ -128,10 +133,11 @@ class MaxConsecutiveSameToolTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var noop: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             budget { maxConsecutiveSameTool = 2; maxToolCalls = 100; maxTurns = 100 }
-            tools { tool("noop", "") { _ -> "ok" } }
-            skills { skill<String, String>("s", "s") { tools("noop") } }
+            tools { noop = tool("noop", "") { _ -> "ok" } }
+            skills { skill<String, String>("s", "s") { tools(noop) } }
         }
 
         val ex = assertThrows<BudgetExceededException> { a("input") }

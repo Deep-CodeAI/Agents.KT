@@ -68,9 +68,10 @@ class AgenticLoopTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var greet: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("greet", "") { _ -> toolExecuted = true; "Hi!" } }
-            skills { skill<String, String>("s", "s") { tools("greet") } }
+            tools { greet = tool("greet", "") { _ -> toolExecuted = true; "Hi!" } }
+            skills { skill<String, String>("s", "s") { tools(greet) } }
         }
 
         a("input")
@@ -86,9 +87,10 @@ class AgenticLoopTest {
         val mock = ModelClient { msgs -> allMessages.add(msgs.toList()); responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var reverse: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("reverse", "") { args -> args["text"].toString().reversed() } }
-            skills { skill<String, String>("s", "s") { tools("reverse") } }
+            tools { reverse = tool("reverse", "") { args -> args["text"].toString().reversed() } }
+            skills { skill<String, String>("s", "s") { tools(reverse) } }
         }
 
         val result = a("hello")
@@ -180,10 +182,11 @@ class AgenticLoopTest {
 
         val toolUseNames = mutableListOf<String>()
         val a = agent<String, String>("a") {
+            lateinit var greet: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("greet", "") { _ -> "Hi!" } }
+            tools { greet = tool("greet", "") { _ -> "Hi!" } }
             skills { skill<String, String>("s", "desc") {
-                tools("greet")
+                tools(greet)
                 knowledge("style-guide", "Rules") { "Use val." }
             }}
             onToolUse { name, _, _ -> toolUseNames.add(name) }
@@ -201,10 +204,11 @@ class AgenticLoopTest {
         }
 
         val a = agent<String, String>("a") {
+            lateinit var noop: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             budget { maxTurns = 3 }
-            tools { tool("noop", "") { _ -> "ok" } }
-            skills { skill<String, String>("s", "s") { tools("noop") } }
+            tools { noop = tool("noop", "") { _ -> "ok" } }
+            skills { skill<String, String>("s", "s") { tools(noop) } }
         }
 
         assertThrows<BudgetExceededException> { a("input") }
@@ -216,9 +220,10 @@ class AgenticLoopTest {
         val mock = ModelClient { msgs -> captured.add(msgs.toList()); LlmResponse.Text("done") }
 
         val a = agent<String, String>("a") {
+            lateinit var greet: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("greet", "Greet someone by name") { _ -> "Hi!" } }
-            skills { skill<String, String>("s", "s") { tools("greet") } }
+            tools { greet = tool("greet", "Greet someone by name") { _ -> "Hi!" } }
+            skills { skill<String, String>("s", "s") { tools(greet) } }
         }
 
         a("task")
@@ -237,17 +242,22 @@ class AgenticLoopTest {
         val toolUses = mutableListOf<ToolUse>()
 
         val a = agent<String, Int>("calculator") {
+            lateinit var add: Tool<Map<String, Any?>, Any?>
+            lateinit var subtract: Tool<Map<String, Any?>, Any?>
+            lateinit var multiply: Tool<Map<String, Any?>, Any?>
+            lateinit var divide: Tool<Map<String, Any?>, Any?>
+            lateinit var power: Tool<Map<String, Any?>, Any?>
             prompt("You are a calculator. Use the provided tools to evaluate expressions step by step. After all tool calls, reply with ONLY the final number.")
             model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
             tools {
-                tool("add",      "Add two numbers. Args: a, b")             { args -> num(args, "a") + num(args, "b") }
-                tool("subtract", "Subtract b from a. Args: a, b")           { args -> num(args, "a") - num(args, "b") }
-                tool("multiply", "Multiply two numbers. Args: a, b")        { args -> num(args, "a") * num(args, "b") }
-                tool("divide",   "Divide a by b. Args: a, b")               { args -> num(args, "a") / num(args, "b") }
-                tool("power",    "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp")) }
+                add      = tool("add",      "Add two numbers. Args: a, b")             { args -> num(args, "a") + num(args, "b") }
+                subtract = tool("subtract", "Subtract b from a. Args: a, b")           { args -> num(args, "a") - num(args, "b") }
+                multiply = tool("multiply", "Multiply two numbers. Args: a, b")        { args -> num(args, "a") * num(args, "b") }
+                divide   = tool("divide",   "Divide a by b. Args: a, b")               { args -> num(args, "a") / num(args, "b") }
+                power    = tool("power",    "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp")) }
             }
             skills { skill<String, Int>("solve", "Evaluate arithmetic expressions using tools") {
-                tools("add", "subtract", "multiply", "divide", "power")
+                tools(add, subtract, multiply, divide, power)
                 transformOutput { it.trim().toIntOrNull() ?: Regex("-?\\d+").find(it)?.value?.toInt() ?: error("No integer in: $it") }
             }}
             onToolUse { name, args, result ->
@@ -291,17 +301,22 @@ class AgenticLoopTest {
         val toolUses = mutableListOf<ToolUse>()
 
         val a = agent<String, String>("calculator") {
+            lateinit var add: Tool<Map<String, Any?>, Any?>
+            lateinit var subtract: Tool<Map<String, Any?>, Any?>
+            lateinit var multiply: Tool<Map<String, Any?>, Any?>
+            lateinit var divide: Tool<Map<String, Any?>, Any?>
+            lateinit var power: Tool<Map<String, Any?>, Any?>
             prompt("You are a calculator. Use the provided tools to evaluate expressions step by step.")
             model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
             tools {
-                tool("add",      "Add two numbers. Args: a, b")             { args -> num(args, "a") + num(args, "b") }
-                tool("subtract", "Subtract b from a. Args: a, b")           { args -> num(args, "a") - num(args, "b") }
-                tool("multiply", "Multiply two numbers. Args: a, b")        { args -> num(args, "a") * num(args, "b") }
-                tool("divide",   "Divide a by b. Args: a, b")               { args -> num(args, "a") / num(args, "b") }
-                tool("power",    "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp")) }
+                add      = tool("add",      "Add two numbers. Args: a, b")             { args -> num(args, "a") + num(args, "b") }
+                subtract = tool("subtract", "Subtract b from a. Args: a, b")           { args -> num(args, "a") - num(args, "b") }
+                multiply = tool("multiply", "Multiply two numbers. Args: a, b")        { args -> num(args, "a") * num(args, "b") }
+                divide   = tool("divide",   "Divide a by b. Args: a, b")               { args -> num(args, "a") / num(args, "b") }
+                power    = tool("power",    "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp")) }
             }
             skills { skill<String, String>("solve", "Evaluate arithmetic expressions using tools") {
-                tools("add", "subtract", "multiply", "divide", "power")
+                tools(add, subtract, multiply, divide, power)
             }}
             onToolUse { name, args, result ->
                 toolUses.add(ToolUse(name, args, result))
@@ -344,15 +359,18 @@ class AgenticLoopTest {
         val toolUses = mutableListOf<ToolUse>()
 
         val compute = agent<String, Int>("calculator") {
+            lateinit var add: Tool<Map<String, Any?>, Any?>
+            lateinit var divide: Tool<Map<String, Any?>, Any?>
+            lateinit var power: Tool<Map<String, Any?>, Any?>
             prompt("You are a calculator. You MUST use the provided tools for every arithmetic operation — never compute mentally. After all tool calls, reply with ONLY the final number.")
             model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
             tools {
-                tool("add",    "Add two numbers. Args: a, b")             { args -> num(args, "a") + num(args, "b") }
-                tool("divide", "Divide a by b. Args: a, b")               { args -> num(args, "a") / num(args, "b") }
-                tool("power",  "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp")) }
+                add    = tool("add",    "Add two numbers. Args: a, b")             { args -> num(args, "a") + num(args, "b") }
+                divide = tool("divide", "Divide a by b. Args: a, b")               { args -> num(args, "a") / num(args, "b") }
+                power  = tool("power",  "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp")) }
             }
             skills { skill<String, Int>("solve", "Evaluate arithmetic expressions using tools") {
-                tools("add", "divide", "power")
+                tools(add, divide, power)
                 transformOutput { it.trim().toIntOrNull() ?: Regex("-?\\d+").find(it)?.value?.toInt() ?: error("No integer in: $it") }
             }}
             onToolUse { name, args, result -> toolUses.add(ToolUse(name, args, result)) }
@@ -374,15 +392,18 @@ class AgenticLoopTest {
         fun num(args: Map<String, Any?>, key: String) = args[key].toString().toDouble()
 
         val compute = agent<String, String>("calculator") {
+            lateinit var add: Tool<Map<String, Any?>, Any?>
+            lateinit var divide: Tool<Map<String, Any?>, Any?>
+            lateinit var power: Tool<Map<String, Any?>, Any?>
             prompt("You are a calculator. Use the provided tools to evaluate the expression, then reply with ONLY the final number — no explanation.")
             model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
             tools {
-                tool("add",    "Add two numbers. Args: a, b")          { args -> num(args, "a") + num(args, "b") }
-                tool("divide", "Divide a by b. Args: a, b")            { args -> num(args, "a") / num(args, "b") }
-                tool("power",  "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp")) }
+                add    = tool("add",    "Add two numbers. Args: a, b")          { args -> num(args, "a") + num(args, "b") }
+                divide = tool("divide", "Divide a by b. Args: a, b")            { args -> num(args, "a") / num(args, "b") }
+                power  = tool("power",  "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp")) }
             }
             skills { skill<String, String>("solve", "Evaluate arithmetic expressions using tools") {
-                tools("add", "divide", "power")
+                tools(add, divide, power)
             }}
         }
 

@@ -30,6 +30,7 @@ class AgentMcpToolUseTest {
             budget { maxTurns = 5 }
             skills {
                 skill<String, String>("answer", "Answer the user's question by calling a tool") {
+                    @Suppress("DEPRECATION") // MCP tools discovered at runtime — names aren't compile-time refs
                     tools(*toolNames)
                 }
             }

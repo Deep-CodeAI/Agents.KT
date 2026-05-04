@@ -166,9 +166,10 @@ class PipelineAgenticIntegrationTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val reverser = agent<String, String>("reverser") {
+            lateinit var reverse: agents_engine.model.Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("reverse", "Reverse a string") { args -> args["text"].toString().reversed() } }
-            skills { skill<String, String>("rev", "Reverse text via tool") { tools("reverse") } }
+            tools { reverse = tool("reverse", "Reverse a string") { args -> args["text"].toString().reversed() } }
+            skills { skill<String, String>("rev", "Reverse text via tool") { tools(reverse) } }
             onToolUse { name, _, _ -> toolUses.add(name) }
         }
         val suffix = agent<String, String>("suffix") {

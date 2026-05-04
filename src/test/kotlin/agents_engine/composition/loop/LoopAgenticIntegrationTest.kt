@@ -60,10 +60,11 @@ class LoopAgenticIntegrationTest {
         }
 
         val worker = agent<String, Int>("worker") {
+            lateinit var increment: agents_engine.model.Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("increment", "Increment a number") { args -> toolLog.add(args["n"].toString()); "ok" } }
+            tools { increment = tool("increment", "Increment a number") { args -> toolLog.add(args["n"].toString()); "ok" } }
             skills { skill<String, Int>("work", "Do iterative work") {
-                tools("increment")
+                tools(increment)
                 transformOutput { it.trim().toInt() }
             }}
         }

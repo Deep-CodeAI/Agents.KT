@@ -69,13 +69,14 @@ class OllamaClientIntegrationTest {
     fun `full agentic loop — model calls tool and returns final answer`() {
         var toolCalled = false
         val a = agent<String, String>("test") {
+            lateinit var greet: Tool<Map<String, Any?>, Any?>
             prompt("You are a tool-calling agent. You MUST use the available tools to complete tasks. Never answer directly without calling a tool first.")
             model { ollama(MODEL); host = HOST; port = PORT; temperature = 0.0 }
-            tools { tool("greet", "Greet a person by name. Arguments: {name: string}") { args ->
+            tools { greet = tool("greet", "Greet a person by name. Arguments: {name: string}") { args ->
                 toolCalled = true
                 "Hello, ${args["name"]}!"
             }}
-            skills { skill<String, String>("s", "Greet someone using the greet tool") { tools("greet") } }
+            skills { skill<String, String>("s", "Greet someone using the greet tool") { tools(greet) } }
         }
 
         val result = a("Greet Alice.")

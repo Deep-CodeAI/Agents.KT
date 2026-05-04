@@ -66,8 +66,9 @@ fun main(args: Array<String>) {
             port = PORT
             temperature = 0.3
         }
+        lateinit var exitApp: agents_engine.model.Tool<Map<String, Any?>, Any?>
         tools {
-            tool(
+            exitApp = tool(
                 "exit_app",
                 "Close this application. Use when the user asks to exit, quit, leave, or end the session.",
             ) { _ ->
@@ -78,13 +79,13 @@ fun main(args: Array<String>) {
         }
         skills {
             skill<String, String>("chat", "Have a conversation with the user, ending it on request") {
-                // Listing exit_app marks this skill as LLM-driven AND
+                // Listing exitApp marks this skill as LLM-driven AND
                 // authorizes gemma to call it. Because gemma3:4b doesn't
                 // support native tool calls, the framework's inline-tool-call
                 // fallback path (#706) kicks in — gemma emits a single JSON
                 // object `{"tool":"exit_app","arguments":{}}` and the loop
                 // dispatches it. This demo exercises that whole stack.
-                tools("exit_app")
+                tools(exitApp)
             }
         }
     }

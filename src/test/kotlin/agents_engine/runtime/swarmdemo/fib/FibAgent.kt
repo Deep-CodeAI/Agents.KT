@@ -61,15 +61,16 @@ fun buildFibAgent(): Agent<String, String> = agent("fib") {
         After a tool returns, render the result in 1–2 short sentences.
     """.trimIndent())
     model { ollama(MODEL); host = HOST; port = PORT; temperature = 0.0 }
+    lateinit var fibonacci: agents_engine.model.Tool<Map<String, Any?>, Any?>
     tools {
-        tool("fibonacci", "Compute the nth Fibonacci number. Argument: n (integer ≥ 0).") { args ->
+        fibonacci = tool("fibonacci", "Compute the nth Fibonacci number. Argument: n (integer ≥ 0).") { args ->
             val n = readInt(args, "n")
             fib(n).toString()
         }
     }
     skills {
         skill<String, String>("compute", "Run a math calculation, possibly via tools") {
-            tools("fibonacci")
+            tools(fibonacci)
         }
     }
     onToolUse { name, args, result -> traceTool("fib", name, args, result) }

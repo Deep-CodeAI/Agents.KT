@@ -29,13 +29,14 @@ class ToolAuthorizationTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("guarded") {
+            lateinit var safeTool: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             tools {
-                tool("safeTool", "ok") { _ -> "safe-result" }
+                safeTool = tool("safeTool", "ok") { _ -> "safe-result" }
                 tool("dangerousTool", "danger") { _ -> dangerousExecuted = true; "should-not-run" }
             }
             // Skill only allows safeTool; dangerousTool exists on the agent but not in this skill's allowlist
-            skills { skill<String, String>("only-safe", "stub") { tools("safeTool") } }
+            skills { skill<String, String>("only-safe", "stub") { tools(safeTool) } }
         }
 
         try {
@@ -60,9 +61,10 @@ class ToolAuthorizationTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var safeTool: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("safeTool", "ok") { _ -> "ok" } }
-            skills { skill<String, String>("s", "stub") { tools("safeTool") } }
+            tools { safeTool = tool("safeTool", "ok") { _ -> "ok" } }
+            skills { skill<String, String>("s", "stub") { tools(safeTool) } }
         }
 
         try {
@@ -81,14 +83,15 @@ class ToolAuthorizationTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var publicTool: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             tools {
-                tool("publicTool", "") { _ -> "ok" }
+                publicTool = tool("publicTool", "") { _ -> "ok" }
                 tool("secretTool", "") { _ -> "should-stay-hidden" }
                 tool("anotherSecretTool", "") { _ -> "also-hidden" }
             }
             // Only publicTool allowed for this skill
-            skills { skill<String, String>("s", "stub") { tools("publicTool") } }
+            skills { skill<String, String>("s", "stub") { tools(publicTool) } }
         }
 
         try {
@@ -153,14 +156,16 @@ class ToolAuthorizationTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("twoSkills") {
+            lateinit var aOnly: Tool<Map<String, Any?>, Any?>
+            lateinit var bOnly: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             tools {
-                tool("aOnly", "") { _ -> "a-result" }
-                tool("bOnly", "") { _ -> skillBToolExecuted = true; "should-not-run-from-A" }
+                aOnly = tool("aOnly", "") { _ -> "a-result" }
+                bOnly = tool("bOnly", "") { _ -> skillBToolExecuted = true; "should-not-run-from-A" }
             }
             skills {
-                skill<String, String>("skill-A", "stub") { tools("aOnly") }
-                skill<String, String>("skill-B", "stub") { tools("bOnly") }
+                skill<String, String>("skill-A", "stub") { tools(aOnly) }
+                skill<String, String>("skill-B", "stub") { tools(bOnly) }
             }
             // Force skill-A so the LLM is running under skill-A's allowlist
             skillSelection { _ -> "skill-A" }
