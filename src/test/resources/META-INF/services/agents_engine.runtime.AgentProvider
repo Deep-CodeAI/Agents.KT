@@ -1,1 +1,4 @@
 agents_engine.runtime.SwarmTestProviderFixture
+agents_engine.runtime.SwarmDemoFibProvider
+agents_engine.runtime.SwarmDemoFactorProvider
+agents_engine.runtime.SwarmDemoExitProvider

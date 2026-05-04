@@ -203,6 +203,18 @@ tasks.register<JavaExec>("interactivePipeline") {
     standardInput = System.`in`
 }
 
+// #984 — full swarm demo. Three sibling agents (fib / factor / exit) live on
+// the test classpath via ServiceLoader. The demo's main() picks `fib` as
+// captain and absorbs the other two as tools; from the REPL the user can
+// trigger any of the three. Same JavaExec + stdin-forwarded pattern.
+tasks.register<JavaExec>("swarmDemo") {
+    description = "Run the swarm demo: captain `fib` absorbs `factor` + `exit` siblings"
+    group = "verification"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("agents_engine.runtime.SwarmDemoKt")
+    standardInput = System.`in`
+}
+
 java {
     withSourcesJar()
     withJavadocJar()
