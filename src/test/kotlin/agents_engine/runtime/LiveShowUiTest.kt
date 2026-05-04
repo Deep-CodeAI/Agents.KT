@@ -231,18 +231,15 @@ class LiveShowUiTest {
         }.start().runUntilTerminated()
 
         val s = out.toString()
-        // Strip whitespace and check for the framework name — the banner uses
-        // letter-spaced "A G E N T S . K T" for visual weight.
-        val condensed = s.replace(" ", "").replace("\n", "")
-        assertTrue(
-            condensed.contains("AGENTS", ignoreCase = true),
-            "default banner should mention Agents.KT: $s",
-        )
-        // The geometric cat shape uses /\ ears and ◆ crown accents.
-        assertTrue(
-            s.contains("/\\") && s.contains("◆"),
-            "default banner should include cat ears (/\\) and crown accents (◆): $s",
-        )
+        // The banner is a tall, dense ASCII rendering of the Agents.KT logo
+        // (cat face + block-letter wordmark below). Verify shape rather than
+        // exact bytes — that lets the banner evolve without test churn while
+        // still trapping a regression that drops the art entirely.
+        val lines = s.lines().count()
+        assertTrue(lines >= 30, "banner should be tall ASCII art; got $lines lines")
+        val atCount = s.count { it == '@' }
+        assertTrue(atCount > 200, "banner should use dense @ art; got $atCount @s")
+        assertTrue(s.contains("+++"), "banner should include crown +++ accents: $s")
     }
 
     @Test
