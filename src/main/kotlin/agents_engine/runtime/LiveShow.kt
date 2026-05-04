@@ -14,13 +14,128 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.runBlocking
 
+// ─────────────────────────────────────────────────────────────────────────────
+// UI surface (#983): ANSI color, themes, ASCII banner, spinner, hooks.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** ANSI escape codes for terminal coloring. [NONE] is a no-op pass-through. */
+enum class AnsiColor(val code: String) {
+    NONE(""),
+    BLACK("[30m"),
+    RED("[31m"),
+    GREEN("[32m"),
+    YELLOW("[33m"),
+    BLUE("[34m"),
+    MAGENTA("[35m"),
+    CYAN("[36m"),
+    WHITE("[37m"),
+    BRIGHT_BLACK("[90m"),
+    BRIGHT_RED("[91m"),
+    BRIGHT_GREEN("[92m"),
+    BRIGHT_YELLOW("[93m"),
+    BRIGHT_BLUE("[94m"),
+    BRIGHT_MAGENTA("[95m"),
+    BRIGHT_CYAN("[96m"),
+    BRIGHT_WHITE("[97m"),
+    ;
+
+    /** Wrap [s] in this color, resetting after. Returns [s] unchanged when [code] is empty. */
+    fun wrap(s: String): String = if (code.isEmpty()) s else "$code$s[0m"
+
+    companion object {
+        private const val RESET = "[0m"
+    }
+}
+
+/** Color theme for the LiveShow REPL. Roles map to ANSI colors; [NONE] disables all. */
+data class LiveShowTheme(
+    val prompt: AnsiColor,
+    val agentOutput: AnsiColor,
+    val error: AnsiColor,
+    val slashOutput: AnsiColor,
+    val banner: AnsiColor,
+) {
+    companion object {
+        /** Pink/cyan/green default — magenta for the banner echoes the logo's accent. */
+        val DEFAULT = LiveShowTheme(
+            prompt = AnsiColor.BRIGHT_CYAN,
+            agentOutput = AnsiColor.BRIGHT_GREEN,
+            error = AnsiColor.RED,
+            slashOutput = AnsiColor.YELLOW,
+            banner = AnsiColor.BRIGHT_MAGENTA,
+        )
+
+        /** Plain text for every role — escape-code-free output. */
+        val NONE = LiveShowTheme(
+            prompt = AnsiColor.NONE,
+            agentOutput = AnsiColor.NONE,
+            error = AnsiColor.NONE,
+            slashOutput = AnsiColor.NONE,
+            banner = AnsiColor.NONE,
+        )
+    }
+}
+
+/**
+ * In-place spinner shown while the agent is invoking. Each frame is rewritten
+ * over the prior one with a carriage return; on completion the line is
+ * cleared and the agent's output is printed in its place.
+ */
+data class Spinner(
+    val frames: List<String>,
+    val intervalMs: Long = 150L,
+) {
+    val isEmpty: Boolean get() = frames.isEmpty()
+
+    companion object {
+        /** ASCII cat with rotating face — fired during inference. */
+        val CAT = Spinner(listOf(
+            ">^_^<  thinking",
+            ">^.^<  thinking.",
+            ">-_-<  thinking..",
+            ">^.^<  thinking...",
+        ))
+
+        /** No-op — disables the spinner. */
+        val NONE = Spinner(emptyList())
+    }
+}
+
+/** Default banner — geometric ASCII cat with crown accents, evoking the Agents.KT logo. */
+internal const val DEFAULT_BANNER: String =
+    "              ◆\n" +
+    "          ◆ ◆ ◆ ◆ ◆\n" +
+    "        ◆ ◆ ◆ ◆ ◆ ◆ ◆\n" +
+    "    /\\                  /\\\n" +
+    "   /  \\________________/  \\\n" +
+    "  /                          \\\n" +
+    "  \\                          /\n" +
+    "   \\   ◤              ◥    /\n" +
+    "    \\                      /\n" +
+    "     \\         ▽          /\n" +
+    "      \\   ─ ─ ─ ─ ─ ─    /\n" +
+    "       \\   ─ ─ ─ ─ ─    /\n" +
+    "        \\               /\n" +
+    "         \\_____________/\n" +
+    "              ╲ ╱\n" +
+    "\n" +
+    "         A G E N T S . K T\n" +
+    "         ─────────────────\n" +
+    "         Live · Repl · Show"
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * REPL deployment surface for any String-input agent or composed structure (#981).
  *
  * Mirrors MCP's two-layer split — `LiveShow.from(agent).start()` is the
  * programmatic equivalent of `McpServer.from(agent).start()`. Multi-turn
  * chat-feel comes from a string-concatenated transcript that the runner
- * prepends to each new invocation; no Session model preempt.
+ * prepends to each new invocation.
+ *
+ * UI polish (#983): ANSI color theme, ASCII banner, in-place spinner during
+ * inference, lifecycle hooks (`onTurnStart` / `onTurnEnd` / `onErrorReported`),
+ * `renderOutput` post-processor.
  *
  * Build via the [from] overloads, configure with [LiveShowBuilder], and call
  * [start] then [runUntilTerminated]. Stop early from another thread via
@@ -34,12 +149,15 @@ class LiveShow internal constructor(
     private val terminated = CountDownLatch(1)
     private val running = AtomicBoolean(false)
 
-    /** Begin reading from [LiveShowConfig.input] on the calling thread's executor. */
+    /** True when the configured output is a real TTY OR colors were force-enabled. */
+    private val effectiveColors: Boolean = when (cfg.colors) {
+        true -> true
+        false -> false
+        null -> System.console() != null
+    }
+
     fun start(): LiveShow {
         if (!running.compareAndSet(false, true)) return this
-        // The REPL runs on a daemon thread so tests / programmatic callers can
-        // stop() without their thread being blocked. main()-driven runs go
-        // through runUntilTerminated() which blocks on the same latch.
         Thread({
             try {
                 runRepl()
@@ -51,92 +169,148 @@ class LiveShow internal constructor(
         return this
     }
 
-    /** Stop the REPL loop (asynchronous; safe to call from any thread). */
-    fun stop() {
-        running.set(false)
-    }
+    fun stop() { running.set(false) }
 
-    /** Block the calling thread until the REPL loop exits. */
-    fun runUntilTerminated() {
-        terminated.await()
-    }
+    fun runUntilTerminated() { terminated.await() }
 
     private fun runRepl() {
         val reader = BufferedReader(cfg.input)
         val writer = cfg.output
-
-        // Pre-built slash table merging built-ins with user additions. User
-        // entries take precedence so they can override `/help` etc.
         val slashes = buildSlashTable()
+        val history = ArrayDeque<Pair<String, String>>()
 
-        val history = ArrayDeque<Pair<String, String>>()  // (user, assistant) pairs
-
-        if (cfg.prompt.isNotEmpty()) writer.print(cfg.prompt).also { writer.flush() }
+        cfg.banner?.invoke()?.let { writer.println(themed(it, cfg.theme.banner)) }
+        writePrompt(writer)
 
         while (running.get()) {
-            val raw = reader.readLine() ?: break  // EOF
+            val raw = reader.readLine() ?: break
             val line = raw.trim()
             if (line.isEmpty()) {
-                if (cfg.prompt.isNotEmpty()) writer.print(cfg.prompt).also { writer.flush() }
+                writePrompt(writer)
                 continue
             }
 
             if (line.startsWith("/")) {
-                val command = line.substring(1).substringBefore(' ')
-                val handler = slashes[command]
-                if (handler == null) {
-                    writer.println("unknown command: /$command (try /help)")
-                } else {
-                    handler(SlashContext(writer, history, this))
-                }
-                if (running.get() && cfg.prompt.isNotEmpty())
-                    writer.print(cfg.prompt).also { writer.flush() }
+                handleSlash(writer, slashes, line, history)
+                if (running.get()) writePrompt(writer)
                 continue
             }
 
-            val composed = composeInput(history, line, cfg.historyDelimiter)
-            val output = try {
-                runBlocking { invoke(composed) }
-            } catch (e: Throwable) {
-                writer.println("error: ${e.message ?: e.toString()}")
-                if (running.get() && cfg.prompt.isNotEmpty())
-                    writer.print(cfg.prompt).also { writer.flush() }
-                continue
-            }
-
-            val rendered = output?.toString() ?: "null"
-            writer.println(rendered)
-
-            if (cfg.maxHistoryTurns > 0) {
-                history.addLast(line to rendered)
-                while (history.size > cfg.maxHistoryTurns) history.removeFirst()
-            }
-
-            if (running.get() && cfg.prompt.isNotEmpty())
-                writer.print(cfg.prompt).also { writer.flush() }
+            handleTurn(writer, history, line)
+            if (running.get()) writePrompt(writer)
         }
     }
+
+    private fun handleSlash(
+        writer: PrintWriter,
+        slashes: Map<String, (SlashContext) -> Unit>,
+        line: String,
+        history: ArrayDeque<Pair<String, String>>,
+    ) {
+        val command = line.substring(1).substringBefore(' ')
+        val handler = slashes[command]
+        if (handler == null) {
+            writer.println(themed("unknown command: /$command (try /help)", cfg.theme.error))
+        } else {
+            handler(SlashContext(writer, history, this))
+        }
+    }
+
+    private fun handleTurn(
+        writer: PrintWriter,
+        history: ArrayDeque<Pair<String, String>>,
+        line: String,
+    ) {
+        cfg.onTurnStart?.invoke(line)
+
+        val composed = composeInput(history, line, cfg.historyDelimiter)
+        val output = runWithSpinner(writer) {
+            try {
+                runBlocking { invoke(composed) }
+            } catch (e: Throwable) {
+                cfg.onErrorReported?.invoke(e)
+                writer.println(themed("error: ${e.message ?: e.toString()}", cfg.theme.error))
+                return@runWithSpinner SENTINEL_FAILURE
+            }
+        }
+
+        if (output === SENTINEL_FAILURE) return
+
+        val rendered = cfg.renderOutput(output)
+        writer.println(themed(rendered, cfg.theme.agentOutput))
+
+        if (cfg.maxHistoryTurns > 0) {
+            history.addLast(line to rendered)
+            while (history.size > cfg.maxHistoryTurns) history.removeFirst()
+        }
+
+        cfg.onTurnEnd?.invoke(line, output)
+    }
+
+    /**
+     * Run [block] while animating the configured [Spinner] in place. Spinner
+     * is suppressed when colors are disabled (would pollute pipe captures).
+     * Final line-clear uses CR + ANSI erase-line so the rendered output sits
+     * cleanly where the spinner used to be.
+     */
+    private fun runWithSpinner(writer: PrintWriter, block: () -> Any?): Any? {
+        if (!effectiveColors || cfg.spinner.isEmpty) return block()
+
+        val running = AtomicBoolean(true)
+        val thread = Thread({
+            var idx = 0
+            while (running.get()) {
+                val frame = cfg.spinner.frames[idx % cfg.spinner.frames.size]
+                writer.print("\r" + themed(frame, cfg.theme.prompt))
+                writer.flush()
+                try { Thread.sleep(cfg.spinner.intervalMs) } catch (_: InterruptedException) { break }
+                idx++
+            }
+        }, "LiveShow-Spinner").apply { isDaemon = true; start() }
+
+        try {
+            return block()
+        } finally {
+            running.set(false)
+            thread.interrupt()
+            // Carriage return + ANSI erase-to-end-of-line clears the spinner.
+            writer.print("\r[2K")
+            writer.flush()
+        }
+    }
+
+    private fun writePrompt(writer: PrintWriter) {
+        if (cfg.prompt.isEmpty()) return
+        writer.print(themed(cfg.prompt, cfg.theme.prompt))
+        writer.flush()
+    }
+
+    private fun themed(s: String, color: AnsiColor): String =
+        if (effectiveColors) color.wrap(s) else s
 
     private fun buildSlashTable(): Map<String, (SlashContext) -> Unit> {
         val builtins: Map<String, (SlashContext) -> Unit> = mapOf(
             "quit" to { ctx -> ctx.show.stop() },
             "exit" to { ctx -> ctx.show.stop() },
-            "clear" to { ctx -> ctx.history.clear(); ctx.writer.println("(history cleared)") },
+            "clear" to { ctx ->
+                ctx.history.clear()
+                ctx.writer.println(themed("(history cleared)", cfg.theme.slashOutput))
+            },
             "help" to { ctx ->
-                ctx.writer.println("commands:")
-                ctx.writer.println("  /quit, /exit  — leave the REPL")
-                ctx.writer.println("  /clear        — wipe conversation history")
-                ctx.writer.println("  /help         — print this help")
-                cfg.userSlashes.keys.sorted().forEach { ctx.writer.println("  /$it") }
+                ctx.writer.println(themed("commands:", cfg.theme.slashOutput))
+                ctx.writer.println(themed("  /quit, /exit  — leave the REPL", cfg.theme.slashOutput))
+                ctx.writer.println(themed("  /clear        — wipe conversation history", cfg.theme.slashOutput))
+                ctx.writer.println(themed("  /help         — print this help", cfg.theme.slashOutput))
+                cfg.userSlashes.keys.sorted().forEach {
+                    ctx.writer.println(themed("  /$it", cfg.theme.slashOutput))
+                }
             },
         )
-        // User overrides win.
         return builtins + cfg.userSlashes.mapValues { (_, action) ->
             { _: SlashContext -> action() }
         }
     }
 
-    /** Internal context handed to slash handlers. */
     internal class SlashContext(
         val writer: PrintWriter,
         val history: ArrayDeque<Pair<String, String>>,
@@ -144,6 +318,9 @@ class LiveShow internal constructor(
     )
 
     companion object {
+        // Object-identity sentinel — distinguishable from any user value.
+        private val SENTINEL_FAILURE: Any = Object()
+
         fun from(agent: Agent<String, *>, block: LiveShowBuilder.() -> Unit = {}): LiveShow =
             buildShow({ agent.invokeSuspend(it) }, block)
 
@@ -172,12 +349,6 @@ class LiveShow internal constructor(
     }
 }
 
-/**
- * Compose the runner's input for a turn. Empty history → raw input; otherwise
- * `--- user ---\n<u>\n--- assistant ---\n<a>\n... --- user ---\n<current>`.
- *
- * Internal so [LiveRunner] and tests can reuse the exact serialization shape.
- */
 internal fun composeInput(
     history: List<Pair<String, String>>,
     current: String,
@@ -203,13 +374,39 @@ class LiveShowBuilder {
     var input: Reader = InputStreamReader(System.`in`)
     var output: PrintWriter = PrintWriter(System.out, /* autoFlush = */ true)
 
-    internal val userSlashes: MutableMap<String, () -> Unit> = mutableMapOf()
+    /** Force colors on/off; null = auto-detect via `System.console()`. */
+    var colors: Boolean? = null
 
-    /** Register a slash command. Name is given without the leading `/`. */
+    /** Color scheme. [LiveShowTheme.NONE] disables theming regardless of [colors]. */
+    var theme: LiveShowTheme = LiveShowTheme.DEFAULT
+
+    /** Transform agent output before printing. Default `it?.toString() ?: "null"`. */
+    var renderOutput: (Any?) -> String = { it?.toString() ?: "null" }
+
+    /** Banner printed once at start. Default = the Agents.KT ASCII art. Set to null for none. */
+    var banner: (() -> String)? = { DEFAULT_BANNER }
+
+    /** In-place spinner shown during inference. [Spinner.NONE] disables. */
+    var spinner: Spinner = Spinner.CAT
+
+    internal val userSlashes: MutableMap<String, () -> Unit> = mutableMapOf()
+    internal var onTurnStart: ((String) -> Unit)? = null
+    internal var onTurnEnd: ((String, Any?) -> Unit)? = null
+    internal var onErrorReported: ((Throwable) -> Unit)? = null
+
     fun slash(name: String, action: () -> Unit) {
         require(name.isNotBlank()) { "slash name must not be blank" }
         userSlashes[name] = action
     }
+
+    /** Fires before each user-line invocation. Receives the user's input. */
+    fun onTurnStart(block: (input: String) -> Unit) { onTurnStart = block }
+
+    /** Fires after a successful invocation. Receives input and the agent's output. */
+    fun onTurnEnd(block: (input: String, output: Any?) -> Unit) { onTurnEnd = block }
+
+    /** Fires when an invocation throws. The user-visible "error: ..." line still prints. */
+    fun onErrorReported(block: (Throwable) -> Unit) { onErrorReported = block }
 
     internal fun build() = LiveShowConfig(
         prompt = prompt,
@@ -217,7 +414,15 @@ class LiveShowBuilder {
         historyDelimiter = historyDelimiter,
         input = input,
         output = output,
+        colors = colors,
+        theme = theme,
+        renderOutput = renderOutput,
+        banner = banner,
+        spinner = spinner,
         userSlashes = userSlashes.toMap(),
+        onTurnStart = onTurnStart,
+        onTurnEnd = onTurnEnd,
+        onErrorReported = onErrorReported,
     )
 }
 
@@ -227,5 +432,13 @@ internal data class LiveShowConfig(
     val historyDelimiter: String,
     val input: Reader,
     val output: PrintWriter,
+    val colors: Boolean?,
+    val theme: LiveShowTheme,
+    val renderOutput: (Any?) -> String,
+    val banner: (() -> String)?,
+    val spinner: Spinner,
     val userSlashes: Map<String, () -> Unit>,
+    val onTurnStart: ((String) -> Unit)?,
+    val onTurnEnd: ((String, Any?) -> Unit)?,
+    val onErrorReported: ((Throwable) -> Unit)?,
 )
