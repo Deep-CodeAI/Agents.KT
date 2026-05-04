@@ -3937,6 +3937,7 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [x] Memory bank — `MemoryBank`, `memory_read` / `memory_write` / `memory_search` tools with per-skill `useMemory()` opt-in (#856)
 - [x] Supply-chain hygiene — pinned Gradle wrapper, dependency-locking via `gradle.lockfile`, `gradle/verification-metadata.xml` SHA-256 verification, `updateVerificationMetadata` cross-platform Gradle task (#858, #872, #883)
 - [x] `loadResource(path)` / `loadResourceOrNull(path)` — read agent system prompts from classpath resources; fail-fast at agent construction when path is missing; UTF-8 decoded; leading-slash normalized (#980)
+- [x] `LiveShow` / `LiveRunner` — REPL deployment surface mirroring MCP's two-layer split (`LiveShow.from(x).start()` + `LiveRunner.serve(x, args)`). Six factory overloads cover `Agent` / `Pipeline` / `Forum` / `Parallel` / `Loop` / `Branch` (any String-input structure). String-concatenated conversation history with `--- user ---` / `--- assistant ---` delimiters and configurable cap. Built-in `/quit`, `/exit`, `/clear`, `/help` plus user-extensible `slash(name) { }`. `--once "<prompt>"` for non-interactive single-turn use. ANSI color theme, ASCII Agents.KT banner, in-place cat spinner, lifecycle hooks (`onTurnStart` / `onTurnEnd` / `onErrorReported`), `renderOutput` post-processor (#981, #983)
 - [ ] `>>` — security/education wrap
 
 ### Phase 2: Runtime + Distribution *(Q2 2026)*
