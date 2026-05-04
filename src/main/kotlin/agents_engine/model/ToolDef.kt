@@ -30,17 +30,21 @@ class ToolDef(
 
 /**
  * Typed handle returned by every `tool(...)` builder overload. Wraps a
- * [ToolDef] with phantom type parameters that let `Skill.tools(...)` and
- * `+autoTool(...)` accept compile-time-checked references instead of
- * stringly-typed lookups (#1015 — KSP P1.1).
+ * [ToolDef] with phantom type parameters that let `Skill.tools(...)` accept
+ * compile-time-checked references instead of stringly-typed lookups
+ * (#1015 — KSP P1.1).
  *
  * `Args` is the deserialized input type for typed tools (the `@Generable`
  * data class), `Map<String, Any?>` for untyped tools. `Result` is the lambda's
  * return type. Both type parameters are erased at runtime — the [def]
  * underneath is the canonical runtime representation.
+ *
+ * Not `@JvmInline value` because Kotlin prohibits vararg of value-class types,
+ * and `Skill.tools(vararg refs: Tool<*, *>)` (#1016) is the primary use site.
+ * Tool handles are constructed once per agent build, never on the hot path —
+ * the per-handle allocation is negligible.
  */
-@JvmInline
-value class Tool<Args, Result> @PublishedApi internal constructor(
+class Tool<Args, Result> @PublishedApi internal constructor(
     @PublishedApi internal val def: ToolDef,
 ) {
     val name: String get() = def.name

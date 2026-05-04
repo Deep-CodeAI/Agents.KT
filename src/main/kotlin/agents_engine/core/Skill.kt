@@ -74,6 +74,21 @@ class Skill<IN, OUT>(
         implementation = null
     }
 
+    /**
+     * Typed overload accepting `Tool<*, *>` handles returned by `tool(...)` builders
+     * (#1015). Catches typos and stale references at compile time instead of at agent
+     * `validate()` (`Agent.kt:404`). See `docs/ksp-design.md` for the broader plan.
+     *
+     * Requires at least one ref to disambiguate from `tools()` (empty), which resolves
+     * to the legacy string-vararg form.
+     */
+    fun tools(first: agents_engine.model.Tool<*, *>, vararg rest: agents_engine.model.Tool<*, *>) {
+        checkNotFrozen()
+        isAgentic = true
+        toolNames = listOf(first.name) + rest.map { it.name }
+        implementation = null
+    }
+
     var outputTransformer: ((String) -> OUT)? = null
         private set
 
