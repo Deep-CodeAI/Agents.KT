@@ -192,6 +192,17 @@ tasks.register<JavaExec>("interactiveLiveShow") {
     standardInput = System.`in`
 }
 
+// #982 — chat with a planner→executor Pipeline through the REPL. Same JavaExec
+// pattern as `interactiveLiveShow` but exercises the
+// LiveShow.from(pipeline: Pipeline<String, *>) overload.
+tasks.register<JavaExec>("interactivePipeline") {
+    description = "Manually drive a LiveShow REPL with a planner→executor Pipeline"
+    group = "verification"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("agents_engine.runtime.InteractivePipelineDemoKt")
+    standardInput = System.`in`
+}
+
 java {
     withSourcesJar()
     withJavadocJar()
