@@ -1158,7 +1158,7 @@ A.branch { }   : Agent<X, Sealed<Y>)           → Branch<X,Z>  (all variants �
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("ai.deep-code:agents-kt:0.1.1")
+    implementation("ai.deep-code:agents-kt:0.2.0")
 }
 ```
 
@@ -1242,4 +1242,4 @@ For the full contributor guide — running the live-LLM and MCP integration test
 
 ## License
 
-[MIT](LICENSE) — K.Skobeltsyn Studio
+[MIT](LICENSE) — Deep-Code.AI
