@@ -2,6 +2,60 @@
 
 All notable changes to Agents.KT are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0, minor bumps may add new public API; existing API surface is preserved.
 
+## [0.2.2] — 2026-05-03
+
+A feature-heavy patch release — REPL deployment, multi-agent JAR composition (Swarm), four new observability hooks, two new budget controls, classpath-resource prompt loading, and a slimmer README. Pre-1.0 patch bump — no breaking changes; all existing API surface preserved.
+
+### Highlights
+
+- **`LiveShow` / `LiveRunner`** — REPL deployment surface mirroring MCP's two-layer split (`LiveShow.from(x).start()` / `LiveRunner.serve(x, args)`). Six factory overloads cover `Agent` / `Pipeline` / `Forum` / `Parallel` / `Loop` / `Branch` — any `String`-input structure becomes interactively chattable. ANSI color theme, full-resolution ASCII Agents.KT banner, in-place cat spinner during inference, lifecycle hooks (`onTurnStart` / `onTurnEnd` / `onErrorReported`), `renderOutput` post-processor, string-concatenated conversation history with `--- user ---` / `--- assistant ---` delimiters, slash commands (`/quit`, `/clear`, `/help` plus user-extensible `slash(name) { }`), `--once "<prompt>"` for non-interactive single-turn use.
+- **Swarm — multi-agent JAR composition.** Drop sibling agent JARs into a folder, ServiceLoader-discover them, `me.absorb(sibling)` exposes each as a tool with full agent personality preserved (prompt, skills, knowledge, memory, observability hooks). In-JVM, no IPC overhead, no static-typing-across-JARs limitation MCP-stdio would impose. Captain-capable: any agent JAR can be elected by running its `main`.
+- **Four new observability hooks.** `onError { Throwable }` for infrastructure failures (LLM transport, parse, budget). `Agent.observe { event }` bridges the four legacy hooks into one sealed `PipelineEvent` stream. `onBudgetThreshold(threshold) { reason, used }` fires once per `BudgetReason` when cumulative usage crosses a fraction (pre-cap warning). `LiveShow.onTurnStart` / `onTurnEnd` / `onErrorReported` for REPL-side telemetry.
+- **Two new budget controls.** `maxTokens` (cumulative across turns when the provider reports usage; new `BudgetReason.TOKENS`) and `maxConsecutiveSameTool` (catches LLM retry loops on a broken tool; new `BudgetReason.CONSECUTIVE_TOOL`). `LlmResponse.tokenUsage: TokenUsage?` — Ollama's `prompt_eval_count` + `eval_count` plumbed through the agentic loop.
+- **`loadResource(path)` for classpath prompts.** `prompt(loadResource("prompts/coder.md"))` loads UTF-8 from the classpath; fail-fast at agent construction with a helpful error if the path is missing. `loadResourceOrNull(path)` for the optional case.
+- **README split.** Down from 1243 → 203 lines. Topical sections moved to `docs/{skills, model-and-tools, mcp, error-recovery, memory, generation, composition, roadmap}.md` with cross-back links.
+
+### Added
+
+#### REPL / runtime
+- `LiveShow.from(agent | pipeline | forum | parallel | loop | branch).start().runUntilTerminated()` — programmatic REPL host. Six factory overloads collapse to one private constructor taking `suspend (String) -> Any?` (#981).
+- `LiveRunner.serve(structure, args, configure)` — picocli-shaped main shim mirroring `McpRunner.serve`. Six overloads, `--once "<prompt>"`, `--max-history N`, `-h`, `-V`. JVM shutdown hook + blocking until SIGTERM, returns int exit code (#981).
+- `LiveShowBuilder` configurables: `prompt`, `maxHistoryTurns`, `historyDelimiter`, `input`, `output`, plus UI polish: `colors`, `theme`, `renderOutput`, `banner`, `spinner` (#983).
+- `LiveShowTheme.DEFAULT` / `LiveShowTheme.NONE` color presets binding `AnsiColor` to roles (prompt / agentOutput / error / slashOutput / banner) (#983).
+- `Spinner.CAT` / `Spinner.NONE` — in-place cat-face spinner during inference, suppressed on non-TTY (#983).
+- Default banner — full-resolution ASCII rendering of the Agents.KT logo (angular cat face with pink crown accents, block-letter wordmark) (#983).
+- `Swarm.discover()` and `Swarm.discover(classLoader)` — ServiceLoader-walk for `AgentProvider` impls (#984).
+- `interface AgentProvider { fun build(): Agent<*, *> }` — single-method SPI for sibling JARs (#984).
+- `Agent<*, *>.absorb(sibling: Agent<*, *>)` — wraps the sibling as a tool on the captain; auto-enables across all skills; fails fast on name collision / typed-input siblings (#984).
+
+#### Observability
+- `Agent.onError { Throwable -> }` — infrastructure-error observability hook (LLM transport, response parse, budget). Pure observability — original exception always rethrows; listener exceptions attached as suppressed (#962).
+- `Agent.observe { event -> }` — sealed `PipelineEvent` (`SkillChosen` / `ToolCalled` / `KnowledgeLoaded` / `ErrorOccurred`) bridges the four hooks into one typed stream; composes additively with prior listeners (#965).
+- `Agent.onBudgetThreshold(threshold) { reason, usedPercent -> }` — pre-cap warning hook; fires once per `BudgetReason` when cumulative usage crosses the fraction (#966).
+
+#### Budget
+- `BudgetConfig.maxTokens: Int?` + `BudgetReason.TOKENS` — cumulative token cap; counts only when the provider reports `tokenUsage` on the response (#963).
+- `BudgetConfig.maxConsecutiveSameTool: Int?` + `BudgetReason.CONSECUTIVE_TOOL` — catches retry loops on a broken tool (#969).
+- `LlmResponse.tokenUsage: TokenUsage?` (`promptTokens`, `completionTokens`, `total`) — Ollama's `prompt_eval_count` + `eval_count` plumbed end-to-end (#963).
+
+#### DX
+- `loadResource(path: String): String` — read agent prompts from `src/main/resources/...`. Fail-fast at agent construction; UTF-8 decoded; leading-slash normalized (#980).
+- `loadResourceOrNull(path: String): String?` — null-returning variant for optional resources (#980).
+- `Agent.toString()` — single-line `Agent<NAME>` form replacing the JVM identity-hash default (#970).
+- `Agent.describe(): String` — multi-line debug summary of name + OUT type, prompt (truncated at 80), model config, budget (overrides only), skills, tools, memory bank presence (#970).
+
+### Changed
+
+- README split from 1243 → 203 lines. Topical content moved to `docs/{skills, model-and-tools, mcp, error-recovery, memory, generation, composition, roadmap}.md`. Each new doc links back to README (#975).
+- README install snippet bumped to `0.2.2`.
+- LICENSE copyright + README license footer updated to `Deep-Code.AI`.
+- Default LiveShow banner is the full-resolution Agents.KT logo (40-line ASCII art); replaced the small geometric placeholder shipped briefly in earlier #983 builds (banner-followup).
+
+### Fixed
+
+- `LenientJsonParser` exponent-sign / Long-overflow / unicode-escape edge-case coverage (#889 cluster).
+- `OllamaClient.parseResponse` extracts `prompt_eval_count` + `eval_count` from response root; partial reports drop to `null` rather than half-attributing (#963).
+
 ## [0.2.0] — 2026-05-03
 
 A substantial release covering MCP client + server, the typed tool boundary, the runtime tool-authorization model, frozen-after-construction agents, an inline-tool fallback for capability-limited models, and a cross-cutting suspend refactor. Pre-1.0 minor bump — no breaking changes; existing blocking `invoke` API preserved via `runBlocking` shim.

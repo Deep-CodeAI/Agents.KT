@@ -25,7 +25,7 @@ import java.util.concurrent.CountDownLatch
  */
 object McpRunner {
 
-    private const val VERSION = "0.1.3"
+    private const val VERSION = "0.2.2"
 
     fun serve(
         agent: Agent<*, *>,

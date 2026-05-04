@@ -30,7 +30,7 @@ import kotlinx.coroutines.runBlocking
  */
 object LiveRunner {
 
-    private const val VERSION = "0.2.0"
+    private const val VERSION = "0.2.2"
 
     fun serve(
         agent: Agent<String, *>,
