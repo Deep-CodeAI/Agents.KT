@@ -203,6 +203,91 @@ tasks.register<JavaExec>("interactivePipeline") {
     standardInput = System.`in`
 }
 
+// #984 — full swarm demo. Three sibling agents (fib / factor / exit) live as
+// SEPARATE JAR files in build/tmp/jars_swarm_demo/, each with its own
+// META-INF/services descriptor. The captain main is packaged inside fib.jar.
+// At runtime, ServiceLoader walks the JARs on the classpath and finds all
+// three providers — the same path a production swarm uses when JARs are
+// dropped into a folder.
+val swarmDemoJarsDir: Provider<Directory> = layout.buildDirectory.dir("tmp/jars_swarm_demo")
+
+// Helper to register one swarm sibling Jar task. Each task pulls only its
+// own subpackage's compiled classes plus its per-JAR service descriptor;
+// no cross-JAR class sharing.
+fun registerSwarmDemoJar(
+    taskName: String,
+    jarFileName: String,
+    classSubpackage: String,
+    resourcesPath: String,
+) = tasks.register<Jar>(taskName) {
+    description = "Pack swarm demo agent classes into $jarFileName"
+    group = "build"
+    dependsOn("compileTestKotlin")
+    archiveFileName.set(jarFileName)
+    destinationDirectory.set(swarmDemoJarsDir)
+    sourceSets.test.get().output.classesDirs.forEach { classesDir ->
+        from(classesDir) {
+            include("agents_engine/runtime/swarmdemo/$classSubpackage/**")
+        }
+    }
+    from(resourcesPath)
+}
+
+val jarSwarmFib = registerSwarmDemoJar(
+    taskName = "jarSwarmFib",
+    jarFileName = "fib.jar",
+    classSubpackage = "fib",
+    resourcesPath = "src/test/swarm-jar-resources/fib",
+)
+val jarSwarmFactor = registerSwarmDemoJar(
+    taskName = "jarSwarmFactor",
+    jarFileName = "factor.jar",
+    classSubpackage = "factor",
+    resourcesPath = "src/test/swarm-jar-resources/factor",
+)
+val jarSwarmExit = registerSwarmDemoJar(
+    taskName = "jarSwarmExit",
+    jarFileName = "exit.jar",
+    classSubpackage = "exitagent",
+    resourcesPath = "src/test/swarm-jar-resources/exit",
+)
+
+// Stage the framework JAR + every runtime dependency next to the demo
+// JARs so the swarm demo is launchable with a pure `java -cp ...` command,
+// no Gradle needed. Output goes to build/tmp/jars_swarm_demo_lib/.
+tasks.register<Copy>("copySwarmDemoLibs") {
+    description = "Stage framework + runtime libs next to the swarm demo JARs"
+    group = "build"
+    dependsOn("jar")  // produces build/libs/agents-kt-<version>.jar
+    from(tasks.named("jar"))
+    from(configurations.runtimeClasspath)
+    into(layout.buildDirectory.dir("tmp/jars_swarm_demo_lib"))
+}
+
+// Aggregate task — builds all three demo JARs and stages their runtime deps.
+tasks.register("buildSwarmDemoJars") {
+    description = "Build the three swarm demo JARs (and stage runtime libs) so the demo can be launched with bare `java`"
+    group = "build"
+    dependsOn(jarSwarmFib, jarSwarmFactor, jarSwarmExit, "copySwarmDemoLibs")
+}
+
+tasks.register<JavaExec>("swarmDemo") {
+    description = "Run the swarm demo: captain `fib.jar` absorbs `factor.jar` + `exit.jar` siblings"
+    group = "verification"
+    dependsOn("buildSwarmDemoJars")
+
+    // Classpath = framework runtime + the three sibling JARs ONLY. We
+    // deliberately do NOT include sourceSets.test.runtimeClasspath, so
+    // ServiceLoader finds providers exclusively from the JARs (proves the
+    // real "drop JARs into a folder" path, not the in-test shortcut).
+    classpath = files(
+        sourceSets.main.get().runtimeClasspath,
+        fileTree(swarmDemoJarsDir) { include("*.jar") },
+    )
+    mainClass.set("agents_engine.runtime.swarmdemo.fib.FibAgentKt")
+    standardInput = System.`in`
+}
+
 java {
     withSourcesJar()
     withJavadocJar()
