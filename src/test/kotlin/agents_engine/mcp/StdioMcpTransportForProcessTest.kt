@@ -44,12 +44,15 @@ class StdioMcpTransportForProcessTest {
     fun `forProcess applies env map to the child process`() {
         // Child reads $TEST_VAR via shell, formats a JSON-RPC response with the
         // value, then exits. If env wasn't applied, $TEST_VAR is empty.
+        // `read req` makes the child block on stdin so rpc()'s write lands in
+        // the pipe before the child exits — without this, fast process startup
+        // (Linux CI) can race the write against the child's exit and produce a
+        // BrokenPipe IOException. See discussion in the PR for #1018 — flake
+        // surfaced once Gradle 9.5 sped up CI scheduling.
         val transport = forProcess(
-            command = listOf("sh", "-c", "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"%s\"}\\n' \"\$TEST_VAR\""),
+            command = listOf("sh", "-c", "read req; printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"%s\"}\\n' \"\$TEST_VAR\""),
             env = mapOf("TEST_VAR" to "applied"),
         )
-        // We don't write a request — the child writes the response unprompted
-        // and exits. rpc() with id=1 will read the line.
         val response = transport.rpc("""{"jsonrpc":"2.0","id":1,"method":"x"}""")
         assertTrue(response.contains("\"result\":\"applied\""), "env var not applied; got: $response")
     }
@@ -58,7 +61,7 @@ class StdioMcpTransportForProcessTest {
     fun `forProcess applies workingDir to the child process`() {
         val tmp = File(System.getProperty("java.io.tmpdir"))
         val transport = forProcess(
-            command = listOf("sh", "-c", "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"%s\"}\\n' \"\$(pwd)\""),
+            command = listOf("sh", "-c", "read req; printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"%s\"}\\n' \"\$(pwd)\""),
             workingDir = tmp,
         )
         val response = transport.rpc("""{"jsonrpc":"2.0","id":1,"method":"x"}""")
@@ -77,7 +80,7 @@ class StdioMcpTransportForProcessTest {
         val transport = forProcess(
             command = listOf(
                 "sh", "-c",
-                """echo err-line-1 >&2; echo err-line-2 >&2; printf '{"jsonrpc":"2.0","id":1,"result":null}\n'""",
+                """read req; echo err-line-1 >&2; echo err-line-2 >&2; printf '{"jsonrpc":"2.0","id":1,"result":null}\n'""",
             ),
             stderrSink = { received.add(it) },
         )
