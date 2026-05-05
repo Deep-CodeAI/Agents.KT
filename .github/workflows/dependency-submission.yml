@@ -23,4 +23,4 @@ jobs:
           distribution: 'corretto'
 
       - name: Submit dependency graph
-        uses: gradle/actions/dependency-submission@ed408507eac070d1f99cc633dbcf757c94c7933a  # v4.4.3
+        uses: gradle/actions/dependency-submission@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e  # v6.1.0
