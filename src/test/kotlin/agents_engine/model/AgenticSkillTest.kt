@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package agents_engine.model
 
 import agents_engine.core.skill

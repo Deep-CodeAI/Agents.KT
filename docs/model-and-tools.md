@@ -9,17 +9,22 @@ val calculator = agent<String, String>("calculator") {
     prompt("You are a calculator. Use the provided tools to evaluate expressions step by step.")
     model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
 
+    lateinit var add: Tool<Map<String, Any?>, Any?>
+    lateinit var subtract: Tool<Map<String, Any?>, Any?>
+    lateinit var multiply: Tool<Map<String, Any?>, Any?>
+    lateinit var divide: Tool<Map<String, Any?>, Any?>
+    lateinit var power: Tool<Map<String, Any?>, Any?>
     tools {
-        tool("add",      "Add two numbers. Args: a, b")             { args -> num(args, "a") + num(args, "b") }
-        tool("subtract", "Subtract b from a. Args: a, b")           { args -> num(args, "a") - num(args, "b") }
-        tool("multiply", "Multiply two numbers. Args: a, b")        { args -> num(args, "a") * num(args, "b") }
-        tool("divide",   "Divide a by b. Args: a, b")               { args -> num(args, "a") / num(args, "b") }
-        tool("power",    "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp")) }
+        add      = tool("add",      "Add two numbers. Args: a, b")             { args -> num(args, "a") + num(args, "b") }
+        subtract = tool("subtract", "Subtract b from a. Args: a, b")           { args -> num(args, "a") - num(args, "b") }
+        multiply = tool("multiply", "Multiply two numbers. Args: a, b")        { args -> num(args, "a") * num(args, "b") }
+        divide   = tool("divide",   "Divide a by b. Args: a, b")               { args -> num(args, "a") / num(args, "b") }
+        power    = tool("power",    "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp")) }
     }
 
     skills {
         skill<String, String>("solve", "Evaluate arithmetic expressions using tools") {
-            tools("add", "subtract", "multiply", "divide", "power")
+            tools(add, subtract, multiply, divide, power)
         }
     }
 
@@ -100,8 +105,9 @@ A per-instance latch records the model's incapability, so subsequent `chat()` ca
 val a = agent<String, String>("calc") {
     // gemma3:4b doesn't support native tools — the fallback drives it via inline JSON
     model { ollama("gemma3:4b"); host = "localhost"; port = 11434 }
-    tools { tool("evaluate", "Evaluate an arithmetic expression") { args -> eval(args["expression"]!!) } }
-    skills { skill<String, String>("calc", "Compute") { tools("evaluate") } }
+    lateinit var evaluate: Tool<Map<String, Any?>, Any?>
+    tools { evaluate = tool("evaluate", "Evaluate an arithmetic expression") { args -> eval(args["expression"]!!) } }
+    skills { skill<String, String>("calc", "Compute") { tools(evaluate) } }
 }
 a("Compute (2+3)*4")  // works — agent invokes evaluate via inline tool call, returns "20"
 ```
@@ -194,12 +200,14 @@ assistant("Translate this to French: Hello world")
 ```kotlin
 val compute = agent<String, Int>("calculator") {
     model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
+    lateinit var add: Tool<Map<String, Any?>, Any?>
+    lateinit var power: Tool<Map<String, Any?>, Any?>
     tools {
-        tool("add",   "Add two numbers. Args: a, b")             { args -> num(args, "a") + num(args, "b") }
-        tool("power", "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp")) }
+        add   = tool("add",   "Add two numbers. Args: a, b")             { args -> num(args, "a") + num(args, "b") }
+        power = tool("power", "Raise base to exponent. Args: base, exp") { args -> Math.pow(num(args, "base"), num(args, "exp")) }
     }
     skills { skill<String, Int>("solve", "Evaluate arithmetic expressions") {
-        tools("add", "power")
+        tools(add, power)
         transformOutput { it.trim().toIntOrNull() ?: Regex("-?\\d+").find(it)?.value?.toInt() ?: error("No int in: $it") }
     }}
 }

@@ -30,12 +30,13 @@ class TypedToolDslTest {
     @Test
     fun `typed tool produces a ToolDef with argsType set`() {
         val a = agent<String, String>("a") {
+            lateinit var greet: Tool<GreetArgs, GreetResult>
             tools {
-                tool<GreetArgs, GreetResult>("greet", "Greets a person") { args ->
+                greet = tool<GreetArgs, GreetResult>("greet", "Greets a person") { args ->
                     GreetResult("Hello, ${args.name}!")
                 }
             }
-            skills { skill<String, String>("s", "stub") { tools("greet") } }
+            skills { skill<String, String>("s", "stub") { tools(greet) } }
         }
         val def = a.toolMap["greet"]
         assertNotNull(def)
@@ -46,13 +47,14 @@ class TypedToolDslTest {
     fun `typed executor receives a properly constructed Args instance`() {
         var captured: GreetArgs? = null
         val a = agent<String, String>("a") {
+            lateinit var greet: Tool<GreetArgs, GreetResult>
             tools {
-                tool<GreetArgs, GreetResult>("greet", "Greets") { args ->
+                greet = tool<GreetArgs, GreetResult>("greet", "Greets") { args ->
                     captured = args
                     GreetResult("Hello, ${args.name}!")
                 }
             }
-            skills { skill<String, String>("s", "stub") { tools("greet") } }
+            skills { skill<String, String>("s", "stub") { tools(greet) } }
         }
         // Invoke the wrapped executor directly with a Map (as the agentic loop would)
         val result = a.toolMap["greet"]!!.executor(mapOf("name" to "Konstantin", "language" to "en"))
@@ -66,12 +68,13 @@ class TypedToolDslTest {
     @Test
     fun `typed executor uses default values from data class when fields are absent`() {
         val a = agent<String, String>("a") {
+            lateinit var greet: Tool<GreetArgs, GreetResult>
             tools {
-                tool<GreetArgs, GreetResult>("greet", "Greets") { args ->
+                greet = tool<GreetArgs, GreetResult>("greet", "Greets") { args ->
                     GreetResult("[${args.language}] hi ${args.name}")
                 }
             }
-            skills { skill<String, String>("s", "stub") { tools("greet") } }
+            skills { skill<String, String>("s", "stub") { tools(greet) } }
         }
         // 'language' has a default of "en"; only pass 'name'
         val result = a.toolMap["greet"]!!.executor(mapOf("name" to "Kon")) as GreetResult
@@ -81,10 +84,11 @@ class TypedToolDslTest {
     @Test
     fun `typed executor throws on missing required field (recovery routing in 636)`() {
         val a = agent<String, String>("a") {
+            lateinit var greet: Tool<GreetArgs, GreetResult>
             tools {
-                tool<GreetArgs, GreetResult>("greet", "Greets") { args -> GreetResult(args.name) }
+                greet = tool<GreetArgs, GreetResult>("greet", "Greets") { args -> GreetResult(args.name) }
             }
-            skills { skill<String, String>("s", "stub") { tools("greet") } }
+            skills { skill<String, String>("s", "stub") { tools(greet) } }
         }
         try {
             a.toolMap["greet"]!!.executor(emptyMap())  // missing required 'name'
@@ -101,10 +105,11 @@ class TypedToolDslTest {
     @Test
     fun `existing untyped tool builder still works (regression)`() {
         val a = agent<String, String>("a") {
+            lateinit var legacy: Tool<Map<String, Any?>, Any?>
             tools {
-                tool("legacy", "untyped tool") { args -> "got: ${args["x"]}" }
+                legacy = tool("legacy", "untyped tool") { args -> "got: ${args["x"]}" }
             }
-            skills { skill<String, String>("s", "stub") { tools("legacy") } }
+            skills { skill<String, String>("s", "stub") { tools(legacy) } }
         }
         assertEquals("got: 42", a.toolMap["legacy"]!!.executor(mapOf("x" to 42)))
         // Untyped tool has null argsType — discriminator for #635 schema gen
@@ -120,14 +125,15 @@ class TypedToolDslTest {
 
         var capturedArgs: GreetArgs? = null
         val a = agent<String, String>("a") {
+            lateinit var greet: Tool<GreetArgs, GreetResult>
             model { ollama("llama3"); client = mock }
             tools {
-                tool<GreetArgs, GreetResult>("greet", "Greets") { args ->
+                greet = tool<GreetArgs, GreetResult>("greet", "Greets") { args ->
                     capturedArgs = args
                     GreetResult("ok")
                 }
             }
-            skills { skill<String, String>("s", "stub") { tools("greet") } }
+            skills { skill<String, String>("s", "stub") { tools(greet) } }
         }
         a("hello")
         assertEquals("world", capturedArgs?.name)

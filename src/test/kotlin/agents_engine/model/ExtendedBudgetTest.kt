@@ -41,9 +41,10 @@ class ExtendedBudgetTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("loop") {
+            lateinit var ping: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("ping", "") { _ -> executions++; "pong" } }
-            skills { skill<String, String>("s", "stub") { tools("ping") } }
+            tools { ping = tool("ping", "") { _ -> executions++; "pong" } }
+            skills { skill<String, String>("s", "stub") { tools(ping) } }
             budget { maxToolCalls = 3 }   // cap
         }
 
@@ -65,9 +66,10 @@ class ExtendedBudgetTest {
         val mock = ModelClient { _ -> Thread.sleep(80); responses.removeFirst() }
 
         val a = agent<String, String>("slow") {
+            lateinit var slow: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("slow", "") { _ -> Thread.sleep(80); "ok" } }
-            skills { skill<String, String>("s", "stub") { tools("slow") } }
+            tools { slow = tool("slow", "") { _ -> Thread.sleep(80); "ok" } }
+            skills { skill<String, String>("s", "stub") { tools(slow) } }
             budget { maxDuration = 100.milliseconds }
         }
 
@@ -87,9 +89,10 @@ class ExtendedBudgetTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("hangy") {
+            lateinit var hang: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("hang", "") { _ -> Thread.sleep(2_000); "ok" } }
-            skills { skill<String, String>("s", "stub") { tools("hang") } }
+            tools { hang = tool("hang", "") { _ -> Thread.sleep(2_000); "ok" } }
+            skills { skill<String, String>("s", "stub") { tools(hang) } }
             budget { perToolTimeout = 100.milliseconds }
         }
 
@@ -111,9 +114,10 @@ class ExtendedBudgetTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("turns") {
+            lateinit var ping: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("ping", "") { _ -> "pong" } }
-            skills { skill<String, String>("s", "stub") { tools("ping") } }
+            tools { ping = tool("ping", "") { _ -> "pong" } }
+            skills { skill<String, String>("s", "stub") { tools(ping) } }
             budget { maxTurns = 3; maxToolCalls = 100 }   // turns wins first
         }
 
@@ -131,9 +135,10 @@ class ExtendedBudgetTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("fast") {
+            lateinit var fast: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("fast", "") { _ -> "result" } }
-            skills { skill<String, String>("s", "stub") { tools("fast") } }
+            tools { fast = tool("fast", "") { _ -> "result" } }
+            skills { skill<String, String>("s", "stub") { tools(fast) } }
         }
         // No throw; returns normally
         assertEquals("done", a("input"))

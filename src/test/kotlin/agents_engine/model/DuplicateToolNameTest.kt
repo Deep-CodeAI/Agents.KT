@@ -19,11 +19,12 @@ class DuplicateToolNameTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("collide") {
+            lateinit var read: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("read", "an action tool") { _ -> "from-action" } }
+            tools { read = tool("read", "an action tool") { _ -> "from-action" } }
             skills {
                 skill<String, String>("s", "stub") {
-                    tools("read")
+                    tools(read)
                     knowledge("read", "knowledge with the same name") { "from-knowledge" }
                 }
             }
@@ -50,11 +51,12 @@ class DuplicateToolNameTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("ok") {
+            lateinit var doSomething: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("doSomething", "x") { _ -> "ok" } }
+            tools { doSomething = tool("doSomething", "x") { _ -> "ok" } }
             skills {
                 skill<String, String>("s", "stub") {
-                    tools("doSomething")
+                    tools(doSomething)
                     knowledge("doc", "guide") { "rules" }
                 }
             }
@@ -74,9 +76,10 @@ class DuplicateToolNameTest {
         // After lookup, it produces one ToolDef, not two — so no duplicate appears in allToolDefs.
         // Verify that doesn't trip the new check.
         val a = agent<String, String>("dup-listing") {
+            lateinit var foo: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("foo", "x") { _ -> "ok" } }
-            skills { skill<String, String>("s", "stub") { tools("foo", "foo") } }
+            tools { foo = tool("foo", "x") { _ -> "ok" } }
+            skills { skill<String, String>("s", "stub") { tools(foo, foo) } }
         }
         a("input")
     }
@@ -88,15 +91,18 @@ class DuplicateToolNameTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var collide: Tool<Map<String, Any?>, Any?>
+            lateinit var secretA: Tool<Map<String, Any?>, Any?>
+            lateinit var secretB: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
             tools {
-                tool("collide", "x") { _ -> "x" }
-                tool("secret_a", "x") { _ -> "x" }
-                tool("secret_b", "x") { _ -> "x" }
+                collide = tool("collide", "x") { _ -> "x" }
+                secretA = tool("secret_a", "x") { _ -> "x" }
+                secretB = tool("secret_b", "x") { _ -> "x" }
             }
             skills {
                 skill<String, String>("s", "stub") {
-                    tools("collide", "secret_a", "secret_b")
+                    tools(collide, secretA, secretB)
                     knowledge("collide", "k") { "kdata" }
                 }
             }

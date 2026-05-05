@@ -119,9 +119,10 @@ class BranchAgenticIntegrationTest {
                 skills { skill<Positive, String>("pos", "Pos") { implementedBy { "ok" } } }
             }
             on<Negative>() then agent<Negative, String>("neg") {
+                lateinit var logIssue: agents_engine.model.Tool<Map<String, Any?>, Any?>
                 model { ollama("llama3"); client = handlerMock }
-                tools { tool("log_issue", "Log a support issue") { args -> toolCalls.add(args["msg"].toString()); "logged" } }
-                skills { skill<Negative, String>("neg", "Handle negative with logging") { tools("log_issue") } }
+                tools { logIssue = tool("log_issue", "Log a support issue") { args -> toolCalls.add(args["msg"].toString()); "logged" } }
+                skills { skill<Negative, String>("neg", "Handle negative with logging") { tools(logIssue) } }
             }
             on<Neutral>() then agent<Neutral, String>("neu") {
                 skills { skill<Neutral, String>("neu", "Neu") { implementedBy { "meh" } } }

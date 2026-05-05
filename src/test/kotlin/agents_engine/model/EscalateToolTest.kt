@@ -34,11 +34,12 @@ class EscalateToolTest {
         val mock = ModelClient { msgs -> captured.add(msgs.toList()); LlmResponse.Text("done") }
 
         val a = agent<String, String>("a") {
+            lateinit var greet: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("greet", "Greet someone") { _ -> "Hi" }
+                greet = tool("greet", "Greet someone") { _ -> "Hi" }
             }
-            skills { skill<String, String>("s", "s") { tools("greet") } }
+            skills { skill<String, String>("s", "s") { tools(greet) } }
         }
 
         a("input")
@@ -50,6 +51,7 @@ class EscalateToolTest {
     }
 
     @Test
+    @Suppress("DEPRECATION") // built-in tools — no user handle to capture
     fun `built-in tools appear in agentic loop when skill references them`() {
         val captured = mutableListOf<List<LlmMessage>>()
         val mock = ModelClient { msgs -> captured.add(msgs.toList()); LlmResponse.Text("done") }
@@ -69,6 +71,7 @@ class EscalateToolTest {
     // -- LLM-driven repair agent calls escalate tool --
 
     @Test
+    @Suppress("DEPRECATION") // built-in escalate tool — no user handle to capture
     fun `repair agent calling escalate tool produces EscalationException`() {
         val responses = ArrayDeque<LlmResponse>()
         responses.add(LlmResponse.ToolCalls(listOf(
@@ -95,6 +98,7 @@ class EscalateToolTest {
     // -- LLM-driven repair agent calls throwException tool --
 
     @Test
+    @Suppress("DEPRECATION") // built-in throwException tool — no user handle to capture
     fun `repair agent calling throwException tool propagates ToolExecutionException`() {
         val responses = ArrayDeque<LlmResponse>()
         responses.add(LlmResponse.ToolCalls(listOf(
@@ -125,6 +129,7 @@ class EscalateToolTest {
     // -- Full flow: repair agent escalates via tool inside agentic loop --
 
     @Test
+    @Suppress("DEPRECATION") // mixes built-in escalate with user parse tool — typed overload requires uniform refs
     fun `repair agent escalates via tool in outer agentic loop`() {
         val fixerResponses = ArrayDeque<LlmResponse>()
         fixerResponses.add(LlmResponse.ToolCalls(listOf(
@@ -145,13 +150,14 @@ class EscalateToolTest {
         val loopMock = ModelClient { msgs -> captured.add(msgs.toList()); loopResponses.removeFirst() }
 
         val a = agent<String, String>("worker") {
+            lateinit var parse: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = loopMock }
             tools {
-                tool("parse", "Parse data", onError = {
+                parse = tool("parse", "Parse data", onError = {
                     executionError { _ -> fix(agent = fixer, retries = 1) }
                 }) { _ -> throw RuntimeException("Parse failed") }
             }
-            skills { skill<String, String>("s", "s") { tools("parse") } }
+            skills { skill<String, String>("s", "s") { tools(parse) } }
         }
 
         val result = a("input")
@@ -165,6 +171,7 @@ class EscalateToolTest {
     // -- Severity parsing --
 
     @Test
+    @Suppress("DEPRECATION") // built-in escalate tool — no user handle to capture
     fun `escalate tool parses severity case-insensitively`() {
         val responses = ArrayDeque<LlmResponse>()
         responses.add(LlmResponse.ToolCalls(listOf(
@@ -187,6 +194,7 @@ class EscalateToolTest {
     }
 
     @Test
+    @Suppress("DEPRECATION") // built-in escalate tool — no user handle to capture
     fun `escalate tool defaults severity to HIGH when not provided`() {
         val responses = ArrayDeque<LlmResponse>()
         responses.add(LlmResponse.ToolCalls(listOf(

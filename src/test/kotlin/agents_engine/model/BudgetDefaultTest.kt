@@ -34,9 +34,10 @@ class BudgetDefaultTest {
         val mock = ModelClient { _ -> if (responses.isEmpty()) LlmResponse.Text("done") else responses.removeFirst() }
 
         val a = agent<String, String>("loopy") {
+            lateinit var ping: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("ping", "") { _ -> "pong" } }
-            skills { skill<String, String>("s", "stub") { tools("ping") } }
+            tools { ping = tool("ping", "") { _ -> "pong" } }
+            skills { skill<String, String>("s", "stub") { tools(ping) } }
             // No explicit budget — relies on default
         }
 
@@ -58,9 +59,10 @@ class BudgetDefaultTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("patient") {
+            lateinit var ping: Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("ping", "") { _ -> "pong" } }
-            skills { skill<String, String>("s", "stub") { tools("ping") } }
+            tools { ping = tool("ping", "") { _ -> "pong" } }
+            skills { skill<String, String>("s", "stub") { tools(ping) } }
             budget { maxTurns = 100 }   // override
         }
 

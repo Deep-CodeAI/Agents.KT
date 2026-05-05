@@ -2,6 +2,33 @@
 
 All notable changes to Agents.KT are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0, minor bumps may add new public API; existing API surface is preserved.
 
+## [Unreleased] — targeting 0.3.0
+
+First leg of the **KSP / compile-time-validation initiative** described in `docs/ksp-design.md`. This release ships **typed tool refs** — Kotlin's type system catches `tools("typo")` mistakes that previously bombed at agent `validate()` (or in CI test runs). Plus the `:agents-kt-ksp` module skeleton, ready for the Phase 2 codegen work.
+
+### Binary compatibility
+
+**Source-compatible** with 0.2.x — your code compiles unchanged (you'll see deprecation warnings on `tools("name")` calls, with a `ReplaceWith` hint to the typed form).
+
+**NOT binary-compatible.** `tool(...)` builders changed return type `Unit → Tool<Args, Result>`. Consumers who upgrade the `agents-kt` jar without recompiling will hit `NoSuchMethodError` at first tool registration. Recompile against 0.3.0; no source changes required. If you depend on `agents-kt` from a published library, that library must also republish against 0.3.0. This is why the bump goes 0.2.x → 0.3.0 and not 0.2.x → 0.2.3.
+
+### Added
+- `Tool<Args, Result>` typed handle returned by every `tool(...)` builder overload. Phantom-typed wrapper around `ToolDef` whose type parameters propagate through the agent build (#1015).
+- `Skill.tools(first: Tool<*, *>, vararg rest: Tool<*, *>)` — typed overload alongside the legacy stringly-typed form. Tool typos become red squiggles in IntelliJ instead of runtime errors at `validate()` (#1016).
+- `Skill.tools()` — explicit no-argument overload that marks a skill agentic with no allowlisted tools (the model gets only memory + built-in tools). Disambiguates from the deprecated string-vararg form.
+- `docs/ksp-design.md` — initiative roadmap, runtime-checks inventory (72 sites bucketed), three-phase plan.
+- **`:agents-kt-ksp` Gradle module** — new sibling artifact `ai.deep-code:agents-kt-ksp` published to Maven Central. Empty `SymbolProcessorProvider` skeleton; consumers can wire it via `ksp("ai.deep-code:agents-kt-ksp:VERSION")` but it does no work yet. Phase 2 of the KSP initiative (#1018). The validation pass (#1019) and schema-generation pass (#1020) plug into the processor in subsequent issues.
+  - Multi-module Gradle setup: `settings.gradle.kts` includes `:agents-kt-ksp`; same Maven Central + Sonatype publishing wiring as the runtime artifact; same in-memory PGP signing.
+  - Depends on `com.google.devtools.ksp:symbol-processing-api:2.3.7` (KSP2, decoupled from Kotlin compiler version).
+  - Reads runtime annotations via `compileOnly(project(":"))` — never lands on the consumer's runtime classpath.
+
+### Changed
+- README + `docs/model-and-tools.md` examples now show typed-ref form first; string form is documented only for built-in tools (`escalate`, `throwException`, `memory_*`).
+- Internal test fixtures migrated to typed refs across 35+ files (#1017).
+
+### Deprecated
+- `Skill.tools(vararg names: String)` — soft-deprecated at warning level. Stays for built-in tools (`escalate`, `throwException`, `memory_*`) and runtime-discovered tool names (MCP); no removal planned pre-1.0.
+
 ## [0.2.3] — 2026-05-04
 
 Hotfix patch — single bug.

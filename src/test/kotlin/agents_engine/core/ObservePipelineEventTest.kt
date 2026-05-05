@@ -44,9 +44,10 @@ class ObservePipelineEventTest {
 
         val events = mutableListOf<PipelineEvent>()
         val a = agent<String, String>("a") {
+            lateinit var echo: agents_engine.model.Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("echo", "") { args -> args["text"].toString().uppercase() } }
-            skills { skill<String, String>("s", "s") { tools("echo") } }
+            tools { echo = tool("echo", "") { args -> args["text"].toString().uppercase() } }
+            skills { skill<String, String>("s", "s") { tools(echo) } }
         }
         a.observe { events += it }
 
@@ -159,9 +160,10 @@ class ObservePipelineEventTest {
 
         val events = mutableListOf<PipelineEvent>()
         val a = agent<String, String>("a") {
+            lateinit var noop: agents_engine.model.Tool<Map<String, Any?>, Any?>
             model { ollama("llama3"); client = mock }
-            tools { tool("noop", "") { _ -> "ok" } }
-            skills { skill<String, String>("s", "s") { tools("noop") } }
+            tools { noop = tool("noop", "") { _ -> "ok" } }
+            skills { skill<String, String>("s", "s") { tools(noop) } }
         }
         a.observe { events += it }
 

@@ -24,8 +24,9 @@ class GenerableEnforcementTest {
     fun `typed tool with non-Generable Args throws at agent construction`() {
         try {
             agent<String, String>("a") {
-                tools { tool<BadArgs, String>("doStuff", "") { "ok" } }
-                skills { skill<String, String>("s", "stub") { tools("doStuff") } }
+                lateinit var doStuff: Tool<BadArgs, String>
+                tools { doStuff = tool<BadArgs, String>("doStuff", "") { "ok" } }
+                skills { skill<String, String>("s", "stub") { tools(doStuff) } }
             }
             fail("expected rejection of non-@Generable Args")
         } catch (e: IllegalArgumentException) {
@@ -38,8 +39,9 @@ class GenerableEnforcementTest {
     @Test
     fun `typed tool with @Generable Args works (regression)`() {
         val a = agent<String, String>("ok") {
-            tools { tool<GoodArgs, String>("doStuff", "") { args -> args.foo } }
-            skills { skill<String, String>("s", "stub") { tools("doStuff") } }
+            lateinit var doStuff: Tool<GoodArgs, String>
+            tools { doStuff = tool<GoodArgs, String>("doStuff", "") { args -> args.foo } }
+            skills { skill<String, String>("s", "stub") { tools(doStuff) } }
         }
         @Suppress("UNCHECKED_CAST")
         val result = a.toolMap["doStuff"]!!.executor(mapOf("foo" to "x"))
@@ -50,8 +52,9 @@ class GenerableEnforcementTest {
     fun `typed tool with sealed Args is rejected at construction (#670)`() {
         try {
             agent<String, String>("a") {
-                tools { tool<SealedArgs, String>("doStuff", "") { _ -> "ok" } }
-                skills { skill<String, String>("s", "stub") { tools("doStuff") } }
+                lateinit var doStuff: Tool<SealedArgs, String>
+                tools { doStuff = tool<SealedArgs, String>("doStuff", "") { _ -> "ok" } }
+                skills { skill<String, String>("s", "stub") { tools(doStuff) } }
             }
             fail("expected rejection of sealed Args")
         } catch (e: IllegalArgumentException) {
@@ -66,8 +69,9 @@ class GenerableEnforcementTest {
         // SealedArgs.A is a concrete @Generable data class — only its sealed parent
         // is the disallowed shape.
         val a = agent<String, String>("ok") {
-            tools { tool<SealedArgs.A, String>("doVariant", "") { args -> args.x } }
-            skills { skill<String, String>("s", "stub") { tools("doVariant") } }
+            lateinit var doVariant: Tool<SealedArgs.A, String>
+            tools { doVariant = tool<SealedArgs.A, String>("doVariant", "") { args -> args.x } }
+            skills { skill<String, String>("s", "stub") { tools(doVariant) } }
         }
         val result = a.toolMap["doVariant"]!!.executor(mapOf("x" to "v"))
         assertTrue(result == "v")

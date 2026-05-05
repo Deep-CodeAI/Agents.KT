@@ -42,6 +42,7 @@ class JsonParseEscalationIntegrationTest {
      * Fixer agent (mock) calls escalate tool → error fed back → LLM retries with corrected JSON.
      */
     @Test
+    @Suppress("DEPRECATION") // fixer uses built-in escalate — no user handle to capture
     fun `escalation feeds error to LLM which retries with corrected JSON`() {
         // Fixer agent: mock LLM calls escalate
         val fixerResponses = ArrayDeque<LlmResponse>()
@@ -79,9 +80,10 @@ class JsonParseEscalationIntegrationTest {
         val mainMock = ModelClient { msgs -> captured.add(msgs.toList()); mainResponses.removeFirst() }
 
         val a = agent<String, String>("json-agent") {
+            lateinit var calculateNumberOfKeys: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mainMock }
             tools {
-                tool("calculateNumberOfKeys",
+                calculateNumberOfKeys = tool("calculateNumberOfKeys",
                     "Count top-level keys in a JSON object. Args: json (valid JSON string)",
                     buildCalculateNumberOfKeysTool()
                 )
@@ -90,7 +92,7 @@ class JsonParseEscalationIntegrationTest {
                 executionError { _ -> fix(agent = fixer, retries = 1) }
             }
             skills { skill<String, String>("solve", "Analyze JSON") {
-                tools("calculateNumberOfKeys")
+                tools(calculateNumberOfKeys)
             }}
             onToolUse { name, args, result ->
                 toolUses.add(ToolUse(name, args, result))
@@ -118,6 +120,7 @@ class JsonParseEscalationIntegrationTest {
      */
     @Tag("live-llm")
     @Test
+    @Suppress("DEPRECATION") // fixer uses built-in escalate — no user handle to capture
     fun `live LLM agent retries with corrected JSON after fixer escalates`() {
         val fixer = agent<String, String>("json-fixer") {
             prompt(
@@ -144,8 +147,9 @@ class JsonParseEscalationIntegrationTest {
             )
             model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
             budget { maxTurns = 10 }
+            lateinit var calculateNumberOfKeys: Tool<Map<String, Any?>, Any?>
             tools {
-                tool("calculateNumberOfKeys",
+                calculateNumberOfKeys = tool("calculateNumberOfKeys",
                     "Count top-level keys in a JSON object. Args: json (string — valid JSON with double-quoted keys, e.g. '{\"name\":\"world\"}')",
                     buildCalculateNumberOfKeysTool()
                 )
@@ -154,7 +158,7 @@ class JsonParseEscalationIntegrationTest {
                 executionError { _ -> fix(agent = fixer, retries = 2) }
             }
             skills { skill<String, String>("solve", "Analyze JSON using tools") {
-                tools("calculateNumberOfKeys")
+                tools(calculateNumberOfKeys)
             }}
             onToolUse { name, args, result ->
                 toolUses.add(ToolUse(name, args, result))
@@ -178,6 +182,7 @@ class JsonParseEscalationIntegrationTest {
      */
     @Tag("live-llm")
     @Test
+    @Suppress("DEPRECATION") // fixer uses built-in escalate — no user handle to capture
     fun `tool block onError - fixer escalates and LLM retries with corrected JSON`() {
         val fixer = agent<String, String>("json-fixer") {
             prompt(
@@ -205,8 +210,9 @@ class JsonParseEscalationIntegrationTest {
             )
             model { ollama("gpt-oss:120b-cloud"); host = "localhost"; port = 11434; temperature = 0.0 }
             budget { maxTurns = 10 }
+            lateinit var calculateNumberOfKeys: Tool<Map<String, Any?>, Any?>
             tools {
-                tool("calculateNumberOfKeys") {
+                calculateNumberOfKeys = tool("calculateNumberOfKeys") {
                     description("Count top-level keys in a JSON object. Args: json (string — valid JSON with double-quoted keys)")
                     executor { args ->
                         rawCallCount++
@@ -226,7 +232,7 @@ class JsonParseEscalationIntegrationTest {
                 }
             }
             skills { skill<String, String>("solve", "Analyze JSON using tools") {
-                tools("calculateNumberOfKeys")
+                tools(calculateNumberOfKeys)
             }}
             onToolUse { name, args, result ->
                 toolUses.add(ToolUse(name, args, result))

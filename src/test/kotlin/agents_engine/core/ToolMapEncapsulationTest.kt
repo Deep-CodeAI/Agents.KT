@@ -17,8 +17,9 @@ class ToolMapEncapsulationTest {
     @Test
     fun `Agent toolMap is exposed as read-only Map (regression)`() {
         val a = agent<String, String>("ok") {
-            tools { tool("foo", "x") { _ -> "f" } }
-            skills { skill<String, String>("s", "stub") { tools("foo") } }
+            lateinit var foo: agents_engine.model.Tool<Map<String, Any?>, Any?>
+            tools { foo = tool("foo", "x") { _ -> "f" } }
+            skills { skill<String, String>("s", "stub") { tools(foo) } }
         }
         // Read access still works
         assertEquals("f", a.toolMap["foo"]!!.executor(emptyMap()))
@@ -55,11 +56,12 @@ class ToolMapEncapsulationTest {
     fun `tools DSL rejects duplicate names (via registerTool guard)`() {
         try {
             agent<String, String>("a") {
+                lateinit var first: agents_engine.model.Tool<Map<String, Any?>, Any?>
                 tools {
-                    tool("first", "x") { _ -> "ok" }
+                    first = tool("first", "x") { _ -> "ok" }
                     tool("first", "x") { _ -> "dup" }
                 }
-                skills { skill<String, String>("s", "stub") { tools("first") } }
+                skills { skill<String, String>("s", "stub") { tools(first) } }
             }
             fail("expected duplicate rejection")
         } catch (e: IllegalArgumentException) {

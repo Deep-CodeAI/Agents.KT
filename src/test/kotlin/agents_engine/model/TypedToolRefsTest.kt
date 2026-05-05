@@ -15,6 +15,7 @@ import kotlin.test.assertEquals
 class TypedToolRefsTest {
 
     @Test
+    @Suppress("DEPRECATION")
     fun `typed tool refs produce same toolNames as string form`() {
         val typedAgent = agent<String, String>("typed-form") {
             lateinit var fetch: Tool<Map<String, Any?>, Any?>

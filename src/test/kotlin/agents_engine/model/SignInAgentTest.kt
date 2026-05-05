@@ -38,17 +38,18 @@ class SignInAgentTest {
         val toolEvents = mutableListOf<Triple<String, Map<String, Any?>, Any?>>()
 
         val a = agent<String, String>("sign-in-agent") {
+            lateinit var buildRequest: Tool<Map<String, Any?>, Any?>
             prompt("You are a sign-in assistant. To build a sign-in request you MUST: 1) call the passwords tool to look up credentials, 2) call build_request with the login and password from that lookup. After build_request returns the JSON, reply with ONLY that JSON — no explanation.")
             model { ollama(MODEL); host = HOST; port = PORT; temperature = 0.0 }
             budget { maxTurns = 6 }
             tools {
-                tool("build_request", "Build a JSON request body. Arguments: login (string), password (string). Returns a JSON string.") { args ->
+                buildRequest = tool("build_request", "Build a JSON request body. Arguments: login (string), password (string). Returns a JSON string.") { args ->
                     buildRequestJson(args)
                 }
             }
             skills {
                 skill<String, String>("sign-in", "Build a sign-in request JSON for the given login") {
-                    tools("build_request")
+                    tools(buildRequest)
                     knowledge("passwords", "User credentials store. Call this to look up passwords for logins.") {
                         """
                         john@example.com : s3cretPass!

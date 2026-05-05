@@ -32,6 +32,7 @@ class AgentFibonacciMcpTest {
             budget { maxTurns = 5 }
             skills {
                 skill<String, Int>("fib", "Generate next Fibonacci number via fib_next") {
+                    @Suppress("DEPRECATION") // MCP tools discovered at runtime — names aren't compile-time refs
                     tools(*mcpTools.map { it.name }.toTypedArray())
                     transformOutput { it.trim().toIntOrNull() ?: Regex("\\d+").find(it)?.value?.toInt() ?: error("No int in: $it") }
                 }

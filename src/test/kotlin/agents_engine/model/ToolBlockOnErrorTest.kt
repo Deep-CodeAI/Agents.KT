@@ -144,9 +144,10 @@ class ToolBlockOnErrorTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var flaky: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("flaky") {
+                flaky = tool("flaky") {
                     description("Flaky tool")
                     executor { _ ->
                         callCount++
@@ -158,7 +159,7 @@ class ToolBlockOnErrorTest {
                     }
                 }
             }
-            skills { skill<String, String>("s", "s") { tools("flaky") } }
+            skills { skill<String, String>("s", "s") { tools(flaky) } }
         }
 
         assertEquals("done", a("input"))
@@ -182,9 +183,10 @@ class ToolBlockOnErrorTest {
         val mock = ModelClient { msgs -> captured.add(msgs.toList()); responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var parse: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("parse") {
+                parse = tool("parse") {
                     description("Parse data")
                     executor { _ -> throw RuntimeException("corrupt input") }
                     onError {
@@ -192,7 +194,7 @@ class ToolBlockOnErrorTest {
                     }
                 }
             }
-            skills { skill<String, String>("s", "s") { tools("parse") } }
+            skills { skill<String, String>("s", "s") { tools(parse) } }
         }
 
         val result = a("input")
@@ -211,6 +213,7 @@ class ToolBlockOnErrorTest {
         val mock = ModelClient { _ -> responses.removeFirst() }
 
         val a = agent<String, String>("a") {
+            lateinit var plain: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
                 defaults {
@@ -218,7 +221,7 @@ class ToolBlockOnErrorTest {
                         executionError { _ -> retry(maxAttempts = 3) }
                     }
                 }
-                tool("plain") {
+                plain = tool("plain") {
                     description("Plain tool")
                     executor { _ ->
                         callCount++
@@ -227,7 +230,7 @@ class ToolBlockOnErrorTest {
                     }
                 }
             }
-            skills { skill<String, String>("s", "s") { tools("plain") } }
+            skills { skill<String, String>("s", "s") { tools(plain) } }
         }
 
         assertEquals("done", a("input"))
@@ -240,14 +243,15 @@ class ToolBlockOnErrorTest {
         val mock = ModelClient { msgs -> captured.add(msgs.toList()); LlmResponse.Text("done") }
 
         val a = agent<String, String>("a") {
+            lateinit var analyze: Tool<Map<String, Any?>, Any?>
             model { ollama("test"); client = mock }
             tools {
-                tool("analyze") {
+                analyze = tool("analyze") {
                     description("Analyze data for patterns")
                     executor { _ -> "patterns found" }
                 }
             }
-            skills { skill<String, String>("s", "s") { tools("analyze") } }
+            skills { skill<String, String>("s", "s") { tools(analyze) } }
         }
 
         a("input")

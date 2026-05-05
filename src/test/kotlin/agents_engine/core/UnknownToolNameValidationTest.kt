@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package agents_engine.core
 
 import kotlin.test.Test
