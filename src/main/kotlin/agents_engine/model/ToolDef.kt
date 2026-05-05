@@ -28,6 +28,27 @@ class ToolDef(
         internal set
 }
 
+/**
+ * Typed handle returned by every `tool(...)` builder overload. Wraps a
+ * [ToolDef] with phantom type parameters that let `Skill.tools(...)` and
+ * `+autoTool(...)` accept compile-time-checked references instead of
+ * stringly-typed lookups (#1015 — KSP P1.1).
+ *
+ * `Args` is the deserialized input type for typed tools (the `@Generable`
+ * data class), `Map<String, Any?>` for untyped tools. `Result` is the lambda's
+ * return type. Both type parameters are erased at runtime — the [def]
+ * underneath is the canonical runtime representation.
+ */
+@JvmInline
+value class Tool<Args, Result> @PublishedApi internal constructor(
+    @PublishedApi internal val def: ToolDef,
+) {
+    val name: String get() = def.name
+    val description: String get() = def.description
+
+    override fun toString(): String = "Tool<${def.name}>"
+}
+
 class ToolDefaultsBuilder {
     internal var errorHandler: ToolErrorHandler? = null
 
@@ -64,13 +85,19 @@ class ToolsBuilder {
         defaultErrorHandler = builder.errorHandler
     }
 
-    fun tool(name: String, description: String, executor: (Map<String, Any?>) -> Any?) {
+    fun tool(
+        name: String,
+        description: String,
+        executor: (Map<String, Any?>) -> Any?,
+    ): Tool<Map<String, Any?>, Any?> {
         requireUserNotReservedToolName(name)
         require(defs.none { it.name == name }) {
             "Tool \"$name\" is already defined in this tools block. " +
                 "Tool names must be unique."
         }
-        defs.add(ToolDef(name = name, description = description, executor = executor))
+        val def = ToolDef(name = name, description = description, executor = executor)
+        defs.add(def)
+        return Tool(def)
     }
 
     fun tool(
@@ -78,7 +105,7 @@ class ToolsBuilder {
         description: String,
         onError: OnErrorBuilder.() -> Unit,
         executor: (Map<String, Any?>) -> Any?,
-    ) {
+    ): Tool<Map<String, Any?>, Any?> {
         requireUserNotReservedToolName(name)
         require(defs.none { it.name == name }) {
             "Tool \"$name\" is already defined in this tools block. " +
@@ -87,9 +114,10 @@ class ToolsBuilder {
         val def = ToolDef(name = name, description = description, executor = executor)
         def.errorHandler = OnErrorBuilder().apply(onError).build()
         defs.add(def)
+        return Tool(def)
     }
 
-    fun tool(name: String, block: ToolDefBuilder.() -> Unit) {
+    fun tool(name: String, block: ToolDefBuilder.() -> Unit): Tool<Map<String, Any?>, Any?> {
         requireUserNotReservedToolName(name)
         require(defs.none { it.name == name }) {
             "Tool \"$name\" is already defined in this tools block. " +
@@ -99,6 +127,7 @@ class ToolsBuilder {
         builder.block()
         val def = builder.build()
         defs.add(def)
+        return Tool(def)
     }
 
     operator fun ToolDef.unaryPlus() {
@@ -127,7 +156,7 @@ class ToolsBuilder {
         name: String,
         description: String,
         crossinline executor: (Args) -> Result,
-    ) {
+    ): Tool<Args, Result> {
         requireUserNotReservedToolName(name)
         require(defs.none { it.name == name }) {
             "Tool \"$name\" is already defined in this tools block. " +
@@ -150,7 +179,9 @@ class ToolsBuilder {
                 )
             executor(typed)
         }
-        defs.add(ToolDef(name = name, description = description, executor = wrapped, argsType = argsClass))
+        val def = ToolDef(name = name, description = description, executor = wrapped, argsType = argsClass)
+        defs.add(def)
+        return Tool(def)
     }
 }
 
