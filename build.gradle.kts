@@ -251,6 +251,12 @@ val jarSwarmExit = registerSwarmDemoJar(
     classSubpackage = "exitagent",
     resourcesPath = "src/test/swarm-jar-resources/exit",
 )
+val jarSwarmRecap = registerSwarmDemoJar(
+    taskName = "jarSwarmRecap",
+    jarFileName = "recap.jar",
+    classSubpackage = "recap",
+    resourcesPath = "src/test/swarm-jar-resources/recap",
+)
 
 // Stage the framework JAR + every runtime dependency next to the demo
 // JARs so the swarm demo is launchable with a pure `java -cp ...` command,
@@ -264,15 +270,15 @@ tasks.register<Copy>("copySwarmDemoLibs") {
     into(layout.buildDirectory.dir("tmp/jars_swarm_demo_lib"))
 }
 
-// Aggregate task — builds all three demo JARs and stages their runtime deps.
+// Aggregate task — builds all sibling demo JARs and stages their runtime deps.
 tasks.register("buildSwarmDemoJars") {
-    description = "Build the three swarm demo JARs (and stage runtime libs) so the demo can be launched with bare `java`"
+    description = "Build the swarm demo JARs (and stage runtime libs) so the demo can be launched with bare `java`"
     group = "build"
-    dependsOn(jarSwarmFib, jarSwarmFactor, jarSwarmExit, "copySwarmDemoLibs")
+    dependsOn(jarSwarmFib, jarSwarmFactor, jarSwarmExit, jarSwarmRecap, "copySwarmDemoLibs")
 }
 
 tasks.register<JavaExec>("swarmDemo") {
-    description = "Run the swarm demo: captain `fib.jar` absorbs `factor.jar` + `exit.jar` siblings"
+    description = "Run the swarm demo: captain `fib.jar` absorbs `factor.jar` + `exit.jar` + `recap.jar` siblings"
     group = "verification"
     dependsOn("buildSwarmDemoJars")
 

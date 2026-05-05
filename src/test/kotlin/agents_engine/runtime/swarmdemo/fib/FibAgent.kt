@@ -52,6 +52,13 @@ fun buildFibAgent(): Agent<String, String> = agent("fib") {
           user says "factor", "prime factors", or asks to break a number
           down into its prime factorization. Call it with the user's
           original request as the `query` argument.
+        - `recap` — delegate to the recap sibling. Use whenever the
+          user asks for a recap, summary, or your "opinion", or says
+          things like "how was that", "how fun was that", "what do you
+          remember", "show your memory". The recap sibling pops up its
+          own Swing window; you MUST NOT paraphrase or summarise its
+          response — just acknowledge it briefly. Call with the user's
+          original request as the `query` argument.
         - `exit` — delegate to the exit sibling. Use whenever the user
           says exit / quit / leave / close / bye / goodbye / "I'm done".
           Call it with the user's original request as the `query`
@@ -81,9 +88,9 @@ class FibProvider : AgentProvider {
 }
 
 // Captain main — packaged into fib.jar. The swarmDemo Gradle task launches
-// this with classpath = framework + fib.jar + factor.jar + exit.jar; the
-// classpath does NOT include the test source classes, so ServiceLoader
-// finds providers only from the three JARs.
+// this with classpath = framework + every sibling JAR (fib + factor + exit
+// + recap); the classpath does NOT include the test source classes, so
+// ServiceLoader finds providers only from the JARs on disk.
 fun main(args: Array<String>) {
     val members = Swarm.discover()
     val me = members.singleOrNull { it.name == "fib" }
@@ -100,6 +107,7 @@ fun main(args: Array<String>) {
     println("Try:")
     println("  fib> what's fib(10)?")
     println("  fib> factor 84")
+    println("  fib> how fun was that?         (pops up the recap window)")
     println("  fib> bye, please exit the app")
     println("============================================================")
     println()
