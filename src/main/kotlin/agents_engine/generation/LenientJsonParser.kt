@@ -76,7 +76,14 @@ internal object LenientJsonParser {
                 '"' -> parseString()
                 't', 'f' -> parseBoolean()
                 'n' -> parseNull()
-                else -> parseNumber()
+                '-', in '0'..'9' -> parseNumber()
+                // #1028 — refuse to fall through to parseNumber on non-numeric chars.
+                // The old `else -> parseNumber()` returned 0 without advancing `pos`
+                // (empty digit run), causing parseArray/parseObject to spin forever
+                // on input like `[abc]`. Throw → caught by parse(input) → returns null.
+                else -> throw IllegalStateException(
+                    "LenientJsonParser: unexpected character '${s[pos]}' at pos $pos"
+                )
             }
         }
 
@@ -97,6 +104,7 @@ internal object LenientJsonParser {
             val map = linkedMapOf<String, Any?>()
             skipWs()
             while (pos < s.length && s[pos] != '}') {
+                val before = pos
                 skipWs()
                 val key = parseString()
                 skipWs()
@@ -106,6 +114,12 @@ internal object LenientJsonParser {
                 skipWs()
                 if (pos < s.length && s[pos] == ',') pos++
                 skipWs()
+                // #1028 — defense-in-depth: refuse to spin if no progress was made.
+                if (pos == before) {
+                    throw IllegalStateException(
+                        "LenientJsonParser: zero-progress at pos $pos in object"
+                    )
+                }
             }
             if (pos < s.length) pos++ // consume '}'
             return map
@@ -116,10 +130,17 @@ internal object LenientJsonParser {
             val list = mutableListOf<Any?>()
             skipWs()
             while (pos < s.length && s[pos] != ']') {
+                val before = pos
                 list.add(parseValue())
                 skipWs()
                 if (pos < s.length && s[pos] == ',') pos++
                 skipWs()
+                // #1028 — defense-in-depth: refuse to spin if no progress was made.
+                if (pos == before) {
+                    throw IllegalStateException(
+                        "LenientJsonParser: zero-progress at pos $pos in array"
+                    )
+                }
             }
             if (pos < s.length) pos++ // consume ']'
             return list

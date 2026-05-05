@@ -2,6 +2,16 @@
 
 All notable changes to Agents.KT are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0, minor bumps may add new public API; existing API surface is preserved.
 
+## [0.2.3] — 2026-05-04
+
+Hotfix patch — single bug.
+
+### Fixed
+- `LenientJsonParser` no longer infinite-loops / OOMs on input where a JSON array or object contains a non-numeric, non-string, non-keyword character (e.g. `[abc]`, `{"k": foo}`, `[<html>]`). The previous `parseValue()` fell through to `parseNumber()` for any unrecognized character; `parseNumber()` returned 0 without advancing `pos`, so `parseArray()` / `parseObject()` spun forever, accumulating zeros until the heap was exhausted. The 0.2.2 `MAX_NESTING_DEPTH` guard (#854) only caught deep nesting, not zero-progress in a single loop body. Two-layer fix: `parseValue()` is now strict on the `else` branch (throws on unknown chars; the throw is caught by the top-level `parse(input)` try/catch and returns `null`, preserving the lenient contract); `parseArray()` and `parseObject()` carry zero-progress guards as defense-in-depth (#1028).
+
+### Trigger path in the wild
+Any LLM response or HTTP body containing `[…non-JSON content…]` would hit this — including non-Ollama responses on `localhost:11434` (HTML error pages, JSON error blobs with embedded brackets), small-model output that emitted markdown tables or pseudo-JSON, or test fixtures pointing the agent at unrelated services. Surfaced as `OutOfMemoryError` during agent invocation, several seconds after the request started.
+
 ## [0.2.2] — 2026-05-03
 
 A feature-heavy patch release — REPL deployment, multi-agent JAR composition (Swarm), four new observability hooks, two new budget controls, classpath-resource prompt loading, and a slimmer README. Pre-1.0 patch bump — no breaking changes; all existing API surface preserved.
