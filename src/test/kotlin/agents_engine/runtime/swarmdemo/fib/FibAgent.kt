@@ -2,6 +2,7 @@ package agents_engine.runtime.swarmdemo.fib
 
 import agents_engine.core.Agent
 import agents_engine.core.agent
+import agents_engine.model.OllamaPreflight
 import agents_engine.runtime.AgentProvider
 import agents_engine.runtime.LiveRunner
 import agents_engine.runtime.Swarm
@@ -118,6 +119,7 @@ fun main(args: Array<String>) {
     val captain = me as Agent<String, String>
     val rc = LiveRunner.serve(captain, args) {
         prompt = "fib> "
+        precheck = OllamaPreflight(host = HOST, port = PORT)::check
     }
     exitProcess(rc)
 }

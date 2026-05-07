@@ -430,6 +430,14 @@ class LiveShowBuilder {
     /** In-place spinner shown during inference. [Spinner.NONE] disables. */
     var spinner: Spinner = Spinner.CAT
 
+    /**
+     * Optional fail-fast endpoint check (#1132). Run by [LiveRunner] before
+     * the banner / `--once` / REPL. Throw to abort startup — the runner prints
+     * `error: <message>` and returns a non-zero exit code. Default is `null`
+     * (no precheck). Typical use: `precheck = OllamaPreflight(host, port)::check`.
+     */
+    var precheck: (() -> Unit)? = null
+
     internal val userSlashes: MutableMap<String, () -> Unit> = mutableMapOf()
     internal var onTurnStart: ((String) -> Unit)? = null
     internal var onTurnEnd: ((String, Any?) -> Unit)? = null
@@ -460,6 +468,7 @@ class LiveShowBuilder {
         renderOutput = renderOutput,
         banner = banner,
         spinner = spinner,
+        precheck = precheck,
         userSlashes = userSlashes.toMap(),
         onTurnStart = onTurnStart,
         onTurnEnd = onTurnEnd,
@@ -478,6 +487,7 @@ internal data class LiveShowConfig(
     val renderOutput: (Any?) -> String,
     val banner: (() -> String)?,
     val spinner: Spinner,
+    val precheck: (() -> Unit)?,
     val userSlashes: Map<String, () -> Unit>,
     val onTurnStart: ((String) -> Unit)?,
     val onTurnEnd: ((String, Any?) -> Unit)?,

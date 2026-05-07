@@ -91,6 +91,18 @@ object LiveRunner {
             return 2
         }
 
+        // #1132 — precheck runs before banner / --once / REPL so an unreachable
+        // endpoint surfaces at startup with a clean error, not mid-spinner on
+        // the first turn.
+        parsed.builder.precheck?.let { check ->
+            try {
+                check()
+            } catch (e: Throwable) {
+                out.println("error: ${e.message ?: e}")
+                return 2
+            }
+        }
+
         parsed.once?.let { prompt ->
             return try {
                 val result = runBlocking { once(prompt) }

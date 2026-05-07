@@ -388,4 +388,90 @@ class LiveRunnerTest {
         }
         assertEquals(0, rc)
     }
+
+    // #1132 — precheck hook lets the runner verify reachability of the model
+    // endpoint before printing the banner or accepting input. Without it, a
+    // misconfigured / down endpoint surfaces only on the first prompt, mid-turn,
+    // wedged into the spinner. Goal: fail-fast at startup with a clean message
+    // and a non-zero exit code.
+    @Test
+    fun `precheck failure returns 2, prints error, skips REPL and banner`() {
+        val out = ByteArrayOutputStream()
+        var agentInvoked = false
+        val agent = agent<String, String>("x") {
+            skills {
+                skill<String, String>("op", "op") {
+                    implementedBy { agentInvoked = true; "ECHO:$it" }
+                }
+            }
+        }
+
+        val rc = LiveRunner.serve(agent, emptyArray()) {
+            output = PrintWriter(out, true)
+            input = StringReader("hello\n/quit\n")  // would be consumed if REPL ran
+            precheck = { error("cannot reach Ollama at localhost:11434 — Connection refused") }
+        }
+
+        assertEquals(2, rc, "precheck failure must produce a non-zero exit code")
+        assertTrue(!agentInvoked, "agent must not be invoked when precheck fails")
+        val s = out.toString()
+        assertTrue(s.contains("Connection refused"), "expected error reason in output: $s")
+        assertTrue(s.contains("error:"), "expected 'error:' prefix in output: $s")
+        // Banner is the giant ASCII cat; it must not have printed.
+        assertTrue(!s.contains("Agents.KT"), "banner must not print on precheck failure: $s")
+    }
+
+    @Test
+    fun `precheck failure also gates --once (no invocation)`() {
+        val out = ByteArrayOutputStream()
+        var invocations = 0
+        val agent = agent<String, String>("x") {
+            skills {
+                skill<String, String>("op", "op") {
+                    implementedBy { invocations++; "ECHO:$it" }
+                }
+            }
+        }
+
+        val rc = LiveRunner.serve(agent, arrayOf("--once", "hi")) {
+            output = PrintWriter(out, true)
+            precheck = { error("nope") }
+        }
+
+        assertEquals(2, rc)
+        assertEquals(0, invocations, "--once must not run when precheck fails")
+        assertTrue(out.toString().contains("nope"), "expected error reason in output: ${out.toString()}")
+    }
+
+    @Test
+    fun `precheck success runs exactly once and lets the runner proceed`() {
+        var prechecked = 0
+        val out = ByteArrayOutputStream()
+        val rc = LiveRunner.serve(echoAgent(), arrayOf("--once", "hi")) {
+            output = PrintWriter(out, true)
+            precheck = { prechecked++ }
+        }
+        assertEquals(0, rc)
+        assertEquals(1, prechecked, "precheck must run exactly once on success")
+        assertTrue(out.toString().contains("ECHO:hi"), "expected normal --once output: ${out.toString()}")
+    }
+
+    @Test
+    fun `precheck does not run for --help or --version`() {
+        var prechecked = 0
+        val checker: () -> Unit = { prechecked++ }
+
+        val rcHelp = LiveRunner.serve(echoAgent(), arrayOf("--help")) {
+            output = PrintWriter(ByteArrayOutputStream(), true)
+            precheck = checker
+        }
+        val rcVersion = LiveRunner.serve(echoAgent(), arrayOf("--version")) {
+            output = PrintWriter(ByteArrayOutputStream(), true)
+            precheck = checker
+        }
+
+        assertEquals(0, rcHelp)
+        assertEquals(0, rcVersion)
+        assertEquals(0, prechecked, "precheck must not run when only printing help/version")
+    }
 }
