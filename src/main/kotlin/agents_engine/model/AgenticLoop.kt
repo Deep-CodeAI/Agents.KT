@@ -68,7 +68,7 @@ suspend fun <IN> executeAgentic(
     // different skill. This is the runtime enforcement the prompt does NOT do.
     val allowedToolMap = allToolDefs.associateBy { it.name }
 
-    val client = config.client ?: OllamaClient(config.host, config.port, config.name, config.temperature, allToolDefs)
+    val client = config.client ?: defaultClientFor(config, allToolDefs)
 
     val hasUntrustedTools = allToolDefs.any { it.untrustedOutput }
     val systemContent = buildString {
@@ -251,7 +251,7 @@ suspend fun <IN> selectSkillByLlm(
         LlmMessage("user", toLlmInput(input)),  // #937 — typed Generable inputs as JSON
     )
 
-    val client = config.client ?: OllamaClient(config.host, config.port, config.name, config.temperature)
+    val client = config.client ?: defaultClientFor(config, emptyList())
     val response = withContext(Dispatchers.IO) { client.chat(messages) }
 
     val raw = when (response) {
@@ -479,3 +479,25 @@ private fun parseOutput(text: String, outType: KClass<*>): Any? = when {
     outType == String::class -> text
     else -> @Suppress("UNCHECKED_CAST") (outType as KClass<Any>).fromLlmOutput(text)
 }
+
+// #1644 — provider dispatch for the default client. Mirrors the prior eager
+// `OllamaClient(...)` construction; user-supplied `config.client` still wins.
+private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelClient =
+    when (config.provider) {
+        ModelProvider.OLLAMA -> OllamaClient(
+            host = config.host,
+            port = config.port,
+            model = config.name,
+            temperature = config.temperature,
+            tools = tools,
+        )
+        ModelProvider.ANTHROPIC -> ClaudeClient(
+            apiKey = config.apiKey
+                ?: error("Agent uses Claude but ModelConfig.apiKey is null — set apiKey in the model { } block"),
+            model = config.name,
+            temperature = config.temperature,
+            maxTokens = config.maxTokens,
+            tools = tools,
+            baseUrl = config.anthropicBaseUrl,
+        )
+    }
