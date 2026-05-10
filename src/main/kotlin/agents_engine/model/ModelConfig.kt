@@ -19,6 +19,25 @@ data class ModelConfig(
     val maxTokens: Int = 4096,
 ) {
     val baseUrl: String get() = "http://$host:$port"
+
+    // Security: the auto-generated data-class toString would include the raw
+    // apiKey, which leaks through any logger / stack trace / future
+    // serialization that calls toString on this config. Override to mask.
+    // equals/hashCode still include apiKey — that's correct for cache keying
+    // and doesn't leak through observation.
+    override fun toString(): String =
+        "ModelConfig(name=$name, provider=$provider, temperature=$temperature, " +
+            "host=$host, port=$port, client=$client, apiKey=${maskApiKey(apiKey)}, " +
+            "anthropicBaseUrl=$anthropicBaseUrl, openAiBaseUrl=$openAiBaseUrl, " +
+            "maxTokens=$maxTokens)"
+
+    private fun maskApiKey(key: String?): String = when {
+        key == null -> "null"
+        key.length <= 8 -> "***"
+        // Show prefix + suffix length so misconfigurations (wrong key, swapped
+        // env vars) are still diagnosable, without ever printing the body.
+        else -> "${key.take(6)}…${key.length}chars"
+    }
 }
 
 class ModelBuilder {

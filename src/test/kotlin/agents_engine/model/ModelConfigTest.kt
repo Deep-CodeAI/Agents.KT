@@ -4,8 +4,10 @@ import agents_engine.core.agent
 import agents_engine.core.skill
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class ModelConfigTest {
 
@@ -66,5 +68,34 @@ class ModelConfigTest {
             skills { skill<String, String>("s", "s") { implementedBy { it } } }
         }
         assertNull(a.modelConfig)
+    }
+
+    // Security regression — ModelConfig.toString() must NEVER include the
+    // raw apiKey value. The default Kotlin data-class toString does, which
+    // makes any `log.info("config = $modelConfig")` or stack trace that
+    // captures a config a credential leak.
+    @Test
+    fun `ModelConfig toString masks apiKey value`() {
+        val cfg = ModelConfig(
+            name = "claude-opus-4-7",
+            provider = ModelProvider.ANTHROPIC,
+            apiKey = "sk-ant-secret-DO-NOT-LEAK-XYZ",
+        )
+        val s = cfg.toString()
+        assertFalse(
+            s.contains("sk-ant-secret-DO-NOT-LEAK-XYZ"),
+            "raw apiKey leaked into toString(): $s",
+        )
+        assertTrue(
+            s.contains("apiKey="),
+            "expected the apiKey field to still appear (masked) so callers can see it's set: $s",
+        )
+    }
+
+    @Test
+    fun `ModelConfig toString shows apiKey as null when unset`() {
+        val cfg = ModelConfig(name = "x", provider = ModelProvider.OLLAMA)
+        val s = cfg.toString()
+        assertTrue(s.contains("apiKey=null"), "unset apiKey should render as null: $s")
     }
 }
