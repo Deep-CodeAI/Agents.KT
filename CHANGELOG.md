@@ -6,10 +6,11 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ### Added
 - **Anthropic Claude adapter** — new `ClaudeClient: ModelClient` and `model { claude("claude-opus-4-7"); apiKey = "..." }` DSL. Maps the framework's `LlmMessage` / `LlmResponse` model to Anthropic's structured Messages API content blocks (`tool_use` / `tool_result`); tools advertise as `input_schema` (Anthropic's spelling); top-level `error` envelopes surface as `LlmProviderException`, same boundary contract as `OllamaClient` (#702). Provider dispatch in `AgenticLoop` constructs the client lazily so the agent's full tool catalog flows in. Live integration tests against the real API gated on a gitignored `.secrets/anthropic-key` (with `ANTHROPIC_API_KEY` env fallback); skipped via JUnit `Assumptions` when the key is absent (#1644).
+- **OpenAI Chat Completions adapter** — `OpenAiClient: ModelClient` and `model { openai("gpt-4o"); apiKey = "..." }` DSL. Maps to OpenAI's `tool_calls` / `tool_call_id` shape with synthesized ids paired FIFO per request; `function.arguments` rides the wire as a stringified JSON (OpenAI's convention); tools advertise as `parameters` (vs Anthropic's `input_schema`). System messages stay in the messages array (vs Anthropic's hoisted top-level field). Same provider-error contract via `LlmProviderException`. Live integration tests gated on `.secrets/openai-key` (with `OPENAI_API_KEY` env fallback) (#1656).
 - **`LiveRunner` precheck hook** — `LiveShowBuilder.precheck: (() -> Unit)?` runs after arg-parse and before banner / `--once` / REPL. Throw to abort startup; the runner prints `error: <msg>` and returns exit code 2. New `OllamaPreflight(host, port)` helper performs a `GET /api/tags` reachability check; wired into the swarm-demo captain so a misconfigured endpoint fails fast at startup instead of mid-spinner on the first turn (#1132).
 
 ### Changed
-- `ModelProvider` enum gained `ANTHROPIC`. `ModelConfig` carries optional `apiKey`, `anthropicBaseUrl`, and `maxTokens` fields used by the Claude adapter. Default Ollama path is unchanged.
+- `ModelProvider` enum gained `ANTHROPIC` and `OPENAI`. `ModelConfig` carries optional `apiKey`, `anthropicBaseUrl`, `openAiBaseUrl`, and `maxTokens` fields used by the Claude / OpenAI adapters. Default Ollama path is unchanged.
 
 ## [0.3.0] — 2026-05-05
 

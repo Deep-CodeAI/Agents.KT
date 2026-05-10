@@ -1,6 +1,6 @@
 package agents_engine.model
 
-enum class ModelProvider { OLLAMA, ANTHROPIC }
+enum class ModelProvider { OLLAMA, ANTHROPIC, OPENAI }
 
 data class ModelConfig(
     val name: String,
@@ -9,11 +9,13 @@ data class ModelConfig(
     val host: String = "localhost",
     val port: Int = 11434,
     val client: ModelClient? = null,
-    /** Anthropic API key. Required when [provider] is [ModelProvider.ANTHROPIC]. */
+    /** API key. Required for [ModelProvider.ANTHROPIC] and [ModelProvider.OPENAI]. */
     val apiKey: String? = null,
     /** Override the Anthropic base URL (tests, regional endpoints, proxies). */
     val anthropicBaseUrl: String = "https://api.anthropic.com",
-    /** Anthropic requires max_tokens on every request. */
+    /** Override the OpenAI base URL (Azure, regional endpoints, proxies). */
+    val openAiBaseUrl: String = "https://api.openai.com",
+    /** max_tokens carried on every Anthropic / OpenAI request. */
     val maxTokens: Int = 4096,
 ) {
     val baseUrl: String get() = "http://$host:$port"
@@ -28,6 +30,7 @@ class ModelBuilder {
     var client: ModelClient? = null
     var apiKey: String? = null
     var anthropicBaseUrl: String = "https://api.anthropic.com"
+    var openAiBaseUrl: String = "https://api.openai.com"
     var maxTokens: Int = ClaudeClient.DEFAULT_MAX_TOKENS
 
     fun ollama(modelName: String) {
@@ -45,9 +48,22 @@ class ModelBuilder {
         provider = ModelProvider.ANTHROPIC
     }
 
+    /**
+     * Select OpenAI Chat Completions (#1656). [OpenAiClient] is constructed
+     * lazily at AgenticLoop time so the agent's full tool catalog is available.
+     */
+    fun openai(modelName: String) {
+        name = modelName
+        provider = ModelProvider.OPENAI
+    }
+
     internal fun build(): ModelConfig {
-        if (provider == ModelProvider.ANTHROPIC && client == null && apiKey == null) {
-            error("model { claude(\"$name\") } requires apiKey to be set")
+        if (client == null && apiKey == null) {
+            when (provider) {
+                ModelProvider.ANTHROPIC -> error("model { claude(\"$name\") } requires apiKey to be set")
+                ModelProvider.OPENAI -> error("model { openai(\"$name\") } requires apiKey to be set")
+                ModelProvider.OLLAMA -> Unit
+            }
         }
         return ModelConfig(
             name = name,
@@ -58,6 +74,7 @@ class ModelBuilder {
             client = client,
             apiKey = apiKey,
             anthropicBaseUrl = anthropicBaseUrl,
+            openAiBaseUrl = openAiBaseUrl,
             maxTokens = maxTokens,
         )
     }

@@ -480,8 +480,8 @@ private fun parseOutput(text: String, outType: KClass<*>): Any? = when {
     else -> @Suppress("UNCHECKED_CAST") (outType as KClass<Any>).fromLlmOutput(text)
 }
 
-// #1644 — provider dispatch for the default client. Mirrors the prior eager
-// `OllamaClient(...)` construction; user-supplied `config.client` still wins.
+// #1644 / #1656 — provider dispatch for the default client. Mirrors the prior
+// eager `OllamaClient(...)` construction; user-supplied `config.client` still wins.
 private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelClient =
     when (config.provider) {
         ModelProvider.OLLAMA -> OllamaClient(
@@ -499,5 +499,14 @@ private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelCl
             maxTokens = config.maxTokens,
             tools = tools,
             baseUrl = config.anthropicBaseUrl,
+        )
+        ModelProvider.OPENAI -> OpenAiClient(
+            apiKey = config.apiKey
+                ?: error("Agent uses OpenAI but ModelConfig.apiKey is null — set apiKey in the model { } block"),
+            model = config.name,
+            temperature = config.temperature,
+            maxTokens = config.maxTokens,
+            tools = tools,
+            baseUrl = config.openAiBaseUrl,
         )
     }

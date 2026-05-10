@@ -3944,7 +3944,7 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 ### Phase 2: Runtime + Distribution *(Q2 2026)*
 
 **Priority (must-ship):**
-- [~] `model { }` — extend beyond Ollama: provider abstraction landed via `ModelProvider`; **Anthropic shipped (#1644)** with the `claude(name)` DSL and `ClaudeClient` mapping `LlmMessage` ↔ Anthropic structured content (`tool_use` / `tool_result`); OpenAI + Google adapters and `suspend fun` + Flow streaming still pending
+- [~] `model { }` — extend beyond Ollama: provider abstraction landed via `ModelProvider`. **Anthropic shipped (#1644)** with the `claude(name)` DSL and `ClaudeClient` mapping `LlmMessage` ↔ Anthropic structured content (`tool_use` / `tool_result`). **OpenAI shipped (#1656)** with the `openai(name)` DSL and `OpenAiClient` mapping to Chat Completions (`tool_calls` ↔ `tool_call_id`, `parameters` schema field). Google (Gemini) and `suspend fun` + Flow streaming still pending.
 - [ ] `Tool<IN, OUT>` base + `McpTool<IN, OUT>` — MCP as native Tool inheritance, not a wrapper (§5.8)
 - [ ] MCP client integration — `McpTool` instances consumable alongside local tools
 - [ ] `grants { tools(...) }` — Layer 2 permissions use actual `Tool<*,*>` references
