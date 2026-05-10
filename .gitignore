@@ -46,3 +46,8 @@ wiki/
 
 ### Project ###
 #docs/
+
+# Local secrets — API keys, tokens, etc. Loaded by integration tests
+# (e.g. ClaudeClientIntegrationTest reads .secrets/anthropic-key). Never
+# commit this directory. See #1644.
+.secrets/
