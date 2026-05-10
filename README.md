@@ -83,6 +83,7 @@ These APIs work in `main`, are unit-tested, and are exercised by integration tes
 - **Typed agents** — `Agent<IN, OUT>` with at least one skill producing `OUT`, validated at construction. See [docs/skills.md](docs/skills.md).
 - **Skills with knowledge** — `skill { knowledge("key", "...") { } }`, lazy-loaded per call. See [docs/skills.md#shared-knowledge](docs/skills.md#shared-knowledge).
 - **Agentic loop with tool calling** — multi-turn `chat ↔ tools` driven by the model. See [docs/model-and-tools.md](docs/model-and-tools.md).
+- **Two model providers** — `model { ollama(...) }` for local/cloud Ollama and `model { claude("claude-opus-4-7"); apiKey = ... }` for Anthropic's Messages API. Both go through one `ModelClient` interface — `LlmMessage` / `LlmResponse` are provider-agnostic, tools/system/role mapping is per-adapter (#1644).
 - **Typed tools via `@Generable`** — `tool<Args, Result>(...)` with reflection-built JSON Schema; `additionalProperties: false`; sealed-discriminator validation (#658, #661, #699).
 - **Typed tool refs in skill allowlists** — `tool(...)` returns a `Tool<Args, Result>` handle; `skill { tools(writeFile, compile) }` accepts handles, the IDE catches typos (#1015–#1017). The legacy `tools("name")` string form remains for built-in tools and runtime-discovered MCP names but produces a deprecation warning.
 - **Per-skill tool authorization** — runtime allowlist; the prompt's "Available tools" listing is descriptive, the security boundary is the runtime check (#630). See [docs/model-and-tools.md#tool-authorization-model](docs/model-and-tools.md#tool-authorization-model).
@@ -136,7 +137,7 @@ What the framework does **not** enforce — your responsibility:
 
 ### Known limitations
 
-- **Single LLM provider** — Ollama only. The injectable `ModelClient` covers test stubs and custom adapters; native multi-provider (Anthropic, OpenAI, Google) is Phase 2.
+- **Two LLM providers shipped** — Ollama and Anthropic. OpenAI and Google adapters are Phase 2; the injectable `ModelClient` covers test stubs and your own adapters in the meantime.
 - **Synchronous agentic loop** — `runBlocking` inside the loop until the suspend refactor lands (#638). Calling agents from existing coroutine scopes works but doesn't propagate cancellation cleanly.
 - **No incoming auth on `McpServer`** — outgoing client supports Bearer; the server does not validate credentials. Suitable for trusted-network deployments only.
 - **No Origin header validation on MCP HTTP** — deferred until the MCP-server hardening pass.
@@ -192,7 +193,7 @@ For the full contributor guide — running the live-LLM and MCP integration test
 
 **Phase 1 — Core DSL** *(in progress)*: typed agents, skills, knowledge, composition operators (`then`, `/`, `*`, `forum`, `.loop`, `.branch`), MCP client + server, agent memory, `loadResource(path)` for prompts from classpath, agentic loop with full budget controls (`maxTurns` / `maxToolCalls` / `maxDuration` / `perToolTimeout` / `maxTokens` / `maxConsecutiveSameTool`), observability hooks (`onSkillChosen`, `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`, `Agent.observe { }`).
 
-**Phase 2 — Runtime + Distribution** *(Q2 2026)*: multi-provider models, KSP compile-time `@Generable`, native CLI / jlink, `Tool<IN, OUT>` hierarchy, `grants {}` permissions, session model, Flow-based observability, `agent.json` serialization, Gradle plugin.
+**Phase 2 — Runtime + Distribution** *(Q2 2026)*: remaining providers (OpenAI, Google) and Flow-based streaming, KSP compile-time `@Generable`, native CLI / jlink, `Tool<IN, OUT>` hierarchy, `grants {}` permissions, session model, Flow-based observability, `agent.json` serialization, Gradle plugin. *(Anthropic adapter has already landed in #1644.)*
 
 **Phase 3 — Production** *(Q3 2026)*: Layer 2 Structure DSL, all 37 compile-time validations, AgentUnit, A2A protocol, file-based knowledge with RAG, OpenTelemetry.
 

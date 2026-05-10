@@ -40,7 +40,12 @@ calculator("Calculate ((15 + 35) / 2)^2")
 // → "The result is 625."
 ```
 
-**`model { }`** — configures the LLM backend. Currently supports Ollama; `host`, `port`, and `temperature` are settable.
+**`model { }`** — configures the LLM backend. Two providers ship today:
+
+- `model { ollama("gpt-oss:120b-cloud"); host = "..."; port = 11434; temperature = 0.0 }` — local or cloud Ollama; auto-fallback to inline JSON tool-call format for models without native tool support (#706).
+- `model { claude("claude-opus-4-7"); apiKey = System.getenv("ANTHROPIC_API_KEY"); temperature = 0.0; maxTokens = 4096 }` — Anthropic Messages API; maps the framework's `LlmMessage` / `LlmResponse` model to Anthropic's structured `tool_use` / `tool_result` content blocks; tools advertise as `input_schema` (Anthropic's spelling) (#1644).
+
+Both adapters share the `ModelClient` interface — switching providers is a one-line DSL change. The injectable `client = ...` escape hatch is still there for test stubs or custom adapters (e.g., OpenAI/Google ahead of native support).
 
 **`tools { tool(name, description) { args -> } }`** — registers callable tools. Each tool receives a `Map<String, Any?>` of arguments and returns any value.
 

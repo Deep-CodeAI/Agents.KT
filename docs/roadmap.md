@@ -20,6 +20,7 @@
 - [x] `.branch {}` — conditional routing on sealed types, composable with `then`
 - [x] `@Generable("desc")` / `@Guide` / `@LlmDescription` — runtime reflection: `toLlmDescription()`, `jsonSchema()`, `promptFragment()`, `fromLlmOutput<T>()`, `PartiallyGenerated<T>`
 - [x] `model { }` — Ollama backend; `host`, `port`, `temperature`; injectable `ModelClient` for tests; auto-fallback to inline JSON tool-call format for models without native tool support (#706)
+- [x] `model { claude(name); apiKey = ... }` — Anthropic Messages API adapter mapping `LlmMessage`/`LlmResponse` to/from Anthropic's structured `tool_use` / `tool_result` content blocks; live integration tests against `claude-haiku-4-5-20251001` (#1644)
 - [x] Agentic execution loop — multi-turn tool calling with budget controls (`maxTurns`, `maxToolCalls`, `maxDuration`, `perToolTimeout`, `maxTokens`, `maxConsecutiveSameTool`) + `onToolUse` observability hook (#637, #963, #969)
 - [x] Skill selection — manual `skillSelection {}` + automatic LLM routing when multiple skills match
 - [x] `onError { Throwable -> }` — infrastructure-error observability hook (LLM transport, response parse, budget); pure observability — original exception always rethrows (#962)

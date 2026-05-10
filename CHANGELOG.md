@@ -2,6 +2,15 @@
 
 All notable changes to Agents.KT are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0, minor bumps may add new public API; existing API surface is preserved.
 
+## [Unreleased]
+
+### Added
+- **Anthropic Claude adapter** — new `ClaudeClient: ModelClient` and `model { claude("claude-opus-4-7"); apiKey = "..." }` DSL. Maps the framework's `LlmMessage` / `LlmResponse` model to Anthropic's structured Messages API content blocks (`tool_use` / `tool_result`); tools advertise as `input_schema` (Anthropic's spelling); top-level `error` envelopes surface as `LlmProviderException`, same boundary contract as `OllamaClient` (#702). Provider dispatch in `AgenticLoop` constructs the client lazily so the agent's full tool catalog flows in. Live integration tests against the real API gated on a gitignored `.secrets/anthropic-key` (with `ANTHROPIC_API_KEY` env fallback); skipped via JUnit `Assumptions` when the key is absent (#1644).
+- **`LiveRunner` precheck hook** — `LiveShowBuilder.precheck: (() -> Unit)?` runs after arg-parse and before banner / `--once` / REPL. Throw to abort startup; the runner prints `error: <msg>` and returns exit code 2. New `OllamaPreflight(host, port)` helper performs a `GET /api/tags` reachability check; wired into the swarm-demo captain so a misconfigured endpoint fails fast at startup instead of mid-spinner on the first turn (#1132).
+
+### Changed
+- `ModelProvider` enum gained `ANTHROPIC`. `ModelConfig` carries optional `apiKey`, `anthropicBaseUrl`, and `maxTokens` fields used by the Claude adapter. Default Ollama path is unchanged.
+
 ## [0.3.0] — 2026-05-05
 
 First leg of the **KSP / compile-time-validation initiative** described in `docs/ksp-design.md`. This release ships **typed tool refs** — Kotlin's type system catches `tools("typo")` mistakes that previously bombed at agent `validate()` (or in CI test runs). Plus the `:agents-kt-ksp` module skeleton, ready for the Phase 2 codegen work.
