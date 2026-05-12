@@ -116,8 +116,12 @@ fun KClass<*>.toLlmDescription(): String {
     // overridden paths. The reflection fallback below still handles the
     // override for non-KSP consumers.
     GeneratedMetaCache.lookupLlmDescription(this)?.let { return it }
-    findAnnotation<LlmDescription>()?.let { return it.text }
-    return if (isSealed) sealedLlmDescription() else dataClassLlmDescription()
+    // #1705: wrap reflection paths so a missing kotlin-reflect degrades
+    // to the simple class-name fallback instead of crashing.
+    return ReflectionFallback.withReflection {
+        findAnnotation<LlmDescription>()?.let { return@withReflection it.text }
+        if (isSealed) sealedLlmDescription() else dataClassLlmDescription()
+    } ?: "## ${simpleName ?: "Unknown"}"
 }
 
 private fun KClass<*>.dataClassLlmDescription(): String {
@@ -188,7 +192,14 @@ fun KClass<*>.jsonSchema(): String {
     // extended to sealed roots; #1703 generalised the cache to load all
     // string constants from the generated object at once.
     GeneratedMetaCache.lookupJsonSchema(this)?.let { return it }
-    return if (isSealed) sealedJsonSchema() else dataClassJsonSchema()
+    // #1705: reflection fallback. kotlin-reflect is now compileOnly; if
+    // it's absent from the consumer's runtime classpath the body throws
+    // NoClassDefFoundError, which we degrade to the "no schema available"
+    // string. Consumers see the same empty-object schema they'd see for
+    // an unsupported type — the agentic loop's invalidArgs path takes over.
+    return ReflectionFallback.withReflection {
+        if (isSealed) sealedJsonSchema() else dataClassJsonSchema()
+    } ?: """{"type":"object","additionalProperties":false}"""
 }
 
 private fun KClass<*>.dataClassJsonSchema(): String {
@@ -435,11 +446,16 @@ fun <T : Any> KClass<T>.fromLlmOutput(json: String): T? {
     }
 
     if (isSealed) {
-        val obj = parsed as? Map<*, *> ?: return null
-        val typeName = obj["type"] as? String ?: return null
-        val variant = sealedSubclasses.find { it.simpleName == typeName } ?: return null
-        @Suppress("UNCHECKED_CAST")
-        return variant.constructFromMap(obj as Map<String, Any?>) as? T
+        // #1705: sealedSubclasses lookup needs kotlin-reflect. The variant
+        // dispatch is wrapped so a missing dep degrades to null (the caller
+        // routes through the existing null-handling path).
+        return ReflectionFallback.withReflection {
+            val obj = parsed as? Map<*, *> ?: return@withReflection null
+            val typeName = obj["type"] as? String ?: return@withReflection null
+            val variant = sealedSubclasses.find { it.simpleName == typeName } ?: return@withReflection null
+            @Suppress("UNCHECKED_CAST")
+            variant.constructFromMap(obj as Map<String, Any?>) as? T
+        }
     }
 
     val obj = parsed as? Map<*, *> ?: return null
@@ -457,6 +473,15 @@ internal fun <T : Any> KClass<T>.constructFromMap(fields: Map<*, Any?>): T? {
     GeneratedMetaCache.lookupConstructor(this)?.let { invoke ->
         return invoke(fields) as T?
     }
+    // #1705: wrap reflection — typed-tool deserialization returns null on
+    // missing kotlin-reflect, which routes through onError.invalidArgs.
+    return ReflectionFallback.withReflection {
+        constructFromMapReflective(fields)
+    }
+}
+
+@Suppress("UNCHECKED_CAST")
+private fun <T : Any> KClass<T>.constructFromMapReflective(fields: Map<*, Any?>): T? {
     val ctor = primaryConstructor ?: return null
     // Strict args (#665): refuse extras so additionalProperties:false is enforced
     // at the Kotlin layer regardless of provider behavior. The "type" discriminator

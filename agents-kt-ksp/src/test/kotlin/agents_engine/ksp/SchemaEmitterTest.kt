@@ -5,6 +5,8 @@ import agents_engine.ksp.GenerableValidator.FieldType
 import agents_engine.ksp.GenerableValidator.GenerableClass
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * Tests for the schema emitter (#1701).
@@ -289,6 +291,34 @@ class SchemaEmitterTest {
     fun `sealed — empty variants list produces empty oneOf matching runtime`() {
         val schema = SchemaEmitter.emitSealedSchema(sealedParent("NoVariants", emptyList()))
         assertEquals("""{"oneOf":[]}""", schema)
+    }
+
+    // ── #1705: defensive emission gate ───────────────────────────────────────
+
+    @Test
+    fun `sealed parent with empty variants — emission gate says skip (incremental-compile safety)`() {
+        // The emitter itself still produces a valid empty oneOf; but the
+        // processor should NOT emit a schema file for a sealed parent that
+        // shows no variants — that's almost always an incremental-compile
+        // race (variants not yet processed). Reflection takes over at
+        // runtime against the real JVM hierarchy.
+        val target = sealedParent("MaybeRace", emptyList())
+        assertFalse(
+            SchemaEmitter.canEmit(target),
+            "sealed parent with empty variants should be excluded from emission",
+        )
+    }
+
+    @Test
+    fun `sealed parent with at least one variant — emission gate says emit`() {
+        val target = sealedParent("Decision", listOf(variant("Approved", emptyList())))
+        assertTrue(SchemaEmitter.canEmit(target))
+    }
+
+    @Test
+    fun `non-sealed data class — emission gate says emit`() {
+        val target = cls("Person", listOf(field("name", FieldType.StringT)))
+        assertTrue(SchemaEmitter.canEmit(target))
     }
 
     @Test

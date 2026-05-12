@@ -33,7 +33,19 @@ configurations.all {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
+    // #1705 (Phase 3): kotlin-reflect is now compileOnly. With KSP-generated
+    // schema/description/constructor companions (#1701-#1704) covering every
+    // hot path, consumers don't need kotlin-reflect on their runtime
+    // classpath unless they (a) skip applying :agents-kt-ksp, or (b) use
+    // @Generable data classes with default-valued primary-ctor params (KSP
+    // currently skips codegen for those). The reflection-using fallback
+    // paths in GenerableSupport are wrapped via ReflectionFallback so a
+    // missing kotlin-reflect degrades to null returns instead of crashing.
+    compileOnly("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
+    // Tests still drive both the generated and reflection paths, so
+    // kotlin-reflect lands on the test classpath via testImplementation.
+    testImplementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
+
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")

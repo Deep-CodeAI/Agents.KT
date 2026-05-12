@@ -20,6 +20,27 @@ package agents_engine.ksp
 internal object SchemaEmitter {
 
     /**
+     * #1705 defensive emission gate. Returns true when the processor should
+     * emit a `__GeneratedSchema.kt` file for this class; false when it
+     * should skip and let the runtime reflection path handle it.
+     *
+     * Today the only "skip" case is: a sealed parent whose
+     * [GenerableValidator.GenerableClass.sealedVariants] list is empty.
+     * That usually means KSP saw the parent before all variant files were
+     * processed (incremental-compile race). Emitting `{"oneOf":[]}` for a
+     * type that actually has variants at JVM runtime would silently produce
+     * a wrong schema. Reflection-based `KClass.sealedSubclasses` always sees
+     * the full hierarchy at runtime, so the fallback is correct.
+     *
+     * Non-sealed data classes are always emit-eligible — they don't
+     * depend on cross-file discovery.
+     */
+    fun canEmit(cls: GenerableValidator.GenerableClass): Boolean {
+        if (cls.isSealed && cls.sealedVariants.isEmpty()) return false
+        return true
+    }
+
+    /**
      * Emit the JSON Schema for a data class. Caller must ensure
      * [GenerableValidator.validate] returned no errors first — this function
      * trusts its input and may produce nonsensical output for unsupported

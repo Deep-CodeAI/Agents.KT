@@ -47,7 +47,7 @@ class AgentsKtSymbolProcessor(
             val model = cls.toGenerableClass(resolver)
             val errors = GenerableValidator.validate(model)
             errors.forEach { msg -> env.logger.error(msg, cls) }
-            if (errors.isEmpty()) {
+            if (errors.isEmpty() && SchemaEmitter.canEmit(model)) {
                 writeGeneratedSchema(cls, model)
             }
         }
