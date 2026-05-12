@@ -2,6 +2,20 @@
 
 All notable changes to Agents.KT are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0, minor bumps may add new public API; existing API surface is preserved.
 
+## [0.4.1] — 2026-05-12
+
+Dependency refresh on top of the v0.4.0 feature set. v0.4.0 was tagged on GitHub but never reached Maven Central; **0.4.1 is the first published release of the three-providers feature set**.
+
+### Security
+- **Refreshed runtime + build dependencies** to close the four dependabot advisories on `main`:
+  - `kotlinx-coroutines-core` and `kotlinx-coroutines-test` 1.10.2 → 1.11.0
+  - Gradle wrapper 9.4.1 → 9.5.0
+  - Lockfile and `gradle/verification-metadata.xml` regenerated.
+  - Supersedes the open dependabot PRs (#47, #48, #39).
+
+### Compatibility
+Source-compatible with 0.4.0. Consumers on 0.3.x can upgrade straight to 0.4.1 — same surface as 0.4.0, plus the dep refresh.
+
 ## [0.4.0] — 2026-05-12
 
 Three model providers, fail-fast startup, and a long-overdue bugfix.
@@ -26,7 +40,6 @@ Three model providers, fail-fast startup, and a long-overdue bugfix.
 ### Security
 - **`ModelConfig.toString()` masks `apiKey`** as `<6-char-prefix>…<N>chars` so `log.info("config = $cfg")`, future reflection-based serializers, or stack traces that capture a config no longer leak credentials. `equals`/`hashCode` still consider apiKey — masking is observation-only (#1665).
 - `SECURITY.md` extended with a "Handling LLM provider credentials" section: `.secrets/` directory convention, `chmod 0600/0700` guidance, the `toString` masking contract, header-handling claim, and a "if a key is committed → rotate first" runbook.
-- **Dependency refresh** ahead of release: `kotlinx-coroutines-core` and `kotlinx-coroutines-test` 1.10.2 → 1.11.0; Gradle wrapper 9.4.1 → 9.5.0. Closes the four dependabot advisories on `main` and supersedes PRs #47, #48, #39. Lockfile and `gradle/verification-metadata.xml` regenerated.
 
 ## [0.3.0] — 2026-05-05
 
