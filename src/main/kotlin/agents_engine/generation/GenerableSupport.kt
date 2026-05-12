@@ -15,49 +15,61 @@ private fun String.escapeJson(): String =
         .replace("\r", "\\r")
         .replace("\t", "\\t")
 
-// ─── KSP-generated schema lookup (#1701) ──────────────────────────────────────
+// ─── KSP-generated metadata lookup (#1701 / #1702 / #1703) ────────────────────
 //
-// The `:agents-kt-ksp` processor emits `<ClassName>__GeneratedSchema.kt` files
-// in the same package as each `@Generable` data class. Each generated object
-// holds a `JSON_SCHEMA` constant that's byte-identical to what
-// `dataClassJsonSchema()` produces below. Looking it up via `Class.forName`
-// lets `KClass.jsonSchema()` skip the reflection walk entirely on consumers
-// that apply KSP — and consumers who don't still fall through to reflection
-// transparently.
+// The `:agents-kt-ksp` processor emits `<ClassName>__GeneratedSchema.kt` per
+// `@Generable` class. Each generated object holds named `const val` strings
+// (`JSON_SCHEMA`, `LLM_DESCRIPTION`, …) byte-identical to what the runtime
+// reflection paths produce. Looking them up via `Class.forName` lets the
+// runtime skip reflection on consumers that apply KSP, and falls through to
+// the reflection paths transparently when no generated object exists.
 
-private object GeneratedSchemaCache {
-    // Both hits (the schema string) and misses (a sentinel) cache so we
-    // never re-attempt Class.forName on the same KClass twice. Concurrent
-    // map for the typical multi-thread agentic-loop access pattern.
-    private val MISS = Any()
-    private val cache = ConcurrentHashMap<KClass<*>, Any>()
+private object GeneratedMetaCache {
+    // Per-class: the loaded map of static String constants, or a sentinel
+    // empty map for the miss case. ConcurrentHashMap for the typical
+    // multi-thread agentic-loop access pattern.
+    private val MISS = emptyMap<String, String>()
+    private val cache = ConcurrentHashMap<KClass<*>, Map<String, String>>()
 
-    fun lookup(kClass: KClass<*>): String? {
-        cache[kClass]?.let { return if (it === MISS) null else it as String }
-        val resolved = tryLoad(kClass) ?: run {
-            cache[kClass] = MISS
-            return null
-        }
-        cache[kClass] = resolved
-        return resolved
+    /** Lookup the `JSON_SCHEMA` constant emitted by the schema-gen pass (#1701, #1702). */
+    fun lookupJsonSchema(kClass: KClass<*>): String? = load(kClass)["JSON_SCHEMA"]
+
+    /** Lookup the `LLM_DESCRIPTION` constant emitted by the description-gen pass (#1703). */
+    fun lookupLlmDescription(kClass: KClass<*>): String? = load(kClass)["LLM_DESCRIPTION"]
+
+    private fun load(kClass: KClass<*>): Map<String, String> {
+        cache[kClass]?.let { return it }
+        val loaded = tryLoad(kClass) ?: MISS
+        cache[kClass] = loaded
+        return loaded
     }
 
-    private fun tryLoad(kClass: KClass<*>): String? {
+    private fun tryLoad(kClass: KClass<*>): Map<String, String>? {
         val fqn = kClass.qualifiedName ?: return null
         return try {
             val generatedClassName = "${fqn}__GeneratedSchema"
-            // Kotlin `object` declarations live as `<Name>` in the JVM class
-            // namespace (their methods live on an `INSTANCE` field) but the
-            // `const val` lands directly as a static field on the class.
+            // Kotlin `object` declarations carry their `const val` fields as
+            // public static finals on the JVM class — easy to read without
+            // touching the INSTANCE.
             val cls = Class.forName(generatedClassName, /* initialize = */ true, kClass.java.classLoader)
-            val field = cls.getDeclaredField("JSON_SCHEMA")
-            field.isAccessible = true
-            field.get(null) as? String
+            val result = HashMap<String, String>()
+            for (field in cls.declaredFields) {
+                val mods = field.modifiers
+                if (java.lang.reflect.Modifier.isStatic(mods) &&
+                    java.lang.reflect.Modifier.isFinal(mods) &&
+                    field.type == String::class.java
+                ) {
+                    field.isAccessible = true
+                    val value = field.get(null) as? String
+                    if (value != null) result[field.name] = value
+                }
+            }
+            result.takeIf { it.isNotEmpty() }
         } catch (_: ClassNotFoundException) {
-            null   // expected when KSP isn't applied or the class is sealed
+            null   // expected when KSP isn't applied to this class
         } catch (_: Throwable) {
             // Defensive — never let lookup errors poison the reflection
-            // fallback path. The generated schema must be a clean win or it
+            // fallback. The generated metadata must be a clean win or it
             // doesn't apply.
             null
         }
@@ -75,6 +87,12 @@ private object GeneratedSchemaCache {
  * Override with [@LlmDescription] on the class when the generated text doesn't fit.
  */
 fun KClass<*>.toLlmDescription(): String {
+    // #1703: prefer the KSP-generated description constant when present.
+    // The generator already bakes the `@LlmDescription` override into the
+    // constant, so a single cache lookup covers both auto-generated and
+    // overridden paths. The reflection fallback below still handles the
+    // override for non-KSP consumers.
+    GeneratedMetaCache.lookupLlmDescription(this)?.let { return it }
     findAnnotation<LlmDescription>()?.let { return it.text }
     return if (isSealed) sealedLlmDescription() else dataClassLlmDescription()
 }
@@ -144,10 +162,9 @@ fun KClass<*>.jsonSchema(): String {
     // #1701: prefer the KSP-generated schema when present. Byte-identical
     // to the reflection path, but no reflection walk, no kotlin-reflect
     // work, and zero allocation past the first call (cached). #1702
-    // extended generation to sealed roots — the cache mechanism is
-    // shape-agnostic (reads a JSON_SCHEMA constant regardless of whether
-    // its content is data-class or `oneOf`-shaped).
-    GeneratedSchemaCache.lookup(this)?.let { return it }
+    // extended to sealed roots; #1703 generalised the cache to load all
+    // string constants from the generated object at once.
+    GeneratedMetaCache.lookupJsonSchema(this)?.let { return it }
     return if (isSealed) sealedJsonSchema() else dataClassJsonSchema()
 }
 

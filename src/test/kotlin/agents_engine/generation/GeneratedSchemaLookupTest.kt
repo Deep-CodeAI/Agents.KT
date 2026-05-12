@@ -21,6 +21,8 @@ data class HandGeneratedUser(val name: String, val age: Int)
 // as it would be in production.
 internal object HandGeneratedUser__GeneratedSchema {
     const val JSON_SCHEMA: String = """{"sentinel":"hand-generated-from-test","not":"the reflection output"}"""
+    // #1703: LLM_DESCRIPTION shipped in the same generated object.
+    const val LLM_DESCRIPTION: String = "HAND-WRITTEN LLM DESC — not the reflected markdown"
 }
 
 // ── Class with NO generated companion (should fall back to reflection) ───────
@@ -114,5 +116,36 @@ class GeneratedSchemaLookupTest {
         assertTrue("\"oneOf\"" in schema, "expected oneOf wrapper from reflection: $schema")
         assertTrue("Yes" in schema && "No" in schema, "expected both variants enumerated: $schema")
         assertTrue("sentinel" !in schema, "must not pick up the hand-generated sentinel from the other test: $schema")
+    }
+
+    // ── LLM description lookup (#1703) ───────────────────────────────────────
+
+    @Test
+    fun `toLlmDescription returns the LLM_DESCRIPTION constant when a generated companion exists`() {
+        val md = HandGeneratedUser::class.toLlmDescription()
+        assertEquals(
+            "HAND-WRITTEN LLM DESC — not the reflected markdown",
+            md,
+            "expected the generated LLM_DESCRIPTION; got: $md",
+        )
+    }
+
+    @Test
+    fun `toLlmDescription falls back to reflection for a class with no generated companion`() {
+        val md = ReflectionOnlyUser::class.toLlmDescription()
+        assertTrue("## ReflectionOnlyUser" in md, "expected reflected header: $md")
+        assertTrue("- **email**" in md, "expected reflected field bullet: $md")
+        assertTrue("HAND-WRITTEN" !in md, "must not leak the sentinel from another test: $md")
+    }
+
+    @Test
+    fun `cache loads multiple constants in one Class-dot-forName attempt`() {
+        // Touching either jsonSchema or toLlmDescription should populate the
+        // cache for both. Second access path is then "already loaded" — same
+        // string returned, same identity expected for cached const.
+        val schemaFirst = HandGeneratedUser::class.jsonSchema()
+        val descSecond = HandGeneratedUser::class.toLlmDescription()
+        assertTrue(schemaFirst.startsWith("{"), "schema should still be JSON: $schemaFirst")
+        assertTrue(descSecond.startsWith("HAND-WRITTEN"), "desc should still be the const: $descSecond")
     }
 }

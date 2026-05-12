@@ -44,6 +44,15 @@ internal object GenerableValidator {
          * KSP couldn't resolve.
          */
         val sealedVariants: List<GenerableClass> = emptyList(),
+        /** Contents of `@Generable(description)` — class-level introductory text (#1703). */
+        val generableDescription: String = "",
+        /**
+         * Contents of `@LlmDescription(text)` — wins over the auto-generated
+         * description. When non-null the emitter returns this text verbatim;
+         * the processor bakes it into the generated constant so runtime stays
+         * reflection-free for the override path too (#1703).
+         */
+        val llmDescriptionOverride: String? = null,
     )
 
     /**
