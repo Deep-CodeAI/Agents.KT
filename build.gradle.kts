@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "ai.deep-code"
-version = "0.4.1"
+version = "0.4.2"
 
 repositories {
     mavenCentral()
@@ -37,6 +37,20 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+
+    // #1695 — Dependabot's submitted dependency graph reads requested
+    // versions, not resolved. The `force(...)` block above pins to 1.84 (a
+    // patched release with no known CVEs per OSV + GHSA), but dependabot
+    // still sees the Kotlin Gradle plugin's transitive request for 1.80 and
+    // alerts on the 1.80-range vulnerabilities. Declaring 1.84 explicitly at
+    // the project level — via `compileOnly`, which does NOT ship to
+    // consumers and does NOT add to the runtime jar — gives dependabot an
+    // explicit 1.84 node in the graph so it stops flagging the resolved-away
+    // 1.80 vulnerabilities.
+    compileOnly("org.bouncycastle:bcprov-jdk18on:1.84")
+    compileOnly("org.bouncycastle:bcpg-jdk18on:1.84")
+    compileOnly("org.bouncycastle:bcpkix-jdk18on:1.84")
+    compileOnly("org.bouncycastle:bcutil-jdk18on:1.84")
 }
 
 kotlin {

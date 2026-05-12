@@ -2,6 +2,11 @@
 
 All notable changes to Agents.KT are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0, minor bumps may add new public API; existing API surface is preserved.
 
+## [0.4.2] — 2026-05-12
+
+### Security
+- **Make BouncyCastle 1.84 pin visible to Dependabot.** The existing `force(...)` block in `build.gradle.kts` already pins BC to 1.84 (the patched release per OSV + GHSA) and the lockfile + verification metadata confirm 1.84 is what resolves. However, Dependabot's submitted dependency graph reads *requested* versions, not resolved, and was still alerting on the 1.80-range CVEs that don't apply to our build. Declare BC 1.84 explicitly at the project level via `compileOnly(...)` so Dependabot sees the explicit 1.84 nodes. `compileOnly` does NOT ship to consumers and does NOT add to the runtime jar — `runtimeClasspath` stays free of BC, as before. No functional change for downstream users.
+
 ## [0.4.1] — 2026-05-12
 
 Dependency refresh on top of the v0.4.0 feature set. v0.4.0 was tagged on GitHub but never reached Maven Central; **0.4.1 is the first published release of the three-providers feature set**.
