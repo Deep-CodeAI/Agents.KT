@@ -23,6 +23,17 @@ internal object HandGeneratedUser__GeneratedSchema {
     const val JSON_SCHEMA: String = """{"sentinel":"hand-generated-from-test","not":"the reflection output"}"""
     // #1703: LLM_DESCRIPTION shipped in the same generated object.
     const val LLM_DESCRIPTION: String = "HAND-WRITTEN LLM DESC — not the reflected markdown"
+    // #1704: constructFromMap method. The runtime cache finds it via JDK
+    // reflection (java.lang.reflect, NOT kotlin-reflect) and invokes it.
+    // Returns a sentinel so the test can distinguish "generated path"
+    // from "reflection path".
+    @JvmStatic
+    fun constructFromMap(fields: Map<*, Any?>): HandGeneratedUser {
+        return HandGeneratedUser(
+            name = "GENERATED:${fields["name"]}",
+            age = (fields["age"] as? Number)?.toInt() ?: 0,
+        )
+    }
 }
 
 // ── Class with NO generated companion (should fall back to reflection) ───────
@@ -147,5 +158,27 @@ class GeneratedSchemaLookupTest {
         val descSecond = HandGeneratedUser::class.toLlmDescription()
         assertTrue(schemaFirst.startsWith("{"), "schema should still be JSON: $schemaFirst")
         assertTrue(descSecond.startsWith("HAND-WRITTEN"), "desc should still be the const: $descSecond")
+    }
+
+    // ── constructFromMap lookup (#1704) ──────────────────────────────────────
+
+    @Test
+    fun `fromLlmOutput uses the generated constructFromMap when present`() {
+        // The "GENERATED:" prefix on the resulting name proves the
+        // generated companion was used, NOT the reflection ctor.
+        val out = HandGeneratedUser::class.fromLlmOutput("""{"name":"alice","age":30}""")
+        assertEquals(
+            HandGeneratedUser(name = "GENERATED:alice", age = 30),
+            out,
+            "expected the generated constructFromMap path; got: $out",
+        )
+    }
+
+    @Test
+    fun `fromLlmOutput falls back to reflection when no generated constructor exists`() {
+        // ReflectionOnlyUser has no __GeneratedSchema companion → cache miss
+        // → existing reflection path constructs via primaryConstructor.callBy.
+        val out = ReflectionOnlyUser::class.fromLlmOutput("""{"email":"alice@example.com"}""")
+        assertEquals(ReflectionOnlyUser(email = "alice@example.com"), out)
     }
 }

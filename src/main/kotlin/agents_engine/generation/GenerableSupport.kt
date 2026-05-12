@@ -25,26 +25,40 @@ private fun String.escapeJson(): String =
 // the reflection paths transparently when no generated object exists.
 
 private object GeneratedMetaCache {
-    // Per-class: the loaded map of static String constants, or a sentinel
-    // empty map for the miss case. ConcurrentHashMap for the typical
-    // multi-thread agentic-loop access pattern.
-    private val MISS = emptyMap<String, String>()
-    private val cache = ConcurrentHashMap<KClass<*>, Map<String, String>>()
+    // Per-class entry: constants map + optional generated constructor method.
+    // ConcurrentHashMap for the typical multi-thread agentic-loop access.
+    private data class Entry(
+        val constants: Map<String, String>,
+        val constructor: java.lang.reflect.Method?,
+    )
+    private val MISS = Entry(emptyMap(), null)
+    private val cache = ConcurrentHashMap<KClass<*>, Entry>()
 
     /** Lookup the `JSON_SCHEMA` constant emitted by the schema-gen pass (#1701, #1702). */
-    fun lookupJsonSchema(kClass: KClass<*>): String? = load(kClass)["JSON_SCHEMA"]
+    fun lookupJsonSchema(kClass: KClass<*>): String? = load(kClass).constants["JSON_SCHEMA"]
 
     /** Lookup the `LLM_DESCRIPTION` constant emitted by the description-gen pass (#1703). */
-    fun lookupLlmDescription(kClass: KClass<*>): String? = load(kClass)["LLM_DESCRIPTION"]
+    fun lookupLlmDescription(kClass: KClass<*>): String? = load(kClass).constants["LLM_DESCRIPTION"]
 
-    private fun load(kClass: KClass<*>): Map<String, String> {
+    /**
+     * Lookup the generated `constructFromMap(Map<*, Any?>): T?` method (#1704).
+     * Returns a typed invocation lambda when present; null when the class
+     * has no generated companion or no `constructFromMap` method (e.g. the
+     * class had default-valued params and KSP skipped that emission).
+     */
+    fun lookupConstructor(kClass: KClass<*>): ((Map<*, Any?>) -> Any?)? {
+        val method = load(kClass).constructor ?: return null
+        return { fields -> method.invoke(null, fields) }
+    }
+
+    private fun load(kClass: KClass<*>): Entry {
         cache[kClass]?.let { return it }
         val loaded = tryLoad(kClass) ?: MISS
         cache[kClass] = loaded
         return loaded
     }
 
-    private fun tryLoad(kClass: KClass<*>): Map<String, String>? {
+    private fun tryLoad(kClass: KClass<*>): Entry? {
         val fqn = kClass.qualifiedName ?: return null
         return try {
             val generatedClassName = "${fqn}__GeneratedSchema"
@@ -52,7 +66,7 @@ private object GeneratedMetaCache {
             // public static finals on the JVM class — easy to read without
             // touching the INSTANCE.
             val cls = Class.forName(generatedClassName, /* initialize = */ true, kClass.java.classLoader)
-            val result = HashMap<String, String>()
+            val constants = HashMap<String, String>()
             for (field in cls.declaredFields) {
                 val mods = field.modifiers
                 if (java.lang.reflect.Modifier.isStatic(mods) &&
@@ -61,10 +75,19 @@ private object GeneratedMetaCache {
                 ) {
                     field.isAccessible = true
                     val value = field.get(null) as? String
-                    if (value != null) result[field.name] = value
+                    if (value != null) constants[field.name] = value
                 }
             }
-            result.takeIf { it.isNotEmpty() }
+            // #1704: find the @JvmStatic constructFromMap(Map) method on
+            // the generated object. May be null when codegen skipped it
+            // (defaults-valued params; reflection still handles those).
+            val constructor = try {
+                cls.getMethod("constructFromMap", Map::class.java).also { it.isAccessible = true }
+            } catch (_: NoSuchMethodException) {
+                null
+            }
+            if (constants.isEmpty() && constructor == null) null
+            else Entry(constants, constructor)
         } catch (_: ClassNotFoundException) {
             null   // expected when KSP isn't applied to this class
         } catch (_: Throwable) {
@@ -424,8 +447,16 @@ fun <T : Any> KClass<T>.fromLlmOutput(json: String): T? {
     return constructFromMap(obj as Map<String, Any?>)
 }
 
+@Suppress("UNCHECKED_CAST")
 @PublishedApi
 internal fun <T : Any> KClass<T>.constructFromMap(fields: Map<*, Any?>): T? {
+    // #1704: prefer the KSP-generated constructFromMap when present. The
+    // generated method is byte-for-byte equivalent to the reflection path
+    // for classes without default-valued params; for everything else, the
+    // cache returns null and we fall through to reflection below.
+    GeneratedMetaCache.lookupConstructor(this)?.let { invoke ->
+        return invoke(fields) as T?
+    }
     val ctor = primaryConstructor ?: return null
     // Strict args (#665): refuse extras so additionalProperties:false is enforced
     // at the Kotlin layer regardless of provider behavior. The "type" discriminator
@@ -516,6 +547,44 @@ private fun coerceToInt(value: Any): Int? {
     }
     if (asLong !in Int.MIN_VALUE..Int.MAX_VALUE) return null
     return asLong.toInt()
+}
+
+// ─── @PublishedApi coercion helpers for generated code (#1704) ────────────────
+//
+// Generated `constructFromMap` lives in the consumer's module and needs to
+// call into the framework's strict coercion. Expose the helpers under
+// @PublishedApi internal so they're callable from generated code without
+// landing in the public API. Each is a typed wrapper over the existing
+// private coerceValue path — same semantics, same overflow rejection.
+
+@PublishedApi internal fun coerceString(value: Any?): String? = value?.toString()
+
+@PublishedApi internal fun coerceInt(value: Any?): Int? =
+    if (value == null) null else coerceToInt(value)
+
+@PublishedApi internal fun coerceLong(value: Any?): Long? =
+    if (value == null) null else coerceToLong(value)
+
+@PublishedApi internal fun coerceDouble(value: Any?): Double? =
+    (value as? Number)?.toDouble()
+
+@PublishedApi internal fun coerceFloat(value: Any?): Float? =
+    (value as? Number)?.toFloat()
+
+@PublishedApi internal fun coerceBoolean(value: Any?): Boolean? = value as? Boolean
+
+/**
+ * Coerce a JSON-decoded list-shaped value with per-item coercion. Returns
+ * null if the value isn't a List, or if any item's coercion returns null.
+ */
+@PublishedApi internal fun <T : Any> coerceList(value: Any?, perItem: (Any?) -> T?): List<T>? {
+    val items = value as? List<*> ?: return null
+    val result = ArrayList<T>(items.size)
+    for (item in items) {
+        val coerced = perItem(item) ?: return null
+        result += coerced
+    }
+    return result
 }
 
 /**
