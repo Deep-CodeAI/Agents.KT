@@ -3949,7 +3949,7 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [ ] MCP client integration — `McpTool` instances consumable alongside local tools
 - [ ] `grants { tools(...) }` — Layer 2 permissions use actual `Tool<*,*>` references
 - [ ] Permission model: 3 states — Granted (auto-runs), Confirmed (user approval), Absent (unavailable)
-- [ ] KSP annotation processor for compile-time `@Generable` (replaces runtime reflection); constrained decoding (Ollama/vLLM) + guided JSON mode (Anthropic/OpenAI)
+- [~] KSP annotation processor for compile-time `@Generable` (replaces runtime reflection); constrained decoding (Ollama/vLLM) + guided JSON mode (Anthropic/OpenAI). **Validation pass shipped (#1700)** — `:agents-kt-ksp` now walks every `@Generable` class and emits compile-time errors for non-sealed interfaces, annotation classes, enums, abstract classes, and classes without a parameterised primary constructor. Sealed types short-circuit (they route through the existing polymorphic / `type` discriminator path). Schema-generation pass (per-class `*_GeneratedSchema.kt` files replacing runtime reflection) is the next pass, then drop `kotlin-reflect` from runtime classpath (Phase 3 of docs/ksp-design.md).
 - [ ] Native CLI binary (GraalVM — no JRE required); `brew`, npm, pip, curl, apt
 - [ ] jlink minimal JRE bundle for runtime (~35 MB)
 - [ ] Structure-level budgets — `budget { }` on Pipeline / Forum / Parallel / Loop (§5.6)
