@@ -1,19 +1,32 @@
-# Agents.KT v0.4.2 — Three Providers + Clean Dependabot
+# Agents.KT v0.4.3 — Complete BC Pin Across Both Modules
 
 **Release date:** 2026-05-12
 
-Functionally identical to v0.4.1. The only change is making the BouncyCastle 1.84 pin visible to Dependabot so the four false-positive alerts on `main` clear.
+Functionally identical to v0.4.2. Consumer-visible POMs and `runtimeClasspath` are byte-for-byte the same. The only change is finishing what v0.4.2 started — pinning BouncyCastle 1.84 in the `:agents-kt-ksp` subproject too, so all four dependabot advisories can finally clear.
 
-## What changed
+## What changed since v0.4.2
 
-### BouncyCastle 1.84 declared explicitly (build-only)
+v0.4.2 added explicit `compileOnly("org.bouncycastle:*:1.84")` declarations + a `force(...)` block to the **root** `build.gradle.kts`, giving Dependabot visible 1.84 nodes in the root project's submitted graph.
 
-The existing `force(...)` block in `build.gradle.kts` already pins BC to 1.84 — confirmed patched by both OSV and GHSA. The lockfile and `gradle/verification-metadata.xml` both record 1.84 as the resolved version. But Dependabot reads the *requested* dependency graph submitted by `gradle/actions/dependency-submission`, not the *resolved* graph, so it kept alerting on the 1.80 vulnerabilities that don't apply.
+But the **`:agents-kt-ksp` subproject** never got the same treatment. Its `kotlinBouncyCastleConfiguration` kept resolving to BC 1.80 transitively (Kotlin Gradle plugin pulls it for jar signing), and Dependabot's per-subproject graph submission kept showing 1.80, keeping the four advisories alive.
 
-The fix: declare BC 1.84 explicitly via `compileOnly(...)` at the project level. `compileOnly` does NOT propagate to consumers — `runtimeClasspath` stays free of BC, same as 0.4.1. The only effect is that Dependabot now sees explicit 1.84 nodes in the graph.
+v0.4.3 mirrors the v0.4.2 fix into `agents-kt-ksp/build.gradle.kts`:
 
 ```kotlin
+// agents-kt-ksp/build.gradle.kts
+configurations.all {
+    resolutionStrategy {
+        force(
+            "org.bouncycastle:bcprov-jdk18on:1.84",
+            "org.bouncycastle:bcpg-jdk18on:1.84",
+            "org.bouncycastle:bcpkix-jdk18on:1.84",
+            "org.bouncycastle:bcutil-jdk18on:1.84",
+        )
+    }
+}
+
 dependencies {
+    // ... existing deps ...
     compileOnly("org.bouncycastle:bcprov-jdk18on:1.84")
     compileOnly("org.bouncycastle:bcpg-jdk18on:1.84")
     compileOnly("org.bouncycastle:bcpkix-jdk18on:1.84")
@@ -21,11 +34,13 @@ dependencies {
 }
 ```
 
-Why we don't drop the `force(...)` block: it's still belt-and-suspenders for any transitive request that bypasses `compileClasspath`.
+Stale BC 1.80 entries in `gradle/verification-metadata.xml` (cumulative cruft from the original 1.80 era) were also pruned — only the 1.84 checksums remain.
 
-## Inherited from v0.4.1
+After v0.4.3 lands on `main`, the next `gradle/actions/dependency-submission` workflow run submits a clean 1.84-everywhere graph for both modules, and the four dependabot alerts should clear.
 
-(See `RELEASE_NOTES.md` in the v0.4.1 tag for the full notes; same content lands in 0.4.2 unchanged.)
+## Inherited from v0.4.2
+
+Same as v0.4.2 — see the v0.4.2 release notes for the full feature set since 0.3.0:
 
 - Three model providers — Ollama, Claude, OpenAI (#1644, #1656)
 - LiveRunner precheck hook + `OllamaPreflight` (#1132)
@@ -33,11 +48,16 @@ Why we don't drop the `force(...)` block: it's still belt-and-suspenders for any
 - `ModelConfig.toString()` masks `apiKey` (#1665)
 - Ollama wire-shape fix: `content: null` on assistant tool-call turns (#1694)
 - Dependency refresh: `kotlinx-coroutines` 1.11.0, Gradle 9.5.0
+- BC 1.84 pinned visibly in root module (#1695, v0.4.2)
 
-## Migration from v0.4.1
+## Migration from v0.4.2
 
-Nothing to do. Drop-in upgrade. `runtimeClasspath` is byte-for-byte identical.
+Drop-in. Nothing to do.
 
 ## Migration from 0.3.x
 
-Same as 0.4.1 — see [`RELEASE_NOTES.md`](https://github.com/Deep-CodeAI/Agents.KT/blob/v0.4.1/RELEASE_NOTES.md) at the v0.4.1 tag.
+```kotlin
+implementation("ai.deep-code:agents-kt:0.4.3")
+```
+
+(Or skip directly from 0.3.x to 0.4.3; v0.4.0, v0.4.1, and v0.4.2 details are in their own release notes if you want the breadcrumb trail.)

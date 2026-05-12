@@ -2,6 +2,11 @@
 
 All notable changes to Agents.KT are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0, minor bumps may add new public API; existing API surface is preserved.
 
+## [0.4.3] — 2026-05-12
+
+### Security
+- **Complete the BouncyCastle pin across both Gradle modules.** v0.4.2 added explicit BC 1.84 `compileOnly` declarations + `force(...)` to the root `build.gradle.kts`, but missed the `:agents-kt-ksp` subproject — its `kotlinBouncyCastleConfiguration` still pulled BC 1.80 transitively, which is what kept the four dependabot advisories alive. v0.4.3 mirrors the same fix into `agents-kt-ksp/build.gradle.kts` and prunes stale 1.80 entries from `gradle/verification-metadata.xml`. Both `gradle.lockfile` files now record 1.84 everywhere; no 1.80 entries remain anywhere in the repo. Published JARs are unchanged — BC was never in `runtimeClasspath` for either module.
+
 ## [0.4.2] — 2026-05-12
 
 ### Security

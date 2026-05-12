@@ -15,6 +15,23 @@ dependencyLocking {
     lockAllConfigurations()
 }
 
+// #1695 — Mirror the BouncyCastle pin from the root build (#883 lineage).
+// The Kotlin Gradle plugin pulls BC transitively into
+// kotlinBouncyCastleConfiguration for jar signing; without these pins the
+// ksp module's submitted dependency graph reads 1.80, which keeps the four
+// Dependabot advisories alive even though the published jars are BC-free
+// at runtime. See v0.4.3 release notes.
+configurations.all {
+    resolutionStrategy {
+        force(
+            "org.bouncycastle:bcprov-jdk18on:1.84",
+            "org.bouncycastle:bcpg-jdk18on:1.84",
+            "org.bouncycastle:bcpkix-jdk18on:1.84",
+            "org.bouncycastle:bcutil-jdk18on:1.84",
+        )
+    }
+}
+
 dependencies {
     // KSP processor API. KSP2 (2.x) is decoupled from the bundled Kotlin
     // compiler version, so the same KSP release works across a range of
@@ -25,6 +42,13 @@ dependencies {
     // compileOnly — never end up on the consumer's runtime classpath; the
     // consumer already has the runtime jar via their own implementation(...).
     compileOnly(project(":"))
+
+    // Explicit BC 1.84 nodes so Dependabot sees the pin (#1695). compileOnly
+    // does NOT propagate to consumers — runtimeClasspath stays BC-free.
+    compileOnly("org.bouncycastle:bcprov-jdk18on:1.84")
+    compileOnly("org.bouncycastle:bcpg-jdk18on:1.84")
+    compileOnly("org.bouncycastle:bcpkix-jdk18on:1.84")
+    compileOnly("org.bouncycastle:bcutil-jdk18on:1.84")
 
     testImplementation(kotlin("test"))
 }
