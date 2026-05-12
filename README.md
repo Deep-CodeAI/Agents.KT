@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <strong>Typed Kotlin DSL framework for AI agent systems.</strong><br/>
-  <em>Define Freely. Compose Strictly. Ship Reliably.</em>
+  <strong>AI agents with boundaries. Through typed Kotlin.</strong><br/>
+  <em>One input. One output. Allowed tools only.</em>
 </p>
 
 <p align="center">
@@ -18,6 +18,8 @@
 ---
 
 Every agent is `Agent<IN, OUT>`. One input type, one output type, one job. Type mismatches and wrong compositions are caught by the compiler where composition is purely type-driven, and structural misuses fail fast at construction time. Reused agent instances are caught at construction time.
+
+Agents.KT is the runtime behind [agents-kt.dev](https://agents-kt.dev/): a local-first Kotlin/JVM framework for typed agent pipelines, explicit per-skill tool authorization, MCP integration, memory, budgets, observability hooks, and swarm-style agent delegation when a single agent stops being the right shape.
 
 ```kotlin
 val parse = agent<RawText, Specification>("parse") {
@@ -49,6 +51,21 @@ val pipeline = parse then generate then review
 val result = pipeline(RawText("getUsers, createUser, deleteUser"))
 // ReviewResult(approved=true)
 ```
+
+---
+
+## Product Shape
+
+The public site is the short version of the runtime contract:
+
+| Site scene | Runtime surface |
+|------------|-----------------|
+| **Typed by design** | `Agent<IN, OUT>` values compose like functions with `then`, `/`, `forum`, loops, and sealed branches. |
+| **Tools with limits** | Tools are registered on the agent but authorized per skill; typed tool handles catch allowlist mistakes early. |
+| **Local first** | Start with Ollama on the JVM, then add MCP when an agent needs external tools or should become an MCP endpoint. |
+| **Swarm when needed** | Drop sibling agent JARs onto the classpath; a captain discovers and absorbs them as delegated tools. |
+| **Start with one dependency** | Pin the Maven artifact, build one typed agent, then add memory, budgets, and observability as the workflow asks for them. |
+| **Docs for the full system** | The wiki and `docs/` cover first agents, composition, tools, MCP, memory, budgets, observability, and swarm. |
 
 ---
 
@@ -155,6 +172,8 @@ For planned features beyond these limitations, see [docs/roadmap.md](docs/roadma
 
 Topical guides:
 
+- [**Website**](https://agents-kt.dev/) — distilled product tour: typed contracts, constrained tools, local-first runtime, swarm, install, and docs.
+- [**Wiki**](https://github.com/Deep-CodeAI/Agents.KT/wiki) — expanded learning path and operational guides.
 - [**Skills**](docs/skills.md) — agent skills, knowledge entries, shared catalogs, the lazy-vs-eager context model.
 - [**Model & Tool Calling**](docs/model-and-tools.md) — agentic loop, typed tools via `@Generable`, inline-tool fallback, authorization, skill selection, budget caps.
 - [**MCP Integration**](docs/mcp.md) — `mcp { server() }` client, `McpServer.from(agent)`, `McpRunner` standalone.
@@ -163,6 +182,14 @@ Topical guides:
 - [**Guided Generation**](docs/generation.md) — `@Generable`, `@Guide`, `@LlmDescription`, JSON-Schema generation, lenient deserializer, `PartiallyGenerated<T>`.
 - [**Composition Operators**](docs/composition.md) — `then`, `/`, `*`, `forum`, `.loop {}`, `.branch {}`, single-placement rule, type algebra.
 - [**Roadmap**](docs/roadmap.md) — full Phase 1–4 feature plan.
+
+---
+
+## Current Release
+
+`main` is prepared as `0.4.3`. The 0.4 line includes the site-facing runtime story plus the recent GitHub updates: Anthropic and OpenAI adapters alongside Ollama, LiveRunner prechecks, `OllamaPreflight`, typed tool references, `Swarm` / `absorb`, and supply-chain hardening for the BouncyCastle advisory cleanup.
+
+Use Maven Central for published artifacts and tags for immutable release points.
 
 ---
 
