@@ -26,6 +26,7 @@ Three model providers, fail-fast startup, and a long-overdue bugfix.
 ### Security
 - **`ModelConfig.toString()` masks `apiKey`** as `<6-char-prefix>…<N>chars` so `log.info("config = $cfg")`, future reflection-based serializers, or stack traces that capture a config no longer leak credentials. `equals`/`hashCode` still consider apiKey — masking is observation-only (#1665).
 - `SECURITY.md` extended with a "Handling LLM provider credentials" section: `.secrets/` directory convention, `chmod 0600/0700` guidance, the `toString` masking contract, header-handling claim, and a "if a key is committed → rotate first" runbook.
+- **Dependency refresh** ahead of release: `kotlinx-coroutines-core` and `kotlinx-coroutines-test` 1.10.2 → 1.11.0; Gradle wrapper 9.4.1 → 9.5.0. Closes the four dependabot advisories on `main` and supersedes PRs #47, #48, #39. Lockfile and `gradle/verification-metadata.xml` regenerated.
 
 ## [0.3.0] — 2026-05-05
 
