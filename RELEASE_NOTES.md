@@ -1,167 +1,89 @@
-# Agents.KT v0.1.1 — Tool Error Recovery
+# Agents.KT v0.4.0 — Three Providers
 
-**Release date:** 2026-03-29
+**Release date:** 2026-05-12
 
-The fixer is an agent.
+One adapter was already in the box. Two more land here. Switching providers is now a one-line change.
 
 ## What's new
 
-### Tool Error Recovery System
-
-Every agent framework hits the same wall: tools fail at runtime. Malformed arguments, network errors, flaky APIs, type mismatches. The standard response is a dedicated parser class or a callback function. Agents.KT takes a different position: **the fixer is an `Agent<String, String>`** — same type system, same composition, same telemetry as everything else. Deterministic agents (`implementedBy`) cost zero LLM calls.
-
-#### `onError` inside the tool block
-
-Error handling lives where the tool lives:
+### Three model providers, one `ModelClient`
 
 ```kotlin
-tool("calculateNumberOfKeys") {
-    description("Count top-level keys in a JSON object")
-    executor { args ->
-        val json = args["json"]?.toString() ?: throw IllegalArgumentException("Missing json")
-        Regex(""""([^"]+)"\s*:""").findAll(json).count()
+// Local / cloud Ollama (since 0.1)
+model { ollama("qwen2.5:7b"); host = "localhost"; port = 11434 }
+
+// Anthropic — new in 0.4
+model { claude("claude-opus-4-7"); apiKey = System.getenv("ANTHROPIC_API_KEY") }
+
+// OpenAI Chat Completions — new in 0.4
+model { openai("gpt-4o"); apiKey = System.getenv("OPENAI_API_KEY") }
+```
+
+`LlmMessage` / `LlmResponse` are provider-agnostic. Each adapter handles the provider's own conventions internally — Anthropic's structured `tool_use` / `tool_result` content blocks, OpenAI's stringified `function.arguments` and synthesized `tool_call_id`s, Ollama's flat shape with inline-JSON fallback. The agentic loop on top is unchanged.
+
+Both new adapters share the same boundary contract `OllamaClient` established: top-level provider error envelopes surface as `LlmProviderException`, not garbled text masquerading as model output (`#702`).
+
+### Fail-fast at REPL startup
+
+`LiveShowBuilder.precheck: (() -> Unit)?` runs after argument parsing and before the banner / `--once` / REPL prompt. Throw to abort; the runner prints `error: <msg>` and returns exit code 2. No more mid-spinner `java.net.ConnectException` on the first turn.
+
+```kotlin
+LiveRunner.serve(captain, args) {
+    prompt = "fib> "
+    precheck = OllamaPreflight(host = "localhost", port = 11434)::check
+}
+```
+
+`OllamaPreflight` ships in the box; for the cloud providers, write a one-liner that hits any cheap endpoint with their key. The precheck hook is generic — you can validate config, environment, even a database connection before the user types anything (`#1132`).
+
+### Typed `@Generable` args, live, on every provider
+
+`TypedArgsLiveIntegrationTest` covers the full round-trip — `@Generable` schema generation → provider envelope (Ollama `parameters`, Anthropic `input_schema`, OpenAI `parameters`) → wire serialization → response parse → `KClass.constructFromMap` → typed executor — against real models. Three tests, one per provider, each gated so a fresh clone without keys stays green. Established that the typed `tool<Args, Result>` path is actually portable, not just "Ollama-shaped" (`#1675`).
+
+### `apiKey` no longer leaks through `toString`
+
+`ModelConfig` is a Kotlin `data class`, and the auto-generated `toString()` dumps every field — including the raw API key. One `log.info("config = $cfg")` away from a credential leak. `ModelConfig.toString()` is now overridden to mask: `apiKey=sk-ant…108chars` instead of the body. `equals`/`hashCode` still consider apiKey (cache keying stays correct); masking is observation-only. `SECURITY.md` gained a "Handling LLM provider credentials" section covering the `.secrets/` convention, file perms, the masking contract, and a "if a key is committed → rotate first" runbook (`#1665`).
+
+## Fixed
+
+### OllamaClient: assistant tool-call turns wire `content: null`
+
+External bug report: every multi-turn agentic loop against Ollama Cloud `gpt-oss:120b-cloud` / `gpt-oss:20b-cloud` was hitting `500 Internal Server Error`. Root cause: assistant messages carrying `tool_calls` and no textual content were serialised as `content: ""`, but the OpenAI / Ollama chat-completions spec says `content` should be `null` (or omitted) when `tool_calls` is present, and the cloud's strict validator rejects the empty-string form. Local Ollama tolerated it, so the bug hid until cloud-routed deployments tried multi-turn.
+
+The fix null-coerces only when **all three** hold: role is `assistant`, `tool_calls` is non-empty, and content is blank. Legitimate empty-string assistant turns (no tool_calls) keep their previous shape — different semantics, different wire bytes. The other two adapters were already spec-compliant; this is an Ollama-only patch. Six regression cases cover the truth table from the bug report, including the exact two-tool-call PlanMaster sequence the reporter attached (`#1694`).
+
+## Binary compatibility
+
+**Source-compatible** with 0.3.x — every new public API has defaults; existing code compiles unchanged.
+
+**Wire-shape change for Ollama tool-call messages** (`#1694`) — assistant turns with `tool_calls` and no textual content now serialize as `content: null` on the wire instead of `content: ""`. Pure payload shaping; in-memory `LlmMessage` is unchanged. Local Ollama tolerated both shapes; Ollama Cloud's strict validators only accept the new form, so this is functionally a regression fix for cloud users.
+
+## Migration
+
+If you're on 0.3.x and only using Ollama, nothing to do. Bump the version, rebuild, ship.
+
+If you want to try Claude or OpenAI, the recipe is one DSL line plus an API key:
+
+```kotlin
+agent("coder") {
+    model {
+        claude("claude-opus-4-7")            // or openai("gpt-4o")
+        apiKey = System.getenv("ANTHROPIC_API_KEY")
+        temperature = 0.0
+        maxTokens = 4096                     // required for both cloud providers
     }
-    onError {
-        executionError { _ -> fix(agent = jsonFixer, retries = 2) }
-        invalidArgs { _, _ -> fix(agent = jsonFixer) }
-    }
+    skills { /* unchanged */ }
 }
 ```
 
-Three placement options with clear priority:
-1. **Tool block `onError {}`** — highest priority
-2. **Agent-level `onToolError("name") {}`** — middle
-3. **`defaults { onError {} }`** — lowest, applies to all tools
+Local development convention: keep keys in `<repo-root>/.secrets/anthropic-key` and `<repo-root>/.secrets/openai-key` (gitignored), `chmod 0600`. See `SECURITY.md` for the full handling guidance.
 
-#### The fixer is always an agent
+## What's next (Phase 2)
 
-No lambda callbacks. Repair uses `Agent<String, String>` — deterministic or LLM-driven:
+- Streaming (`Flow<LlmResponseChunk>`) on every adapter — kills the dead-air spinner.
+- Prompt caching headers for Claude — `cache_control: ephemeral` on long system prompts and knowledge blocks; ~90% cost cut on repeat turns.
+- KSP compile-time `@Generable` (replaces runtime reflection).
+- Google (Gemini) adapter — last on the multi-provider list.
+- `Tool<IN, OUT>` base hierarchy + `McpTool<IN, OUT>` subclass, unblocking `grants { }` typed permissions.
 
-```kotlin
-// Deterministic — zero LLM calls
-val jsonFixer = agent<String, String>("json-fixer") {
-    skills {
-        skill<String, String>("cleanup", "Fix JSON") {
-            implementedBy { input -> input.replace(",}", "}").replace(",]", "]") }
-        }
-    }
-}
-
-// LLM-driven — uses a model to analyze and fix
-val smartFixer = agent<String, String>("smart-fixer") {
-    prompt("Fix malformed JSON. If structural error, call escalate.")
-    model { ollama("gpt-4o-mini"); temperature = 0.0 }
-    skills {
-        skill<String, String>("fix", "Analyze and fix JSON errors") {
-            tools("escalate")
-        }
-    }
-}
-```
-
-#### Built-in `escalate` and `throwException` tools
-
-Every agent has two framework-provided tools registered at construction time — **inactive by default**, activated when a skill references them in `tools(...)`.
-
-- **`escalate`** — soft failure. The error is fed back to the parent LLM as a tool result, giving it a chance to retry with corrected arguments. The fixer can include corrected data in the escalation reason.
-- **`throwException`** — hard failure. `ToolExecutionException` propagates immediately. No retries.
-
-```kotlin
-// LLM-driven fixer calls escalate → error fed back → parent LLM retries
-LLM calls parseJson(json = "{name: world}")
-  → tool throws: "unquoted keys"
-  → fixer invoked → fixer calls escalate("Corrected: {\"name\":\"world\"}")
-    → error fed back to parent LLM
-      → parent retries with corrected JSON → succeeds
-```
-
-#### `ToolError` sealed hierarchy
-
-Four error types for programmatic handling:
-
-```kotlin
-sealed interface ToolError {
-    data class InvalidArgs(val rawArgs: String, val parseError: String, val expectedSchema: Map<String, Any?>)
-    data class DeserializationError(val rawValue: String, val targetType: KType, val cause: Throwable)
-    data class ExecutionError(val args: Map<String, Any?>, val cause: Throwable)
-    data class EscalationError(val source: String, val reason: String, val severity: Severity, val originalError: ToolError, val attempts: Int)
-}
-
-enum class Severity { LOW, MEDIUM, HIGH, CRITICAL }
-```
-
-### Tool Definition Block DSL
-
-New `ToolDefBuilder` for richer tool definitions:
-
-```kotlin
-tools {
-    tool("fetch") {
-        description("Fetch a URL")
-        executor { args -> httpGet(args["url"].toString()) }
-        onError {
-            executionError { _ -> retry(maxAttempts = 3) }
-        }
-    }
-}
-```
-
-All existing `tool("name", "description") { args -> ... }` forms continue to work.
-
-## New files
-
-| File | Purpose |
-|------|---------|
-| `model/ToolError.kt` | `ToolError` sealed hierarchy, `Severity`, `EscalationException`, `ToolExecutionException` |
-| `model/OnErrorBuilder.kt` | `RepairResult`, `RepairScope`, `ToolErrorHandler`, `OnErrorBuilder`, `executeAgentFix` |
-
-## Modified files
-
-| File | Change |
-|------|--------|
-| `model/ToolDef.kt` | `ToolDefBuilder` block DSL, `ToolDefaultsBuilder`, `buildBuiltInTools()` (escalate/throwException) |
-| `model/AgenticLoop.kt` | `executeToolWithRecovery()` — error handler dispatch with retry, agent repair, escalation feedback |
-| `core/Agent.kt` | `onToolError()`, `getToolErrorHandler()`, built-in tool auto-registration |
-
-## Tests
-
-**78 new tests** across 10 test files:
-
-| File | Tests | Coverage |
-|------|-------|----------|
-| `ToolErrorTest` | 6 | Sealed hierarchy construction, exhaustive `when` |
-| `OnErrorDSLTest` | 10 | `invalidArgs`, `deserializationError`, `executionError` handlers |
-| `ToolErrorDefaultsTest` | 3 | Defaults apply to all tools, per-tool overrides |
-| `ToolErrorAgentRepairTest` | 4 | Agent-based fix, retries, escalation, throwException |
-| `ToolErrorAgenticLoopTest` | 6 | Retry recovery, retry exhaustion, escalation feedback, defaults in loop |
-| `ToolLevelOnErrorTest` | 16 | `onError` via `onError=` param, priority chain, agentic loop, escalation, throwException |
-| `ToolBlockOnErrorTest` | 9 | `tool {}` block DSL, priority over defaults/agent-level, agentic loop |
-| `EscalateToolTest` | 10 | Built-in tools in every agent, activation via `tools(...)`, severity parsing |
-| `JsonParseEscalationIntegrationTest` | 3 | Full escalation flow: malformed JSON → fixer escalates → LLM retries → succeeds |
-| `ThrowExceptionIntegrationTest` | 5 | Hard failure: throwException kills pipeline, doesn't fire onToolUse, ignores remaining retries |
-
-**Integration tests** (live LLM via Ollama):
-- Flaky tool retry recovery with real LLM
-- Retry exhaustion → `ToolExecutionException`
-- Escalation → LLM reads corrected data from error → retries → succeeds
-- Agent-based repair with real LLM
-- Defaults across multiple tools with real LLM
-- Tool block `onError` with escalation and real LLM
-- `throwException` stops pipeline with real LLM
-
-## Breaking changes
-
-None. All existing APIs and tests continue to work unchanged.
-
-## Upgrade
-
-```kotlin
-// build.gradle.kts
-dependencies {
-    implementation("ai.deep-code:agents-kt:0.1.1")
-}
-```
-
----
-
-*Agents.KT — Define Freely. Compose Strictly. Ship Reliably.*
+Full roadmap: [`docs/roadmap.md`](docs/roadmap.md).

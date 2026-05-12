@@ -2,18 +2,30 @@
 
 All notable changes to Agents.KT are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0, minor bumps may add new public API; existing API surface is preserved.
 
-## [Unreleased]
+## [0.4.0] — 2026-05-12
+
+Three model providers, fail-fast startup, and a long-overdue bugfix.
+
+### Binary compatibility
+**Source-compatible** with 0.3.x — every new public API addition (`claude()`, `openai()`, `ModelProvider.ANTHROPIC`, `ModelProvider.OPENAI`, the `precheck` hook, the new `ModelConfig` fields) has defaults; existing 0.3.x code compiles unchanged.
+
+**Wire-shape change for Ollama tool-call messages** (#1694) — assistant turns with `tool_calls` and no textual content now serialize as `content: null` on the wire instead of `content: ""`. This is purely a payload-shaping change; in-memory `LlmMessage` is unchanged. Local Ollama tolerated both shapes; Ollama Cloud's strict validators only accept the new (spec-compliant) form.
 
 ### Added
 - **Anthropic Claude adapter** — new `ClaudeClient: ModelClient` and `model { claude("claude-opus-4-7"); apiKey = "..." }` DSL. Maps the framework's `LlmMessage` / `LlmResponse` model to Anthropic's structured Messages API content blocks (`tool_use` / `tool_result`); tools advertise as `input_schema` (Anthropic's spelling); top-level `error` envelopes surface as `LlmProviderException`, same boundary contract as `OllamaClient` (#702). Provider dispatch in `AgenticLoop` constructs the client lazily so the agent's full tool catalog flows in. Live integration tests against the real API gated on a gitignored `.secrets/anthropic-key` (with `ANTHROPIC_API_KEY` env fallback); skipped via JUnit `Assumptions` when the key is absent (#1644).
 - **OpenAI Chat Completions adapter** — `OpenAiClient: ModelClient` and `model { openai("gpt-4o"); apiKey = "..." }` DSL. Maps to OpenAI's `tool_calls` / `tool_call_id` shape with synthesized ids paired FIFO per request; `function.arguments` rides the wire as a stringified JSON (OpenAI's convention); tools advertise as `parameters` (vs Anthropic's `input_schema`). System messages stay in the messages array (vs Anthropic's hoisted top-level field). Same provider-error contract via `LlmProviderException`. Live integration tests gated on `.secrets/openai-key` (with `OPENAI_API_KEY` env fallback) (#1656).
 - **`LiveRunner` precheck hook** — `LiveShowBuilder.precheck: (() -> Unit)?` runs after arg-parse and before banner / `--once` / REPL. Throw to abort startup; the runner prints `error: <msg>` and returns exit code 2. New `OllamaPreflight(host, port)` helper performs a `GET /api/tags` reachability check; wired into the swarm-demo captain so a misconfigured endpoint fails fast at startup instead of mid-spinner on the first turn (#1132).
+- **Live typed-args integration tests across all three providers** — `TypedArgsLiveIntegrationTest` exercises the full `@Generable` schema → provider envelope → wire → response parse → `KClass.constructFromMap` → typed executor round-trip on Ollama / Claude / OpenAI. Each test skips cleanly when the relevant provider isn't reachable (#1675).
 
 ### Changed
 - `ModelProvider` enum gained `ANTHROPIC` and `OPENAI`. `ModelConfig` carries optional `apiKey`, `anthropicBaseUrl`, `openAiBaseUrl`, and `maxTokens` fields used by the Claude / OpenAI adapters. Default Ollama path is unchanged.
 
 ### Fixed
 - **OllamaClient: assistant tool-call messages now wire-serialize `content` as JSON `null`** when no textual content accompanies the `tool_calls`. The previous shape (`content: ""`) was tolerated by local Ollama but rejected with `500 Internal Server Error` by Ollama Cloud's strict OpenAI-compatible validators (`gpt-oss:120b-cloud`, `gpt-oss:20b-cloud`). This broke every multi-turn agentic loop against those models. The null-coercion fires only when role is `assistant` AND `tool_calls` is non-empty AND content is blank — empty-string assistant turns without tool_calls keep their previous shape. Other adapters (`ClaudeClient`, `OpenAiClient`) were already spec-compliant; this is an Ollama-only fix (#1694).
+
+### Security
+- **`ModelConfig.toString()` masks `apiKey`** as `<6-char-prefix>…<N>chars` so `log.info("config = $cfg")`, future reflection-based serializers, or stack traces that capture a config no longer leak credentials. `equals`/`hashCode` still consider apiKey — masking is observation-only (#1665).
+- `SECURITY.md` extended with a "Handling LLM provider credentials" section: `.secrets/` directory convention, `chmod 0600/0700` guidance, the `toString` masking contract, header-handling claim, and a "if a key is committed → rotate first" runbook.
 
 ## [0.3.0] — 2026-05-05
 
