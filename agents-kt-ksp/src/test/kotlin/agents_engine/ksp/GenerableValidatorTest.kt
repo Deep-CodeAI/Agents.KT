@@ -108,4 +108,76 @@ class GenerableValidatorTest {
         val errors = GenerableValidator.validate(cls(name = "com.example.deep.Foo", abstract = true))
         assertTrue("com.example.deep.Foo" in errors[0], errors[0])
     }
+
+    // ── Field-type validation (#1701) ────────────────────────────────────────
+
+    private fun clsWithFields(fields: List<GenerableValidator.Field>) =
+        cls(paramCount = fields.size).copy(fields = fields)
+
+    @Test
+    fun `good — primitive field types pass`() {
+        val errors = GenerableValidator.validate(clsWithFields(listOf(
+            GenerableValidator.Field("s", GenerableValidator.FieldType.StringT, false, false, null),
+            GenerableValidator.Field("i", GenerableValidator.FieldType.IntT, false, false, null),
+            GenerableValidator.Field("b", GenerableValidator.FieldType.BoolT, false, false, null),
+        )))
+        assertEquals(emptyList(), errors)
+    }
+
+    @Test
+    fun `good — List of supported type passes`() {
+        val errors = GenerableValidator.validate(clsWithFields(listOf(
+            GenerableValidator.Field("tags", GenerableValidator.FieldType.ListT(GenerableValidator.FieldType.StringT), false, false, null),
+        )))
+        assertEquals(emptyList(), errors)
+    }
+
+    @Test
+    fun `good — nested @Generable reference passes`() {
+        val errors = GenerableValidator.validate(clsWithFields(listOf(
+            GenerableValidator.Field("inner", GenerableValidator.FieldType.GenerableRef("com.example.Other"), false, false, null),
+        )))
+        assertEquals(emptyList(), errors)
+    }
+
+    @Test
+    fun `bad — unsupported field type produces an error naming the field`() {
+        val errors = GenerableValidator.validate(clsWithFields(listOf(
+            GenerableValidator.Field(
+                "createdAt",
+                GenerableValidator.FieldType.Unsupported("java.time.Instant"),
+                false, false, null,
+            ),
+        )))
+        assertEquals(1, errors.size, errors.toString())
+        assertTrue("createdAt" in errors[0], errors[0])
+        assertTrue("java.time.Instant" in errors[0], errors[0])
+        assertTrue("unsupported" in errors[0].lowercase(), errors[0])
+    }
+
+    @Test
+    fun `bad — List of unsupported type is itself unsupported`() {
+        val errors = GenerableValidator.validate(clsWithFields(listOf(
+            GenerableValidator.Field(
+                "events",
+                GenerableValidator.FieldType.ListT(GenerableValidator.FieldType.Unsupported("java.time.Instant")),
+                false, false, null,
+            ),
+        )))
+        assertEquals(1, errors.size, errors.toString())
+        assertTrue("events" in errors[0], errors[0])
+        assertTrue("java.time.Instant" in errors[0], errors[0])
+    }
+
+    @Test
+    fun `multiple unsupported fields all reported`() {
+        val errors = GenerableValidator.validate(clsWithFields(listOf(
+            GenerableValidator.Field("a", GenerableValidator.FieldType.Unsupported("X"), false, false, null),
+            GenerableValidator.Field("b", GenerableValidator.FieldType.StringT, false, false, null),
+            GenerableValidator.Field("c", GenerableValidator.FieldType.Unsupported("Y"), false, false, null),
+        )))
+        assertEquals(2, errors.size, errors.toString())
+        assertTrue(errors.any { "a:" in it && "X" in it })
+        assertTrue(errors.any { "c:" in it && "Y" in it })
+    }
 }

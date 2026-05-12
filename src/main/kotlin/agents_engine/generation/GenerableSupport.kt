@@ -1,5 +1,6 @@
 package agents_engine.generation
 
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.KClass
 import kotlin.reflect.KParameter
 import kotlin.reflect.KType
@@ -13,6 +14,55 @@ private fun String.escapeJson(): String =
         .replace("\n", "\\n")
         .replace("\r", "\\r")
         .replace("\t", "\\t")
+
+// ─── KSP-generated schema lookup (#1701) ──────────────────────────────────────
+//
+// The `:agents-kt-ksp` processor emits `<ClassName>__GeneratedSchema.kt` files
+// in the same package as each `@Generable` data class. Each generated object
+// holds a `JSON_SCHEMA` constant that's byte-identical to what
+// `dataClassJsonSchema()` produces below. Looking it up via `Class.forName`
+// lets `KClass.jsonSchema()` skip the reflection walk entirely on consumers
+// that apply KSP — and consumers who don't still fall through to reflection
+// transparently.
+
+private object GeneratedSchemaCache {
+    // Both hits (the schema string) and misses (a sentinel) cache so we
+    // never re-attempt Class.forName on the same KClass twice. Concurrent
+    // map for the typical multi-thread agentic-loop access pattern.
+    private val MISS = Any()
+    private val cache = ConcurrentHashMap<KClass<*>, Any>()
+
+    fun lookup(kClass: KClass<*>): String? {
+        cache[kClass]?.let { return if (it === MISS) null else it as String }
+        val resolved = tryLoad(kClass) ?: run {
+            cache[kClass] = MISS
+            return null
+        }
+        cache[kClass] = resolved
+        return resolved
+    }
+
+    private fun tryLoad(kClass: KClass<*>): String? {
+        val fqn = kClass.qualifiedName ?: return null
+        return try {
+            val generatedClassName = "${fqn}__GeneratedSchema"
+            // Kotlin `object` declarations live as `<Name>` in the JVM class
+            // namespace (their methods live on an `INSTANCE` field) but the
+            // `const val` lands directly as a static field on the class.
+            val cls = Class.forName(generatedClassName, /* initialize = */ true, kClass.java.classLoader)
+            val field = cls.getDeclaredField("JSON_SCHEMA")
+            field.isAccessible = true
+            field.get(null) as? String
+        } catch (_: ClassNotFoundException) {
+            null   // expected when KSP isn't applied or the class is sealed
+        } catch (_: Throwable) {
+            // Defensive — never let lookup errors poison the reflection
+            // fallback path. The generated schema must be a clean win or it
+            // doesn't apply.
+            null
+        }
+    }
+}
 
 // ─── LLM Description ─────────────────────────────────────────────────────────
 
@@ -90,8 +140,16 @@ private fun KClass<*>.sealedLlmDescription(): String = buildString {
  * - Data classes produce `{"type":"object","properties":{...},"required":[...]}`.
  * - Sealed interfaces produce `{"oneOf":[...]}` with a `"type"` discriminator per variant.
  */
-fun KClass<*>.jsonSchema(): String =
-    if (isSealed) sealedJsonSchema() else dataClassJsonSchema()
+fun KClass<*>.jsonSchema(): String {
+    // #1701: prefer the KSP-generated schema when present. Byte-identical to
+    // the reflection path, but no reflection walk, no kotlin-reflect work,
+    // and zero allocation past the first call (cached). Sealed roots aren't
+    // generated yet, so they still go through the reflection path below.
+    if (!isSealed) {
+        GeneratedSchemaCache.lookup(this)?.let { return it }
+    }
+    return if (isSealed) sealedJsonSchema() else dataClassJsonSchema()
+}
 
 private fun KClass<*>.dataClassJsonSchema(): String {
     val ctor = primaryConstructor ?: return """{"type":"object","additionalProperties":false}"""

@@ -14,6 +14,10 @@ internal object GenerableValidator {
     /**
      * Minimal description of a class as seen by KSP. Just the fields the
      * validator needs — by keeping it small, the tests are direct.
+     *
+     * #1701 adds [fields] for the schema-generation path. Validation rules
+     * fire against `fields` (each must be a supported type); the emitter
+     * reads it to produce JSON Schema.
      */
     internal data class GenerableClass(
         val qualifiedName: String,
@@ -24,7 +28,45 @@ internal object GenerableValidator {
         val isAnnotation: Boolean,
         val hasPrimaryConstructor: Boolean,
         val primaryConstructorParamCount: Int,
+        /** Primary-constructor params in declaration order. Empty when not analysed. */
+        val fields: List<Field> = emptyList(),
     )
+
+    /**
+     * One primary-constructor parameter. Field types map 1:1 to the runtime's
+     * `KType.jsonSchemaTypeObject` set so the emitter produces byte-identical
+     * schemas to the reflection path. Anything outside this set fires a
+     * validator error and the class is excluded from generation.
+     */
+    internal data class Field(
+        val name: String,
+        val type: FieldType,
+        val isNullable: Boolean,
+        /** True when the parameter has a default value (Kotlin `= …`). */
+        val hasDefault: Boolean,
+        /** Contents of `@Guide(description)` if present; else null. */
+        val guideDescription: String?,
+    )
+
+    /**
+     * The supported-type set, matching the runtime's
+     * `KType.jsonSchemaTypeObject` branching exactly. Each variant carries
+     * the data the emitter needs.
+     */
+    internal sealed class FieldType {
+        object StringT : FieldType()
+        object IntT : FieldType()       // `Int` and `Long` → "integer"
+        object LongT : FieldType()
+        object DoubleT : FieldType()    // `Double` and `Float` → "number"
+        object FloatT : FieldType()
+        object BoolT : FieldType()
+        /** `List<T>` where T is itself a [FieldType]. Item-less list → array of unknown. */
+        data class ListT(val itemType: FieldType?) : FieldType()
+        /** Another `@Generable` class — schema emitted by recursion / lookup. */
+        data class GenerableRef(val qualifiedName: String) : FieldType()
+        /** Anything else — fires a validator error; never emitted. */
+        data class Unsupported(val rawTypeName: String) : FieldType()
+    }
 
     /**
      * Run all shape rules against [cls] and return a list of error messages
@@ -88,6 +130,32 @@ internal object GenerableValidator {
             }
         }
 
+        // Rule: every primary-constructor parameter must be a supported type
+        // (#1701). The runtime falls back to `{"type":"string"}` for unknown
+        // types, which silently corrupts model output — better to fail at
+        // compile time with a pointer at the offending field.
+        if (errors.isEmpty() && cls.fields.isNotEmpty()) {
+            cls.fields.forEach { field ->
+                val unsupported = unsupportedTypeName(field.type)
+                if (unsupported != null) {
+                    errors += "@Generable class '${cls.qualifiedName}' has field '${field.name}: $unsupported' " +
+                        "with an unsupported type. Supported: String, Int, Long, Double, Float, Boolean, " +
+                        "List<T> of any supported type, or another @Generable class."
+                }
+            }
+        }
+
         return errors
+    }
+
+    /**
+     * Returns the offending type name if [type] is not representable, or null
+     * if it's fine. Recurses into [FieldType.ListT] item types — a
+     * `List<java.time.Instant>` is just as bad as `java.time.Instant` itself.
+     */
+    private fun unsupportedTypeName(type: FieldType): String? = when (type) {
+        is FieldType.Unsupported -> type.rawTypeName
+        is FieldType.ListT -> type.itemType?.let { unsupportedTypeName(it) }
+        else -> null
     }
 }
