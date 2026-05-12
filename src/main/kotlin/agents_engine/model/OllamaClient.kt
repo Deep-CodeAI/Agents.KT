@@ -172,10 +172,24 @@ open class OllamaClient(
     internal fun buildRequestJson(messages: List<LlmMessage>, includeTools: Boolean = true): String {
         val messagesJson = messages.joinToString(",") { msg ->
             buildString {
-                append("""{"role":${msg.role.toJsonString()},"content":${msg.content.toJsonString()}""")
-                if (!msg.toolCalls.isNullOrEmpty()) {
+                // #1694 — On assistant turns that carry tool_calls, content must
+                // be JSON null per the OpenAI / Ollama chat-completions spec.
+                // Ollama Cloud's strict gpt-oss:* validators reject the
+                // empty-string form with 500 Internal Server Error; local
+                // Ollama tolerates either. Null-coerce only when:
+                //   role == assistant AND tool_calls non-empty AND content blank.
+                // A genuine empty-string assistant turn with no tool_calls is
+                // preserved as "content":"" (different semantics).
+                val toolCallsPresent = !msg.toolCalls.isNullOrEmpty()
+                val contentJson = if (msg.role == "assistant" && toolCallsPresent && msg.content.isEmpty()) {
+                    "null"
+                } else {
+                    msg.content.toJsonString()
+                }
+                append("""{"role":${msg.role.toJsonString()},"content":$contentJson""")
+                if (toolCallsPresent) {
                     append(""","tool_calls":[""")
-                    append(msg.toolCalls.joinToString(",") { tc ->
+                    append(msg.toolCalls!!.joinToString(",") { tc ->
                         """{"function":{"name":${tc.name.toJsonString()},"arguments":${InlineToolCallParser.argsToJson(tc.arguments)}}}"""
                     })
                     append("]")

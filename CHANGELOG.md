@@ -12,6 +12,9 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 ### Changed
 - `ModelProvider` enum gained `ANTHROPIC` and `OPENAI`. `ModelConfig` carries optional `apiKey`, `anthropicBaseUrl`, `openAiBaseUrl`, and `maxTokens` fields used by the Claude / OpenAI adapters. Default Ollama path is unchanged.
 
+### Fixed
+- **OllamaClient: assistant tool-call messages now wire-serialize `content` as JSON `null`** when no textual content accompanies the `tool_calls`. The previous shape (`content: ""`) was tolerated by local Ollama but rejected with `500 Internal Server Error` by Ollama Cloud's strict OpenAI-compatible validators (`gpt-oss:120b-cloud`, `gpt-oss:20b-cloud`). This broke every multi-turn agentic loop against those models. The null-coercion fires only when role is `assistant` AND `tool_calls` is non-empty AND content is blank — empty-string assistant turns without tool_calls keep their previous shape. Other adapters (`ClaudeClient`, `OpenAiClient`) were already spec-compliant; this is an Ollama-only fix (#1694).
+
 ## [0.3.0] — 2026-05-05
 
 First leg of the **KSP / compile-time-validation initiative** described in `docs/ksp-design.md`. This release ships **typed tool refs** — Kotlin's type system catches `tools("typo")` mistakes that previously bombed at agent `validate()` (or in CI test runs). Plus the `:agents-kt-ksp` module skeleton, ready for the Phase 2 codegen work.
