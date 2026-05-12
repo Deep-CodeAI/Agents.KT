@@ -30,6 +30,20 @@ internal object GenerableValidator {
         val primaryConstructorParamCount: Int,
         /** Primary-constructor params in declaration order. Empty when not analysed. */
         val fields: List<Field> = emptyList(),
+        /**
+         * Simple class name (no package). Used as the `"type"` discriminator
+         * const when rendering sealed variants. Derived from [qualifiedName]
+         * when not given explicitly — the processor sets it directly.
+         */
+        val simpleName: String = qualifiedName.substringAfterLast('.'),
+        /** Contents of `@Guide(description)` on the class itself (#1702 — for sealed variants). */
+        val guideDescription: String? = null,
+        /**
+         * Sealed parent: variants discovered via KSP's `getSealedSubclasses()`.
+         * Empty for non-sealed classes and for sealed parents whose subclasses
+         * KSP couldn't resolve.
+         */
+        val sealedVariants: List<GenerableClass> = emptyList(),
     )
 
     /**

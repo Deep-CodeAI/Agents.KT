@@ -28,6 +28,33 @@ internal object HandGeneratedUser__GeneratedSchema {
 @Generable("user with no generated companion")
 data class ReflectionOnlyUser(val email: String)
 
+// ── Sealed root with hand-written generated companion (#1702) ────────────────
+//
+// Demonstrates that the runtime lookup mechanism is shape-agnostic — sealed
+// parents whose generated schema is the `{"oneOf":[...]}` shape resolve the
+// same way as data-class shapes do.
+
+@Generable("hand-generated sealed root")
+sealed interface HandGeneratedDecision {
+    @Generable("approved variant")
+    data class Approved(val confidence: Double) : HandGeneratedDecision
+    @Generable("rejected variant")
+    data class Rejected(val reason: String) : HandGeneratedDecision
+}
+
+internal object HandGeneratedDecision__GeneratedSchema {
+    const val JSON_SCHEMA: String = """{"sentinel":"hand-generated-sealed","wraps":"oneOf normally"}"""
+}
+
+// Sealed root WITHOUT a generated companion — must fall back to the runtime's
+// sealedJsonSchema reflection path.
+
+@Generable("reflection-only sealed")
+sealed interface ReflectionOnlyDecision {
+    @Generable data class Yes(val ok: Boolean) : ReflectionOnlyDecision
+    @Generable data class No(val why: String) : ReflectionOnlyDecision
+}
+
 class GeneratedSchemaLookupTest {
 
     @Test
@@ -67,5 +94,25 @@ class GeneratedSchemaLookupTest {
         assertEquals(a, b)
         assertTrue("sentinel" !in a, "first call must be reflection: $a")
         assertTrue("sentinel" !in b, "cached call must still be reflection: $b")
+    }
+
+    // ── Sealed-root lookup (#1702) ───────────────────────────────────────────
+
+    @Test
+    fun `jsonSchema returns the generated constant for a sealed parent when companion exists`() {
+        val schema = HandGeneratedDecision::class.jsonSchema()
+        assertEquals(
+            """{"sentinel":"hand-generated-sealed","wraps":"oneOf normally"}""",
+            schema,
+            "sealed parents should hit the generated lookup just like data classes",
+        )
+    }
+
+    @Test
+    fun `jsonSchema falls back to sealedJsonSchema reflection for a sealed parent with no companion`() {
+        val schema = ReflectionOnlyDecision::class.jsonSchema()
+        assertTrue("\"oneOf\"" in schema, "expected oneOf wrapper from reflection: $schema")
+        assertTrue("Yes" in schema && "No" in schema, "expected both variants enumerated: $schema")
+        assertTrue("sentinel" !in schema, "must not pick up the hand-generated sentinel from the other test: $schema")
     }
 }

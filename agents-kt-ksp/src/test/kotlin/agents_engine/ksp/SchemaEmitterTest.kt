@@ -173,4 +173,141 @@ class SchemaEmitterTest {
             schema,
         )
     }
+
+    // ── Sealed-root schema generation (#1702) ────────────────────────────────
+
+    private fun variant(
+        simpleName: String,
+        fields: List<Field>,
+        guide: String? = null,
+    ) = GenerableClass(
+        qualifiedName = "com.example.$simpleName",
+        isSealed = false,
+        isAbstract = false,
+        isInterface = false,
+        isEnum = false,
+        isAnnotation = false,
+        hasPrimaryConstructor = true,
+        primaryConstructorParamCount = fields.size,
+        fields = fields,
+        simpleName = simpleName,
+        guideDescription = guide,
+    )
+
+    private fun sealedParent(name: String, variants: List<GenerableClass>) = GenerableClass(
+        qualifiedName = "com.example.$name",
+        isSealed = true,
+        isAbstract = true,    // sealed types are abstract from a JVM perspective; emitter ignores this for sealed
+        isInterface = false,
+        isEnum = false,
+        isAnnotation = false,
+        hasPrimaryConstructor = false,
+        primaryConstructorParamCount = 0,
+        simpleName = name,
+        sealedVariants = variants,
+    )
+
+    @Test
+    fun `sealed — two-variant root produces oneOf with discriminators`() {
+        val schema = SchemaEmitter.emitSealedSchema(sealedParent("Decision", listOf(
+            variant("Approved", listOf(field("confidence", FieldType.DoubleT))),
+            variant("Rejected", listOf(field("reason", FieldType.StringT))),
+        )))
+        assertEquals(
+            """{"oneOf":[""" +
+                """{"type":"object","properties":{"type":{"type":"string","const":"Approved"},"confidence":{"type":"number"}},"required":["type","confidence"],"additionalProperties":false}""" +
+                "," +
+                """{"type":"object","properties":{"type":{"type":"string","const":"Rejected"},"reason":{"type":"string"}},"required":["type","reason"],"additionalProperties":false}""" +
+                "]}",
+            schema,
+        )
+    }
+
+    @Test
+    fun `sealed — variant with no extra params is just the discriminator`() {
+        val schema = SchemaEmitter.emitSealedSchema(sealedParent("Status", listOf(
+            variant("Pending", emptyList()),
+        )))
+        assertEquals(
+            """{"oneOf":[""" +
+                """{"type":"object","properties":{"type":{"type":"string","const":"Pending"}},"required":["type"],"additionalProperties":false}""" +
+                "]}",
+            schema,
+        )
+    }
+
+    @Test
+    fun `sealed — variant with @Guide description tacked on at end`() {
+        val schema = SchemaEmitter.emitSealedSchema(sealedParent("Decision", listOf(
+            variant(
+                "Approved",
+                listOf(field("confidence", FieldType.DoubleT)),
+                guide = "the request was accepted",
+            ),
+        )))
+        assertEquals(
+            """{"oneOf":[""" +
+                """{"type":"object","properties":{"type":{"type":"string","const":"Approved"},"confidence":{"type":"number"}},"required":["type","confidence"],"additionalProperties":false,"description":"the request was accepted"}""" +
+                "]}",
+            schema,
+        )
+    }
+
+    @Test
+    fun `sealed — nullable param is not in required list`() {
+        val schema = SchemaEmitter.emitSealedSchema(sealedParent("Decision", listOf(
+            variant("Rejected", listOf(
+                field("reason", FieldType.StringT),
+                field("notes", FieldType.StringT, nullable = true),
+            )),
+        )))
+        assertEquals(
+            """{"oneOf":[""" +
+                """{"type":"object","properties":{"type":{"type":"string","const":"Rejected"},"reason":{"type":"string"},"notes":{"type":"string"}},"required":["type","reason"],"additionalProperties":false}""" +
+                "]}",
+            schema,
+        )
+    }
+
+    @Test
+    fun `sealed — variant with default-valued param is not in required list`() {
+        val schema = SchemaEmitter.emitSealedSchema(sealedParent("Decision", listOf(
+            variant("Approved", listOf(
+                field("confidence", FieldType.DoubleT),
+                field("note", FieldType.StringT, hasDefault = true),
+            )),
+        )))
+        assertEquals(
+            """{"oneOf":[""" +
+                """{"type":"object","properties":{"type":{"type":"string","const":"Approved"},"confidence":{"type":"number"},"note":{"type":"string"}},"required":["type","confidence"],"additionalProperties":false}""" +
+                "]}",
+            schema,
+        )
+    }
+
+    @Test
+    fun `sealed — empty variants list produces empty oneOf matching runtime`() {
+        val schema = SchemaEmitter.emitSealedSchema(sealedParent("NoVariants", emptyList()))
+        assertEquals("""{"oneOf":[]}""", schema)
+    }
+
+    @Test
+    fun `sealed — variant field @Guide and class @Guide both render correctly`() {
+        // Both the field-level and class-level @Guide annotations should
+        // appear in the right places — field guide inside the type object,
+        // class guide as a trailing top-level description.
+        val schema = SchemaEmitter.emitSealedSchema(sealedParent("D", listOf(
+            variant(
+                "Approved",
+                listOf(field("confidence", FieldType.DoubleT, guide = "0..1 score")),
+                guide = "the variant",
+            ),
+        )))
+        assertEquals(
+            """{"oneOf":[""" +
+                """{"type":"object","properties":{"type":{"type":"string","const":"Approved"},"confidence":{"type":"number","description":"0..1 score"}},"required":["type","confidence"],"additionalProperties":false,"description":"the variant"}""" +
+                "]}",
+            schema,
+        )
+    }
 }

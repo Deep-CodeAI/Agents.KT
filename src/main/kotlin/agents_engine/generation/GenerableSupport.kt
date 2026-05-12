@@ -141,13 +141,13 @@ private fun KClass<*>.sealedLlmDescription(): String = buildString {
  * - Sealed interfaces produce `{"oneOf":[...]}` with a `"type"` discriminator per variant.
  */
 fun KClass<*>.jsonSchema(): String {
-    // #1701: prefer the KSP-generated schema when present. Byte-identical to
-    // the reflection path, but no reflection walk, no kotlin-reflect work,
-    // and zero allocation past the first call (cached). Sealed roots aren't
-    // generated yet, so they still go through the reflection path below.
-    if (!isSealed) {
-        GeneratedSchemaCache.lookup(this)?.let { return it }
-    }
+    // #1701: prefer the KSP-generated schema when present. Byte-identical
+    // to the reflection path, but no reflection walk, no kotlin-reflect
+    // work, and zero allocation past the first call (cached). #1702
+    // extended generation to sealed roots — the cache mechanism is
+    // shape-agnostic (reads a JSON_SCHEMA constant regardless of whether
+    // its content is data-class or `oneOf`-shaped).
+    GeneratedSchemaCache.lookup(this)?.let { return it }
     return if (isSealed) sealedJsonSchema() else dataClassJsonSchema()
 }
 

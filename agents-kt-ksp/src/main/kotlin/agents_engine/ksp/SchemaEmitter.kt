@@ -88,6 +88,60 @@ internal object SchemaEmitter {
     }
 
     /**
+     * Emit the JSON Schema for a sealed `@Generable` root (#1702).
+     *
+     * Format: `{"oneOf":[variant1,variant2,...]}` where each variant is a
+     * data-class-shaped object with a `"type"` discriminator at the head
+     * (`{"type":"string","const":"<SimpleName>"}`), then the variant's own
+     * primary-ctor params, then `additionalProperties:false`, with the
+     * variant-class `@Guide(description)` (if any) tacked on at the end
+     * as `"description"`.
+     *
+     * Mirrors `GenerableSupport.sealedJsonSchema()` + `variantJsonSchema()`
+     * byte-for-byte.
+     */
+    fun emitSealedSchema(parent: GenerableValidator.GenerableClass): String = buildString {
+        append("""{"oneOf":[""")
+        parent.sealedVariants.forEachIndexed { i, variant ->
+            if (i > 0) append(",")
+            append(emitVariantSchema(variant))
+        }
+        append("]}")
+    }
+
+    private fun emitVariantSchema(variant: GenerableValidator.GenerableClass): String = buildString {
+        append("""{"type":"object","properties":{""")
+        // Discriminator always first — matches the runtime's
+        // `"type":{"type":"string","const":"$simpleName"}` placement.
+        append(""""type":{"type":"string","const":"""")
+        append(variant.simpleName)
+        append("\"}")
+        variant.fields.forEach { field ->
+            append(",")
+            append("\"").append(field.name).append("\":")
+            append(emitFieldFragment(field))
+        }
+        // Required: "type" is always required; then non-nullable, non-defaulted params.
+        append("""},"required":["type"""")
+        variant.fields.forEach { field ->
+            if (!field.isNullable && !field.hasDefault) {
+                append(""","""")
+                append(field.name)
+                append('"')
+            }
+        }
+        append("""],"additionalProperties":false""")
+        // Variant-class @Guide description (#1702) — appears AFTER
+        // additionalProperties, matching the runtime's variantJsonSchema().
+        if (variant.guideDescription != null) {
+            append(""","description":"""")
+            append(escapeJson(variant.guideDescription))
+            append('"')
+        }
+        append('}')
+    }
+
+    /**
      * Match `String.escapeJson()` in `GenerableSupport.kt`. Defensive copy
      * here so the KSP module doesn't depend on the runtime project at
      * compile time.
