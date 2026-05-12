@@ -278,6 +278,29 @@ class Agent<IN, OUT>(
         }
     }
 
+    /**
+     * #1698: Run [invokeSuspend] with the [promptOverride] in effect as the
+     * agent's system prompt, then restore the baked-in [prompt]. Used by the
+     * `wrap` operator (`teacher wrap student`) so the teacher's output can
+     * drive the student's behavior for one call without permanently mutating
+     * the student.
+     *
+     * Single-threaded contract: agents are single-placed (see
+     * [markPlaced]), and `wrap` calls are sequential within a [Pipeline]
+     * invocation. Concurrent calls into the same agent instance from
+     * different threads would race on the swap; that violates the existing
+     * single-placement guarantee, not this method's contract.
+     */
+    internal suspend fun invokeSuspendWithPromptOverride(input: IN, promptOverride: String): OUT {
+        val previous = this.prompt
+        this.prompt = promptOverride
+        try {
+            return invokeSuspend(input)
+        } finally {
+            this.prompt = previous
+        }
+    }
+
     private suspend fun resolveSkill(input: IN): Skill<*, *> {
         val candidates = skills.values.filter {
             it.inType.java.isInstance(input) && it.outType == outType

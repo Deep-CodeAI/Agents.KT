@@ -4,6 +4,9 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [0.4.3] — 2026-05-12
 
+### Added
+- **`wrap` operator (PRD `>>`)** — closes the last open Phase 1 PRD line item. `teacher wrap student` returns a `Pipeline<IN, OUT>` that runs the teacher first to compute a system prompt string, then invokes the student with that string as its prompt for that one call. The student's baked-in `prompt` is restored after the call returns. Two framings: **education** (teacher specializes a generalist student) and **security** (teacher locks down the student's task surface). Type: `Agent<IN, String> wrap Agent<IN, OUT>` → `Pipeline<IN, OUT>`. Headline test: agent A teaches agent B to compute `fib(10)` via a `fib` tool, driven by a stub `ModelClient` that reads the teacher's instruction from the system prompt and emits a tool call. Both agents participate in the single-placement contract via the returned Pipeline (#1698).
+
 ### Security
 - **Complete the BouncyCastle pin across both Gradle modules.** v0.4.2 added explicit BC 1.84 `compileOnly` declarations + `force(...)` to the root `build.gradle.kts`, but missed the `:agents-kt-ksp` subproject — its `kotlinBouncyCastleConfiguration` still pulled BC 1.80 transitively, which is what kept the four dependabot advisories alive. v0.4.3 mirrors the same fix into `agents-kt-ksp/build.gradle.kts` and prunes stale 1.80 entries from `gradle/verification-metadata.xml`. Both `gradle.lockfile` files now record 1.84 everywhere; no 1.80 entries remain anywhere in the repo. Published JARs are unchanged — BC was never in `runtimeClasspath` for either module.
 
