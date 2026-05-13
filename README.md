@@ -200,7 +200,7 @@ Use Maven Central for published artifacts and tags for immutable release points.
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("ai.deep-code:agents-kt:0.4.3")
+    implementation("ai.deep-code:agents-kt:0.4.4")
 }
 ```
 

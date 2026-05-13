@@ -2,7 +2,15 @@
 
 All notable changes to Agents.KT are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0, minor bumps may add new public API; existing API surface is preserved.
 
-## [0.4.3] — 2026-05-12
+## [0.4.4] — 2026-05-13
+
+First Maven Central release after **v0.4.2**. Internal tags `v0.4.3` (BC pin completeness) existed on GitHub but never reached Maven Central; their content is folded into 0.4.4 alongside the KSP arc and the `wrap` operator. Skip straight to 0.4.4:
+
+```kotlin
+implementation("ai.deep-code:agents-kt:0.4.4")
+```
+
+## [0.4.3-unpublished] — 2026-05-12
 
 ### Added
 - **KSP validation pass for `@Generable`** — the `:agents-kt-ksp` skeleton that's shipped since 0.3.0 (#1018) is now wired to do real work. The processor walks every `@Generable` class in the consumer's compilation and emits compile-time errors for shapes the framework can't actually construct from JSON: non-sealed interfaces, annotation classes, enums, abstract classes, and classes without a parameterised primary constructor. Sealed types short-circuit — they route through the polymorphic / `type` discriminator path that `GenerableSupport.sealedJsonSchema` already handles. Errors point at the offending declaration so the IDE shows red squiggles where the user can fix them. Schema-generation pass (replacing runtime reflection) is the next KSP increment; this issue closes the validation half (#1700).
