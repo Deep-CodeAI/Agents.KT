@@ -144,14 +144,27 @@ class ConstructFromMapEmitterTest {
     }
 
     @Test
-    fun `data class — nested @Generable ref dispatches to the nested generated companion`() {
+    fun `data class — nested @Generable ref routes through the runtime extension (handles missing companion gracefully)`() {
+        // #1707/#2: previously emitted a hard-coded
+        // `Customer__GeneratedSchema.constructFromMap(it)` — if Customer
+        // had default-valued params and was skipped by canGenerate, the
+        // OUTER class's generated source failed to compile (unresolved
+        // reference). The fix routes through the runtime extension on
+        // `KClass`, which checks the cache (fast path when generated
+        // companion exists) and falls back to reflection otherwise. The
+        // `::class` receiver is a Kotlin compile-time class literal,
+        // not a reflection call.
         val out = ConstructFromMapEmitter.emitDataClassBody(
             cls("Order", listOf(field("customer", FieldType.GenerableRef("com.example.Customer")))),
             isSealedVariant = false,
         )
         assertTrue(
-            "(fields[\"customer\"] as? Map<*, *>)?.let { com.example.Customer__GeneratedSchema.constructFromMap(it) }" in out,
-            "expected dispatch to nested companion: $out",
+            "(fields[\"customer\"] as? Map<*, *>)?.let { com.example.Customer::class.constructFromMap(it) }" in out,
+            "expected dispatch via ::class.constructFromMap (cache-aware, no compile-time dependency on the nested companion): $out",
+        )
+        assertFalse(
+            "Customer__GeneratedSchema.constructFromMap" in out,
+            "must not hard-code the generated companion reference (breaks when nested class is non-generated): $out",
         )
     }
 

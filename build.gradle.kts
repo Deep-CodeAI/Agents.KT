@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "ai.deep-code"
-version = "0.4.4"
+version = "0.4.5"
 
 repositories {
     mavenCentral()
@@ -33,18 +33,25 @@ configurations.all {
 }
 
 dependencies {
-    // #1705 (Phase 3): kotlin-reflect is now compileOnly. With KSP-generated
-    // schema/description/constructor companions (#1701-#1704) covering every
-    // hot path, consumers don't need kotlin-reflect on their runtime
-    // classpath unless they (a) skip applying :agents-kt-ksp, or (b) use
-    // @Generable data classes with default-valued primary-ctor params (KSP
-    // currently skips codegen for those). The reflection-using fallback
-    // paths in GenerableSupport are wrapped via ReflectionFallback so a
-    // missing kotlin-reflect degrades to null returns instead of crashing.
-    compileOnly("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
-    // Tests still drive both the generated and reflection paths, so
-    // kotlin-reflect lands on the test classpath via testImplementation.
-    testImplementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
+    // #1707 — kotlin-reflect reverted to `implementation` after v0.4.4
+    // over-promised "reflect-free runtime". The KSP arc (#1701-#1704)
+    // does cover the high-frequency read paths on @Generable
+    // (`jsonSchema`, `toLlmDescription`, `constructFromMap`), but other
+    // hot paths still use `kotlin.reflect.full.*`:
+    //   - Skill.kt:208  (toLlmDescription via findAnnotation)
+    //   - AgenticLoop.kt:77  (system-message build)
+    //   - ToolDef.kt:170  (typed-tool @Generable check)
+    //   - McpServer.kt:230 (runtime-discovered @Generable input)
+    //   - GenerableSupport.kt:367 (toLlmInput)
+    //   - BranchBuilder.kt:75 (sealedSubclasses for branch exhaustiveness)
+    // Making kotlin-reflect compileOnly with these intact would crash
+    // consumer apps without it on the classpath. Honest framing: KSP
+    // saves the per-call schema/description/construct walks; runtime
+    // still requires kotlin-reflect for agent construction and a few
+    // adjacent paths. A future PR can wrap each remaining callsite and
+    // ship a consumer-app smoke test without kotlin-reflect — too large
+    // to be a v0.4.5 patch.
+    implementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     testImplementation(kotlin("test"))

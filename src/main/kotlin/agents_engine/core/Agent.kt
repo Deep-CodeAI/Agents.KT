@@ -279,25 +279,38 @@ class Agent<IN, OUT>(
     }
 
     /**
-     * #1698: Run [invokeSuspend] with the [promptOverride] in effect as the
-     * agent's system prompt, then restore the baked-in [prompt]. Used by the
-     * `wrap` operator (`teacher wrap student`) so the teacher's output can
-     * drive the student's behavior for one call without permanently mutating
-     * the student.
+     * #1698: Run the agentic loop with [promptOverride] in effect as the
+     * system prompt, *without* mutating the agent's baked-in [prompt].
+     * Used by the `wrap` operator (`teacher wrap student`).
      *
-     * Single-threaded contract: agents are single-placed (see
-     * [markPlaced]), and `wrap` calls are sequential within a [Pipeline]
-     * invocation. Concurrent calls into the same agent instance from
-     * different threads would race on the swap; that violates the existing
-     * single-placement guarantee, not this method's contract.
+     * #1707/#3: v0.4.4 implemented this by swapping `this.prompt` and
+     * restoring in a `finally` block. That's race-unsafe when the same
+     * pipeline is launched from multiple coroutines — one lane's prompt
+     * could land in another lane's system message. The fix routes the
+     * override through `executeAgentic`'s `effectivePrompt` parameter,
+     * which threads through the call stack as a local rather than via
+     * the shared field.
+     *
+     * Falls back through the same skill-resolution / error-hook flow as
+     * the normal [invokeSuspend]; only the system-message construction
+     * differs (reads the override instead of `agent.prompt`).
      */
     internal suspend fun invokeSuspendWithPromptOverride(input: IN, promptOverride: String): OUT {
-        val previous = this.prompt
-        this.prompt = promptOverride
         try {
-            return invokeSuspend(input)
-        } finally {
-            this.prompt = previous
+            val skill = resolveSkill(input)
+            skillChosenListener?.invoke(skill.name)
+            return if (skill.isAgentic) {
+                castOut(executeAgentic(this, skill, input, effectivePrompt = promptOverride))
+            } else {
+                // Non-agentic skills don't read prompt — implementedBy lambdas
+                // ignore the override. Same behavior as the legacy path.
+                castOut(executors[skill.name]!!(input))
+            }
+        } catch (t: Throwable) {
+            errorListener?.let { listener ->
+                try { listener(t) } catch (cb: Throwable) { t.addSuppressed(cb) }
+            }
+            throw t
         }
     }
 

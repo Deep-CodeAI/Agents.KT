@@ -2,6 +2,21 @@
 
 All notable changes to Agents.KT are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0, minor bumps may add new public API; existing API surface is preserved.
 
+## [0.4.5] — 2026-05-14
+
+Patch release responding to v0.4.4 reviewer feedback (#1707). All five concerns verified against `main`; correctness fixes shipped, one over-promise walked back honestly.
+
+### Fixed
+- **`wrap` is now race-safe under concurrent invocation.** v0.4.4 implemented `teacher wrap student` by mutating `student.prompt` for the duration of one call and restoring in `finally`. Single-placement protected against multi-pipeline reuse but not against the same Pipeline launched from multiple coroutines, or a direct invocation racing with a wrap-pipeline mid-call — one lane could see another's system prompt. v0.4.5 threads the effective prompt through `executeAgentic(agent, skill, input, effectivePrompt)` as a local parameter; `agent.prompt` is never mutated. Test coverage: `WrapConcurrencyTest` exercises 8 parallel lanes with distinguishable teacher outputs + a direct invocation racing alongside, asserting no cross-talk. **Consumer-visible behavior change**: `wrap`'s prompt override is only visible to **agentic skills** (those that go through `executeAgentic`). `implementedBy` skills don't see it (and never reliably did — the old test pattern that relied on reading `agent.prompt` from inside an `implementedBy` lambda worked only because of the now-removed mutation race). Realistic usage of `wrap` is for LLM-driven students; that path is unchanged. (#1707/#3)
+- **KSP `constructFromMap` no longer emits uncompilable nested references.** v0.4.4 generated `Customer__GeneratedSchema.constructFromMap(it)` for every nested `@Generable` ref. If the nested class had default-valued primary-ctor params, the processor skipped emitting its `constructFromMap` — leaving the outer class's generated source with an unresolved reference at compile time, not a runtime fallback as the code comment claimed. v0.4.5 routes nested refs through `<NestedClass>::class.constructFromMap(map)` instead: the `::class` receiver is a Kotlin class literal (no `kotlin-reflect` involvement at the call site), and the `@PublishedApi` extension's cache lookup handles both cases — generated companion present → fast path; absent → reflection fallback or graceful null. Test coverage: `ConstructFromMapEmitterTest` pins the new emission shape. (#1707/#2)
+
+### Changed
+- **`kotlin-reflect` reverted from `compileOnly` back to `implementation`.** v0.4.4 framed the KSP arc as "reflect-free runtime", but several hot paths still call `kotlin.reflect.full.*` regardless of KSP: `Skill.toLlmDescription`, `AgenticLoop` system-message build, `ToolDef` typed-tool validation, `McpServer` runtime-discovered `@Generable` input detection, `GenerableSupport.toLlmInput`, `BranchBuilder.sealedSubclasses`. A consumer without `kotlin-reflect` would hit `LinkageError` at agent construction, not just at LLM calls. The KSP wins are still real — `jsonSchema`, `toLlmDescription`, and `constructFromMap` read-paths skip the reflection walk when a generated companion exists — but the runtime continues to require `kotlin-reflect`. A future PR will wrap each remaining callsite and ship a consumer-app smoke test without `kotlin-reflect`; too large to be a v0.4.5 patch. (#1707/#1)
+- **Doc drift cleared.** README's "main prepared as 0.4.3" stale string updated to current version. `wiki/API-Quick-Reference.md`'s `maxTurns` default corrected from `Int.MAX_VALUE` to the actual code default `8` (set in `BudgetConfig.kt`). (#1707/#5)
+
+### Deferred to a follow-up commit
+- **CI alignment with the wrapper** (`./gradlew` at Gradle 9.5.0 instead of action-supplied 8.13) — patch ready locally; requires a GitHub token with `workflow` scope to push. See #1707/#4 follow-up.
+
 ## [0.4.4] — 2026-05-13
 
 First Maven Central release after **v0.4.2**. Internal tags `v0.4.3` (BC pin completeness) existed on GitHub but never reached Maven Central; their content is folded into 0.4.4 alongside the KSP arc and the `wrap` operator. Skip straight to 0.4.4:

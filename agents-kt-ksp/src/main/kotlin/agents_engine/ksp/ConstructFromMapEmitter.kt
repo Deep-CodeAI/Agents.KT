@@ -123,12 +123,19 @@ internal object ConstructFromMapEmitter {
             "agents_engine.generation.coerceList($source) { $itemExpr }"
         }
         is GenerableValidator.FieldType.GenerableRef ->
-            // Call the nested generated companion. If the nested class isn't
-            // generated (e.g. it has defaults), the JVM dispatch surfaces a
-            // ClassNotFoundException at runtime → caller's catch block
-            // returns null → caller falls through to reflection on retry.
-            // Acceptable: the per-class fallback is correct.
-            "(${source} as? Map<*, *>)?.let { ${type.qualifiedName}__GeneratedSchema.constructFromMap(it) }"
+            // #1707/#2: route nested refs through the runtime extension on
+            // KClass. The receiver `::class` is a Kotlin class literal that
+            // compiles regardless of whether the nested class has a
+            // generated companion — `agents_engine.generation.constructFromMap`
+            // is `@PublishedApi internal` and consults the cache (generated
+            // companion present → fast path; absent → reflection fallback,
+            // or graceful null if kotlin-reflect is unavailable).
+            //
+            // Previously we hard-coded `${type.qualifiedName}__GeneratedSchema.constructFromMap(it)`,
+            // which was an unresolved reference at compile time when the
+            // nested class had default-valued params (canGenerate skipped
+            // its constructFromMap emission).
+            "(${source} as? Map<*, *>)?.let { ${type.qualifiedName}::class.constructFromMap(it) }"
         is GenerableValidator.FieldType.Unsupported ->
             // Validator should have caught this. Defensive — make compile fail loudly.
             error("Cannot emit coercion for unsupported type ${type.rawTypeName}")

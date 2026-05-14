@@ -1,9 +1,10 @@
 package agents_engine.composition.wrap
 
 import agents_engine.composition.loop.loop
-import agents_engine.core.Agent
 import agents_engine.core.agent
 import agents_engine.core.skill
+import agents_engine.model.LlmResponse
+import agents_engine.model.ModelClient
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -41,6 +42,31 @@ import kotlin.test.assertTrue
  */
 class GuessingGameTest {
 
+    /**
+     * Build a stub `ModelClient` that parses the system message for a
+     * `[low, high]` window and emits the midpoint as text. Stand-in for an
+     * actual LLM-driven student; lets the test exercise the real
+     * agentic-loop path (which is what `wrap` overrides) without needing
+     * a live LLM.
+     *
+     * #1707/#3 update: the previous version of this test used pure-Kotlin
+     * `implementedBy` skills and read `guesserAgent.prompt` inside the
+     * lambda via a lateinit capture. That only worked because `wrap` used
+     * to mutate `student.prompt`; the mutation was a concurrency hazard
+     * (see WrapConcurrencyTest). The current `wrap` threads the override
+     * through `executeAgentic` instead — so the override is visible to
+     * agentic skills, not to `implementedBy` lambdas. This matches the
+     * intended consumer use case: a wrapped student is meaningful when
+     * it's LLM-driven.
+     */
+    private fun midpointStubClient() = ModelClient { msgs ->
+        val systemContent = msgs.firstOrNull { it.role == "system" }?.content.orEmpty()
+        val match = Regex("""\[(\d+),\s*(\d+)]""").find(systemContent)
+        val a = match?.groupValues?.get(1)?.toInt() ?: 1
+        val b = match?.groupValues?.get(2)?.toInt() ?: 100
+        LlmResponse.Text(((a + b) / 2).toString())
+    }
+
     @Test
     fun `wrap inside Loop — oracle teaches guesser to find secret 42 via binary search`() {
         val secret = 42
@@ -67,54 +93,35 @@ class GuessingGameTest {
             }
         }
 
-        // Guesser: reads its runtime prompt (set by wrap each round) and
-        // emits the midpoint of the window. Captured via lateinit so the
-        // closure can read the live `prompt` at invocation time.
-        lateinit var guesserAgent: Agent<String, String>
-        guesserAgent = agent<String, String>("guesser") {
+        // Guesser: agentic with a stub `ModelClient` that reads the
+        // teacher-supplied system message and emits the midpoint.
+        val guesser = agent<String, String>("guesser") {
             prompt("baked-in default — overridden by the oracle every round")
+            model { ollama("stub"); client = midpointStubClient() }
             skills {
-                skill<String, String>("guess", "Emit the midpoint of the current window") {
-                    implementedBy { _ ->
-                        // The wrap override is reflected in the agent's `prompt`
-                        // for the duration of this call. Parse "[A, B]" out of
-                        // the override; default to [1, 100] if missing.
-                        val windowRegex = Regex("""\[(\d+),\s*(\d+)]""")
-                        val match = windowRegex.find(guesserAgent.prompt)
-                        val a = match?.groupValues?.get(1)?.toInt() ?: 1
-                        val b = match?.groupValues?.get(2)?.toInt() ?: 100
-                        ((a + b) / 2).toString()  // binary-search midpoint
-                    }
-                }
+                skill<String, String>("guess", "Emit the midpoint of the current window") { tools() }
             }
         }
 
-        // Compose: wrap → Pipeline → loop. Termination is "guess matches secret."
-        val game = (oracle wrap guesserAgent).loop(maxIterations = 12) { guess ->
+        val game = (oracle wrap guesser).loop(maxIterations = 12) { guess ->
             if (guess.trim() == secret.toString()) null else guess
         }
 
-        val finalGuess = game("")  // start with empty input — oracle initialises [1, 100]
+        val finalGuess = game("start")
 
-        // 1. Final guess is the secret.
         assertEquals(secret.toString(), finalGuess.trim())
-
-        // 2. Binary search of 1..100 converges in ≤ 7 rounds (⌈log2(100)⌉).
         assertTrue(
             guessLog.size <= 7,
             "binary search of 1..100 should converge in ≤ 7 rounds; took ${guessLog.size}: $guessLog",
         )
         assertTrue(guessLog.isNotEmpty(), "guesser must have made at least one guess")
-
-        // 3. Window is fully narrowed at termination.
         assertTrue(low <= secret && secret <= high, "secret must always sit inside the running window")
-
-        // 4. Student's baked-in prompt is restored after the whole game,
-        //    not just per round — the override unwinds cleanly across
-        //    the entire loop chain.
+        // Student's baked-in prompt was never mutated (#1707/#3 fix); the
+        // wrap override threads through invocation context. Verify the
+        // field is still the original baked-in value.
         assertTrue(
-            "baked-in default" in guesserAgent.prompt,
-            "after the game, guesser.prompt must be restored to the baked-in default; got: ${guesserAgent.prompt}",
+            "baked-in default" in guesser.prompt,
+            "guesser.prompt must remain the baked-in value (no mutation); got: ${guesser.prompt}",
         )
     }
 
@@ -139,25 +146,16 @@ class GuessingGameTest {
             }
         }
 
-        lateinit var guesserAgent: Agent<String, String>
-        guesserAgent = agent<String, String>("guesser-2") {
+        val guesser = agent<String, String>("guesser-2") {
             prompt("init")
-            skills {
-                skill<String, String>("guess", "Midpoint") {
-                    implementedBy { _ ->
-                        val match = Regex("""\[(\d+),\s*(\d+)]""").find(guesserAgent.prompt)
-                        val a = match?.groupValues?.get(1)?.toInt() ?: 1
-                        val b = match?.groupValues?.get(2)?.toInt() ?: 100
-                        ((a + b) / 2).toString()
-                    }
-                }
-            }
+            model { ollama("stub"); client = midpointStubClient() }
+            skills { skill<String, String>("guess", "Midpoint") { tools() } }
         }
 
-        val game = (oracle wrap guesserAgent).loop(maxIterations = 12) { guess ->
+        val game = (oracle wrap guesser).loop(maxIterations = 12) { guess ->
             if (guess.trim() == secret.toString()) null else guess
         }
 
-        assertEquals(secret.toString(), game("").trim())
+        assertEquals(secret.toString(), game("start").trim())
     }
 }

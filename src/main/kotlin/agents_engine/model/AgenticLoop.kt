@@ -21,6 +21,13 @@ suspend fun <IN> executeAgentic(
     agent: Agent<IN, *>,
     skill: Skill<*, *>,
     input: IN,
+    /**
+     * #1707/#3: the effective system prompt for this invocation. Defaults
+     * to the agent's baked-in `prompt`. The `wrap` operator passes the
+     * teacher's output here instead of mutating `agent.prompt` (which
+     * races on concurrent invocation of the same pipeline).
+     */
+    effectivePrompt: String = agent.prompt,
 ): Any {
     val config = requireNotNull(agent.modelConfig) {
         "Agent '${agent.name}' has no model configured. Add a model { } block."
@@ -72,7 +79,10 @@ suspend fun <IN> executeAgentic(
 
     val hasUntrustedTools = allToolDefs.any { it.untrustedOutput }
     val systemContent = buildString {
-        if (agent.prompt.isNotBlank()) { append(agent.prompt); append("\n\n") }
+        // #1707/#3: read effectivePrompt (defaults to agent.prompt) instead
+        // of agent.prompt directly, so wrap's per-invocation override is
+        // race-free under concurrent pipeline calls.
+        if (effectivePrompt.isNotBlank()) { append(effectivePrompt); append("\n\n") }
         // When knowledge is lazy, use description only — content loads via tool calls
         if (knowledgeToolDefs.isNotEmpty()) append(skill.toLlmDescription())
         else append(skill.toLlmContext())

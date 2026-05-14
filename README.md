@@ -187,7 +187,7 @@ Topical guides:
 
 ## Current Release
 
-`main` is prepared as `0.4.3`. The 0.4 line includes the site-facing runtime story plus the recent GitHub updates: Anthropic and OpenAI adapters alongside Ollama, LiveRunner prechecks, `OllamaPreflight`, typed tool references, `Swarm` / `absorb`, and supply-chain hardening for the BouncyCastle advisory cleanup.
+`main` is currently `0.4.5`. The 0.4 line covers Anthropic and OpenAI adapters alongside Ollama, LiveRunner prechecks, `OllamaPreflight`, typed tool references, `Swarm` / `absorb`, supply-chain hardening for the BouncyCastle advisory cleanup, the `wrap` operator (`teacher wrap student`), and the KSP processor that generates compile-time schema, LLM-description and `constructFromMap` constants for `@Generable` types.
 
 Use Maven Central for published artifacts and tags for immutable release points.
 
@@ -200,7 +200,7 @@ Use Maven Central for published artifacts and tags for immutable release points.
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("ai.deep-code:agents-kt:0.4.4")
+    implementation("ai.deep-code:agents-kt:0.4.5")
 }
 ```
 
