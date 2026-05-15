@@ -2,6 +2,9 @@ package agents_engine.model
 
 import agents_engine.generation.LenientJsonParser
 import agents_engine.generation.jsonSchema
+import java.io.BufferedReader
+import java.io.InputStream
+import java.io.InputStreamReader
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -9,6 +12,10 @@ import java.net.http.HttpResponse
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 
 /**
  * OpenAI Chat Completions adapter (#1656). Mirrors [OllamaClient] and
@@ -59,6 +66,134 @@ open class OpenAiClient(
         return parseResponse(responseBody)
     }
 
+    /**
+     * #1743 — native SSE streaming. OpenAI's protocol is `data:`-only
+     * (no `event:` names), terminated by the literal `data: [DONE]`.
+     *
+     * Tool-call correlation: the `id` (`call_*`) arrives in the FIRST
+     * delta for a given `tool_calls[].index`; subsequent deltas omit
+     * it. The aggregator caches `index -> id` after first sighting.
+     *
+     * Arguments arrive as concatenated string fragments. We emit
+     * `LlmChunk.ToolCallArgumentsDelta` per non-empty fragment and
+     * accumulate into a buffer; on `finish_reason: "tool_calls"` we
+     * parse the buffer and emit `LlmChunk.ToolCallFinished`.
+     *
+     * Token usage requires `stream_options.include_usage: true` (set in
+     * `buildRequestJson(stream=true)`). OpenAI then sends a final
+     * usage-only delta with `choices: []` and `usage: {...}`. We capture
+     * it and emit `LlmChunk.End(usage)` when `[DONE]` arrives.
+     */
+    override suspend fun chatStream(messages: List<LlmMessage>): Flow<LlmChunk> {
+        val body = buildRequestJson(messages, stream = true)
+        val headers = mapOf(
+            "Authorization" to "Bearer $apiKey",
+            "content-type" to "application/json",
+        )
+        return flow {
+            sendChatStream(body, headers).use { stream ->
+                parseSseStream(stream, this)
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    /** Test seam — subclasses override to stub the streaming InputStream. */
+    internal open fun sendChatStream(body: String, headers: Map<String, String>): InputStream {
+        val builder = HttpRequest.newBuilder()
+            .uri(URI.create("$baseUrl/v1/chat/completions"))
+            .timeout(requestTimeout.toJavaDuration())
+            .POST(HttpRequest.BodyPublishers.ofString(body))
+        headers.forEach { (k, v) -> builder.header(k, v) }
+        val response = http.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream())
+        return response.body()
+    }
+
+    /** Per-tool-call streaming state. */
+    private data class ToolCallState(
+        var id: String? = null,
+        var name: String? = null,
+        val argsBuilder: StringBuilder = StringBuilder(),
+    )
+
+    private suspend fun parseSseStream(stream: InputStream, collector: kotlinx.coroutines.flow.FlowCollector<LlmChunk>) {
+        // Keyed by `tool_calls[].index` within the choice.
+        val toolStates = mutableMapOf<Int, ToolCallState>()
+        var usage: TokenUsage? = null
+
+        BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).useLines { lines ->
+            for (line in lines) {
+                if (line.isBlank() || !line.startsWith("data:")) continue
+                val payload = line.removePrefix("data:").trim()
+                if (payload == "[DONE]") {
+                    collector.emit(LlmChunk.End(usage))
+                    return@useLines
+                }
+                @Suppress("UNCHECKED_CAST")
+                val data = LenientJsonParser.parse(payload) as? Map<String, Any?> ?: continue
+                // Final usage-only delta: choices is empty, usage non-null.
+                (data["usage"] as? Map<*, *>)?.let { u ->
+                    val prompt = (u["prompt_tokens"] as? Number)?.toInt()
+                    val completion = (u["completion_tokens"] as? Number)?.toInt()
+                    if (prompt != null && completion != null) usage = TokenUsage(prompt, completion)
+                }
+                val choices = data["choices"] as? List<*> ?: continue
+                val choice = choices.firstOrNull() as? Map<*, *> ?: continue
+                val delta = choice["delta"] as? Map<*, *>
+                val finishReason = choice["finish_reason"] as? String
+
+                // Text content delta.
+                (delta?.get("content") as? String)?.takeIf { it.isNotEmpty() }?.let {
+                    collector.emit(LlmChunk.TextDelta(it))
+                }
+
+                // Tool-call deltas.
+                val rawToolCalls = delta?.get("tool_calls") as? List<*>
+                rawToolCalls?.forEach { tc ->
+                    val tcMap = tc as? Map<*, *> ?: return@forEach
+                    val tcIndex = (tcMap["index"] as? Number)?.toInt() ?: return@forEach
+                    val state = toolStates.getOrPut(tcIndex) { ToolCallState() }
+                    val newId = tcMap["id"] as? String
+                    val fn = tcMap["function"] as? Map<*, *>
+                    val newName = fn?.get("name") as? String
+                    val argsFragment = fn?.get("arguments") as? String
+
+                    // First sighting: id + name typically present together.
+                    if (state.id == null && newId != null) {
+                        state.id = newId
+                        if (newName != null) state.name = newName
+                        collector.emit(LlmChunk.ToolCallStarted(callId = newId, toolName = newName ?: ""))
+                    } else if (newName != null && state.name == null) {
+                        state.name = newName
+                    }
+
+                    if (!argsFragment.isNullOrEmpty()) {
+                        state.argsBuilder.append(argsFragment)
+                        val callId = state.id
+                        if (callId != null) {
+                            collector.emit(LlmChunk.ToolCallArgumentsDelta(callId = callId, deltaJson = argsFragment))
+                        }
+                    }
+                }
+
+                // finish_reason == "tool_calls" marks completion of the
+                // assistant turn's tool-call sequence; emit Finished for
+                // each accumulated call.
+                if (finishReason == "tool_calls") {
+                    toolStates.values.forEach { state ->
+                        val callId = state.id ?: return@forEach
+                        val argsString = state.argsBuilder.toString()
+                        val parsed = if (argsString.isBlank()) emptyMap()
+                                     else parseToolArguments(argsString).arguments
+                        collector.emit(LlmChunk.ToolCallFinished(callId = callId, arguments = parsed))
+                    }
+                    toolStates.clear()
+                }
+            }
+            // EOF without [DONE]: emit End with whatever usage we captured.
+            collector.emit(LlmChunk.End(usage))
+        }
+    }
+
     /** Test seam — subclasses override to stub HTTP without a server. */
     internal open fun sendChat(body: String, headers: Map<String, String>): String {
         val builder = HttpRequest.newBuilder()
@@ -78,7 +213,7 @@ open class OpenAiClient(
         return String(bytes, Charsets.UTF_8)
     }
 
-    internal fun buildRequestJson(messages: List<LlmMessage>): String {
+    internal fun buildRequestJson(messages: List<LlmMessage>, stream: Boolean = false): String {
         val pendingToolCallIds: ArrayDeque<String> = ArrayDeque()
         var toolCallCounter = 0
 
@@ -121,7 +256,10 @@ open class OpenAiClient(
             ""","tools":[$defs]"""
         } else ""
 
-        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature,"messages":[${messageObjects.joinToString(",")}]$toolsField}"""
+        // #1743: stream_options.include_usage opts into a final usage-only
+        // delta after finish_reason — required to get TokenUsage on stream.
+        val streamField = if (stream) ""","stream":true,"stream_options":{"include_usage":true}""" else ""
+        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$streamField,"messages":[${messageObjects.joinToString(",")}]$toolsField}"""
     }
 
     internal fun parseResponse(body: String): LlmResponse {
