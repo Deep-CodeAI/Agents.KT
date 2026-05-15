@@ -212,7 +212,7 @@ cd Agents.KT
 ./gradlew test
 ```
 
-For the full contributor guide — running the live-LLM and MCP integration tests, mutation testing, the dependency-verification workflow, and IDE setup — see the [**Building From Source**](https://github.com/Deep-CodeAI/Agents.KT/wiki/Building-From-Source) wiki page.
+Testing details — task names, integration test setup, mutation testing, how to write tests against the framework with a stub `ModelClient` — are in [**`docs/testing.md`**](docs/testing.md). IDE setup and build prerequisites are on the [**Building From Source**](https://github.com/Deep-CodeAI/Agents.KT/wiki/Building-From-Source) wiki page.
 
 ---
 
