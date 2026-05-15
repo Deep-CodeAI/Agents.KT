@@ -55,6 +55,21 @@ class ReflectionFallbackTest {
         assertNull(out, "LinkageError should also gracefully degrade")
     }
 
+    @Test
+    fun `withReflection catches KotlinReflectionNotSupportedError separately from LinkageError`() {
+        // #1719 — kotlin-stdlib throws KotlinReflectionNotSupportedError
+        // (sibling of LinkageError under Error, NOT a subclass) when a
+        // reflect-requiring KClass member like isSealed / primaryConstructor
+        // is accessed without kotlin-reflect on the classpath. v0.4.5's
+        // LinkageError-only catch missed it; v0.4.6 added the second catch.
+        // Without this catch the agents-kt-no-reflect-test smoke suite
+        // crashes on `isSealed` lookups before reaching its real assertions.
+        val out = ReflectionFallback.withReflection<Int> {
+            throw kotlin.jvm.KotlinReflectionNotSupportedError("simulated absent kotlin-reflect")
+        }
+        assertNull(out, "KotlinReflectionNotSupportedError should degrade just like LinkageError does")
+    }
+
     private fun assertEquals(expected: Int, actual: Int?) {
         kotlin.test.assertEquals(expected, actual)
     }
