@@ -60,6 +60,11 @@
 - [ ] File-based knowledge: `skill.md`, `reference`, `examples`, `checklist` + RAG pipeline
 - [ ] Production observability: OpenTelemetry traces
 - [ ] Team DSL — swarm coordination (if isolated execution available)
+- [ ] **Sandboxed tool execution** — `SandboxedExecutor` interface with three backends, opt-in per tool (`tool(..., sandbox = ...)`) or per skill (`sandbox { }` block). Default executor stays in-process for backward compatibility.
+  - `ProcessSandbox` — subprocess executor with env / cwd / timeout / network constraints. Backends: `sandbox-exec` on macOS (built into the OS), `bwrap` or `firejail` on Linux. Falls back to plain `ProcessBuilder` with a loud warning on platforms with no native sandboxing tool. **Most pragmatic** — every dev box has at least one path.
+  - `WasmSandbox` — JAR-embedded WASM runtime via Chicory (pure-Java; no host setup). Tools compiled to WASM; filesystem and network capabilities granted explicitly at registration. **Most truly embedded** — works anywhere a JVM runs.
+  - `DockerSandbox` — opt-in extras module (`agents-kt-docker-sandbox`) via `docker-java`. Talks to whatever Docker daemon the host already runs. **Not embeddable** — library ships in the JAR, daemon does not. For teams that already operate Docker.
+  - Why this axis matters: today `grants { tools(writeFile, compile) }` controls *which* tools an agent can call; sandboxing controls *what those tools can do* once invoked. Pairs with frozen agents + typed args to give a security model that's strictly stronger than "trust the executor lambda."
 
 **Phase 4 — Ecosystem** *(Q4 2026)*
 - [ ] Knowledge packs — battle-tested prompt libraries for common domains
