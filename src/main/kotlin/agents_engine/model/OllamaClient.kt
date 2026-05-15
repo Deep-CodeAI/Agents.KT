@@ -2,6 +2,9 @@ package agents_engine.model
 
 import agents_engine.generation.LenientJsonParser
 import agents_engine.generation.jsonSchema
+import java.io.BufferedReader
+import java.io.InputStream
+import java.io.InputStreamReader
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -9,6 +12,10 @@ import java.net.http.HttpResponse
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 
 internal data class ParsedToolArguments(
     val arguments: Map<String, Any?>,
@@ -105,6 +112,74 @@ open class OllamaClient(
         }
     }
 
+    /**
+     * #1741 — native streaming via Ollama's NDJSON protocol (`stream: true`).
+     * One JSON object per line. Intermediate lines carry partial
+     * `message.content`; the final `done:true` line carries tool calls
+     * (if any) plus `prompt_eval_count` + `eval_count`.
+     *
+     * Tool calls are NOT progressively streamed by Ollama — they land all
+     * at once in the final chunk. We emit the canonical
+     * `ToolCallStarted` / `ToolCallArgumentsDelta` / `ToolCallFinished`
+     * triple for each so consumers see the same shape they would from
+     * a progressively-streaming provider; the wire-level granularity
+     * is just coarser.
+     *
+     * HTTP cancellation: the underlying `HttpClient.send(...)` blocks
+     * inside `BufferedReader.readLine()`. Coroutine cancellation can't
+     * interrupt the blocking read mid-line. Step 4 will migrate to
+     * `sendAsync` for true cancellation propagation.
+     */
+    override suspend fun chatStream(messages: List<LlmMessage>): Flow<LlmChunk> {
+        val nativeToolsActive = tools.isNotEmpty() && !nativeToolsKnownUnsupported
+        val effectiveMessages = if (tools.isNotEmpty() && nativeToolsKnownUnsupported) {
+            withInlineToolPrompt(messages)
+        } else {
+            messages
+        }
+        val body = buildRequestJson(effectiveMessages, includeTools = nativeToolsActive, stream = true)
+        return flow {
+            sendChatStream(body).use { stream ->
+                BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).useLines { lines ->
+                    for (line in lines) {
+                        if (line.isBlank()) continue
+                        val parsed = LenientJsonParser.parse(line) as? Map<*, *> ?: continue
+                        val done = parsed["done"] as? Boolean ?: false
+                        val message = parsed["message"] as? Map<*, *>
+                        val content = (message?.get("content") as? String) ?: ""
+                        if (content.isNotEmpty()) emit(LlmChunk.TextDelta(content))
+                        if (done) {
+                            val rawToolCalls = message?.get("tool_calls") as? List<*>
+                            rawToolCalls?.forEach { tc ->
+                                val fn = (tc as? Map<*, *>)?.get("function") as? Map<*, *> ?: return@forEach
+                                val name = fn["name"] as? String ?: return@forEach
+                                val parsedArgs = parseToolArguments(fn["arguments"])
+                                val callId = java.util.UUID.randomUUID().toString()
+                                emit(LlmChunk.ToolCallStarted(callId, name))
+                                emit(LlmChunk.ToolCallArgumentsDelta(callId, parsedArgs.rawArguments ?: ""))
+                                emit(LlmChunk.ToolCallFinished(callId, parsedArgs.arguments))
+                            }
+                            emit(LlmChunk.End(extractOllamaTokenUsage(parsed)))
+                            break
+                        }
+                    }
+                }
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    /** Test seam (#1741): subclasses override to stub the streaming InputStream. */
+    internal open fun sendChatStream(body: String): InputStream {
+        val request = HttpRequest.newBuilder()
+            .uri(URI.create("$baseUrl/api/chat"))
+            .header("Content-Type", "application/json")
+            .timeout(requestTimeout.toJavaDuration())
+            .POST(HttpRequest.BodyPublishers.ofString(body))
+            .build()
+        val response = http.send(request, HttpResponse.BodyHandlers.ofInputStream())
+        return response.body()
+    }
+
     /** Test seam (#706): subclasses override to stub HTTP without standing up a server. */
     internal open fun sendChat(body: String): String {
         val request = HttpRequest.newBuilder()
@@ -169,7 +244,11 @@ open class OllamaClient(
         }
     }
 
-    internal fun buildRequestJson(messages: List<LlmMessage>, includeTools: Boolean = true): String {
+    internal fun buildRequestJson(
+        messages: List<LlmMessage>,
+        includeTools: Boolean = true,
+        stream: Boolean = false,
+    ): String {
         val messagesJson = messages.joinToString(",") { msg ->
             buildString {
                 // #1694 — On assistant turns that carry tool_calls, content must
@@ -205,7 +284,7 @@ open class OllamaClient(
             }
             ""","tools":[$defs]"""
         } else ""
-        return """{"model":${model.toJsonString()},"stream":false,"temperature":$temperature,"messages":[$messagesJson]$toolsJson}"""
+        return """{"model":${model.toJsonString()},"stream":$stream,"temperature":$temperature,"messages":[$messagesJson]$toolsJson}"""
     }
 
     internal fun parseResponse(body: String): LlmResponse {
