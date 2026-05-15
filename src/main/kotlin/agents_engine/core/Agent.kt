@@ -268,6 +268,7 @@ class Agent<IN, OUT>(
     internal suspend fun invokeSuspendForSession(
         input: IN,
         emitter: agents_engine.model.AgentEventEmitter? = null,
+        onSkillCompleted: (agents_engine.model.TokenUsage?) -> Unit = { /* no-op */ },
         onSkillStarted: (String) -> Unit,
     ): OUT {
         try {
@@ -275,7 +276,12 @@ class Agent<IN, OUT>(
             skillChosenListener?.invoke(skill.name)
             onSkillStarted(skill.name)
             return if (skill.isAgentic) {
-                castOut(executeAgentic(this, skill, input, emitter = emitter))
+                val result = executeAgentic(this, skill, input, emitter = emitter)
+                // #1740: surface cumulative usage on the way out. Non-agentic
+                // skills don't go through executeAgentic, so onSkillCompleted
+                // stays at its default null for the implementedBy path below.
+                onSkillCompleted(result.tokenUsage)
+                castOut(result.output)
             } else {
                 castOut(executors[skill.name]!!(input))
             }
@@ -318,7 +324,7 @@ class Agent<IN, OUT>(
             val skill = resolveSkill(input)
             skillChosenListener?.invoke(skill.name)
             return if (skill.isAgentic) {
-                castOut(executeAgentic(this, skill, input, effectivePrompt = promptOverride))
+                castOut(executeAgentic(this, skill, input, effectivePrompt = promptOverride).output)
             } else {
                 // Non-agentic skills don't read prompt — implementedBy lambdas
                 // ignore the override. Same behavior as the legacy path.

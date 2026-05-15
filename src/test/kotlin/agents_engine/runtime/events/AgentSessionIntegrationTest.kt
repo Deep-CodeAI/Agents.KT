@@ -202,6 +202,73 @@ class AgentSessionIntegrationTest {
         assertTrue(finishedIdx < tokenIdx, "ToolCallFinished (from turn 1) must precede the final Token (from turn 2)")
     }
 
+    @Test
+    fun `tokensUsed on SkillCompleted and Completed reflects single-turn stub usage`() = runTest {
+        // #1740 — one-turn agentic stub with explicit TokenUsage.
+        // Cumulative usage for a one-turn run equals that turn's usage.
+        val usage = TokenUsage(promptTokens = 12, completionTokens = 5)
+        val stub = ModelClient { _ -> LlmResponse.Text("done", usage) }
+
+        val agentic = agent<String, String>("tu") {
+            prompt("Single-turn stub.")
+            model { ollama("llama3"); client = stub }
+            skills { skill<String, String>("respond", "Echoes via the model") { tools() } }
+        }
+
+        val events = agentic.session("kick").events.toList()
+
+        val skillCompleted = events.filterIsInstance<AgentEvent.SkillCompleted>().single()
+        val completed = events.filterIsInstance<AgentEvent.Completed<String>>().single()
+        assertEquals(usage, skillCompleted.tokensUsed, "SkillCompleted.tokensUsed must reflect the stub's TokenUsage")
+        assertEquals(usage, completed.tokensUsed, "Completed.tokensUsed must reflect the stub's TokenUsage")
+    }
+
+    @Test
+    fun `tokensUsed sums prompt and completion tokens across multiple turns`() = runTest {
+        // #1740 — two-turn stub (ToolCalls then Text). Each turn reports
+        // distinct usage. Cumulative on SkillCompleted/Completed must sum
+        // prompt and completion tokens independently across turns.
+        val turn1Usage = TokenUsage(promptTokens = 100, completionTokens = 20)
+        val turn2Usage = TokenUsage(promptTokens = 150, completionTokens = 35)
+        val turn1 = LlmResponse.ToolCalls(
+            listOf(
+                ToolCall(
+                    name = "ping",
+                    arguments = emptyMap(),
+                    rawArguments = "{}",
+                    callId = "call-multi-turn",
+                ),
+            ),
+            turn1Usage,
+        )
+        val turn2 = LlmResponse.Text("pong", turn2Usage)
+        val responses = ArrayDeque<LlmResponse>().apply { add(turn1); add(turn2) }
+        val stub = ModelClient { _ -> responses.removeFirst() }
+
+        val agentic = agent<String, String>("multi") {
+            prompt("Two-turn stub.")
+            model { ollama("llama3"); client = stub }
+            tools { tool("ping", "Returns pong") { _: Map<String, Any?> -> "pong" } }
+            skills {
+                skill<String, String>("respond", "Two-turn skill") {
+                    @Suppress("DEPRECATION")
+                    tools("ping")
+                }
+            }
+        }
+
+        val events = agentic.session("kick").events.toList()
+
+        val expected = TokenUsage(
+            promptTokens = turn1Usage.promptTokens + turn2Usage.promptTokens,
+            completionTokens = turn1Usage.completionTokens + turn2Usage.completionTokens,
+        )
+        val skillCompleted = events.filterIsInstance<AgentEvent.SkillCompleted>().single()
+        val completed = events.filterIsInstance<AgentEvent.Completed<String>>().single()
+        assertEquals(expected, skillCompleted.tokensUsed, "SkillCompleted.tokensUsed must sum prompt and completion tokens across turns")
+        assertEquals(expected, completed.tokensUsed, "Completed.tokensUsed must sum prompt and completion tokens across turns")
+    }
+
     // Tiny generic 4-tuple — assertable via destructuring in the concurrent test.
     private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 }

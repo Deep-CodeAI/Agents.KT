@@ -42,6 +42,9 @@ fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
         // Captured-on-the-stack: each session has its own holder, so
         // concurrent sessions can't race on a shared field.
         var capturedSkillName: String? = null
+        // #1740: per-session usage capture from the agentic loop's cumulative
+        // total. Stays null for implementedBy skills (no LLM round-trip).
+        var capturedUsage: agents_engine.model.TokenUsage? = null
         // #1739: emitter forwards AgentEvents from inside the agentic loop
         // (Token, ToolCallStarted, ToolCallArgumentsDelta, ToolCallFinished)
         // into the same channel as the bracket events. trySend is non-
@@ -53,12 +56,16 @@ fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
             channel.trySend(event as AgentEvent<OUT>)
         }
         try {
-            val output = agent.invokeSuspendForSession(input, emitter = streamingEmitter) { skillName ->
+            val output = agent.invokeSuspendForSession(
+                input,
+                emitter = streamingEmitter,
+                onSkillCompleted = { usage -> capturedUsage = usage },
+            ) { skillName ->
                 capturedSkillName = skillName
                 channel.trySend(AgentEvent.SkillStarted(agent.name, skillName))
             }
-            channel.trySend(AgentEvent.SkillCompleted(agent.name, capturedSkillName ?: "?", null))
-            channel.trySend(AgentEvent.Completed(agent.name, output, null))
+            channel.trySend(AgentEvent.SkillCompleted(agent.name, capturedSkillName ?: "?", capturedUsage))
+            channel.trySend(AgentEvent.Completed(agent.name, output, capturedUsage))
             channel.close()
             result.complete(output)
         } catch (t: Throwable) {

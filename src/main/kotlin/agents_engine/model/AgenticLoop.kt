@@ -14,10 +14,19 @@ import kotlinx.coroutines.withContext
 private const val MAX_ARGUMENT_REPAIR_STEPS = 8
 
 /**
- * Runs the agentic loop for [skill] on [agent] with [input].
- * Returns the parsed output as [Any]; the caller casts it via the agent's castOut.
+ * #1740 — return shape from [executeAgentic]. Carries the parsed output
+ * alongside cumulative [TokenUsage] summed across all LLM turns of the
+ * invocation. [tokenUsage] is null when the provider never reported
+ * usage for any turn.
  */
-suspend fun <IN> executeAgentic(
+internal data class AgenticResult(val output: Any, val tokenUsage: TokenUsage?)
+
+/**
+ * Runs the agentic loop for [skill] on [agent] with [input].
+ * Returns the parsed output paired with cumulative token usage;
+ * the caller casts the output via the agent's castOut.
+ */
+internal suspend fun <IN> executeAgentic(
     agent: Agent<IN, *>,
     skill: Skill<*, *>,
     input: IN,
@@ -37,7 +46,7 @@ suspend fun <IN> executeAgentic(
      * callers (`Agent.invoke`, `Agent.invokeSuspend`) pay no overhead.
      */
     emitter: AgentEventEmitter? = null,
-): Any {
+): AgenticResult {
     val config = requireNotNull(agent.modelConfig) {
         "Agent '${agent.name}' has no model configured. Add a model { } block."
     }
@@ -123,6 +132,9 @@ suspend fun <IN> executeAgentic(
     var turns = 0
     var toolCalls = 0
     var totalTokens = 0
+    // #1740: cumulative usage across all turns. Provider reports per-turn;
+    // we sum prompt and completion independently (TokenUsage.total is derived).
+    var cumulativeUsage: TokenUsage? = null
     var lastToolName: String? = null
     var consecutiveSameTool = 0
     val invocationStartNanos = System.nanoTime()
@@ -171,6 +183,13 @@ suspend fun <IN> executeAgentic(
         // even if it tips us over: the throw still surfaces the breach.
         response.tokenUsage?.let { usage ->
             totalTokens += usage.total
+            // #1740: build cumulative TokenUsage for the event surface.
+            cumulativeUsage = cumulativeUsage?.let { prev ->
+                TokenUsage(
+                    promptTokens = prev.promptTokens + usage.promptTokens,
+                    completionTokens = prev.completionTokens + usage.completionTokens,
+                )
+            } ?: usage
             val cap = budget.maxTokens
             if (cap != null) {
                 maybeFireThreshold(BudgetReason.TOKENS, totalTokens.toDouble() / cap)
@@ -185,9 +204,10 @@ suspend fun <IN> executeAgentic(
 
         when (response) {
             is LlmResponse.Text -> {
-                return skill.outputTransformer?.invoke(response.content)
+                val parsed = skill.outputTransformer?.invoke(response.content)
                     ?: parseOutput(response.content, agent.outType)
                     ?: error("Could not parse LLM output as ${agent.outType.simpleName}: '${response.content}'")
+                return AgenticResult(parsed, cumulativeUsage)
             }
             is LlmResponse.ToolCalls -> {
                 messages.add(LlmMessage("assistant", "", response.calls))
