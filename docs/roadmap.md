@@ -29,7 +29,7 @@
 - [x] `Agent.toString()` + `Agent.describe()` — readable single-line + multi-line debug output replacing the JVM identity-hash default (#970)
 - [x] `onBudgetThreshold(threshold) { reason, usedPercent -> }` — pre-cap warning hook; fires once per `BudgetReason` when cumulative usage crosses the fraction, before the cap throws (#966)
 - [x] `loadResource(path)` / `loadResourceOrNull(path)` — read agent system prompts from classpath resources; fail-fast at agent construction when path is missing; UTF-8 decoded; leading-slash normalized (#980)
-- [ ] `>>` — security/education wrap
+- [x] `wrap` — teacher→student prompt-override operator (`teacher wrap student` returns a `Pipeline<IN, OUT>` where the teacher's `String` output becomes the student's system prompt for that one call; restored after). Two framings: *education* (one generalist student specialized by many teachers) and *security* (the student's task surface is locked to what the teacher emits). The PRD calls this the `>>` operator; Kotlin can't overload `>>` so the function is named `wrap` (#1698)
 
 **Phase 2 — Runtime + Distribution** *(Q2 2026)*
 
@@ -38,7 +38,8 @@
 - [ ] MCP client integration — `McpTool` instances consumable alongside local tools
 - [ ] `grants { tools(...) }` — Layer 2 permissions use actual `Tool<*,*>` references
 - [ ] Permission model: 3 states — Granted (auto-runs), Confirmed (user approval), Absent (unavailable)
-- [ ] KSP annotation processor — compile-time `@Generable`; constrained decoding (Ollama) + guided JSON mode (Anthropic/OpenAI)
+- [x] KSP annotation processor — compile-time `@Generable` codegen: shape validation (#1700), schema emitter + field-type validation (#1701), sealed-root schema (#1702), `toLlmDescription()` + multi-constant cache (#1703), `constructFromMap` codegen (#1704), drop runtime `kotlin-reflect` + empty-variants gate (#1705). Ships as `agents-kt-ksp` module
+- [ ] Provider-level constrained decoding (Ollama `format: schema`) + guided JSON mode (Anthropic / OpenAI `response_format: json_schema`) — wire `@Generable` JSON schemas through to provider request payloads so the model is forced to emit valid shape (eliminates retry-on-parse loops)
 - [ ] Native CLI binary (GraalVM — no JRE required); `brew`, npm, pip, curl, apt
 - [ ] jlink minimal JRE bundle for runtime (~35MB)
 
@@ -47,7 +48,9 @@
 - [ ] Reactive context hooks — `beforeInference`, `afterToolCall` (context-mutating)
 - [x] Agent memory — `MemoryBank`, `memory_read`/`memory_write`/`memory_search` auto-injected tools
 - [ ] `.spawn {}` — independent sub-agent lifecycle, `AgentHandle<OUT>`, parent-managed join
-- [ ] `Flow<PipelineEvent>` for reactive UIs + Pipeline-level events (`StageStarted`, `PipelineCompleted`, etc) — depends on streaming, sub-agents, sessions
+- [x] Streaming foundation — `LlmChunk` sealed type (`TextDelta` / `ToolCallStarted` / `ToolCallArgumentsDelta` / `ToolCallFinished` / `End`) + `ModelClient.chatStream(messages): Flow<LlmChunk>` with a default impl that wraps `chat()` so non-streaming providers keep working unchanged. Provider-native streaming (Anthropic SSE, OpenAI SSE, Ollama `stream: true`) overrides land per-adapter. `LlmChunk` stays narrow — no agentic concepts like `skillName` / `agentId` (#1722)
+- [ ] Per-adapter native streaming overrides — Anthropic SSE, OpenAI SSE, Ollama `stream: true` — emit real partial chunks instead of the default `chat()`-wrap. See [v0.5.0 streaming premortem](premortem-0.5.0-streaming.md)
+- [ ] `Flow<PipelineEvent>` for reactive UIs + Pipeline-level events (`StageStarted`, `PipelineCompleted`, etc) — built on top of `LlmChunk`; depends on sub-agents and sessions
 - [ ] **Multimodal input** — vision and audio content blocks on LLM messages.
   - **Image input:** vision-capable adapters accept image bytes + media type as a content block alongside text. Targets: Anthropic (`image` content blocks), OpenAI (`image_url` / base64 in content), Ollama (`llava` / `bakllava` via `images` field), Google Gemini.
   - **Audio input:** true audio input (Gemini, GPT-4o-audio) — `LlmContent.Audio` block. Optional STT-only helper `audio.transcribe(file)` for the Whisper-style use case.
