@@ -25,6 +25,23 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
         private set
 
     /**
+     * #1734 — pure-data view of everything we know about the connected server.
+     * Populated after `handshake()` + `loadTools()` complete. The fields the
+     * client doesn't currently fetch (resources, prompts, full capability
+     * matrix) remain null/default; those land in follow-up issues as the
+     * client gains new RPC calls. Consumers read off this snapshot rather
+     * than the scattered `serverName` / `serverVersion` / private tools
+     * accessors.
+     */
+    var snapshot: McpServerInfo? = null
+        private set
+
+    /** Server-reported capabilities map from the initialize handshake; raw shape so we can refine later without re-fetching. */
+    private var rawServerCapabilities: Map<*, *> = emptyMap<Any?, Any?>()
+    private var serverTitle: String? = null
+    private var serverInstructions: String? = null
+
+    /**
      * Mint a [ToolDef] for each tool the server exposes.
      *
      * When [prefix] is non-null, display names become `"$prefix.$wireName"`. The wire
@@ -75,7 +92,11 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
             (result["serverInfo"] as? Map<*, *>)?.let { info ->
                 serverName = info["name"] as? String
                 serverVersion = info["version"] as? String
+                serverTitle = info["title"] as? String
             }
+            // #1734: capture capability matrix + instructions for the snapshot.
+            rawServerCapabilities = result["capabilities"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+            serverInstructions = result["instructions"] as? String
         }
 
         transport.notify("""{"jsonrpc":"2.0","method":"notifications/initialized"}""")
@@ -94,8 +115,70 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
                 name = m["name"] as? String ?: error("tool descriptor missing 'name': $m"),
                 description = m["description"] as? String ?: "",
                 inputSchema = m["inputSchema"] as? Map<*, *>,
+                title = m["title"] as? String,
+                outputSchema = m["outputSchema"] as? Map<*, *>,
+                annotations = (m["annotations"] as? Map<*, *>)?.let { ann ->
+                    McpToolAnnotations(
+                        title = ann["title"] as? String,
+                        readOnlyHint = ann["readOnlyHint"] as? Boolean,
+                        destructiveHint = ann["destructiveHint"] as? Boolean,
+                        idempotentHint = ann["idempotentHint"] as? Boolean,
+                        openWorldHint = ann["openWorldHint"] as? Boolean,
+                    )
+                },
             )
         }
+        materializeSnapshot()
+    }
+
+    /**
+     * #1734 — build [snapshot] from the data the handshake + loadTools steps
+     * have already gathered. Fields we don't fetch yet (resources, prompts)
+     * stay null even when the capability matrix says the server supports
+     * them — the snapshot reflects what THIS client knows, not what the
+     * server could in principle return. Follow-up issues add resources /
+     * prompts fetching and populate those fields.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun materializeSnapshot() {
+        val caps = McpCapabilities(
+            tools = (rawServerCapabilities["tools"] as? Map<*, *>)?.let {
+                McpToolsCapability(listChanged = it["listChanged"] as? Boolean ?: false)
+            },
+            resources = (rawServerCapabilities["resources"] as? Map<*, *>)?.let {
+                McpResourcesCapability(
+                    listChanged = it["listChanged"] as? Boolean ?: false,
+                    subscribe = it["subscribe"] as? Boolean ?: false,
+                )
+            },
+            prompts = (rawServerCapabilities["prompts"] as? Map<*, *>)?.let {
+                McpPromptsCapability(listChanged = it["listChanged"] as? Boolean ?: false)
+            },
+            logging = rawServerCapabilities["logging"] != null,
+            completions = rawServerCapabilities["completions"] != null,
+            experimental = (rawServerCapabilities["experimental"] as? Map<String, Any?>) ?: emptyMap(),
+        )
+        val toolInfos = tools.map { t ->
+            McpToolInfo(
+                name = t.name,
+                title = t.title,
+                description = t.description.ifEmpty { null },
+                inputSchema = (t.inputSchema as? Map<String, Any?>) ?: emptyMap(),
+                outputSchema = t.outputSchema as? Map<String, Any?>,
+                annotations = t.annotations,
+            )
+        }
+        snapshot = McpServerInfo(
+            name = serverName ?: error("snapshot before handshake — serverName is null"),
+            title = serverTitle,
+            version = serverVersion ?: "",
+            protocolVersion = serverProtocolVersion ?: "",
+            instructions = serverInstructions,
+            capabilities = caps,
+            // Per spec the tools listing is meaningful only when the server declares the capability.
+            // Default to the listing we just fetched regardless — McpServer-from-agent always declares tools.
+            tools = toolInfos,
+        )
     }
 
     private fun post(method: String, params: Any?): Any? {
@@ -161,4 +244,7 @@ internal data class McpToolDescriptor(
     val name: String,
     val description: String,
     val inputSchema: Map<*, *>?,
+    val title: String? = null,
+    val outputSchema: Map<*, *>? = null,
+    val annotations: McpToolAnnotations? = null,
 )
