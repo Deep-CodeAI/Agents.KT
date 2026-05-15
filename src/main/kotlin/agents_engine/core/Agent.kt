@@ -252,10 +252,20 @@ class Agent<IN, OUT>(
      * which lets parent-scope cancellation and `withTimeout` propagate cleanly into
      * the agentic loop. The blocking [invoke] is a thin shim over this.
      */
-    suspend fun invokeSuspend(input: IN): OUT {
+    suspend fun invokeSuspend(input: IN): OUT = invokeSuspendForSession(input) { /* no-op */ }
+
+    /**
+     * #1736 — session-aware sibling of [invokeSuspend]. Same logic, plus an
+     * extra [onSkillStarted] callback fired after skill resolution and before
+     * execution. Existing `invokeSuspend` delegates with a no-op callback, so
+     * backward-compat is byte-for-byte; this entry point is only called by
+     * `Agent.session(input)` to surface the skill name into the event flow.
+     */
+    internal suspend fun invokeSuspendForSession(input: IN, onSkillStarted: (String) -> Unit): OUT {
         try {
             val skill = resolveSkill(input)
             skillChosenListener?.invoke(skill.name)
+            onSkillStarted(skill.name)
             return if (skill.isAgentic) {
                 castOut(executeAgentic(this, skill, input))
             } else {

@@ -1,0 +1,121 @@
+package agents_engine.runtime.events
+
+import agents_engine.model.TokenUsage
+
+/**
+ * #1736 — typed event emitted from `Agent.session(input).events` while the
+ * agentic loop runs. See [the v0.5.0 streaming premortem](../../../../docs/premortem-0.5.0-streaming.md)
+ * for the full design rationale.
+ *
+ * The sealed hierarchy is complete here so consumers can write exhaustive
+ * `when` matches today. **Not every subtype is emitted yet.** v0.5.0 step 2
+ * surfaces only [SkillStarted], [SkillCompleted], [Completed], and [Failed]
+ * — enough for the consumer surface to be useful for `implementedBy`-style
+ * agents. [Token], [ToolCallStarted], [ToolCallArgumentsDelta], and
+ * [ToolCallFinished] land in step 3 when the agentic loop is rewired onto a
+ * `FlowCollector<AgentEvent>`.
+ *
+ * Every event carries [agentId] — the name of the agent that produced it.
+ * Composition operators (`then`, `Pipeline`, `Branch`, `wrap`, `Swarm`)
+ * preserve provenance via this field so a consumer collecting from a
+ * composed pipeline can still tell which agent emitted which event.
+ *
+ * Only [Completed] carries the typed `OUT` payload; every other subtype
+ * is `AgentEvent<Nothing>` so events flow through any `AgentSession<OUT>`
+ * regardless of OUT.
+ */
+sealed interface AgentEvent<out OUT> {
+    /** The agent that produced this event. For composed pipelines this is the inner agent's name, not the composition's. */
+    val agentId: String
+
+    /**
+     * A chunk of LLM-streamed text from a single skill turn. Providers chunk at
+     * their own granularity — [text] may be a single token or a multi-token
+     * chunk; the framework passes through as-is.
+     *
+     * Not yet emitted (step 3 — agentic loop rewire).
+     */
+    data class Token(
+        override val agentId: String,
+        val skillName: String,
+        val text: String,
+    ) : AgentEvent<Nothing>
+
+    /**
+     * A new tool call has begun streaming. [callId] is unique per call within a
+     * session; [ToolCallArgumentsDelta] and [ToolCallFinished] for the same call
+     * share this id.
+     *
+     * Not yet emitted (step 3).
+     */
+    data class ToolCallStarted(
+        override val agentId: String,
+        val skillName: String,
+        val callId: String,
+        val toolName: String,
+    ) : AgentEvent<Nothing>
+
+    /**
+     * Partial tool-call arguments JSON. Multiple deltas may arrive per call for
+     * providers that stream argument JSON (Anthropic, OpenAI). Non-streaming
+     * providers emit one delta with the full JSON.
+     *
+     * Not yet emitted (step 3).
+     */
+    data class ToolCallArgumentsDelta(
+        override val agentId: String,
+        val callId: String,
+        val deltaJson: String,
+    ) : AgentEvent<Nothing>
+
+    /**
+     * Tool call complete — arguments parsed, executor invoked, result captured.
+     * [isError] flags executor exceptions that `onError` swallowed (loop keeps
+     * going); when [isError] is true and `onError` rethrew, the session emits
+     * [Failed] instead.
+     *
+     * Not yet emitted (step 3).
+     */
+    data class ToolCallFinished(
+        override val agentId: String,
+        val callId: String,
+        val toolName: String,
+        val arguments: Map<String, Any?>,
+        val result: Any?,
+        val isError: Boolean,
+    ) : AgentEvent<Nothing>
+
+    /** Agent has resolved a skill and is about to execute it (typed-tool dispatch OR an `implementedBy` lambda). */
+    data class SkillStarted(
+        override val agentId: String,
+        val skillName: String,
+    ) : AgentEvent<Nothing>
+
+    /**
+     * Skill execution complete. [tokensUsed] reports the cumulative LLM token
+     * usage for this skill turn, or null for `implementedBy` skills (no LLM)
+     * and for v0.5.0 step 2 (token threading lands in step 3).
+     */
+    data class SkillCompleted(
+        override val agentId: String,
+        val skillName: String,
+        val tokensUsed: TokenUsage?,
+    ) : AgentEvent<Nothing>
+
+    /** Terminal success — carries the typed output of the agent invocation. Emitted exactly once on the happy path. */
+    data class Completed<out OUT>(
+        override val agentId: String,
+        val output: OUT,
+        val tokensUsed: TokenUsage?,
+    ) : AgentEvent<OUT>
+
+    /**
+     * Terminal failure — emitted exactly once on the error path, BEFORE the
+     * exception propagates. Consumers collecting `events.toList()` see this
+     * as the last element; `session.await()` rethrows [cause].
+     */
+    data class Failed(
+        override val agentId: String,
+        val cause: Throwable,
+    ) : AgentEvent<Nothing>
+}
