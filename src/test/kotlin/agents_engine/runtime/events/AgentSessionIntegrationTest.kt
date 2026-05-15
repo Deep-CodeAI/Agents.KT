@@ -4,6 +4,7 @@ import agents_engine.core.agent
 import agents_engine.model.LlmResponse
 import agents_engine.model.ModelClient
 import agents_engine.model.TokenUsage
+import agents_engine.model.ToolCall
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.toList
@@ -93,8 +94,10 @@ class AgentSessionIntegrationTest {
     }
 
     @Test
-    fun `agentic-stub bracketing — SkillStarted SkillCompleted Completed wrap the loop, no Token or ToolCall events yet`() = runTest {
-        // Stub model: completes the agentic loop in one turn.
+    fun `agentic-stub bracketing — Token event fires between SkillStarted and SkillCompleted, ToolCall events absent`() = runTest {
+        // Stub model: completes the agentic loop in one turn with a text response.
+        // Through the chatOrStream path this becomes a single TextDelta + End,
+        // which surfaces as one AgentEvent.Token between the bracket events.
         val usage = TokenUsage(promptTokens = 7, completionTokens = 4)
         val stub = ModelClient { _ -> LlmResponse.Text("done", usage) }
 
@@ -111,18 +114,92 @@ class AgentSessionIntegrationTest {
         val output = session.await()
 
         assertEquals("done", output, "agentic skill output must equal the stub text")
-        // Step 2 contract: only SkillStarted / SkillCompleted / Completed surface for agentic skills.
-        // When step 3 rewires executeAgentic onto a FlowCollector, this assertion will need to
-        // relax — at that point this test pins the new contract instead.
+
+        // No ToolCall* events — this stub has no tool turn.
         assertTrue(
-            events.none { it is AgentEvent.Token || it is AgentEvent.ToolCallStarted ||
+            events.none { it is AgentEvent.ToolCallStarted ||
                 it is AgentEvent.ToolCallArgumentsDelta || it is AgentEvent.ToolCallFinished },
-            "step 2 must not yet emit Token / ToolCall* events for agentic skills; got: $events",
+            "ToolCall* events must NOT appear when the stub has no tool turn; got: $events",
         )
-        assertEquals(3, events.size, "expected exactly [SkillStarted, SkillCompleted, Completed]; got: $events")
+
+        // Step 3 contract: 4 events — SkillStarted, Token("done"), SkillCompleted, Completed.
+        assertEquals(4, events.size, "expected exactly [SkillStarted, Token, SkillCompleted, Completed]; got: $events")
         val started = events[0]; assertIs<AgentEvent.SkillStarted>(started); assertEquals("respond", started.skillName)
-        val completed = events[1]; assertIs<AgentEvent.SkillCompleted>(completed); assertEquals("respond", completed.skillName)
-        val terminal = events[2]; assertIs<AgentEvent.Completed<String>>(terminal); assertEquals("done", terminal.output)
+        val token = events[1]; assertIs<AgentEvent.Token>(token)
+        assertEquals("agentic", token.agentId)
+        assertEquals("respond", token.skillName)
+        assertEquals("done", token.text, "the entire stub Text response becomes one Token chunk under default chatStream")
+        val completed = events[2]; assertIs<AgentEvent.SkillCompleted>(completed); assertEquals("respond", completed.skillName)
+        val terminal = events[3]; assertIs<AgentEvent.Completed<String>>(terminal); assertEquals("done", terminal.output)
+    }
+
+    @Test
+    fun `tool-call events fire around the executor with matching callIds and final Token from the text turn`() = runTest {
+        // Stub does two turns:
+        //   1. ToolCalls — one call to `greet(name="world")` with explicit callId
+        //   2. Text — "hi world"
+        // The chatOrStream path translates the first turn into ToolCallStarted +
+        // ArgumentsDelta + (provider-side Finished bookkeeping). After the tool
+        // executor runs, the loop emits AgentEvent.ToolCallFinished with the
+        // result and isError=false.
+        val explicitCallId = "call-abc-123"
+        val turn1 = LlmResponse.ToolCalls(
+            listOf(
+                ToolCall(
+                    name = "greet",
+                    arguments = mapOf("name" to "world"),
+                    rawArguments = """{"name":"world"}""",
+                    callId = explicitCallId,
+                ),
+            ),
+        )
+        val turn2 = LlmResponse.Text("hi world")
+        val responses = ArrayDeque<LlmResponse>().apply { add(turn1); add(turn2) }
+        val stub = ModelClient { _ -> responses.removeFirst() }
+
+        val toolAgent = agent<String, String>("tool-agent") {
+            prompt("Stub agent that issues one tool call then a final text.")
+            model { ollama("llama3"); client = stub }
+            tools { tool("greet", "Greets someone") { args: Map<String, Any?> -> "hello ${args["name"]}" } }
+            skills {
+                skill<String, String>("respond", "Uses the greet tool") {
+                    @Suppress("DEPRECATION")
+                    tools("greet")
+                }
+            }
+        }
+
+        val session = toolAgent.session("kick")
+        val events = session.events.toList()
+        val output = session.await()
+
+        assertEquals("hi world", output)
+
+        // Find the ToolCallStarted / ToolCallFinished pair — they must share the same callId.
+        val started = events.filterIsInstance<AgentEvent.ToolCallStarted>().single()
+        val finished = events.filterIsInstance<AgentEvent.ToolCallFinished>().single()
+        assertEquals(explicitCallId, started.callId, "explicit callId on ToolCall must flow through to ToolCallStarted")
+        assertEquals(started.callId, finished.callId, "ToolCallFinished must share callId with the matching Started")
+        assertEquals("greet", finished.toolName)
+        assertEquals(mapOf("name" to "world"), finished.arguments)
+        assertEquals("hello world", finished.result, "ToolCallFinished.result must carry the executor's return value")
+        assertEquals(false, finished.isError, "successful executor return must produce isError=false")
+
+        // ArgumentsDelta at least once for this tool call.
+        val argsDeltas = events.filterIsInstance<AgentEvent.ToolCallArgumentsDelta>().filter { it.callId == explicitCallId }
+        assertTrue(argsDeltas.isNotEmpty(), "expected at least one ToolCallArgumentsDelta with the same callId; got: $events")
+
+        // Final text turn emits exactly one Token.
+        val tokens = events.filterIsInstance<AgentEvent.Token>()
+        assertEquals(1, tokens.size, "expected exactly one Token from the final text turn; got: $tokens")
+        assertEquals("hi world", tokens.single().text)
+
+        // Order check: Started < ArgumentsDelta < Finished, all before the final Token.
+        val startedIdx = events.indexOf(started)
+        val finishedIdx = events.indexOf(finished)
+        val tokenIdx = events.indexOf(tokens.single())
+        assertTrue(startedIdx < finishedIdx, "ToolCallStarted must precede ToolCallFinished")
+        assertTrue(finishedIdx < tokenIdx, "ToolCallFinished (from turn 1) must precede the final Token (from turn 2)")
     }
 
     // Tiny generic 4-tuple — assertable via destructuring in the concurrent test.

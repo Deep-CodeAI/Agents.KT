@@ -28,6 +28,15 @@ suspend fun <IN> executeAgentic(
      * races on concurrent invocation of the same pipeline).
      */
     effectivePrompt: String = agent.prompt,
+    /**
+     * #1739: optional AgentEvent emitter. When non-null, the loop streams
+     * via `client.chatStream(...)`, surfaces `Token` / `ToolCallStarted` /
+     * `ToolCallArgumentsDelta` events from chunks, and emits
+     * `ToolCallFinished` after each tool executor runs. When null, the
+     * loop uses `client.chat(...)` byte-for-byte as before — non-streaming
+     * callers (`Agent.invoke`, `Agent.invokeSuspend`) pay no overhead.
+     */
+    emitter: AgentEventEmitter? = null,
 ): Any {
     val config = requireNotNull(agent.modelConfig) {
         "Agent '${agent.name}' has no model configured. Add a model { } block."
@@ -152,7 +161,7 @@ suspend fun <IN> executeAgentic(
             elapsedNanos.toDouble() / budget.maxDuration.inWholeNanoseconds,
         )
 
-        val response = withContext(Dispatchers.IO) { client.chat(messages) }
+        val response = chatOrStream(client, messages, agent.name, skill.name, emitter)
         turns++
         maybeFireThreshold(BudgetReason.TURNS, turns.toDouble() / budget.maxTurns)
 
@@ -213,9 +222,46 @@ suspend fun <IN> executeAgentic(
                             "Tool '${call.name}' is not allowed for skill '${skill.name}'. " +
                                 "Allowed: ${allowedToolMap.keys}"
                         )
-                    val result = executeToolWithBudget(agent, tool, call, budget)
+                    val result = try {
+                        executeToolWithBudget(agent, tool, call, budget)
+                    } catch (t: Throwable) {
+                        // #1739: tool executor threw and onError didn't recover.
+                        // Surface a ToolCallFinished event with isError=true so
+                        // consumers see the failure, then rethrow — the loop's
+                        // outer error path takes over (session emits Failed).
+                        if (emitter != null && call.callId != null) {
+                            emitter(
+                                agents_engine.runtime.events.AgentEvent.ToolCallFinished(
+                                    agentId = agent.name,
+                                    callId = call.callId,
+                                    toolName = call.name,
+                                    arguments = call.arguments,
+                                    result = t.message,
+                                    isError = true,
+                                )
+                            )
+                        }
+                        throw t
+                    }
                     if (isKnowledge) agent.knowledgeUsedListener?.invoke(call.name, result?.toString() ?: "")
                     else agent.toolUseListener?.invoke(call.name, call.arguments, result)
+                    // #1739: emit ToolCallFinished on the success path with the
+                    // executor's return value. callId is the one the streaming
+                    // aggregator stamped on this ToolCall — null only when the
+                    // emitter is null (no event work needed) or the non-streaming
+                    // path produced a ToolCall without one.
+                    if (emitter != null && call.callId != null) {
+                        emitter(
+                            agents_engine.runtime.events.AgentEvent.ToolCallFinished(
+                                agentId = agent.name,
+                                callId = call.callId,
+                                toolName = call.name,
+                                arguments = call.arguments,
+                                result = result,
+                                isError = false,
+                            )
+                        )
+                    }
                     val toolMessage = if (tool.untrustedOutput) {
                         wrapUntrustedToolResult(tool.name, result)
                     } else {

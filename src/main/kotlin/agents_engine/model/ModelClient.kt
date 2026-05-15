@@ -11,6 +11,16 @@ data class ToolCall(
     val arguments: Map<String, Any?> = emptyMap(),
     val rawArguments: String? = null,
     val invalidArgumentsError: String? = null,
+    /**
+     * #1739 — provider-side call identifier. Set by streaming adapters
+     * (Anthropic SSE `tool_use_id`, OpenAI `tool_call_id`, MCP) so the
+     * agentic loop can correlate the chunks of one tool call back to a
+     * single `AgentEvent.ToolCallStarted` / `ToolCallFinished` pair, even
+     * under interleaved streaming. Nullable with default null — non-
+     * streaming providers that don't surface an explicit id can leave
+     * this empty.
+     */
+    val callId: String? = null,
 )
 
 /**
@@ -64,7 +74,12 @@ fun interface ModelClient {
                 }
                 is LlmResponse.ToolCalls -> {
                     response.calls.forEach { call ->
-                        val callId = java.util.UUID.randomUUID().toString()
+                        // #1739: honor the provider's callId when supplied; synthesize
+                        // only when the non-streaming `chat()` path returned a ToolCall
+                        // without one. This keeps explicit ids stable end-to-end so
+                        // AgentEvent.ToolCallStarted and ToolCallFinished can be
+                        // matched by consumers.
+                        val callId = call.callId ?: java.util.UUID.randomUUID().toString()
                         emit(LlmChunk.ToolCallStarted(callId, call.name))
                         emit(LlmChunk.ToolCallArgumentsDelta(callId, call.rawArguments ?: ""))
                         emit(LlmChunk.ToolCallFinished(callId, call.arguments))

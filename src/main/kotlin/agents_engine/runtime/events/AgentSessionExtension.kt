@@ -40,12 +40,20 @@ fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
     scope.launch {
         // Captured-on-the-stack: each session has its own holder, so
-        // concurrent sessions can't race on a shared field. Step 3's
-        // agentic-loop rewire moves skill-name tracking into the
-        // FlowCollector chain proper.
+        // concurrent sessions can't race on a shared field.
         var capturedSkillName: String? = null
+        // #1739: emitter forwards AgentEvents from inside the agentic loop
+        // (Token, ToolCallStarted, ToolCallArgumentsDelta, ToolCallFinished)
+        // into the same channel as the bracket events. trySend is non-
+        // suspending — appropriate for a BUFFERED channel; if the buffer
+        // ever fills (it has high capacity), excess events would be
+        // dropped silently. Step 4 will tighten this for high-throughput
+        // streaming.
+        val streamingEmitter: agents_engine.model.AgentEventEmitter = { event ->
+            channel.trySend(event as AgentEvent<OUT>)
+        }
         try {
-            val output = agent.invokeSuspendForSession(input) { skillName ->
+            val output = agent.invokeSuspendForSession(input, emitter = streamingEmitter) { skillName ->
                 capturedSkillName = skillName
                 channel.trySend(AgentEvent.SkillStarted(agent.name, skillName))
             }
