@@ -192,6 +192,27 @@ tasks.register("updateVerificationMetadata") {
     }
 }
 
+// #1720 — single entry point for "run everything before pushing":
+//   - root :test (unit, excludes live-llm / live-mcp tags via useJUnitPlatform)
+//   - every subproject :test (KSP processor, no-reflect smoke)
+//   - :integrationTest (live-llm — needs a running Ollama)
+//   - :mcpIntegrationTest (live-mcp — needs MCP_REDMINE_URL)
+//
+// CI keeps using `check`, which is unit-only — the live tasks need infra CI
+// doesn't have. testAll is for the developer who wants one command for the
+// full gate before release-cut.
+tasks.register("testAll") {
+    description = "Runs every test task across every subproject — unit, KSP, no-reflect smoke, live-llm integration, live-mcp integration."
+    group = "verification"
+    dependsOn(
+        ":test",
+        ":agents-kt-ksp:test",
+        ":agents-kt-no-reflect-test:test",
+        ":integrationTest",
+        ":mcpIntegrationTest",
+    )
+}
+
 tasks.register<Test>("integrationTest") {
     description = "Runs integration tests that require a live LLM (Ollama)"
     group = "verification"
