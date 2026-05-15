@@ -164,6 +164,7 @@ What the framework does **not** enforce — your responsibility:
 - **No A2A protocol yet** — agent-to-agent over network (Phase 2 / 3).
 - **Inline-tool-call fallback model variance** — small Ollama models (e.g. `gemma3:4b`) reliably emit single tool calls via the inline format but may produce thin final-turn text after multi-step tool sequences. For multi-step reasoning, a tool-native model (`gpt-oss:20b-cloud` and similar) is the better fit.
 - **No tool sandboxing** — tool executors run in-process with full JVM privileges. `grants { }` controls *which* tools an agent can call, not *what they can do* once invoked. Sandboxed execution (`ProcessSandbox` / `WasmSandbox` / `DockerSandbox` opt-in backends) is on the Phase 3 roadmap.
+- **Text-only I/O today** — `LlmMessage.content: String` carries text. Image input (vision-capable adapters: Anthropic, OpenAI, Ollama, Gemini) and audio input land in Phase 2 alongside an `LlmContent` sealed-block evolution of the message model. Image generation (`ImageModelClient`: DALL-E, Imagen, Stability) and text-to-speech (`TTSModelClient`: OpenAI TTS, ElevenLabs, Google) are Phase 3.
 
 For planned features beyond these limitations, see [docs/roadmap.md](docs/roadmap.md).
 
@@ -221,9 +222,9 @@ Testing details — task names, integration test setup, mutation testing, how to
 
 **Phase 1 — Core DSL** *(in progress)*: typed agents, skills, knowledge, composition operators (`then`, `/`, `*`, `forum`, `.loop`, `.branch`), MCP client + server, agent memory, `loadResource(path)` for prompts from classpath, agentic loop with full budget controls (`maxTurns` / `maxToolCalls` / `maxDuration` / `perToolTimeout` / `maxTokens` / `maxConsecutiveSameTool`), observability hooks (`onSkillChosen`, `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`, `Agent.observe { }`).
 
-**Phase 2 — Runtime + Distribution** *(Q2 2026)*: remaining provider (Google), `Flow<...>` streaming on every adapter, KSP compile-time `@Generable`, native CLI / jlink, `Tool<IN, OUT>` hierarchy, `grants {}` permissions, session model, Flow-based observability, `agent.json` serialization, Gradle plugin. *(Anthropic and OpenAI adapters already landed in #1644 and #1656.)*
+**Phase 2 — Runtime + Distribution** *(Q2 2026)*: remaining provider (Google), `Flow<...>` streaming on every adapter, KSP compile-time `@Generable`, native CLI / jlink, `Tool<IN, OUT>` hierarchy, `grants {}` permissions, session model, Flow-based observability, **multimodal input** (image + audio content blocks; vision-capable adapters for Anthropic/OpenAI/Ollama/Gemini), `agent.json` serialization, Gradle plugin. *(Anthropic and OpenAI adapters already landed in #1644 and #1656.)*
 
-**Phase 3 — Production** *(Q3 2026)*: Layer 2 Structure DSL, all 37 compile-time validations, AgentUnit, A2A protocol, file-based knowledge with RAG, OpenTelemetry, **sandboxed tool execution** (`SandboxedExecutor` with `ProcessSandbox` / `WasmSandbox` / `DockerSandbox` backends — opt-in per tool, default executor stays in-process).
+**Phase 3 — Production** *(Q3 2026)*: Layer 2 Structure DSL, all 37 compile-time validations, AgentUnit, A2A protocol, file-based knowledge with RAG, OpenTelemetry, **sandboxed tool execution** (`SandboxedExecutor` with `ProcessSandbox` (Seatbelt / bwrap), `WasmSandbox` (Chicory), `DockerSandbox` backends — opt-in per tool, subprocess-shaped tools only, default executor stays in-process), **generative outputs** (`ImageModelClient` for DALL-E / Imagen / Stability, `TTSModelClient` for OpenAI / ElevenLabs / Google).
 
 **Phase 4 — Ecosystem** *(Q4 2026)*: knowledge packs, NL → DSL generation, Skillify, visual editor, knowledge marketplace.
 
