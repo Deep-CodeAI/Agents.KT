@@ -2,6 +2,18 @@
 
 All notable changes to Agents.KT are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0, minor bumps may add new public API; existing API surface is preserved.
 
+## [0.4.6] — 2026-05-15
+
+Follow-up to v0.4.5's open thread: actually make `kotlin-reflect` optional at runtime, and ship the smoke test that proves it. The premortem (`docs/premortem-0.4.6.md`) defined the success criteria; this release meets them.
+
+### Changed
+- **`kotlin-reflect` is now `compileOnly` for real.** v0.4.5 reverted to `implementation` honestly because several callsites (`Skill.toLlmDescription`, `ToolDef` typed-tool validation, `McpServer` `@Generable` input detection, `GenerableSupport.toLlmInput` + `generableToJson`, `BranchBuilder.sealedSubclasses`, `fromLlmOutput`'s `isSealed` check) still went directly through `kotlin.reflect.full.*`. v0.4.6 wraps every remaining callsite via `ReflectionFallback.withReflection { ... }` or routes through the new `hasGenerableAnnotation()` probe which checks the KSP-generated cache first. The published POM now ships `kotlin-reflect` as `compileOnly` — consumers either apply `:agents-kt-ksp` (recommended, full functionality) or pull `kotlin-reflect` in themselves (legacy reflection paths). Without either, the runtime degrades to sane fallbacks (empty schema, simple-name LLM description, null on `constructFromMap`) instead of crashing.
+- **`ReflectionFallback` catches `KotlinReflectionNotSupportedError` in addition to `LinkageError`.** kotlin-stdlib's `KClass::isSealed` doesn't throw `NoClassDefFoundError` when reflect is absent — it throws its own `kotlin.jvm.KotlinReflectionNotSupportedError`, a sibling under `Error`. Both branches are now caught.
+- **`fromLlmOutput` no longer crashes on the `isSealed` check without reflect.** The `if (isSealed)` dispatch is now wrapped — data classes route through the unguarded `constructFromMap` path (cache hit returns instantly; cache miss falls into the wrapped reflection branch), sealed roots without reflect return null cleanly.
+
+### Added
+- **`agents-kt-no-reflect-test` Gradle subproject.** Excludes `kotlin-reflect` from its consumer-shaped classpaths (`compileClasspath`, `runtimeClasspath`, and the test counterparts — scoped narrowly so the Kotlin compiler daemon's own classpath is untouched, since the compiler internally uses reflect to read its argument metadata). The suite asserts (a) `Class.forName("kotlin.reflect.full.KClasses")` throws `ClassNotFoundException` — the proof that reflect really is absent; (b) `jsonSchema`, `toLlmDescription`, `fromLlmOutput` all return correct results via the generated `__GeneratedSchema` companion when present; (c) all three return their graceful-degradation fallbacks when no companion exists. Failing this suite regresses the v0.4.6 contract.
+
 ## [0.4.5] — 2026-05-14
 
 Patch release responding to v0.4.4 reviewer feedback (#1707). All five concerns verified against `main`; correctness fixes shipped, one over-promise walked back honestly.

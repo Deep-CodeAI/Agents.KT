@@ -187,7 +187,7 @@ Topical guides:
 
 ## Current Release
 
-`main` is currently `0.4.5`. The 0.4 line covers Anthropic and OpenAI adapters alongside Ollama, LiveRunner prechecks, `OllamaPreflight`, typed tool references, `Swarm` / `absorb`, supply-chain hardening for the BouncyCastle advisory cleanup, the `wrap` operator (`teacher wrap student`), and the KSP processor that generates compile-time schema, LLM-description and `constructFromMap` constants for `@Generable` types.
+`main` is currently `0.4.6`. The 0.4 line covers Anthropic and OpenAI adapters alongside Ollama, LiveRunner prechecks, `OllamaPreflight`, typed tool references, `Swarm` / `absorb`, supply-chain hardening for the BouncyCastle advisory cleanup, the `wrap` operator (`teacher wrap student`), and the KSP processor that generates compile-time schema, LLM-description and `constructFromMap` constants for `@Generable` types. As of v0.4.6, `kotlin-reflect` is genuinely `compileOnly` — every `kotlin.reflect.full.*` callsite is wrapped or routed through the KSP cache, and an `agents-kt-no-reflect-test` smoke subproject pins the contract by excluding `kotlin-reflect` from its own classpath.
 
 Use Maven Central for published artifacts and tags for immutable release points.
 
@@ -200,7 +200,7 @@ Use Maven Central for published artifacts and tags for immutable release points.
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("ai.deep-code:agents-kt:0.4.5")
+    implementation("ai.deep-code:agents-kt:0.4.6")
 }
 ```
 

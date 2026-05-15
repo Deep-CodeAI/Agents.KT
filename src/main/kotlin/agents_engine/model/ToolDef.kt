@@ -3,7 +3,7 @@ package agents_engine.model
 import agents_engine.generation.Generable
 import agents_engine.generation.constructFromMap
 import kotlin.reflect.KClass
-import kotlin.reflect.full.findAnnotation
+import agents_engine.generation.hasGenerableAnnotation
 
 /**
  * A tool the agentic loop can invoke on the model's behalf.
@@ -167,9 +167,14 @@ class ToolsBuilder {
                 "Tool names must be unique."
         }
         val argsClass = Args::class
-        require(argsClass.findAnnotation<Generable>() != null) {
+        // #1718: route through the KSP-cache-aware probe so the check works
+        // without kotlin-reflect on the classpath when KSP has generated the
+        // companion. Falls through to wrapped reflection for non-KSP consumers.
+        require(argsClass.hasGenerableAnnotation()) {
             "Typed tool \"$name\" Args type ${argsClass.simpleName} must be annotated with @Generable. " +
-                "Add `@Generable(\"description\")` to the data class."
+                "Add `@Generable(\"description\")` to the data class. " +
+                "(If KSP is not applied and kotlin-reflect is not on the classpath, this check " +
+                "cannot detect the annotation — add `ksp(\"ai.deep-code:agents-kt-ksp\")` to your build.)"
         }
         require(!argsClass.isSealed) {
             "Typed tool \"$name\" Args type ${argsClass.simpleName} is sealed. " +

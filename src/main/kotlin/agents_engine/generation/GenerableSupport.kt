@@ -364,7 +364,9 @@ fun toLlmInput(value: Any?): String = when (value) {
     }
     else -> {
         val cls = value::class
-        if (cls.findAnnotation<Generable>() != null) {
+        // #1718: cache-first @Generable detection. Reflection-free for
+        // KSP-applied consumers; wrapped reflection fallback otherwise.
+        if (cls.hasGenerableAnnotation()) {
             generableToJson(value, cls)
         } else {
             value.toString()
@@ -388,7 +390,9 @@ private fun jsonSerialize(value: Any?): String = when (value) {
     }
     else -> {
         val cls = value::class
-        if (cls.findAnnotation<Generable>() != null) {
+        // #1718: cache-first @Generable detection. Reflection-free for
+        // KSP-applied consumers; wrapped reflection fallback otherwise.
+        if (cls.hasGenerableAnnotation()) {
             generableToJson(value, cls)
         } else {
             // Non-Generable, non-primitive nested value — render via toString
@@ -400,27 +404,32 @@ private fun jsonSerialize(value: Any?): String = when (value) {
 }
 
 private fun generableToJson(value: Any, cls: KClass<*>): String {
-    val ctor = cls.primaryConstructor
-        ?: return "\"${value.toString().escapeJson()}\""
-    val isSealedVariant = cls.allSuperclasses.any { it.isSealed }
-    return buildString {
-        append("{")
-        var first = true
-        if (isSealedVariant) {
-            append("\"type\":\"${cls.simpleName}\"")
-            first = false
+    // #1718: this function walks ctor params + member properties — pure
+    // kotlin-reflect territory. Wrap so a missing kotlin-reflect degrades
+    // to `toString()` rendering (lossy but doesn't crash).
+    return ReflectionFallback.withReflection {
+        val ctor = cls.primaryConstructor
+            ?: return@withReflection "\"${value.toString().escapeJson()}\""
+        val isSealedVariant = cls.allSuperclasses.any { it.isSealed }
+        buildString {
+            append("{")
+            var first = true
+            if (isSealedVariant) {
+                append("\"type\":\"${cls.simpleName}\"")
+                first = false
+            }
+            ctor.parameters.forEach { param ->
+                val name = param.name ?: return@forEach
+                val prop = cls.memberProperties.find { it.name == name } ?: return@forEach
+                if (!first) append(",")
+                first = false
+                @Suppress("UNCHECKED_CAST")
+                val fieldValue = (prop as kotlin.reflect.KProperty1<Any, *>).get(value)
+                append("\"${name.escapeJson()}\":${jsonSerialize(fieldValue)}")
+            }
+            append("}")
         }
-        ctor.parameters.forEach { param ->
-            val name = param.name ?: return@forEach
-            val prop = cls.memberProperties.find { it.name == name } ?: return@forEach
-            if (!first) append(",")
-            first = false
-            @Suppress("UNCHECKED_CAST")
-            val fieldValue = (prop as kotlin.reflect.KProperty1<Any, *>).get(value)
-            append("\"${name.escapeJson()}\":${jsonSerialize(fieldValue)}")
-        }
-        append("}")
-    }
+    } ?: "\"${value.toString().escapeJson()}\""
 }
 
 // ─── Lenient Deserialization ──────────────────────────────────────────────────
@@ -445,10 +454,15 @@ fun <T : Any> KClass<T>.fromLlmOutput(json: String): T? {
         return null
     }
 
-    if (isSealed) {
-        // #1705: sealedSubclasses lookup needs kotlin-reflect. The variant
-        // dispatch is wrapped so a missing dep degrades to null (the caller
-        // routes through the existing null-handling path).
+    // #1718: `isSealed` is itself a kotlin-reflect call. Wrap it so
+    // consumers without reflect fall through to the data-class path
+    // rather than crashing on the check. Sealed-root dispatch without
+    // reflection isn't yet supported — that's a KSP-generated dispatcher
+    // for a follow-up. For now: with reflect missing AND the type is
+    // sealed, we lose the dispatcher entirely and return null (caller's
+    // null-handling path takes over).
+    val isSealedRoot = ReflectionFallback.withReflection { isSealed } == true
+    if (isSealedRoot) {
         return ReflectionFallback.withReflection {
             val obj = parsed as? Map<*, *> ?: return@withReflection null
             val typeName = obj["type"] as? String ?: return@withReflection null
@@ -572,6 +586,29 @@ private fun coerceToInt(value: Any): Int? {
     }
     if (asLong !in Int.MIN_VALUE..Int.MAX_VALUE) return null
     return asLong.toInt()
+}
+
+// ─── @Generable annotation probe (#1718, v0.4.6) ─────────────────────────────
+//
+// Replaces direct `findAnnotation<Generable>()` calls at consumer-facing sites
+// (ToolDef typed-tool validation, McpServer @Generable detection, toLlmInput
+// branch). Routes through the KSP-generated cache first — fast, reflection-
+// free, works even without kotlin-reflect on the classpath. Falls through to
+// reflection (wrapped) for non-KSP consumers; returns false cleanly when both
+// are unavailable.
+
+@PublishedApi
+internal fun KClass<*>.hasGenerableAnnotation(): Boolean {
+    // Cache check is the load-bearing reflection-free path. If the KSP
+    // processor generated a `<FQN>__GeneratedSchema` for this class, it has
+    // `@Generable` by definition (the processor only walks annotated classes).
+    if (GeneratedMetaCache.lookupJsonSchema(this) != null) return true
+    if (GeneratedMetaCache.lookupLlmDescription(this) != null) return true
+    // Reflection fallback for consumers without KSP applied. Wrapped so a
+    // missing kotlin-reflect degrades to false rather than crashing.
+    return ReflectionFallback.withReflection {
+        findAnnotation<Generable>() != null
+    } == true
 }
 
 // ─── @PublishedApi coercion helpers for generated code (#1704) ────────────────

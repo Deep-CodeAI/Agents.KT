@@ -2,6 +2,7 @@ package agents_engine.composition.branch
 
 import agents_engine.composition.pipeline.Pipeline
 import agents_engine.core.*
+import agents_engine.generation.ReflectionFallback
 import kotlin.reflect.KClass
 
 class BranchBuilder<OUT> {
@@ -72,7 +73,14 @@ private fun <OUT> validateSealedCompleteness(sourceOutType: KClass<*>, routes: L
     if (routes.any { it is BranchRoute.ElseRoute }) return  // onElse is the catch-all
 
     val coveredTypes = routes.filterIsInstance<BranchRoute.TypeRoute<OUT>>().map { it.klass }
-    val sealedSubclasses = sourceOutType.sealedSubclasses
+    // #1718: sealedSubclasses is a kotlin-reflect call. Wrap so a missing
+    // kotlin-reflect skips the exhaustiveness check rather than crashing.
+    // Consumers using Branch on sealed types should typically also have a
+    // compile-time `when` on their side — losing this belt-and-braces check
+    // is acceptable when reflect is intentionally absent.
+    val sealedSubclasses = ReflectionFallback.withReflection {
+        sourceOutType.sealedSubclasses
+    } ?: return  // can't validate without reflection — skip the check, trust the consumer
     val uncovered = sealedSubclasses.filter { sub -> coveredTypes.none { it.java.isAssignableFrom(sub.java) } }
     require(uncovered.isEmpty()) {
         "Branch on sealed type ${sourceOutType.simpleName} is missing routes for: " +

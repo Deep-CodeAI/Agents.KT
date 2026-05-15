@@ -3,6 +3,7 @@ package agents_engine.core
 import agents_engine.generation.Generable
 import agents_engine.generation.Guide
 import kotlin.reflect.KClass
+import agents_engine.generation.ReflectionFallback
 import kotlin.reflect.full.findAnnotation
 import kotlin.reflect.full.primaryConstructor
 
@@ -205,18 +206,24 @@ class SkillsBuilder {
 }
 
 private fun KClass<*>.generableDescription(): String {
-    val annotation = findAnnotation<Generable>() ?: return ""
-    return buildString {
-        val desc = annotation.description
-        if (desc.isNotEmpty()) append(" — $desc")
-        val ctor = primaryConstructor
-        if (ctor != null && ctor.parameters.isNotEmpty()) {
-            ctor.parameters.forEach { param ->
-                val typeName = (param.type.classifier as? KClass<*>)?.simpleName ?: "Any"
-                val guide = param.findAnnotation<Guide>()
-                append("\n  - ${param.name} ($typeName)")
-                if (guide != null) append(": ${guide.description}")
+    // #1718: wrap kotlin-reflect calls so consumers without kotlin-reflect
+    // on the classpath get an empty description instead of LinkageError.
+    // Skill auto-descriptions degrade gracefully — the agent still runs, the
+    // system prompt just lacks the per-class structural detail.
+    return ReflectionFallback.withReflection {
+        val annotation = findAnnotation<Generable>() ?: return@withReflection ""
+        buildString {
+            val desc = annotation.description
+            if (desc.isNotEmpty()) append(" — $desc")
+            val ctor = primaryConstructor
+            if (ctor != null && ctor.parameters.isNotEmpty()) {
+                ctor.parameters.forEach { param ->
+                    val typeName = (param.type.classifier as? KClass<*>)?.simpleName ?: "Any"
+                    val guide = param.findAnnotation<Guide>()
+                    append("\n  - ${param.name} ($typeName)")
+                    if (guide != null) append(": ${guide.description}")
+                }
             }
         }
-    }
+    } ?: ""
 }

@@ -17,11 +17,18 @@ package agents_engine.generation
  *    `onError.invalidArgs`; schema/description lookups return null and
  *    upstream code surfaces a clear "couldn't resolve" error.
  *
- * `LinkageError` (parent of `NoClassDefFoundError`) is also caught — JDK
- * occasionally throws `IncompatibleClassChangeError` etc. in adjacent
- * scenarios; better to degrade than crash.
+ * Two error families are caught:
+ * - `LinkageError` (parent of `NoClassDefFoundError`) — fires when a
+ *   reflective callsite references a kotlin-reflect class that is
+ *   absent at runtime. Also covers `IncompatibleClassChangeError` etc.
+ * - `KotlinReflectionNotSupportedError` (in `kotlin.jvm`, a sibling of
+ *   `LinkageError` under `Error`) — fires when kotlin-stdlib itself
+ *   detects that kotlin-reflect is missing and the caller invoked a
+ *   member like `KClass::isSealed` that requires it. Specifically
+ *   matters under the `agents-kt-no-reflect-test` subproject (#1718)
+ *   which excludes kotlin-reflect from the runtime classpath.
  *
- * Non-LinkageError exceptions propagate so real bugs aren't swallowed.
+ * Non-Error exceptions propagate so real bugs aren't swallowed.
  */
 internal object ReflectionFallback {
 
@@ -31,6 +38,11 @@ internal object ReflectionFallback {
         // NoClassDefFoundError, IncompatibleClassChangeError,
         // ClassFormatError — all signal "the classpath is incomplete for
         // this code path". Degrade gracefully.
+        null
+    } catch (_: kotlin.jvm.KotlinReflectionNotSupportedError) {
+        // kotlin-stdlib's own "you called a reflect-requiring member
+        // without kotlin-reflect on the classpath" signal. Same
+        // degradation contract.
         null
     }
 }

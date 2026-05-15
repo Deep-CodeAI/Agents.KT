@@ -1,71 +1,62 @@
-# Agents.KT v0.4.5 — Reviewer-feedback patch
+# Agents.KT v0.4.6 — `kotlin-reflect` actually optional
 
-**Release date:** 2026-05-14
+**Release date:** 2026-05-15
 
-Patch release responding to v0.4.4 reviewer feedback. Two correctness fixes, one over-promise walked back honestly, CI / wrapper alignment, doc drift cleared.
+Follow-up to v0.4.5's open thread. v0.4.4 over-promised "reflect-free runtime"; v0.4.5 walked it back honestly; v0.4.6 finishes the job and pins the contract with a smoke-test subproject. Drop-in for v0.4.5.
 
 ```kotlin
-implementation("ai.deep-code:agents-kt:0.4.5")
+implementation("ai.deep-code:agents-kt:0.4.6")
 ```
 
-Drop-in for v0.4.4. Source-compatible; one behavior change documented below under **`wrap` race fix**.
+The premortem at `docs/premortem-0.4.6.md` defined the success criteria. This release ticks every box; the checklist comparison is at the bottom of these notes.
 
 ---
 
-## Fixed
+## What changed
 
-### `wrap` is now race-safe under concurrent invocation
+### `kotlin-reflect` is `compileOnly` for real
 
-v0.4.4's `teacher wrap student` mutated `student.prompt` for the duration of one call and restored it in a `finally` block. Single-placement protected against multi-pipeline reuse, but not against:
+Every remaining `kotlin.reflect.full.*` callsite is now either routed through the KSP-aware `hasGenerableAnnotation()` probe (cache-first, reflection-fallback) or wrapped via `ReflectionFallback.withReflection { ... }`. Specifically:
 
-- The same Pipeline launched from multiple coroutines (lanes race on the shared field — one lane's prompt could land in another's system message).
-- A direct `student(input)` invocation racing with a wrap-pipeline mid-call.
+- `Skill.kt:208` — `generableDescription()` is wrapped; returns `""` when neither KSP companion nor `kotlin-reflect` is available.
+- `ToolDef.kt:170` — typed-tool `require(... is @Generable)` uses `hasGenerableAnnotation()`. Error message now mentions the `:agents-kt-ksp` opt-in.
+- `McpServer.kt:230` — runtime `@Generable` input detection uses `hasGenerableAnnotation()`.
+- `GenerableSupport.kt:367/391` (`toLlmInput` branches) — uses `hasGenerableAnnotation()`. `generableToJson` body is wrapped (falls back to `toString()` when reflection is unavailable).
+- `BranchBuilder.kt:75` — `sealedSubclasses` access wrapped. When `kotlin-reflect` is absent, the exhaustiveness check is skipped (consumer-side `when`-exhaustiveness is the belt; this framework check was the braces).
+- `GenerableSupport.kt:457` — `fromLlmOutput`'s `isSealed` check wrapped. Sealed-root dispatch without `kotlin-reflect` is not supported in this slice (returns null cleanly); data-class dispatch routes through the unguarded `constructFromMap` path which hits the KSP cache first.
 
-The fix threads the effective prompt through `executeAgentic(agent, skill, input, effectivePrompt: String)` as a local parameter. `agent.prompt` is never mutated. New regression test `WrapConcurrencyTest` exercises 8 parallel lanes with distinguishable teacher outputs plus a direct invocation racing alongside, asserting zero cross-talk.
+### `ReflectionFallback` now also catches `KotlinReflectionNotSupportedError`
 
-**Behavior change worth flagging.** Under the new design, the wrap override is visible to **agentic skills** (those that go through `executeAgentic`). `implementedBy` skills don't see it — and never reliably did. The old `GuessingGameTest` pattern that read `guesserAgent.prompt` from inside an `implementedBy` lambda worked only because of the mutation race; that test is rewritten in 0.4.5 to use an agentic stub `ModelClient` (the realistic shape of a wrapped student anyway). If your code relies on `implementedBy` seeing the wrap override, you need an agentic skill there instead.
+`kotlin-stdlib` doesn't throw `NoClassDefFoundError` when reflect-required members are accessed without `kotlin-reflect` on the classpath — it throws its own `kotlin.jvm.KotlinReflectionNotSupportedError`, a sibling under `Error`. v0.4.6's `ReflectionFallback.withReflection` catches both error families. v0.4.5 only caught `LinkageError`; the new catch is what makes the no-reflect contract actually hold at runtime.
 
-### KSP `constructFromMap` no longer emits uncompilable nested references
+### `agents-kt-no-reflect-test` Gradle subproject (the proof)
 
-v0.4.4 generated `Customer__GeneratedSchema.constructFromMap(it)` for every nested `@Generable` ref in a `data class`. If the nested class had default-valued primary-ctor params, the processor skipped emitting its `constructFromMap` (per the `canGenerate` rule), but the OUTER class's generated source still referenced that method → unresolved reference at compile time, not the runtime fallback the code comment claimed.
+A consumer-shaped subproject that excludes `kotlin-reflect` from its `compileClasspath`, `runtimeClasspath`, and the test counterparts. (The Kotlin compiler daemon's own classpath is left alone — the compiler internally uses `kotlin-reflect` to read its own argument metadata; stripping it there breaks the daemon.) The smoke test (`agents-kt-no-reflect-test/src/test/kotlin/smoke/NoReflectSmokeTest.kt`):
 
-The fix routes nested refs through `<NestedClass>::class.constructFromMap(it)`. The `::class` receiver is a Kotlin compile-time class literal (no `kotlin-reflect` involvement at the call site), and the `@PublishedApi` extension's cache lookup handles both cases — generated companion present → fast path; absent → reflection fallback (or graceful null when consumers chose to keep `kotlin-reflect` off their classpath).
+1. Asserts `Class.forName("kotlin.reflect.full.KClasses")` throws `ClassNotFoundException` — the load-bearing negative assertion. If the exclude leaks, the rest of the suite is meaningless and this guard fails first.
+2. With a hand-written `__GeneratedSchema` companion (same shape `:agents-kt-ksp` emits), exercises `jsonSchema()`, `toLlmDescription()`, and `fromLlmOutput()` — proves the generated cache path covers the whole `@Generable` surface without touching `kotlin-reflect`.
+3. With a `@Generable` class that has **no** generated companion, exercises the same three entry points — proves graceful degradation returns sane fallbacks (`{"type":"object","additionalProperties":false}` for schema, `## SimpleName` for description, `null` for `fromLlmOutput`) instead of crashing.
 
-## Changed
+The subproject runs in the default `./gradlew test` aggregate. Failing it regresses the v0.4.6 contract.
 
-### `kotlin-reflect` reverted to `implementation` (walking back v0.4.4's "reflect-free runtime" framing)
+## Consumer impact
 
-v0.4.4 moved `kotlin-reflect` to `compileOnly` and framed the release as "reflect-free runtime". That was over-stated. The KSP arc (#1701–#1704) does replace the high-frequency read paths on `@Generable` — `jsonSchema`, `toLlmDescription`, `constructFromMap` — but other hot paths still call `kotlin.reflect.full.*` regardless of KSP:
+- **You apply `:agents-kt-ksp`** (recommended): no change. The generated cache covers every `@Generable` call. `kotlin-reflect` is never needed.
+- **You don't apply KSP, but you keep `kotlin-reflect` in your own runtime classpath**: no change. The wrapped reflection path runs exactly as it did pre-v0.4.6.
+- **You don't apply KSP and you don't have `kotlin-reflect`**: the runtime no longer crashes at agent construction or first call. Behavior degrades cleanly — schema becomes the empty-object stub, LLM descriptions become `## SimpleName`, `fromLlmOutput` returns null, typed-tool dispatch routes through `onError.invalidArgs`. The agent runs; output quality may drop because the model sees less structural detail in the system prompt. Document this case to your users; `:agents-kt-ksp` is the right answer for production.
 
-- `Skill.toLlmDescription` (skill auto-description)
-- `AgenticLoop` system-message build
-- `ToolDef` typed-tool `@Generable` validation
-- `McpServer` runtime-discovered `@Generable` input detection
-- `GenerableSupport.toLlmInput`
-- `BranchBuilder.sealedSubclasses` (branch exhaustiveness check)
+## Comparison against the premortem checklist
 
-A consumer without `kotlin-reflect` on the classpath would hit `LinkageError` at agent construction, not just at LLM calls. The honest framing for 0.4.5:
+Each success criterion from `docs/premortem-0.4.6.md`:
 
-- **KSP saves the per-call schema / description / construct reads** (still real, still worth applying `:agents-kt-ksp`).
-- **Runtime still requires `kotlin-reflect`** for agent construction and a few adjacent paths.
+- [x] **Published POM does NOT contain `kotlin-reflect`.** Build the local bundle; the generated `agents-kt-0.4.6.pom` has zero `kotlin-reflect` entries (`compileOnly` does not propagate to consumers).
+- [x] **`agents-kt-no-reflect-test` builds and the smoke test passes.** Seven assertions, all green: the negative classpath probe plus six runtime-degradation paths.
+- [x] **Main unit suite stays green.** 975 root tests + 56 KSP tests still pass with `kotlin-reflect` on the test classpath (`testImplementation`).
+- [x] **Negative-path coverage.** The smoke test's `ReflectOnlyCustomer` (no generated companion) exercises the "reflect-absent + KSP-absent" graceful-degradation path that the premortem flagged as the most-likely silent-corruption risk.
+- [x] **CHANGELOG and these notes name specific files / line numbers / contracts.** No floating claims; every "kotlin-reflect optional" sentence points at a wrapped callsite or the smoke test.
 
-A future PR will wrap each remaining `kotlin.reflect.full.*` callsite via `ReflectionFallback.withReflection { ... }` and ship a consumer-app smoke test that builds without `kotlin-reflect`. That work is too large to be a v0.4.5 patch.
+## What's NOT in this release
 
-### CI uses the wrapper's pinned Gradle
-
-The `.github/workflows/ci.yml` job used to pin `gradle-version: '8.13'` via the setup-gradle action and call `gradle build` / `gradle test` directly. The wrapper says 9.5.0. The mismatch was a "passed locally, failed in CI" drift surface. Now: no `gradle-version` argument; `./gradlew build` / `./gradlew test`. Same Gradle everywhere.
-
-### Doc drift cleared
-
-- README's `main is prepared as 0.4.3` stale string updated.
-- `wiki/API-Quick-Reference.md`'s `maxTurns` default corrected from `Int.MAX_VALUE` to the actual code default `8` (set in `BudgetConfig.kt`).
-
-## Migration
-
-From v0.4.4: drop-in, except for the one `wrap` behavior change — if you used `implementedBy` skills with a `lateinit var agent` capture to read the wrap-supplied prompt, switch to an agentic skill backed by a stub `ModelClient` (or a real one). Pattern in `GuessingGameTest` if you want a worked example.
-
-From v0.4.2 or earlier: see the v0.4.4 release notes for the cumulative changes.
-
-## Test count
-
-975 root + 56 KSP = **1031 unit tests, 0 failures.**
+- Sealed-root `fromLlmOutput` dispatch without `kotlin-reflect` — needs a KSP-generated sealed dispatcher emitter. Returns null in the meantime (data classes are the common case).
+- Generating skill auto-descriptions via KSP. Wrap was sufficient for v0.4.6; the cleaner refactor is a follow-up.
+- The CI workflow update from v0.4.5 (stashed locally; needs a workflow-scoped token).

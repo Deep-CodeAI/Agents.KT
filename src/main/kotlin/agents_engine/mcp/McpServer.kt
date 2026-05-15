@@ -10,7 +10,7 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import kotlin.reflect.KClass
-import kotlin.reflect.full.findAnnotation
+import agents_engine.generation.hasGenerableAnnotation
 
 /**
  * Exposes an [Agent]'s skills as MCP tools over Streamable HTTP.
@@ -227,7 +227,9 @@ internal class ExposedSkill private constructor(
                         "required" to listOf("input"),
                     ),
                 )
-                inType.findAnnotation<Generable>() != null -> ExposedSkill(
+                // #1718: cache-aware probe, reflection-free when KSP generated
+                // the companion. Falls through to wrapped reflection otherwise.
+                inType.hasGenerableAnnotation() -> ExposedSkill(
                     skill = skill,
                     inputBuilder = { args ->
                         @Suppress("UNCHECKED_CAST")
