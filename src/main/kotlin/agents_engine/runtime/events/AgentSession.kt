@@ -4,6 +4,18 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.Flow
 
 /**
+ * `agents_engine/runtime/events/AgentSession.kt` — the [AgentSession]
+ * handle returned by `agent.session(input)` (#1736). Carries a cold
+ * `Flow<AgentEvent<OUT>>` and a suspending `await(): OUT`. Cold flow —
+ * each `session(...)` call is a fresh invocation. Cancellation
+ * propagates: cancelling collection of `events` or the `await()`
+ * coroutine cancels the upstream agent invocation (and, in step 3,
+ * the LLM HTTP call). See
+ * `src/main/resources/internals-agent/runtime/events/AgentSession.md`
+ * (#1837 / #1893).
+ */
+
+/**
  * #1736 — handle to an in-flight agent invocation. Returned by
  * `agent.session(input)`. Carries a cold [events] flow and a terminal
  * [await] entry point.

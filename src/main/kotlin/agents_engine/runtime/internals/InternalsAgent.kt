@@ -405,8 +405,52 @@ fun buildInternalsAgent(): Agent<String, String> = agent<String, String>("agents
             implementedBy { _ -> loadResource("internals-agent/mcp/TcpMcpTransport.md") }
         }
 
+        // ── runtime/ ───────────────────────────────────────────────────
+        skill<String, String>(
+            name = "runtime_liverunner_kt",
+            description = "Source-file knowledge for agents_engine/runtime/LiveRunner.kt — picocli-shaped one-line main for the LiveShow REPL (#981). CLI flags: --once \"<prompt>\" (non-interactive single invocation for scripting/pipes), --max-history N, -h/--help, -V/--version. Sibling to McpRunner. Returns process exit code. Call when the IDE LLM needs to reason about wrapping an agent in a CLI.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/runtime/LiveRunner.md") }
+        }
+
+        skill<String, String>(
+            name = "runtime_liveshow_kt",
+            description = "Source-file knowledge for agents_engine/runtime/LiveShow.kt — interactive demo REPL. Wraps any of the six top-level types (Agent / Pipeline / Branch / Loop / Parallel / Forum). UI surface (#983): ANSI color enum, themed Style records, ASCII banner, spinner, slash-command hooks, history trimming, optional precheck (typical: OllamaPreflight). Reader/PrintWriter abstraction for tests. Used by every runnable demo in the repo. Call when the IDE LLM needs to reason about building a REPL frontend.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/runtime/LiveShow.md") }
+        }
+
+        skill<String, String>(
+            name = "runtime_swarm_kt",
+            description = "Source-file knowledge for agents_engine/runtime/Swarm.kt — multi-JAR agent assembly via ServiceLoader (#984). AgentProvider SAM is implemented per sibling JAR (META-INF/services); Swarm.discover() iterates them all. Captain calls Agent.absorb on each sibling to wire it as a session-aware tool (#1752). JVM-only (not MCP-stdio) to preserve full Agent<IN,OUT> surface — trade-off: no process isolation. Call when the IDE LLM needs to reason about composing many agents into one binary.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/runtime/Swarm.md") }
+        }
+
+        // ── runtime/events/ ────────────────────────────────────────────
+        skill<String, String>(
+            name = "runtime_events_agentevent_kt",
+            description = "Source-file knowledge for agents_engine/runtime/events/AgentEvent.kt — typed sealed event union for sessions (#1736). Variants: SkillStarted, SkillCompleted, Completed (carries OUT), Failed (step 2); Token, ToolCallStarted, ToolCallArgumentsDelta, ToolCallFinished (step 3). agentId on every variant preserves provenance through composition. AgentEvent<Nothing> for non-OUT variants flows through any AgentSession<OUT>. Call when the IDE LLM needs to reason about consuming streamed agent events.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/runtime/events/AgentEvent.md") }
+        }
+
+        skill<String, String>(
+            name = "runtime_events_agentsession_kt",
+            description = "Source-file knowledge for agents_engine/runtime/events/AgentSession.kt — handle returned by agent.session(input). events: cold Flow<AgentEvent<OUT>>, await(): suspend OUT (throws original exception unwrapped on failure). Each session(...) call is a fresh invocation; share via events.shareIn(...). Cancellation propagates both ways into the agent invocation and (step 3) the upstream LLM HTTP call. internal constructor. Call when the IDE LLM needs to reason about consuming session results.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/runtime/events/AgentSession.md") }
+        }
+
+        skill<String, String>(
+            name = "runtime_events_agentsessionextension_kt",
+            description = "Source-file knowledge for agents_engine/runtime/events/AgentSessionExtension.kt — agent.session(input) entry. Builds Channel.BUFFERED + CompletableDeferred + dedicated SupervisorJob+Dispatchers.Default scope per session. Producer coroutine forwards AgentEvents via emitter to channel.trySend. Completed/Failed terminal events close the channel and complete/fail the deferred. Sibling session extensions for Pipeline/Branch/Loop/Forum/Parallel follow the same pattern. Call when the IDE LLM needs to reason about session plumbing internals.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/runtime/events/AgentSessionExtension.md") }
+        }
+
         // Future skills (one per src file) land here as their child issues
-        // (#1890 → #1900) get worked. Keep entries grouped by package to
-        // mirror the source tree's structure for readability.
+        // (#1895 → #1900 — ksp subproject) get worked. Keep entries
+        // grouped by package to mirror the source tree's structure.
     }
 }

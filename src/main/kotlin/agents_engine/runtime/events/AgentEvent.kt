@@ -3,6 +3,19 @@ package agents_engine.runtime.events
 import agents_engine.model.TokenUsage
 
 /**
+ * `agents_engine/runtime/events/AgentEvent.kt` — the typed sealed event
+ * union surfaced via `Agent.session(input).events` (#1736). Variants:
+ * [SkillStarted] / [SkillCompleted] / [Completed] / [Failed]
+ * (delivered today by step 2) plus [Token] / [ToolCallStarted] /
+ * [ToolCallArgumentsDelta] / [ToolCallFinished] (delivered by step 3
+ * — the agentic loop rewire). Every event carries [agentId] for
+ * provenance through composition operators. Only [Completed] carries
+ * the typed `OUT`; others are `AgentEvent<Nothing>`. See
+ * `src/main/resources/internals-agent/runtime/events/AgentEvent.md`
+ * (#1837 / #1892).
+ */
+
+/**
  * #1736 — typed event emitted from `Agent.session(input).events` while the
  * agentic loop runs. See [the v0.5.0 streaming premortem](../../../../docs/premortem-0.5.0-streaming.md)
  * for the full design rationale.

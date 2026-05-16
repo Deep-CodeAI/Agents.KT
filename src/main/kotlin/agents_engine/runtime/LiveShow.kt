@@ -14,6 +14,16 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.runBlocking
 
+/**
+ * `agents_engine/runtime/LiveShow.kt` — the demo REPL surface. Builds a
+ * line-by-line interactive runner around an `Agent`, `Pipeline`,
+ * `Branch`, `Loop`, `Parallel`, or `Forum`. Ships with ANSI color
+ * themes, ASCII banner, spinner, command hooks, configurable history
+ * trimming, optional precheck (e.g. [OllamaPreflight]). Used by every
+ * runnable demo in the repo. See
+ * `src/main/resources/internals-agent/runtime/LiveShow.md` (#1837 / #1890).
+ */
+
 // ─────────────────────────────────────────────────────────────────────────────
 // UI surface (#983): ANSI color, themes, ASCII banner, spinner, hooks.
 // ─────────────────────────────────────────────────────────────────────────────

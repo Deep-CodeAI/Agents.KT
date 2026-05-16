@@ -10,6 +10,16 @@ import java.io.PrintWriter
 import kotlinx.coroutines.runBlocking
 
 /**
+ * `agents_engine/runtime/LiveRunner.kt` — picocli-shaped one-line main
+ * for the [LiveShow] REPL (#981). Mirrors [McpRunner] in shape and
+ * lifecycle. CLI flags: `--once "<prompt>"` (non-interactive single
+ * invocation), `--max-history N` (override builder's maxHistoryTurns),
+ * `-h/--help`, `-V/--version`. Returns process exit code. See
+ * `src/main/resources/internals-agent/runtime/LiveRunner.md`
+ * (#1837 / #1889).
+ */
+
+/**
  * Picocli-shaped one-line `main` for the [LiveShow] REPL (#981). Mirrors
  * [agents_engine.mcp.McpRunner.serve] in shape and lifecycle.
  *

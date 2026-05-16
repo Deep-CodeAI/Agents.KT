@@ -12,6 +12,19 @@ import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
 
 /**
+ * `agents_engine/runtime/events/AgentSessionExtension.kt` — the
+ * `agent.session(input)` extension entry point (#1736). Each call
+ * builds a fresh `Channel.BUFFERED` + a `CompletableDeferred<OUT>`,
+ * launches the agent under a `SupervisorJob() + Dispatchers.Default`
+ * scope, threads an `AgentEventEmitter` through the streaming-aware
+ * `invokeSuspendForSession` entry, and returns an [AgentSession]
+ * wrapping the channel-as-flow and the deferred. Cold flow — fresh
+ * invocation per call. See
+ * `src/main/resources/internals-agent/runtime/events/AgentSessionExtension.md`
+ * (#1837 / #1894).
+ */
+
+/**
  * #1736 — start a streaming session against [this] agent.
  *
  * Returns an [AgentSession] whose [AgentSession.events] is a cold flow of

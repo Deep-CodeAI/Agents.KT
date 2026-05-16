@@ -5,6 +5,20 @@ import agents_engine.model.ToolDef
 import java.util.ServiceLoader
 
 /**
+ * `agents_engine/runtime/Swarm.kt` — multi-JAR agent assembly via
+ * `ServiceLoader` (#984). [AgentProvider] is the SAM interface each
+ * sibling-agent JAR implements; [Swarm.discover] iterates every
+ * `META-INF/services/agents_engine.runtime.AgentProvider` on the
+ * classpath, building one `Agent<*, *>` per provider. The captain agent
+ * then calls `Agent.absorb` per sibling to wire them as session-aware
+ * tools (#1752). In-JVM rather than MCP-stdio to preserve the full
+ * `Agent<IN, OUT>` surface (prompts, skills, knowledge, memory,
+ * observability hooks, error handlers) of every sibling. See
+ * `src/main/resources/internals-agent/runtime/Swarm.md`
+ * (#1837 / #1891).
+ */
+
+/**
  * Service-loadable contract for an agent shipped from a separate JAR (#984).
  *
  * Each agent JAR places `META-INF/services/agents_engine.runtime.AgentProvider`
