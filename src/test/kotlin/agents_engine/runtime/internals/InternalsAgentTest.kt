@@ -1,5 +1,7 @@
 package agents_engine.runtime.internals
 
+import java.io.File
+import java.net.JarURLConnection
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -7,11 +9,47 @@ import kotlin.test.assertTrue
 class InternalsAgentTest {
 
     @Test
-    fun `registers one skill per internals-agent adjunct`() {
+    fun `registers exactly one skill per internals-agent adjunct on the classpath`() {
         val agent = buildInternalsAgent()
-        // 57 in src/main/kotlin + 6 in agents-kt-ksp = 63 adjuncts at v0.6.0.
-        // If a new adjunct lands, this bumps with it — that's the contract.
-        assertEquals(63, agent.skills.size, "Skill count drifted from adjunct file count.")
+        val adjunctCount = countAdjunctsOnClasspath()
+        // Contract: skill count ALWAYS equals the .md file count under
+        // src/main/resources/internals-agent/. Adding a new adjunct should
+        // make this test pass automatically (and bump the skill count); a
+        // drift means the scanner missed a file or registered a duplicate.
+        assertEquals(
+            adjunctCount,
+            agent.skills.size,
+            "Skill count must equal adjunct count. " +
+                "Adjuncts on classpath: $adjunctCount. Registered skills: ${agent.skills.size}. " +
+                "Skill names: ${agent.skills.keys.sorted()}",
+        )
+        // Sanity: the scanner found SOME adjuncts. Catches the regression
+        // where the resources dir gets wiped or relocated.
+        assertTrue(adjunctCount > 0, "Found 0 adjuncts on classpath — the scanner is broken or the resources dir moved.")
+    }
+
+    /**
+     * Walks the classpath the same way `InternalsAgent.kt` does, but kept
+     * test-local so this test fails loudly when the production scanner
+     * silently drifts away from the resource layout.
+     */
+    private fun countAdjunctsOnClasspath(): Int {
+        val cl = Thread.currentThread().contextClassLoader
+            ?: ::countAdjunctsOnClasspath.javaClass.classLoader
+        val url = cl.getResource("internals-agent") ?: return 0
+        return when (url.protocol) {
+            "file" -> {
+                val root = File(url.toURI())
+                root.walkTopDown().count { it.isFile && it.extension == "md" }
+            }
+            "jar" -> {
+                val conn = url.openConnection() as JarURLConnection
+                conn.jarFile.entries().asSequence().count {
+                    !it.isDirectory && it.name.startsWith("internals-agent/") && it.name.endsWith(".md")
+                }
+            }
+            else -> error("Unsupported classpath resource protocol: ${url.protocol}")
+        }
     }
 
     @Test
