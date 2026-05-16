@@ -157,6 +157,68 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
         }
     }
 
+    /**
+     * #1810 — fetch resource listings from the server (`resources/list`).
+     * Returns the raw `McpResourceInfo` records. For the Skill view, use
+     * [resourceSkills].
+     */
+    fun listResources(): List<McpResourceInfo> {
+        val result = post("resources/list", emptyMap<String, Any?>())
+        val resultMap = result as? Map<*, *> ?: return emptyList()
+        val resourcesList = resultMap["resources"] as? List<*> ?: return emptyList()
+        return resourcesList.mapNotNull { raw ->
+            val m = raw as? Map<*, *> ?: return@mapNotNull null
+            val uri = m["uri"] as? String ?: return@mapNotNull null
+            val name = m["name"] as? String ?: return@mapNotNull null
+            McpResourceInfo(
+                uri = uri,
+                name = name,
+                title = m["title"] as? String,
+                description = m["description"] as? String,
+                mimeType = m["mimeType"] as? String,
+                size = (m["size"] as? Number)?.toLong(),
+            )
+        }
+    }
+
+    /**
+     * #1810 — read a resource's content (`resources/read`). Joins all
+     * returned text content blocks into a single string. Binary
+     * (base64-encoded) resources are out of scope for this slice —
+     * extend when needed.
+     */
+    fun readResource(uri: String): String {
+        val result = post("resources/read", mapOf("uri" to uri))
+        val resultMap = result as? Map<*, *>
+            ?: error("resources/read returned non-object: $result")
+        val contents = resultMap["contents"] as? List<*> ?: emptyList<Any?>()
+        return contents.mapNotNull { c ->
+            val m = c as? Map<*, *> ?: return@mapNotNull null
+            m["text"] as? String
+        }.joinToString("\n")
+    }
+
+    /**
+     * #1810 — MCP-as-skills (3/3): expose every server-side resource as
+     * a [Skill]. Skill `name` is the resource's display name (with
+     * optional prefix); `implementedBy` invokes [readResource] with the
+     * captured URI. Skill args are ignored — resources are addressed
+     * by URI, not by call-time parameters.
+     */
+    fun resourceSkills(prefix: String? = null): List<agents_engine.core.Skill<Map<String, Any?>, String>> {
+        return listResources().map { info ->
+            val displayName = if (prefix != null) "$prefix.${info.name}" else info.name
+            agents_engine.core.Skill<Map<String, Any?>, String>(
+                name = displayName,
+                description = info.description ?: "MCP resource ${info.uri}",
+                inType = Map::class,
+                outType = String::class,
+            ).also { skill ->
+                skill.implementedBy { _ -> readResource(info.uri) }
+            }
+        }
+    }
+
     fun call(toolName: String, args: Map<String, Any?>): Any? {
         val result = post("tools/call", mapOf("name" to toolName, "arguments" to args))
         val resultMap = result as? Map<*, *>

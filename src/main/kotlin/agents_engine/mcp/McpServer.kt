@@ -41,12 +41,27 @@ internal data class RegisteredPrompt(
     val render: (Map<String, Any?>) -> String,
 )
 
+/**
+ * #1810 — a server-side resource registration. Mirrors the MCP wire
+ * shape for resources: URI (the addressable handle), display name,
+ * optional description and MIME type, and a `read` closure invoked on
+ * `resources/read` to produce the resource's text content.
+ */
+internal data class RegisteredResource(
+    val uri: String,
+    val name: String,
+    val description: String?,
+    val mimeType: String?,
+    val read: () -> String,
+)
+
 class McpServer private constructor(
     private val agent: Agent<*, *>,
     private val exposedSkills: List<ExposedSkill>,
     private val portRequest: Int,
     private val maxRequestBytes: Long = DEFAULT_MAX_REQUEST_BYTES,
     private val registeredPrompts: List<RegisteredPrompt> = emptyList(),
+    private val registeredResources: List<RegisteredResource> = emptyList(),
 ) {
     private var http: HttpServer? = null
     private val sessionId: String = java.util.UUID.randomUUID().toString()
@@ -118,6 +133,11 @@ class McpServer private constructor(
                     "nextCursor" to null,
                 ))
                 "prompts/get" -> handlePromptGet(id, request)
+                "resources/list" -> jsonRpcResult(id, mapOf(
+                    "resources" to registeredResources.map { it.toMcpDescriptor() },
+                    "nextCursor" to null,
+                ))
+                "resources/read" -> handleResourceRead(id, request)
                 else -> jsonRpcError(id, -32601, "Method not found: $method")
             }
             respond(exchange, 200, response)
@@ -138,11 +158,14 @@ class McpServer private constructor(
                 "Unsupported protocolVersion: \"$requested\". Server speaks: \"$MCP_PROTOCOL_VERSION\".",
             )
         }
-        // #1796: declare prompts capability when prompts are registered.
+        // #1796 / #1810: declare prompts and resources capabilities when registered.
         val capabilities = buildMap<String, Any?> {
             put("tools", mapOf("listChanged" to false))
             if (registeredPrompts.isNotEmpty()) {
                 put("prompts", mapOf("listChanged" to false))
+            }
+            if (registeredResources.isNotEmpty()) {
+                put("resources", mapOf("listChanged" to false, "subscribe" to false))
             }
         }
         return jsonRpcResult(id, mapOf(
@@ -190,6 +213,35 @@ class McpServer private constructor(
         }
     }
 
+    private fun handleResourceRead(id: Any?, request: Map<*, *>): String {
+        val params = request["params"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+        val uri = params["uri"] as? String
+            ?: return jsonRpcError(id, -32602, "Missing resource uri")
+        val resource = registeredResources.firstOrNull { it.uri == uri }
+            ?: return jsonRpcError(id, -32601, "Unknown resource uri: $uri")
+        return try {
+            val content = resource.read()
+            jsonRpcResult(id, mapOf(
+                "contents" to listOf(
+                    buildMap<String, Any?> {
+                        put("uri", resource.uri)
+                        resource.mimeType?.let { put("mimeType", it) }
+                        put("text", content)
+                    },
+                ),
+            ))
+        } catch (e: Exception) {
+            jsonRpcError(id, -32603, "Resource '$uri' read failed: ${e.message ?: e.toString()}")
+        }
+    }
+
+    private fun RegisteredResource.toMcpDescriptor(): Map<String, Any?> = buildMap {
+        put("uri", uri)
+        put("name", name)
+        description?.let { put("description", it) }
+        mimeType?.let { put("mimeType", it) }
+    }
+
     private fun handleToolCall(id: Any?, request: Map<*, *>): String {
         val params = request["params"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
         val name = params["name"] as? String
@@ -234,8 +286,12 @@ class McpServer private constructor(
 
         fun from(agent: Agent<*, *>, block: McpExposeBuilder.() -> Unit): McpServer {
             val builder = McpExposeBuilder().apply(block)
-            require(builder.exposedNames.isNotEmpty() || builder.prompts.isNotEmpty()) {
-                "McpServer requires at least one expose(skillName) or prompt(...) registration."
+            require(
+                builder.exposedNames.isNotEmpty() ||
+                    builder.prompts.isNotEmpty() ||
+                    builder.resources.isNotEmpty()
+            ) {
+                "McpServer requires at least one expose(skillName), prompt(...), or resource(...) registration."
             }
             val exposed = builder.exposedNames.map { name ->
                 val skill = agent.skills[name]
@@ -253,6 +309,7 @@ class McpServer private constructor(
                 portRequest = builder.port,
                 maxRequestBytes = builder.maxRequestBytes,
                 registeredPrompts = builder.prompts,
+                registeredResources = builder.resources,
             )
         }
     }
@@ -282,6 +339,28 @@ class McpExposeBuilder internal constructor() {
             "Prompt \"$name\" already registered on this McpServer."
         }
         prompts += RegisteredPrompt(name, description, arguments, render)
+    }
+
+    internal val resources = mutableListOf<RegisteredResource>()
+
+    /**
+     * #1810 — register a server-side resource. [content] is invoked
+     * per `resources/read` call; its String return becomes the
+     * resource's text content. Use a static return for static
+     * resources; pass a closure that reads from disk/db/etc. for
+     * dynamic content.
+     */
+    fun resource(
+        uri: String,
+        name: String,
+        description: String? = null,
+        mimeType: String? = null,
+        content: () -> String,
+    ) {
+        require(resources.none { it.uri == uri }) {
+            "Resource uri \"$uri\" already registered on this McpServer."
+        }
+        resources += RegisteredResource(uri, name, description, mimeType, content)
     }
 }
 
