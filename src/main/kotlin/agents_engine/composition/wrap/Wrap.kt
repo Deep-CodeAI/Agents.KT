@@ -45,8 +45,23 @@ infix fun <IN, OUT> Agent<IN, String>.wrap(student: Agent<IN, OUT>): Pipeline<IN
     this.markPlaced("pipeline")
     student.markPlaced("pipeline")
     val teacher = this
-    return Pipeline(listOf(teacher, student)) { input ->
-        val promptOverride = teacher.invokeSuspend(input)
-        student.invokeSuspendWithPromptOverride(input, promptOverride)
-    }
+    return Pipeline(
+        agents = listOf(teacher, student),
+        // #1747: streaming path — teacher streams its events, then its
+        // typed `String` output becomes the student's prompt override
+        // for the wrapped run. Both agents' events flow with their own
+        // agentIds.
+        sessionExec = { input, emitter ->
+            val (override, _) = agents_engine.runtime.events.runAgentInSession(teacher, input, emitter)
+            val (out, _) = agents_engine.runtime.events.runAgentInSession(
+                student, input, emitter,
+                promptOverride = override,
+            )
+            out
+        },
+        execution = { input ->
+            val promptOverride = teacher.invokeSuspend(input)
+            student.invokeSuspendWithPromptOverride(input, promptOverride)
+        },
+    )
 }

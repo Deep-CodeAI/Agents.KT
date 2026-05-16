@@ -268,6 +268,14 @@ class Agent<IN, OUT>(
     internal suspend fun invokeSuspendForSession(
         input: IN,
         emitter: agents_engine.model.AgentEventEmitter? = null,
+        /**
+         * #1747 — optional system-prompt override (used by the `wrap` operator).
+         * When non-null, replaces `this.prompt` as the effective system prompt
+         * for this invocation only. Consolidates the previous separate
+         * `invokeSuspendWithPromptOverride` entry point — that one now
+         * delegates here with `emitter = null`.
+         */
+        promptOverride: String? = null,
         onSkillCompleted: (agents_engine.model.TokenUsage?) -> Unit = { /* no-op */ },
         onSkillStarted: (String) -> Unit,
     ): OUT {
@@ -276,7 +284,11 @@ class Agent<IN, OUT>(
             skillChosenListener?.invoke(skill.name)
             onSkillStarted(skill.name)
             return if (skill.isAgentic) {
-                val result = executeAgentic(this, skill, input, emitter = emitter)
+                val result = executeAgentic(
+                    this, skill, input,
+                    effectivePrompt = promptOverride ?: this.prompt,
+                    emitter = emitter,
+                )
                 // #1740: surface cumulative usage on the way out. Non-agentic
                 // skills don't go through executeAgentic, so onSkillCompleted
                 // stays at its default null for the implementedBy path below.
@@ -320,22 +332,15 @@ class Agent<IN, OUT>(
      * differs (reads the override instead of `agent.prompt`).
      */
     internal suspend fun invokeSuspendWithPromptOverride(input: IN, promptOverride: String): OUT {
-        try {
-            val skill = resolveSkill(input)
-            skillChosenListener?.invoke(skill.name)
-            return if (skill.isAgentic) {
-                castOut(executeAgentic(this, skill, input, effectivePrompt = promptOverride).output)
-            } else {
-                // Non-agentic skills don't read prompt — implementedBy lambdas
-                // ignore the override. Same behavior as the legacy path.
-                castOut(executors[skill.name]!!(input))
-            }
-        } catch (t: Throwable) {
-            errorListener?.let { listener ->
-                try { listener(t) } catch (cb: Throwable) { t.addSuppressed(cb) }
-            }
-            throw t
-        }
+        // #1747 — consolidated into invokeSuspendForSession. emitter = null
+        // preserves the non-streaming behavior the wrap operator used pre-
+        // step 4; the streaming variant goes through runAgentInSession with
+        // the same promptOverride parameter.
+        return invokeSuspendForSession(
+            input = input,
+            emitter = null,
+            promptOverride = promptOverride,
+        ) { /* no-op onSkillStarted */ }
     }
 
     private suspend fun resolveSkill(input: IN): Skill<*, *> {

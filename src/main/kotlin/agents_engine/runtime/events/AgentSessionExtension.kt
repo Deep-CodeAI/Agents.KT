@@ -81,12 +81,20 @@ internal suspend fun <IN, OUT> runAgentInSession(
     agent: Agent<IN, OUT>,
     input: IN,
     emitter: AgentEventEmitter,
+    /**
+     * #1747 — when non-null, runs the agentic loop with this string as
+     * the effective system prompt instead of `agent.prompt`. Used by the
+     * `wrap` operator's session path (teacher's output becomes the
+     * student's per-call system prompt).
+     */
+    promptOverride: String? = null,
 ): Pair<OUT, TokenUsage?> {
     var capturedSkillName: String? = null
     var capturedUsage: TokenUsage? = null
     val output = agent.invokeSuspendForSession(
         input,
         emitter = emitter,
+        promptOverride = promptOverride,
         onSkillCompleted = { usage -> capturedUsage = usage },
     ) { skillName ->
         // SkillStarted fires BEFORE the skill body runs — emitting from
