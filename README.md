@@ -185,6 +185,12 @@ Topical guides:
 - [**Agent Memory**](docs/memory.md) — `memory(MemoryBank())`, the three auto-injected tools, sharing memory across agents.
 - [**Guided Generation**](docs/generation.md) — `@Generable`, `@Guide`, `@LlmDescription`, JSON-Schema generation, lenient deserializer, `PartiallyGenerated<T>`.
 - [**Composition Operators**](docs/composition.md) — `then`, `/`, `*`, `forum`, `.loop {}`, `.branch {}`, single-placement rule, type algebra.
+- [**InternalsAgent**](docs/internals-agent.md) — query agents-kt internals from your IDE via MCP (Cursor / Claude Desktop).
+- [**Threat Model**](docs/threat-model.md) — five deployment scenarios + anti-patterns; self-classify your use case in 5 min.
+- [**Production Hardening**](docs/production-hardening.md) — actionable checklist for "before going live."
+- [**Regulated Deployment**](docs/regulated-deployment.md) — capability inventory, action log, decision points; EU AI Act mapping.
+- [**Comparison**](docs/comparison.md) — Agents.KT vs LangChain / Semantic Kernel / AutoGen / raw MCP.
+- [**Interceptors (design draft)**](docs/interceptors.md) — `onBefore*` family + `Decision` sealed type; not yet implemented (#1907).
 - [**Roadmap**](docs/roadmap.md) — full Phase 1–4 feature plan.
 
 ---
