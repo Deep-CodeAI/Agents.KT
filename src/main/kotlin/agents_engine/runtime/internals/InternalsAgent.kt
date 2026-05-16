@@ -103,8 +103,36 @@ fun buildInternalsAgent(): Agent<String, String> = agent<String, String>("agents
             implementedBy { _ -> loadResource("internals-agent/model/ClaudeClient.md") }
         }
 
+        skill<String, String>(
+            name = "model_inlinetoolcallparser_kt",
+            description = "Source-file knowledge for agents_engine/model/InlineToolCallParser.kt — parses {\"tool\":\"name\",\"arguments\":{...}} text into ToolCall and the reverse JSON encoder. Used by providers without native function-calling that instruct the LLM to emit inline tool-call JSON. Lenient parsing via generation.LenientJsonParser, strict encoding. Call when the IDE LLM needs to reason about how LLM text becomes a ToolCall.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/model/InlineToolCallParser.md") }
+        }
+
+        skill<String, String>(
+            name = "model_llmchunk_kt",
+            description = "Source-file knowledge for agents_engine/model/LlmChunk.kt — provider-level streaming chunk union (TextDelta, ToolCallStarted/ArgumentsDelta/Finished, End) per #1722. Narrow — no agentic concepts. Flow shape is [TextDelta]* [Started Δ* Finished]* End. Default ModelClient.chatStream wraps non-streaming chat with this shape. callId honored from ToolCall when present (#1739). Call when the IDE LLM needs to reason about LLM streaming.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/model/LlmChunk.md") }
+        }
+
+        skill<String, String>(
+            name = "model_llmproviderexception_kt",
+            description = "Source-file knowledge for agents_engine/model/LlmProviderException.kt — single-class file (#702). Boundary error for LLM-provider protocol failures (auth, capability, model-not-found, malformed request, 4xx/5xx). Distinguished from IllegalStateException (output parse) and BudgetExceededException. All three shipped clients throw this. Call when the IDE LLM needs to reason about retry policy for provider failures.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/model/LlmProviderException.md") }
+        }
+
+        skill<String, String>(
+            name = "model_modelclient_kt",
+            description = "Source-file knowledge for agents_engine/model/ModelClient.kt — the LLM transport fun interface and shared types (LlmMessage, ToolCall with callId #1739, TokenUsage #963, LlmResponse.Text/ToolCalls). Default chatStream wraps non-streaming chat with LlmChunk emission. Three shipped impls: Ollama, Claude, OpenAI. Custom clients implement the SAM. Call when the IDE LLM needs to reason about adding a new LLM provider or testing with a fake client.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/model/ModelClient.md") }
+        }
+
         // Future skills (one per src file) land here as their child issues
-        // (#1847 → #1900) get worked. Keep entries grouped by package to
+        // (#1851 → #1900) get worked. Keep entries grouped by package to
         // mirror the source tree's structure for readability.
     }
 }

@@ -1,5 +1,15 @@
 package agents_engine.model
 
+/**
+ * `agents_engine/model/LlmChunk.kt` — the provider-level streaming chunk
+ * union (#1722). Each adapter's native streaming endpoint produces these;
+ * non-streaming providers get the default `ModelClient.chatStream` that
+ * wraps `chat()`. Stays narrow — nothing here references agentic concepts
+ * like `skillName` or `agentId`. See
+ * `src/main/resources/internals-agent/model/LlmChunk.md` for the adjunct
+ * surfaced to IDE-side LLM tools (#1837 / #1848).
+ */
+
 // #1722 — provider-level streaming chunk type. Each adapter's native
 // streaming endpoint produces these; non-streaming providers get the
 // default ModelClient.chatStream which wraps `chat` and emits an

@@ -1,5 +1,15 @@
 package agents_engine.model
 
+/**
+ * `agents_engine/model/ModelClient.kt` — the LLM transport interface
+ * ([ModelClient]) plus the shared types adapters speak in: [LlmMessage],
+ * [ToolCall], [TokenUsage], [LlmResponse]. Defines the default
+ * `chatStream(...)` wrapping `chat(...)` so non-streaming providers work
+ * unchanged (#1722). See
+ * `src/main/resources/internals-agent/model/ModelClient.md` for the
+ * adjunct surfaced to IDE-side LLM tools (#1837 / #1850).
+ */
+
 data class LlmMessage(
     val role: String,
     val content: String,
