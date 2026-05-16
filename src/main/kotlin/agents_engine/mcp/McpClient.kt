@@ -57,6 +57,37 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
         )
     }
 
+    /**
+     * #1795 — MCP-as-skills (1/3): expose every MCP-side tool as a [Skill]
+     * usable as an agent primary skill (vs [toolDefs] which surfaces them
+     * as auxiliary functions used inside another skill's agentic loop).
+     *
+     * Each returned skill has `inType = Map::class` (the tool's args map),
+     * `outType = String::class` (MCP tool result rendered to text). Its
+     * `implementedBy` invokes [call] with the wire-side tool name.
+     *
+     * Choice between the two:
+     * - `toolDefs()` — the agent has its own skill driving an LLM that
+     *   sometimes calls MCP tools as helpers. MCP capabilities are
+     *   auxiliary.
+     * - `toolSkills()` — the agent IS a thin wrapper over MCP. Each MCP
+     *   capability is a primary entry point the agent can dispatch to.
+     *
+     * Both surfaces ship; consumers pick the shape that matches their
+     * agent design.
+     */
+    fun toolSkills(prefix: String? = null): List<agents_engine.core.Skill<Map<String, Any?>, String>> = tools.map { t ->
+        val displayName = if (prefix != null) "$prefix.${t.name}" else t.name
+        agents_engine.core.Skill<Map<String, Any?>, String>(
+            name = displayName,
+            description = describeForLlm(t),
+            inType = Map::class,
+            outType = String::class,
+        ).also { skill ->
+            skill.implementedBy { args -> call(t.name, args)?.toString() ?: "" }
+        }
+    }
+
     fun call(toolName: String, args: Map<String, Any?>): Any? {
         val result = post("tools/call", mapOf("name" to toolName, "arguments" to args))
         val resultMap = result as? Map<*, *>
