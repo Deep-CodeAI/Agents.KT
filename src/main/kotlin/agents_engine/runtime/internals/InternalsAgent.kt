@@ -313,8 +313,100 @@ fun buildInternalsAgent(): Agent<String, String> = agent<String, String>("agents
             implementedBy { _ -> loadResource("internals-agent/composition/wrap/Wrap.md") }
         }
 
+        // ── mcp/ ───────────────────────────────────────────────────────
+        skill<String, String>(
+            name = "mcp_agentmcpdsl_kt",
+            description = "Source-file knowledge for agents_engine/mcp/AgentMcpDsl.kt — agent { mcp { server(...) } } declarative MCP registration. Three connection shapes (url=HTTP / command=stdio / host+port=TCP), tool prefixing by server name, v0.5.0 toolSkills/promptSkills/resourceSkills shortcuts. Fail-fast at agent-build time. mcpClients accessor for lifecycle. Call when the IDE LLM needs to reason about wiring an MCP server into an agent.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/mcp/AgentMcpDsl.md") }
+        }
+
+        skill<String, String>(
+            name = "mcp_httpmcptransport_kt",
+            description = "Source-file knowledge for agents_engine/mcp/HttpMcpTransport.kt — Streamable HTTP MCP transport. POST → JSON or SSE response. Captures Mcp-Session-Id from any response, replays on subsequent requests. Honors McpAuth.Bearer. requestTimeout and maxResponseBytes limits. Shared JDK HttpClient. Call when the IDE LLM needs to reason about HTTP MCP connectivity.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/mcp/HttpMcpTransport.md") }
+        }
+
+        skill<String, String>(
+            name = "mcp_linedelimitedmcptransport_kt",
+            description = "Source-file knowledge for agents_engine/mcp/LineDelimitedMcpTransport.kt — abstract base for stdio + TCP transports. \\n-terminated UTF-8 JSON-RPC envelopes. Notifications (no id field) dropped silently. Single-flight: callers must serialize rpc() calls. Subclasses override only close() for their own teardown. Call when the IDE LLM needs to reason about line-delimited MCP framing.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/mcp/LineDelimitedMcpTransport.md") }
+        }
+
+        skill<String, String>(
+            name = "mcp_mcpauth_kt",
+            description = "Source-file knowledge for agents_engine/mcp/McpAuth.kt — sealed McpAuth (None / Bearer(token)). Bearer.toString() redacts the token to keep it out of logs (#857). Sealed for future variants (OAuth, ApiKeyHeader). Stdio + TCP derive auth from connection identity; only HTTP currently consumes Bearer. Call when the IDE LLM needs to reason about MCP authentication.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/mcp/McpAuth.md") }
+        }
+
+        skill<String, String>(
+            name = "mcp_mcpclient_kt",
+            description = "Source-file knowledge for agents_engine/mcp/McpClient.kt — wraps an McpTransport. Lifecycle: handshake() → loadTools() / loadResources() / loadResourceTemplates() / loadPrompts() → snapshot populated (#1734). Synchronous single-threaded; concurrent agentic-loop calls are externally serialized. AtomicLong id counter starting at 2 (initialize uses 1). Factories: McpClient.http/.stdio/.tcp. AutoCloseable. Call when the IDE LLM needs to reason about consuming a remote MCP server.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/mcp/McpClient.md") }
+        }
+
+        skill<String, String>(
+            name = "mcp_mcpjson_kt",
+            description = "Source-file knowledge for agents_engine/mcp/McpJson.kt — internal strict JSON encoder for MCP RPC envelopes. ~25 lines. Supports null/Boolean/Number/String/Map/Iterable/Array; falls back to escape(toString()). Full string escapes including \\uXXXX for control chars under 0x20. Reads use generation.LenientJsonParser (different concern). Call when the IDE LLM needs to reason about MCP wire encoding.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/mcp/McpJson.md") }
+        }
+
+        skill<String, String>(
+            name = "mcp_mcpprotocolversion_kt",
+            description = "Source-file knowledge for agents_engine/mcp/McpProtocolVersion.kt — one-line file holding MCP_PROTOCOL_VERSION constant (currently \"2025-03-26\"). Single source of truth — bump here when upgrading MCP spec revision. Used by McpClient.handshake() and McpServer identity. Call when the IDE LLM needs to know the MCP version targeted.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/mcp/McpProtocolVersion.md") }
+        }
+
+        skill<String, String>(
+            name = "mcp_mcprunner_kt",
+            description = "Source-file knowledge for agents_engine/mcp/McpRunner.kt — McpRunner.serve(agent, args) { } one-line main returning exit code. CLI flags: --port N (0=auto), --expose NAME (repeatable, overrides block exposes), -h/--help, -V/--version. Picocli-shaped. CountDownLatch-based graceful shutdown on SIGTERM/SIGINT. Sibling to LiveRunner. Call when the IDE LLM needs to reason about exposing an agent over MCP from a CLI.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/mcp/McpRunner.md") }
+        }
+
+        skill<String, String>(
+            name = "mcp_mcpserver_kt",
+            description = "Source-file knowledge for agents_engine/mcp/McpServer.kt — exposes an Agent as an MCP server over HTTP (JDK HttpServer at POST /mcp). McpServer.from(agent) { port, expose(...) }. Non-agentic skills only (implementedBy { }); IN must be String or @Generable; output rendered as text block via toString(). v0.5.0 (#1796) adds prompt and resource registration. RegisteredPrompt mirrors MCP wire shape. The InternalsAgent runs on this. Call when the IDE LLM needs to reason about hosting an MCP server.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/mcp/McpServer.md") }
+        }
+
+        skill<String, String>(
+            name = "mcp_mcpserverinfo_kt",
+            description = "Source-file knowledge for agents_engine/mcp/McpServerInfo.kt — immutable pure-data snapshot of an MCP server's surface (#1734). identity + protocolVersion + capabilities + tools + resources + resourceTemplates + prompts. Populated by McpClient over time as RPCs land. Constructible directly in tests without a transport stub. Forward-looking — fields land here before the RPC support arrives. Call when the IDE LLM needs to reason about reading MCP server state.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/mcp/McpServerInfo.md") }
+        }
+
+        skill<String, String>(
+            name = "mcp_mcptransport_kt",
+            description = "Source-file knowledge for agents_engine/mcp/McpTransport.kt — internal interface. rpc(envelope): String for request/response, notify(envelope) for fire-and-forget. AutoCloseable. Single-flight (callers serialize). Three implementations: HttpMcpTransport (Streamable HTTP), TcpMcpTransport (line-delimited TCP), StdioMcpTransport (line-delimited stdio). Same JSON-RPC envelope, different framing. Call when the IDE LLM needs to reason about MCP transports.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/mcp/McpTransport.md") }
+        }
+
+        skill<String, String>(
+            name = "mcp_stdiomcptransport_kt",
+            description = "Source-file knowledge for agents_engine/mcp/StdioMcpTransport.kt — line-delimited JSON over stdin/stdout. Two factories: forStreams (test pipes / custom IPC) and forProcess (spawns child via ProcessBuilder, drains stderr on daemon thread to avoid full-buffer deadlock). close() destroys gracefully (SIGTERM, 2s wait, SIGKILL). Robust to Linux CI fast-exit races. Call when the IDE LLM needs to reason about subprocess MCP servers.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/mcp/StdioMcpTransport.md") }
+        }
+
+        skill<String, String>(
+            name = "mcp_tcpmcptransport_kt",
+            description = "Source-file knowledge for agents_engine/mcp/TcpMcpTransport.kt — thin subclass of LineDelimitedMcpTransport delegating to the socket's streams. close() runCatching { socket.close() } for idempotence (peer may have closed). Caller builds the Socket; transport owns its lifetime. No built-in TLS or auth — use HTTPS-fronted HTTP transport for untrusted networks. Call when the IDE LLM needs to reason about TCP MCP connectivity.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/mcp/TcpMcpTransport.md") }
+        }
+
         // Future skills (one per src file) land here as their child issues
-        // (#1876 → #1900) get worked. Keep entries grouped by package to
+        // (#1890 → #1900) get worked. Keep entries grouped by package to
         // mirror the source tree's structure for readability.
     }
 }

@@ -9,6 +9,17 @@ import java.io.OutputStream
 import java.io.OutputStreamWriter
 
 /**
+ * `agents_engine/mcp/LineDelimitedMcpTransport.kt` — abstract base for
+ * the stdio + TCP transports. JSON-RPC envelopes are one line each,
+ * `\n`-terminated. Notifications from the server (no `id` field) are
+ * dropped silently. Single-flight: callers must serialize their
+ * `rpc()` calls (the `McpClient` is single-threaded, so the contract
+ * matches). See
+ * `src/main/resources/internals-agent/mcp/LineDelimitedMcpTransport.md`
+ * (#1837 / #1878).
+ */
+
+/**
  * Shared logic for line-delimited JSON-RPC transports (stdio, TCP).
  *
  * Each request envelope is written as a single line (terminated by `\n`).

@@ -1,6 +1,15 @@
 package agents_engine.mcp
 
 /**
+ * `agents_engine/mcp/McpAuth.kt` — sealed auth scheme for MCP transports.
+ * Today: `None` (default) and `Bearer(token)`. `Bearer.toString()` is
+ * redacted to keep tokens out of logs (#857). Stdio + TCP derive auth
+ * from connection identity; only HTTP currently cares. Sealed so future
+ * variants (OAuth, ApiKeyHeader) plug in without overload sprawl. See
+ * `src/main/resources/internals-agent/mcp/McpAuth.md` (#1837 / #1879).
+ */
+
+/**
  * Auth scheme for an MCP transport. Today only HTTP cares — stdio and TCP
  * derive auth from connection identity. Sealed so future variants
  * (`OAuth`, `ApiKeyHeader`, etc.) can plug in without overload sprawl.

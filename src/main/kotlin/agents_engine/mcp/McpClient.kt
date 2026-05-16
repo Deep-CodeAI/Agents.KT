@@ -7,6 +7,18 @@ import java.io.OutputStream
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicLong
 
+/**
+ * `agents_engine/mcp/McpClient.kt` — the framework's MCP client.
+ * Wraps an [McpTransport] (HTTP / TCP / stdio) and speaks JSON-RPC.
+ * Lifecycle: construct via factory → `handshake()` initializes the
+ * protocol + records server identity → `loadTools()` populates the
+ * tool catalog. v0.5.0 adds `loadPrompts()` / `loadResources()` /
+ * `loadResourceTemplates()` so the [snapshot] [McpServerInfo] (#1734)
+ * carries the server's full surface for `toolSkills()` /
+ * `promptSkills()` / `resourceSkills()` consumers. AutoCloseable.
+ * See `src/main/resources/internals-agent/mcp/McpClient.md`
+ * (#1837 / #1880).
+ */
 class McpClient internal constructor(private val transport: McpTransport) : AutoCloseable {
 
     private var tools: List<McpToolDescriptor> = emptyList()

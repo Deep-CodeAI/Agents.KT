@@ -9,6 +9,16 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 
 /**
+ * `agents_engine/mcp/HttpMcpTransport.kt` — Streamable HTTP transport
+ * for MCP. Each `rpc()` is a POST whose response is JSON or SSE
+ * (single `data:` event). Captures `Mcp-Session-Id` from any response
+ * and replays it on subsequent requests. Honors [McpAuth] (Bearer,
+ * None) and per-request / max-response-size limits. See
+ * `src/main/resources/internals-agent/mcp/HttpMcpTransport.md`
+ * (#1837 / #1877).
+ */
+
+/**
  * Streamable HTTP transport. Each `rpc()` is a POST whose response is either a JSON body
  * or an SSE stream (a single `data:` event). Captures `Mcp-Session-Id` from any response
  * header and replays it on subsequent requests.

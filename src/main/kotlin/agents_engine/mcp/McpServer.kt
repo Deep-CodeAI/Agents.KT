@@ -13,6 +13,17 @@ import kotlin.reflect.KClass
 import agents_engine.generation.hasGenerableAnnotation
 
 /**
+ * `agents_engine/mcp/McpServer.kt` — exposes an [Agent]'s skills as MCP
+ * tools (and prompts/resources per #1796) over Streamable HTTP. Built
+ * via `McpServer.from(agent) { expose(...) }`. Scope (first cut):
+ * HTTP only (JDK `HttpServer`); non-agentic skills only (declared via
+ * `implementedBy { }`); skill `IN` must be `String` or a `@Generable`
+ * class. Server-side prompts mirror MCP wire shape (RegisteredPrompt).
+ * The InternalsAgent itself runs on this. See
+ * `src/main/resources/internals-agent/mcp/McpServer.md` (#1837 / #1884).
+ */
+
+/**
  * Exposes an [Agent]'s skills as MCP tools over Streamable HTTP.
  *
  * ```kotlin

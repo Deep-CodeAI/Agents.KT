@@ -5,6 +5,17 @@ import java.io.OutputStream
 import java.util.concurrent.TimeUnit
 
 /**
+ * `agents_engine/mcp/StdioMcpTransport.kt` — line-delimited transport
+ * over stdio. Two factories: `forStreams(...)` (test pipes / custom
+ * IPC) and `forProcess(...)` (spawn a child, read stdout / write
+ * stdin, stderr drained on a daemon thread to avoid full-buffer
+ * deadlock). `close()` destroys the child gracefully then
+ * forcibly after 2s. See
+ * `src/main/resources/internals-agent/mcp/StdioMcpTransport.md`
+ * (#1837 / #1887).
+ */
+
+/**
  * Stdio transport. Two creation paths:
  *
  * - [forStreams] — wraps a generic input/output stream pair. Used by tests

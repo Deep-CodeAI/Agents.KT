@@ -4,6 +4,15 @@ import agents_engine.core.Agent
 import java.util.concurrent.CountDownLatch
 
 /**
+ * `agents_engine/mcp/McpRunner.kt` — the one-line `main` for exposing
+ * an agent over MCP. Returns a process exit code. Honors CLI flags
+ * `--port N`, `--expose NAME` (repeatable), `-h / --help`, `-V /
+ * --version`. The configuration block sets defaults; CLI flags
+ * override. See `src/main/resources/internals-agent/mcp/McpRunner.md`
+ * (#1837 / #1883).
+ */
+
+/**
  * One-line `main` for exposing an agent over MCP. Picocli-shaped:
  *
  * ```kotlin

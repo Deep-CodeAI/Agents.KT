@@ -5,6 +5,18 @@ import java.io.File
 import java.util.WeakHashMap
 
 /**
+ * `agents_engine/mcp/AgentMcpDsl.kt` — the agent-level `mcp { server(...) }`
+ * DSL for declarative MCP server registration. Each `server` connects at
+ * agent-construction time and registers its tools into `agent.toolMap`
+ * prefixed by server name. v0.5.0 added `toolSkills()` / `promptSkills()` /
+ * `resourceSkills()` shortcuts that expose every MCP capability shape as
+ * `Skill<Map<String, Any?>, String>`. Connection failures fail the build
+ * (fail-fast). Clients are retained on the agent via [mcpClients] for
+ * lifecycle. See `src/main/resources/internals-agent/mcp/AgentMcpDsl.md`
+ * (#1837 / #1876).
+ */
+
+/**
  * Agent-level DSL for declarative MCP server registration.
  *
  * ```kotlin

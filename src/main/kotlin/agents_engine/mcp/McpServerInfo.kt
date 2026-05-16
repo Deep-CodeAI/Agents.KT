@@ -1,5 +1,16 @@
 package agents_engine.mcp
 
+/**
+ * `agents_engine/mcp/McpServerInfo.kt` — immutable pure-data snapshot of
+ * an MCP server's full surface (#1734). Identity + protocol version +
+ * capabilities + tools + resources + resource templates + prompts.
+ * Populated by `McpClient` after handshake + listings; constructible
+ * directly in tests. Consumers read off this shape regardless of
+ * which fields the live client has filled in. See
+ * `src/main/resources/internals-agent/mcp/McpServerInfo.md`
+ * (#1837 / #1885).
+ */
+
 // #1734 — immutable pure-data snapshot of an MCP server's full surface.
 // Materialized by McpClient after the initialize handshake + listings;
 // can also be constructed directly in tests, no transport stub needed.

@@ -1,5 +1,15 @@
 package agents_engine.mcp
 
+/**
+ * `agents_engine/mcp/McpJson.kt` — minimal internal JSON encoder for
+ * MCP envelopes. Strict output (no trailing commas), handles null /
+ * Boolean / Number / String / Map / Iterable / Array. Full string
+ * escape coverage including `\uXXXX` for control characters under
+ * 0x20. Used to build JSON-RPC requests; the framework's lenient
+ * parser is used to read responses. See
+ * `src/main/resources/internals-agent/mcp/McpJson.md` (#1837 / #1881).
+ */
+
 internal object McpJson {
     fun encode(value: Any?): String = when (value) {
         null -> "null"
