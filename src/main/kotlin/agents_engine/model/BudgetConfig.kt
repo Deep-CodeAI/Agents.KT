@@ -4,6 +4,15 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
 /**
+ * `agents_engine/model/BudgetConfig.kt` — six budget caps for an agentic
+ * invocation, the matching builder, and the [BudgetReason] enum +
+ * [BudgetExceededException] surfaced when a cap fires. See
+ * `src/main/resources/internals-agent/model/BudgetConfig.md` for the
+ * adjunct surfaced to IDE-side LLM tools via `agents-kt-internals`
+ * (#1837 / #1845).
+ */
+
+/**
  * Budget caps for an agentic invocation. All defaults are production-friendly:
  * tight enough to bound cost / wall-time runaway, generous enough that
  * well-designed loops are not artificially constrained.

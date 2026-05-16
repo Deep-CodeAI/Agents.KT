@@ -89,8 +89,22 @@ fun buildInternalsAgent(): Agent<String, String> = agent<String, String>("agents
             implementedBy { _ -> loadResource("internals-agent/model/AgenticLoop.md") }
         }
 
+        skill<String, String>(
+            name = "model_budgetconfig_kt",
+            description = "Source-file knowledge for agents_engine/model/BudgetConfig.kt — six caps (maxTurns 8, maxToolCalls 32, maxDuration 5m, perToolTimeout null, maxTokens null #963, maxConsecutiveSameTool null #969), the BudgetBuilder DSL, BudgetReason enum, BudgetExceededException, and pre-cap threshold warnings via onBudgetThreshold. Call when the IDE LLM needs to reason about cost/runaway control for agentic invocations.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/model/BudgetConfig.md") }
+        }
+
+        skill<String, String>(
+            name = "model_claudeclient_kt",
+            description = "Source-file knowledge for agents_engine/model/ClaudeClient.kt — Anthropic Messages API adapter (#1644). LlmMessage→Anthropic JSON wire mapping (system field, tool_use/tool_result blocks with synthetic toolu_<n> IDs, input_schema spelling), streaming via SSE (text_delta and input_json_delta chunks), boundary errors via LlmProviderException (#702), open sendChat seam for tests. Call when the IDE LLM needs to reason about wiring the framework to Anthropic.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/model/ClaudeClient.md") }
+        }
+
         // Future skills (one per src file) land here as their child issues
-        // (#1845 → #1900) get worked. Keep entries grouped by package to
+        // (#1847 → #1900) get worked. Keep entries grouped by package to
         // mirror the source tree's structure for readability.
     }
 }
