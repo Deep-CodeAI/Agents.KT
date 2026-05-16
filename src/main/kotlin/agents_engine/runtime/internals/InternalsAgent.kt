@@ -60,8 +60,29 @@ fun buildInternalsAgent(): Agent<String, String> = agent<String, String>("agents
             implementedBy { _ -> loadResource("internals-agent/core/Memory.md") }
         }
 
+        skill<String, String>(
+            name = "core_resources_kt",
+            description = "Source-file knowledge for agents_engine/core/Resources.kt — the loadResource / loadResourceOrNull classpath helpers (#980): UTF-8 decoding, leading-slash tolerance, fail-fast on missing, contextClassLoader-first lookup. Call when the IDE LLM needs to reason about prompt/knowledge resource loading or InternalsAgent's adjunct mechanism.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/core/Resources.md") }
+        }
+
+        skill<String, String>(
+            name = "core_pipelineevent_kt",
+            description = "Source-file knowledge for agents_engine/core/PipelineEvent.kt — the sealed PipelineEvent (SkillChosen, ToolCalled, KnowledgeLoaded, ErrorOccurred) and the Agent.observe { } extension that chains it over the four per-event listeners additively (#965). Call when the IDE LLM needs to reason about post-hoc observability vs the in-loop AgentEvent stream.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/core/PipelineEvent.md") }
+        }
+
+        skill<String, String>(
+            name = "core_skillroute_kt",
+            description = "Source-file knowledge for agents_engine/core/SkillRoute.kt — the @Generable SkillRoute structured output (skillName, confidence, rationale) the LLM router returns when picking among candidate skills (#641), the skillSelectionConfidenceThreshold (default 0.6), SkillRoutingException, and how rationale surfaces via the routerRationale listener. Call when the IDE LLM needs to reason about multi-skill agents and routing decisions.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/core/SkillRoute.md") }
+        }
+
         // Future skills (one per src file) land here as their child issues
-        // (#1841 → #1900) get worked. Keep entries grouped by package to
+        // (#1844 → #1900) get worked. Keep entries grouped by package to
         // mirror the source tree's structure for readability.
     }
 }

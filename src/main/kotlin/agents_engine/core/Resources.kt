@@ -1,6 +1,13 @@
 package agents_engine.core
 
 /**
+ * `agents_engine/core/Resources.kt` — classpath resource loading helpers
+ * ([loadResource], [loadResourceOrNull]). See
+ * `src/main/resources/internals-agent/core/Resources.md` for the adjunct
+ * surfaced to IDE-side LLM tools via `agents-kt-internals` (#1837 / #1841).
+ */
+
+/**
  * Read a UTF-8 classpath resource and return its full content. See #980.
  *
  * Canonical usage — pulling an agent's system prompt out of a .md file:

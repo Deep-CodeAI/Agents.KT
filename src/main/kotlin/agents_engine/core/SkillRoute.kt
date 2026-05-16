@@ -4,6 +4,14 @@ import agents_engine.generation.Generable
 import agents_engine.generation.Guide
 
 /**
+ * `agents_engine/core/SkillRoute.kt` — the @Generable structured-output type
+ * the LLM router returns when picking a skill, plus the
+ * [SkillRoutingException] thrown when confidence falls below threshold. See
+ * `src/main/resources/internals-agent/core/SkillRoute.md` for the adjunct
+ * surfaced to IDE-side LLM tools via `agents-kt-internals` (#1837 / #1843).
+ */
+
+/**
  * Structured result the LLM router returns when picking a skill from a list of
  * candidates. See #641.
  *

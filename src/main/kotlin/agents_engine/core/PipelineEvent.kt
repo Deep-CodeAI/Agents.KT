@@ -3,6 +3,14 @@ package agents_engine.core
 import java.time.Instant
 
 /**
+ * `agents_engine/core/PipelineEvent.kt` — the post-hoc observability event
+ * union and the [Agent.observe] extension that wires it into the four
+ * per-event listener slots. See `src/main/resources/internals-agent/core/PipelineEvent.md`
+ * for the adjunct surfaced to IDE-side LLM tools via `agents-kt-internals`
+ * (#1837 / #1842).
+ */
+
+/**
  * Typed event union emitted via [Agent.observe]. Bridges the four existing
  * agent-level hooks (`onSkillChosen`, `onToolUse`, `onKnowledgeUsed`,
  * `onError`) into a single sealed type so integrators wiring telemetry can
