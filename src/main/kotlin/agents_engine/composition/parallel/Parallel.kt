@@ -17,6 +17,14 @@ import kotlinx.coroutines.withContext
 class Parallel<IN, OUT>(
     val agents: List<Agent<*, *>>,
     internal val executions: List<suspend (IN) -> OUT>,
+    /**
+     * #1750 — per-branch session-aware execution. When set, each branch's
+     * events stream into the shared emitter passed to `Parallel.session`;
+     * the events interleave in arrival order but are demultiplexable by
+     * `agentId`. Null for branches built outside the div factories —
+     * those run via `executions` with no events flowing through.
+     */
+    internal val sessionExecutions: List<suspend (IN, agents_engine.model.AgentEventEmitter) -> OUT>? = null,
 ) {
     operator fun invoke(input: IN): List<OUT> = runBlocking { invokeSuspend(input) }
 
@@ -30,19 +38,36 @@ class Parallel<IN, OUT>(
 operator fun <A, B> Agent<A, B>.div(other: Agent<A, B>): Parallel<A, B> {
     this.markPlaced("parallel")
     other.markPlaced("parallel")
+    val left = this
     return Parallel(
-        agents = listOf(this, other),
+        agents = listOf(left, other),
         executions = listOf(
-            { input -> this.invokeSuspend(input) },
+            { input -> left.invokeSuspend(input) },
             { input -> other.invokeSuspend(input) },
+        ),
+        // #1750: each branch streams via runAgentInSession; events from
+        // both branches flow into the same emitter and interleave.
+        sessionExecutions = listOf(
+            { input, emitter -> agents_engine.runtime.events.runAgentInSession(left, input, emitter).first },
+            { input, emitter -> agents_engine.runtime.events.runAgentInSession(other, input, emitter).first },
         ),
     )
 }
 
 operator fun <A, B> Parallel<A, B>.div(other: Agent<A, B>): Parallel<A, B> {
     other.markPlaced("parallel")
+    val inner = this
     return Parallel(
-        agents = agents + other,
-        executions = executions + { input -> other.invokeSuspend(input) },
+        agents = inner.agents + other,
+        executions = inner.executions + { input -> other.invokeSuspend(input) },
+        // #1750: extend the inner Parallel's session executions with the new branch.
+        // If the inner Parallel had no sessionExecutions (built outside the factory),
+        // we can't manufacture them retroactively — fall back to null so the whole
+        // Parallel emits only the terminal events.
+        sessionExecutions = inner.sessionExecutions?.let { execs ->
+            execs + { input, emitter ->
+                agents_engine.runtime.events.runAgentInSession(other, input, emitter).first
+            }
+        },
     )
 }
