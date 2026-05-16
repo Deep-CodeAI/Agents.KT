@@ -1,0 +1,53 @@
+package agents_engine.runtime.internals
+
+import agents_engine.core.Agent
+import agents_engine.core.agent
+import agents_engine.core.loadResource
+
+/**
+ * #1837 — Agents.KT InternalsAgent: a self-hosting docs agent whose skills
+ * correspond to source files in the framework. Exposed via
+ * `McpServer.from(buildInternalsAgent())` so IDE-side AI agents (Cursor,
+ * Claude Desktop) can query the framework's own structure as tools.
+ *
+ * **Design.** Each skill is `implementedBy { _ -> loadResource("internals-agent/<path>.md") }`
+ * — a pure data fetch. The IDE's LLM (not ours) decides which skill to
+ * call based on the skill's `description` (sold to the LLM as a tool);
+ * the skill returns the curated KDoc adjunct as text content. No
+ * framework-side LLM round-trip is needed — the InternalsAgent has no
+ * `model { }` configured because its skills don't use one.
+ *
+ * **Adjunct files.** Each skill loads from `src/main/resources/internals-agent/<package>/<File>.md`.
+ * These are curated markdown summaries kept synchronized with each source
+ * file's top-of-file `/** ... */` description (a deliberate-redundancy
+ * choice: the .md is what the IDE LLM sees, the KDoc is what a human
+ * reading the source sees, and they say the same thing).
+ *
+ * **Per-file children.** Skills are added incrementally as the v0.6.0
+ * per-file children of #1837 get worked. The pattern is:
+ * 1. Pick the next open child (e.g., `redmine_get_issue 1839` for
+ *    `core/Skill.kt`).
+ * 2. Add the top-of-file KDoc to the source file.
+ * 3. Create the adjunct `.md` at `internals-agent/<path>.md`.
+ * 4. Register a skill in this file's `skills { }` block.
+ * 5. Commit referencing the child issue; close it with the SHA.
+ *
+ * Running locally: `./gradlew runInternalsAgent` (or via the [Main]
+ * companion file). Configure Cursor / Claude Desktop to point at the
+ * advertised loopback URL.
+ */
+fun buildInternalsAgent(): Agent<String, String> = agent<String, String>("agents-kt-internals") {
+    skills {
+        // ── core/ ──────────────────────────────────────────────────────
+        skill<String, String>(
+            name = "core_agent_kt",
+            description = "Source-file knowledge for agents_engine/core/Agent.kt — the Agent<IN, OUT> class, single-placement rule, invoke / invokeSuspend / session entry points, observability hooks (skillChosenListener, toolUseListener, knowledgeUsedListener, errorListener, budgetThresholdListener), freeze-after-construction contract. Call when the IDE LLM needs to reason about how Agents are constructed, invoked, or observed.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/core/Agent.md") }
+        }
+
+        // Future skills (one per src file) land here as their child issues
+        // (#1839 → #1900) get worked. Keep entries grouped by package to
+        // mirror the source tree's structure for readability.
+    }
+}

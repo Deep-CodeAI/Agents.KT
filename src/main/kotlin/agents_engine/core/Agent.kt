@@ -13,6 +13,44 @@ import agents_engine.model.buildBuiltInTools
 import agents_engine.model.executeAgentic
 import agents_engine.model.selectSkillByLlm
 
+/**
+ * `agents_engine/core/Agent.kt` — the typed-agent class. One input type,
+ * one output type, one job. Type mismatches at composition boundaries
+ * are caught by the compiler; structural misuses (duplicate placements,
+ * mutation after freeze) fail fast at construction time.
+ *
+ * **Construction.** Built through the `agent { }` DSL, never via direct
+ * constructor calls. After construction `validate()` runs and the agent
+ * is frozen — skills, tools, knowledge, and observability hooks are
+ * read-only. Mutation attempts throw `IllegalStateException`.
+ *
+ * **Invocation surfaces.** Three entry points, all routing through the
+ * same skill-resolution + agentic loop:
+ * - [invoke] / `agent(input)` — blocking, returns `OUT`.
+ * - [invokeSuspend] — suspending, returns `OUT`. Use from coroutines so
+ *   parent-scope cancellation + `withTimeout` propagate cleanly.
+ * - `agent.session(input)` (extension in `agents_engine.runtime.events`) —
+ *   returns `AgentSession<OUT>` with cold `events: Flow<AgentEvent<OUT>>`
+ *   and `suspend fun await()`. The v0.5.0+ streaming surface.
+ *
+ * **Single-placement rule.** A given `Agent` instance may be wired into
+ * AT MOST one structure (`then`, `/`, `forum`, `Branch`, `Loop`,
+ * `wrap`, `Swarm`). A second placement throws `IllegalArgumentException`.
+ *
+ * **Observability hooks (post-hoc PipelineEvent).** Separate from
+ * `AgentEvent` (the streaming session surface): `onSkillChosen`,
+ * `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`, and
+ * the unified `observe { event -> }` sealed-event view.
+ *
+ * **Internal session entry point.** [invokeSuspendForSession] is the
+ * streaming-aware variant called only by `Agent.session(input)` and
+ * composition operators. Existing [invokeSuspend] delegates to it
+ * with a no-op emitter — byte-for-byte unchanged non-streaming behavior.
+ *
+ * See `src/main/resources/internals-agent/core/Agent.md` for the
+ * extended adjunct surfaced to IDE-side LLM tools via the
+ * `agents-kt-internals` MCP server (#1837 / #1838).
+ */
 class Agent<IN, OUT>(
     val name: String,
     val outType: kotlin.reflect.KClass<*>,
