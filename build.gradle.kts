@@ -259,6 +259,16 @@ tasks.register<JavaExec>("interactivePipeline") {
     standardInput = System.`in`
 }
 
+// #1837 — run the InternalsAgent MCP server. Exposes every framework
+// source file's adjunct as an MCP tool. Default port 8765; override via
+// `--args="<port>"`. See docs/internals-agent.md for IDE wiring.
+tasks.register<JavaExec>("runInternalsAgent") {
+    description = "Run the InternalsAgent MCP server (default port 8765)"
+    group = "application"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("agents_engine.runtime.internals.MainKt")
+}
+
 // #984 — full swarm demo. Three sibling agents (fib / factor / exit) live as
 // SEPARATE JAR files in build/tmp/jars_swarm_demo/, each with its own
 // META-INF/services descriptor. The captain main is packaged inside fib.jar.
