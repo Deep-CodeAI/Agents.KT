@@ -11,6 +11,17 @@ import kotlinx.coroutines.withContext
 import kotlin.reflect.KClass
 
 /**
+ * `agents_engine/composition/forum/Forum.kt` — the deliberation operator.
+ * `Forum<IN, OUT>` fans the same input out to N participants in
+ * parallel, collects their outputs as a [ForumTranscript], and either
+ * surfaces the transcript directly or hands it to a transcript-captain
+ * for synthesis. `@Mention` text routing surfaces via [onMentionEmitted].
+ * Used for n-of-many voting, multi-agent debate, ensemble reasoning.
+ * See `src/main/resources/internals-agent/composition/forum/Forum.md`
+ * (#1837 / #1867).
+ */
+
+/**
  * One participant's contribution to a forum deliberation.
  * `output` is `Any?` because participants are heterogeneously typed (`Agent<IN, *>`).
  */

@@ -5,6 +5,16 @@ import agents_engine.core.*
 import agents_engine.generation.ReflectionFallback
 import kotlin.reflect.KClass
 
+/**
+ * `agents_engine/composition/branch/BranchBuilder.kt` — the DSL surface
+ * for assembling a `Branch`. `on<T>() then targetAgent` / `then pipeline`
+ * registers a `TypeRoute`; `onNull()` and `orElse()` cover the absent /
+ * default cases. Each `then` also wires a `sessionExecutor` (#1748)
+ * that streams the routed branch's events when invoked under
+ * `branch.session(input)`. Marks placed agents (single-placement rule).
+ * See `src/main/resources/internals-agent/composition/branch/BranchBuilder.md`
+ * (#1837 / #1865).
+ */
 class BranchBuilder<OUT> {
     @PublishedApi internal val routes = mutableListOf<BranchRoute<OUT>>()
 

@@ -5,6 +5,17 @@ import kotlinx.coroutines.runBlocking
 import kotlin.reflect.KClass
 
 /**
+ * `agents_engine/composition/branch/Branch.kt` — the routing operator.
+ * A `Branch<IN, OUT>` runs a source agent, dispatches on the result
+ * type/null/else to a registered route, and returns the route's
+ * `OUT`. Order matters — first matching route wins (#638). Suspend
+ * executors so routes can dispatch into agents/pipelines via their
+ * suspending entry points without nested runBlocking. See
+ * `src/main/resources/internals-agent/composition/branch/Branch.md`
+ * (#1837 / #1864).
+ */
+
+/**
  * One branch route. Order matters: routes are evaluated in registration order
  * and the first matcher whose predicate returns true wins. Place specific routes
  * before general ones (e.g., `on<Dog>()` before `on<Animal>()`).

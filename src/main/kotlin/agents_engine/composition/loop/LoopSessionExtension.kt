@@ -12,6 +12,18 @@ import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
 
 /**
+ * `agents_engine/composition/loop/LoopSessionExtension.kt` — the
+ * `loop.session(input)` extension. Each iteration runs via the loop's
+ * `sessionExec`, streaming the wrapped agent's events with the
+ * agent's `agentId`. Iterations interleave only one at a time
+ * (loops are sequential). Termination as in the non-streaming path:
+ * `next` returns `null` or `maxIterations` hit. Terminal `Completed`
+ * carries `loopAgentId` (or `"loop"` fallback) (#1749). See
+ * `src/main/resources/internals-agent/composition/loop/LoopSessionExtension.md`
+ * (#1837 / #1870).
+ */
+
+/**
  * #1749 — start a streaming session against [this] loop.
  *
  * Each iteration runs the wrapped agent (or pipeline) under the same

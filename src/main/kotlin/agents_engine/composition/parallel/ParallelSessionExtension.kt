@@ -15,6 +15,17 @@ import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
 
 /**
+ * `agents_engine/composition/parallel/ParallelSessionExtension.kt` — the
+ * `parallel.session(input)` extension. All branches run concurrently
+ * via `sessionExecutions`, their events interleave on the shared
+ * channel — demultiplex by `agentId` on the consumer side. Terminal
+ * `Completed` fires once with the full `List<OUT>` after all branches
+ * complete. `Failed` if any branch throws (#1750). See
+ * `src/main/resources/internals-agent/composition/parallel/ParallelSessionExtension.md`
+ * (#1837 / #1872).
+ */
+
+/**
  * #1750 — start a streaming session against [this] parallel composition.
  *
  * All branches run concurrently under `Dispatchers.Default`. Each branch

@@ -4,6 +4,19 @@ import agents_engine.composition.pipeline.Pipeline
 import agents_engine.core.Agent
 
 /**
+ * `agents_engine/composition/wrap/Wrap.kt` — the teacher-student
+ * prompt-override operator (#1698). `teacher wrap student` returns a
+ * `Pipeline` where the teacher's output (a `String`) becomes the
+ * student's system prompt for that one call. Two framings: education
+ * (a teacher specializes a generalist student) and security (the
+ * teacher locks down the student's task surface). Race-safe — the
+ * teacher's prompt is passed via `effectivePrompt` instead of
+ * mutating `agent.prompt` (#1707). See
+ * `src/main/resources/internals-agent/composition/wrap/Wrap.md`
+ * (#1837 / #1875).
+ */
+
+/**
  * Teacher-student prompt-override operator (#1698).
  *
  * `teacher wrap student` returns a [Pipeline] that:

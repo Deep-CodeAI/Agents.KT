@@ -8,6 +8,19 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 /**
+ * `agents_engine/composition/parallel/Parallel.kt` — concurrent fan-out
+ * via the `/` operator: `agentA / agentB / agentC` produces a
+ * `Parallel<IN, OUT>` whose `invoke(input)` returns `List<OUT>` from
+ * running all branches concurrently. Each branch must share the same
+ * `IN` and `OUT`. Sessions: per-branch session-aware execution streams
+ * each branch's events with its own `agentId` (#1750). Runs in
+ * `coroutineScope` (no nested runBlocking) — cancellation, timeouts,
+ * dispatcher all live with the caller (#638). See
+ * `src/main/resources/internals-agent/composition/parallel/Parallel.md`
+ * (#1837 / #1871).
+ */
+
+/**
  * #638: Parallel runs branches concurrently inside `coroutineScope`, not
  * `runBlocking(Dispatchers.Default)`. The framework no longer creates its own
  * scope — cancellation, timeouts, and dispatcher choice all live with the caller.

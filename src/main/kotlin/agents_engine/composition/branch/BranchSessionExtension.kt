@@ -13,6 +13,18 @@ import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
 
 /**
+ * `agents_engine/composition/branch/BranchSessionExtension.kt` — adds the
+ * `branch.session(input)` extension. Source agent runs first, streaming
+ * events with `agentId=source.name`. The matched route's agent (or
+ * pipeline) then runs, streaming its own events. Terminal `Completed`
+ * carries the routed agent's name as `agentId`. Routes built outside
+ * `BranchBuilder` lack `sessionExecutor` → fall back to non-streaming
+ * `executor` but still surface terminal `Completed`/`Failed` (#1748).
+ * See `src/main/resources/internals-agent/composition/branch/BranchSessionExtension.md`
+ * (#1837 / #1866).
+ */
+
+/**
  * #1748 — start a streaming session against [this] branch.
  *
  * The source agent runs first to produce the routing value; its events

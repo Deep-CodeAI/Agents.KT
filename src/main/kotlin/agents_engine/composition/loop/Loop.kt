@@ -4,6 +4,17 @@ import agents_engine.core.*
 import agents_engine.composition.pipeline.Pipeline
 import kotlinx.coroutines.runBlocking
 
+/**
+ * `agents_engine/composition/loop/Loop.kt` — feedback-loop operator.
+ * Runs `execution(input)`, calls `next(output)` to derive the next
+ * input (or `null` to terminate), repeats until `next` returns `null`
+ * or `maxIterations` (default 1000) is hit. The session-aware variant
+ * (#1749) streams each iteration's events with the wrapped agent's
+ * own `agentId`. See
+ * `src/main/resources/internals-agent/composition/loop/Loop.md`
+ * (#1837 / #1869).
+ */
+
 private const val DEFAULT_MAX_ITERATIONS = 1_000
 
 /**

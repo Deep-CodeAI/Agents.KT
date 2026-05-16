@@ -8,6 +8,20 @@ import agents_engine.composition.parallel.Parallel
 import kotlinx.coroutines.runBlocking
 
 /**
+ * `agents_engine/composition/pipeline/Pipeline.kt` — sequential
+ * composition via the `then` infix. `agentA then agentB` produces a
+ * `Pipeline<IN, OUT>` that runs A, feeds its output into B, returns
+ * B's output. Many `then` overloads exist for chaining
+ * Agent/Pipeline/Forum/Loop/Branch/Parallel onto each other. The
+ * single suspending `execution` lambda lets the framework cross-call
+ * other composition operators in one coroutine (no nested
+ * runBlocking — #638). Session-aware `sessionExec` (#1745) streams
+ * inner agents' events with their own `agentId`s. See
+ * `src/main/resources/internals-agent/composition/pipeline/Pipeline.md`
+ * (#1837 / #1873).
+ */
+
+/**
  * #638: `execution` is suspend so internal cross-calls between Pipeline / Forum /
  * Parallel / Loop / Branch can chain in one coroutine — no nested `runBlocking`.
  * The blocking [invoke] is a one-line shim that wraps `runBlocking` exactly once,

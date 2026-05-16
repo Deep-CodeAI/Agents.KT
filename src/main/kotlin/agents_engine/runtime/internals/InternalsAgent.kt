@@ -223,8 +223,98 @@ fun buildInternalsAgent(): Agent<String, String> = agent<String, String>("agents
             implementedBy { _ -> loadResource("internals-agent/generation/ReflectionFallback.md") }
         }
 
+        // ── composition/branch/ ────────────────────────────────────────
+        skill<String, String>(
+            name = "composition_branch_branch_kt",
+            description = "Source-file knowledge for agents_engine/composition/branch/Branch.kt — the routing operator. Branch<IN, OUT> runs a source agent then dispatches on result type/null/else to a registered route. Order matters — first matching route wins. Suspend executors (#638) compose with agents/pipelines. Session-aware sessionExecutor + routedAgentName (#1748). Call when the IDE LLM needs to reason about type-dispatch routing.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/composition/branch/Branch.md") }
+        }
+
+        skill<String, String>(
+            name = "composition_branch_branchbuilder_kt",
+            description = "Source-file knowledge for agents_engine/composition/branch/BranchBuilder.kt — the Branch DSL. on<T>() then agent / then pipeline, onNull(), orElse(). Each then marks the target placed (single-placement) and wires sessionExecutor (#1748) via runAgentInSession or pipeline.effectiveSessionExec. ReflectionFallback for the cast lambda. Call when the IDE LLM needs to reason about how Branch routes are assembled.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/composition/branch/BranchBuilder.md") }
+        }
+
+        skill<String, String>(
+            name = "composition_branch_branchsessionextension_kt",
+            description = "Source-file knowledge for agents_engine/composition/branch/BranchSessionExtension.kt — branch.session(input) (#1748). Source agent streams first (agentId=source.name), matched route streams with routedAgentName, terminal Completed uses routedAgentName. Routes built outside BranchBuilder fall back gracefully. Channel.BUFFERED + SupervisorJob + Dispatchers.Default. Call when the IDE LLM needs to reason about streaming a branch.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/composition/branch/BranchSessionExtension.md") }
+        }
+
+        // ── composition/forum/ ─────────────────────────────────────────
+        skill<String, String>(
+            name = "composition_forum_forum_kt",
+            description = "Source-file knowledge for agents_engine/composition/forum/Forum.kt — the deliberation operator. Forum<IN,OUT> fans input out to N heterogeneous Agent<IN,*> participants concurrently, collects as ForumTranscript<IN>, optional captain synthesizes final OUT. ParticipantContribution(agentName, output: Any?). @Mention text routing via onMentionEmitted. coroutineScope concurrency (#638). Call when the IDE LLM needs to reason about multi-agent voting/debate/ensemble.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/composition/forum/Forum.md") }
+        }
+
+        skill<String, String>(
+            name = "composition_forum_forumsessionextension_kt",
+            description = "Source-file knowledge for agents_engine/composition/forum/ForumSessionExtension.kt — forum.session(input). Participants run concurrently via runAgentInSession; events interleave on shared channel demultiplexable by agentId. Captain runs after deliberation completes; its events stream too. Terminal Completed carries captain's output or the transcript. Call when the IDE LLM needs to reason about streaming a forum.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/composition/forum/ForumSessionExtension.md") }
+        }
+
+        // ── composition/loop/ ──────────────────────────────────────────
+        skill<String, String>(
+            name = "composition_loop_loop_kt",
+            description = "Source-file knowledge for agents_engine/composition/loop/Loop.kt — feedback-loop operator. execution(input) → output, next(output)→IN? derives next input (null terminates), maxIterations=1000 default with require(>0). Suspend execution (#638) composes with operators. sessionExec for streaming iterations (#1749), loopAgentId for terminal Completed. Call when the IDE LLM needs to reason about iterative refinement.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/composition/loop/Loop.md") }
+        }
+
+        skill<String, String>(
+            name = "composition_loop_loopsessionextension_kt",
+            description = "Source-file knowledge for agents_engine/composition/loop/LoopSessionExtension.kt — loop.session(input) (#1749). Iterations run serially (loops are sequential — events interleave one iteration at a time). Same termination rules as non-streaming. maxIterations breach → Failed. Constructed outside factory functions falls back to non-streaming execution. Call when the IDE LLM needs to reason about streaming a loop.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/composition/loop/LoopSessionExtension.md") }
+        }
+
+        // ── composition/parallel/ ──────────────────────────────────────
+        skill<String, String>(
+            name = "composition_parallel_parallel_kt",
+            description = "Source-file knowledge for agents_engine/composition/parallel/Parallel.kt — concurrent fan-out via / operator. Parallel<IN,OUT> runs N branches concurrently returning List<OUT>. Same IN and OUT required. coroutineScope (#638) — caller owns scope/cancellation/dispatcher. sessionExecutions for per-branch session streaming (#1750). Sibling cancel on failure. Call when the IDE LLM needs to reason about homogeneous concurrent execution vs heterogeneous Forum.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/composition/parallel/Parallel.md") }
+        }
+
+        skill<String, String>(
+            name = "composition_parallel_parallelsessionextension_kt",
+            description = "Source-file knowledge for agents_engine/composition/parallel/ParallelSessionExtension.kt — parallel.session(input) (#1750). Branches launched concurrently via async; events interleave by arrival on shared channel demultiplexable by agentId. awaitAll() before terminal Completed(List<OUT>) — result order preserved. Sibling cancellation on failure. sessionExecutions=null → fall back to executions without emitter. Call when the IDE LLM needs to reason about streaming a parallel.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/composition/parallel/ParallelSessionExtension.md") }
+        }
+
+        // ── composition/pipeline/ ──────────────────────────────────────
+        skill<String, String>(
+            name = "composition_pipeline_pipeline_kt",
+            description = "Source-file knowledge for agents_engine/composition/pipeline/Pipeline.kt — sequential composition via then infix. Many then overloads (Agent/Pipeline/Forum/Loop/Parallel/Branch). Suspend execution lambda lets cross-operator chains run in one coroutine without nested runBlocking (#638). sessionExec (#1745) declared BEFORE execution for trailing-lambda binding safety. effectiveSessionExec falls back to execution when null. Single-placement enforcement. Call when the IDE LLM needs to reason about chaining agents into a pipeline.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/composition/pipeline/Pipeline.md") }
+        }
+
+        skill<String, String>(
+            name = "composition_pipeline_pipelinesessionextension_kt",
+            description = "Source-file knowledge for agents_engine/composition/pipeline/PipelineSessionExtension.kt — pipeline.session(input) (#1745). Runs effectiveSessionExec — explicit sessionExec streams inner agents, null fallback runs execution surfacing only terminal events. Terminal Completed uses last agent's name. Channel.BUFFERED + SupervisorJob + Dispatchers.Default. Known gap: un-converted then overloads don't stream inner events. Call when the IDE LLM needs to reason about streaming a pipeline.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/composition/pipeline/PipelineSessionExtension.md") }
+        }
+
+        // ── composition/wrap/ ──────────────────────────────────────────
+        skill<String, String>(
+            name = "composition_wrap_wrap_kt",
+            description = "Source-file knowledge for agents_engine/composition/wrap/Wrap.kt — teacher-student prompt override (#1698 / 'wrap' / PRD's '>>' operator). teacher wrap student returns Pipeline where teacher's String output becomes student's system prompt for that one call. Race-safe via effectivePrompt passthrough (#1707) — student's baked prompt never mutated. Two framings: education (specialize generalist) and security (lock task surface). Call when the IDE LLM needs to reason about dynamic prompt overrides.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/composition/wrap/Wrap.md") }
+        }
+
         // Future skills (one per src file) land here as their child issues
-        // (#1864 → #1900) get worked. Keep entries grouped by package to
+        // (#1876 → #1900) get worked. Keep entries grouped by package to
         // mirror the source tree's structure for readability.
     }
 }

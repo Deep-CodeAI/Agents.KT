@@ -12,6 +12,18 @@ import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
 
 /**
+ * `agents_engine/composition/pipeline/PipelineSessionExtension.kt` — the
+ * `pipeline.session(input)` extension. Runs the pipeline's
+ * `effectiveSessionExec` (which falls back to the non-streaming
+ * `execution` for un-converted `then` overloads, surfacing only the
+ * terminal Completed). Inner agents' events stream with their own
+ * `agentId`s. Terminal `Completed` carries the pipeline's final
+ * output (#1745). See
+ * `src/main/resources/internals-agent/composition/pipeline/PipelineSessionExtension.md`
+ * (#1837 / #1874).
+ */
+
+/**
  * #1745 — start a streaming session against [this] pipeline.
  *
  * Sequential composition: each inner agent runs to completion before the

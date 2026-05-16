@@ -18,6 +18,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
+ * `agents_engine/composition/forum/ForumSessionExtension.kt` — the
+ * `forum.session(input)` extension. All participants run concurrently
+ * via `runAgentInSession`, their events interleave on the shared
+ * channel demultiplexable by `agentId`. The optional transcript-captain
+ * runs after the deliberation completes; its events also flow through.
+ * Terminal `Completed` carries the forum's effective output. See
+ * `src/main/resources/internals-agent/composition/forum/ForumSessionExtension.md`
+ * (#1837 / #1868).
+ */
+
+/**
  * #1751 — start a streaming session against [this] forum.
  *
  * Participants run concurrently — their events stream into the shared
