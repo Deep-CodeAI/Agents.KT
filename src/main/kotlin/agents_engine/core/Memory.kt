@@ -4,9 +4,32 @@ import agents_engine.model.ToolDef
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * In-memory store for agent memory. Each agent writes under its own name as key.
- * Shared across agents — pass the same bank to multiple agents for shared context,
- * or give each agent its own bank for isolation.
+ * `agents_engine/core/Memory.kt` — agent memory bank + the `memory_*` tool family.
+ *
+ * **MemoryBank.** A `ConcurrentHashMap<String, String>` keyed by agent name.
+ * Each agent reads/writes under its own name; sharing memory across agents
+ * is opt-in (pass the same bank to multiple agents).
+ *
+ * **Sharing model.** One bank per agent = isolation. One bank shared across
+ * many agents = shared workspace (each writes under its own name, all can
+ * read each other's slots via different keys if needed). The framework does
+ * not assume a particular topology.
+ *
+ * **Bounded line history.** `maxLines` truncates each write to the LAST N
+ * lines. Default is `Int.MAX_VALUE` (unbounded). Useful for streaming
+ * scratch-pads where the LLM should only see recent state.
+ *
+ * **Three built-in tools** (built by [buildMemoryTools]):
+ * - `memory_read` — no args, returns stored content as String.
+ * - `memory_write` — arg `content` (or first value), overwrites the agent's slot.
+ * - `memory_search` — arg `query` (or first value), case-insensitive line filter.
+ *
+ * **Opt-in (#856).** Tools are exposed only to skills that called
+ * `Skill.useMemory()`. When NO skill opts in, the legacy behavior applies:
+ * every skill gets memory if a bank is set.
+ *
+ * See `src/main/resources/internals-agent/core/Memory.md` for the adjunct
+ * surfaced to IDE-side LLM tools via `agents-kt-internals` (#1837 / #1840).
  */
 class MemoryBank(val maxLines: Int = Int.MAX_VALUE) {
 

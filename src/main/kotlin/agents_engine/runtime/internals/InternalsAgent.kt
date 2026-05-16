@@ -53,8 +53,15 @@ fun buildInternalsAgent(): Agent<String, String> = agent<String, String>("agents
             implementedBy { _ -> loadResource("internals-agent/core/Skill.md") }
         }
 
+        skill<String, String>(
+            name = "core_memory_kt",
+            description = "Source-file knowledge for agents_engine/core/Memory.kt — the MemoryBank ConcurrentHashMap-backed scratch-pad keyed by agent name, the three built-in tools (memory_read / memory_write / memory_search), per-agent vs shared-workspace topologies, maxLines line-history truncation, opt-in mechanics under #856. Call when the IDE LLM needs to reason about how agents persist or share state across turns.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/core/Memory.md") }
+        }
+
         // Future skills (one per src file) land here as their child issues
-        // (#1840 → #1900) get worked. Keep entries grouped by package to
+        // (#1841 → #1900) get worked. Keep entries grouped by package to
         // mirror the source tree's structure for readability.
     }
 }
