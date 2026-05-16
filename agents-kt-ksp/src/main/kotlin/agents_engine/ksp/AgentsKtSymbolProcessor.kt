@@ -14,9 +14,11 @@ import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 
 /**
- * KSP processor entry point for Agents.KT (#1018).
+ * `agents-kt-ksp/agents_engine/ksp/AgentsKtSymbolProcessor.kt` — KSP
+ * processor entry (#1018). Runtime `GenerableSupport` reads emitted
+ * objects via `Class.forName`, falls back to reflection.
  *
- * Two passes today:
+ * **Two passes per round:**
  *
  * 1. **Validation** (#1700) — walk every `@Generable` class, run shape rules
  *    (sealed/abstract/etc.) and field-type rules (#1701: every primary-ctor
@@ -25,7 +27,9 @@ import java.nio.charset.StandardCharsets
  *
  * 2. **Schema generation** (#1701) — for clean non-sealed data classes,
  *    emit `<package>/<ClassName>__GeneratedSchema.kt` containing a
- *    `const val JSON_SCHEMA: String` built by [SchemaEmitter]. The runtime
+ *    `const val JSON_SCHEMA: String` built by [SchemaEmitter],
+ *    `LLM_DESCRIPTION` by [LlmDescriptionEmitter] (#1703), and
+ *    `constructFromMap` by [ConstructFromMapEmitter] (#1704). The runtime
  *    looks up these objects via `Class.forName` (see
  *    `agents_engine.generation.GenerableSupport.kt`) and falls back to
  *    reflection when not present.
@@ -33,6 +37,10 @@ import java.nio.charset.StandardCharsets
  * Sealed roots are deliberately skipped this iteration — variant schema
  * with `type` discriminator is a separate emitter; the runtime path stays
  * authoritative for sealed for now.
+ *
+ * See `src/main/resources/internals-agent/ksp/AgentsKtSymbolProcessor.md`
+ * in the main module for the adjunct surfaced via the InternalsAgent
+ * (#1837 / #1895).
  */
 class AgentsKtSymbolProcessor(
     private val env: SymbolProcessorEnvironment,

@@ -1,6 +1,19 @@
 package agents_engine.ksp
 
 /**
+ * `agents-kt-ksp/agents_engine/ksp/GenerableValidator.kt` — pure-data
+ * compile-time shape rules for `@Generable` classes (#1700). KSP-free
+ * by design so tests run without the kctfork harness (which lags
+ * Kotlin metadata versions; the project is on Kotlin 2.3.x). The
+ * runtime checks in `GenerableSupport` / `ToolDef` still fire when
+ * KSP isn't applied — this just lifts diagnosis to the IDE / compile
+ * step when KSP is on the classpath. [GenerableClass] is the minimal
+ * KSP-free shape the processor extracts and feeds in. See
+ * `src/main/resources/internals-agent/ksp/GenerableValidator.md`
+ * (#1837 / #1898).
+ */
+
+/**
  * Compile-time shape rules for `@Generable` classes (#1700). Pure data over
  * pure data — KSP-free so the rules can be unit-tested without the KSP test
  * harness (kctfork lags Kotlin metadata versions, and we run on Kotlin 2.3.x).

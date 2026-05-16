@@ -1,6 +1,17 @@
 package agents_engine.ksp
 
 /**
+ * `agents-kt-ksp/agents_engine/ksp/LlmDescriptionEmitter.kt` — emits the
+ * markdown the framework's runtime `KClass.toLlmDescription()` produces
+ * via reflection (#1703). **Contract: byte-identical to runtime.**
+ * Output must match `GenerableSupport.dataClassLlmDescription()` and
+ * `sealedLlmDescription()` exactly — consumers see the same prompt
+ * either way; only when the work happens changes. See
+ * `src/main/resources/internals-agent/ksp/LlmDescriptionEmitter.md`
+ * (#1837 / #1899).
+ */
+
+/**
  * Emits the markdown that the framework's `KClass.toLlmDescription()`
  * produces today via reflection (#1703).
  *

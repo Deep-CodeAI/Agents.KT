@@ -1,6 +1,22 @@
 package agents_engine.ksp
 
 /**
+ * `agents-kt-ksp/agents_engine/ksp/SchemaEmitter.kt` — emits a JSON
+ * Schema string for a `@Generable` data class (#1701). **Contract:
+ * byte-identical to runtime.** Output must match
+ * `KClass.dataClassJsonSchema()` in `GenerableSupport` exactly —
+ * same field ordering, same separator placement, same `@Guide`
+ * quoting. Consumers depend on this for prompt-cache determinism
+ * (identical input → identical bytes → identical Anthropic cache
+ * key). Sealed types out of scope this iteration (variant-with-
+ * discriminator shape goes through a separate emitter). #1705
+ * defensive emission gate skips when sealed parent's variants list
+ * is empty (incremental-compile race). See
+ * `src/main/resources/internals-agent/ksp/SchemaEmitter.md`
+ * (#1837 / #1900).
+ */
+
+/**
  * Emits a JSON Schema string for a `@Generable` data class (#1701).
  *
  * **Contract: byte-identical to runtime.** The output must match the result

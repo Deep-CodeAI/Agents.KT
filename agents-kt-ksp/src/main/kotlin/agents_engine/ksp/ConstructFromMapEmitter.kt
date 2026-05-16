@@ -1,6 +1,23 @@
 package agents_engine.ksp
 
 /**
+ * `agents-kt-ksp/agents_engine/ksp/ConstructFromMapEmitter.kt` —
+ * emits the generated `constructFromMap` body for `@Generable` types
+ * (#1704). Reproduces the runtime contract from
+ * `GenerableSupport.constructFromMap` byte-for-byte: strict extras
+ * rejection (#665), sealed-variant `type` discriminator (#699),
+ * per-field coercion via @PublishedApi helpers (`coerceString`,
+ * `coerceInt`, `coerceList` — overflow/type rejection identical to
+ * reflection), short-circuit `null` on coercion miss for non-nullable
+ * required params. Skips classes with default-valued params (Kotlin's
+ * synthetic constructor-with-mask isn't callable from generated source —
+ * those fall through to reflection). Pure object; no KSP types in
+ * signature. See
+ * `src/main/resources/internals-agent/ksp/ConstructFromMapEmitter.md`
+ * (#1837 / #1897).
+ */
+
+/**
  * Emits the source body of `constructFromMap(fields: Map<*, Any?>): Foo?`
  * for `@Generable data class` and `@Generable sealed` types (#1704).
  *

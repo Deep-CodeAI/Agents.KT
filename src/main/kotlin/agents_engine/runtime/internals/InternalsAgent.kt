@@ -449,8 +449,49 @@ fun buildInternalsAgent(): Agent<String, String> = agent<String, String>("agents
             implementedBy { _ -> loadResource("internals-agent/runtime/events/AgentSessionExtension.md") }
         }
 
-        // Future skills (one per src file) land here as their child issues
-        // (#1895 → #1900 — ksp subproject) get worked. Keep entries
-        // grouped by package to mirror the source tree's structure.
+        // ── ksp/ (sibling :agents-kt-ksp module) ───────────────────────
+        skill<String, String>(
+            name = "ksp_agentsktsymbolprocessor_kt",
+            description = "Source-file knowledge for agents-kt-ksp/agents_engine/ksp/AgentsKtSymbolProcessor.kt — KSP processor entry (#1018). Two passes per round: validation via GenerableValidator (#1700), then schema/description/constructor emission via SchemaEmitter/LlmDescriptionEmitter/ConstructFromMapEmitter (#1701/#1703/#1704). Emits <package>/<ClassName>__GeneratedSchema.kt; runtime GenerableSupport reads via Class.forName, falls back to reflection. Sealed roots and default-valued-param classes fall through to reflection. Call when the IDE LLM needs to reason about KSP-vs-reflection dispatch.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/ksp/AgentsKtSymbolProcessor.md") }
+        }
+
+        skill<String, String>(
+            name = "ksp_agentsktsymbolprocessorprovider_kt",
+            description = "Source-file knowledge for agents-kt-ksp/agents_engine/ksp/AgentsKtSymbolProcessorProvider.kt — two-line service-loader factory. KSP discovers it via META-INF/services/com.google.devtools.ksp.processing.SymbolProcessorProvider. Consumers apply the KSP plugin and add ksp(\"ai.deep-code:agents-kt-ksp:<v>\"). KSP instantiates one processor per round via create(env). Call when the IDE LLM needs to reason about wiring the KSP module into a consumer build.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/ksp/AgentsKtSymbolProcessorProvider.md") }
+        }
+
+        skill<String, String>(
+            name = "ksp_constructfrommapemitter_kt",
+            description = "Source-file knowledge for agents-kt-ksp/agents_engine/ksp/ConstructFromMapEmitter.kt — emits constructFromMap body (#1704). Reproduces runtime contract byte-for-byte: strict extras rejection (#665), sealed-variant type discriminator (#699), per-field coercion via @PublishedApi helpers (coerceString/coerceInt/coerceList), null short-circuit for non-nullable required. Skips classes with default-valued params (Kotlin synthetic constructor-with-mask not callable from generated source — falls through to reflection). Pure object, no KSP types in signature. Call when the IDE LLM needs to reason about typed map→instance coercion.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/ksp/ConstructFromMapEmitter.md") }
+        }
+
+        skill<String, String>(
+            name = "ksp_generablevalidator_kt",
+            description = "Source-file knowledge for agents-kt-ksp/agents_engine/ksp/GenerableValidator.kt — KSP-free pure-data validation rules for @Generable (#1700). Tests don't need kctfork (which lags Kotlin metadata; project on 2.3.x). GenerableClass is the minimal extracted shape. Rules: data class or sealed root, primary ctor with params, supported field types, sealed variants must be @Generable, nullable allowed. env.logger.error per violation surfaces in IDE underlines. Call when the IDE LLM needs to reason about what makes a type @Generable-eligible.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/ksp/GenerableValidator.md") }
+        }
+
+        skill<String, String>(
+            name = "ksp_llmdescriptionemitter_kt",
+            description = "Source-file knowledge for agents-kt-ksp/agents_engine/ksp/LlmDescriptionEmitter.kt — emits the markdown KClass.toLlmDescription() produces via reflection (#1703). Contract: byte-identical to GenerableSupport.dataClassLlmDescription/sealedLlmDescription. Format: ## ClassName + description + bulleted fields with @Guide text; sealed: 'Choose one of the following variants:' + ### Variant blocks. Prompt-cache determinism depends on this matching. Call when the IDE LLM needs to reason about LLM-facing type descriptions.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/ksp/LlmDescriptionEmitter.md") }
+        }
+
+        skill<String, String>(
+            name = "ksp_schemaemitter_kt",
+            description = "Source-file knowledge for agents-kt-ksp/agents_engine/ksp/SchemaEmitter.kt — emits JSON Schema for @Generable data class (#1701). Contract: byte-identical to KClass.dataClassJsonSchema(). Same field ordering, separator placement, @Guide quoting — prompt-cache determinism depends on this. shouldEmit() #1705 defensive gate skips when sealed parent has empty variants list (incremental-compile race). Sealed types out of scope this iteration (separate emitter). Call when the IDE LLM needs to reason about LLM structured-output schemas.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/ksp/SchemaEmitter.md") }
+        }
+
+        // 63 children done — closes out the v0.6.0 InternalsAgent surface.
     }
 }
