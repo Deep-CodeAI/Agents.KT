@@ -30,11 +30,17 @@ data class ForumTranscript<IN>(
 
 class Forum<IN, OUT>(
     val agents: List<Agent<IN, *>>,
-    private val outType: KClass<*>,
-    private val castOut: (Any?) -> OUT,
-    private val captainTakesTranscript: Boolean = false,
+    internal val outType: KClass<*>,
+    internal val castOut: (Any?) -> OUT,
+    internal val captainTakesTranscript: Boolean = false,
 ) {
     private var mentionListener: ((agentName: String, output: Any?) -> Unit)? = null
+
+    internal fun fireMentionListener(name: String, output: Any?) {
+        mentionListener?.invoke(name, output)
+    }
+
+    internal fun castForumReturnInternal(raw: Any?): OUT = castForumReturn(raw)
 
     fun onMentionEmitted(block: (agentName: String, output: Any?) -> Unit) {
         mentionListener = block
@@ -98,7 +104,7 @@ class Forum<IN, OUT>(
     }
 }
 
-private class ForumReturnException(val value: Any?) : RuntimeException()
+internal class ForumReturnException(val value: Any?) : RuntimeException()
 
 private fun buildForumReturnTool(): agents_engine.model.ToolDef =
     agents_engine.model.ToolDef(
