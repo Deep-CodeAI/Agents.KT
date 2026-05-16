@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/mcp/McpProtocolVersion.kt — one-line file holding MCP_PROTOCOL_VERSION constant (currently "2025-03-26"). Single source of truth — bump here when upgrading MCP spec revision. Used by McpClient.handshake() and McpServer identity. Call when the IDE LLM needs to know the MCP version targeted.
+---
+
 # `agents_engine/mcp/McpProtocolVersion.kt` — protocol version constant
 
 Single-line file:

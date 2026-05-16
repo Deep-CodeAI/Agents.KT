@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/composition/parallel/ParallelSessionExtension.kt — parallel.session(input) (#1750). Branches launched concurrently via async; events interleave by arrival on shared channel demultiplexable by agentId. awaitAll() before terminal Completed(List<OUT>) — result order preserved. Sibling cancellation on failure. sessionExecutions=null → fall back to executions without emitter. Call when the IDE LLM needs to reason about streaming a parallel.
+---
+
 # `agents_engine/composition/parallel/ParallelSessionExtension.kt` — streaming parallel
 
 Adds `Parallel<IN, OUT>.session(input): AgentSession<List<OUT>>` (#1750).

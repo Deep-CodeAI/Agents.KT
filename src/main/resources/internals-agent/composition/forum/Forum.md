@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/composition/forum/Forum.kt — the deliberation operator. Forum<IN,OUT> fans input out to N heterogeneous Agent<IN,*> participants concurrently, collects as ForumTranscript<IN>, optional captain synthesizes final OUT. ParticipantContribution(agentName, output: Any?). @Mention text routing via onMentionEmitted. coroutineScope concurrency (#638). Call when the IDE LLM needs to reason about multi-agent voting/debate/ensemble.
+---
+
 # `agents_engine/composition/forum/Forum.kt` — the deliberation operator
 
 `Forum<IN, OUT>` fans the same input out to N heterogeneous participants in parallel, collects their outputs, and either:

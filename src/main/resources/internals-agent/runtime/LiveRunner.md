@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/runtime/LiveRunner.kt — picocli-shaped one-line main for the LiveShow REPL (#981). CLI flags: --once "<prompt>" (non-interactive single invocation for scripting/pipes), --max-history N, -h/--help, -V/--version. Sibling to McpRunner. Returns process exit code. Call when the IDE LLM needs to reason about wrapping an agent in a CLI.
+---
+
 # `agents_engine/runtime/LiveRunner.kt` — one-line REPL main
 
 The picocli-shaped CLI wrapper around `LiveShow`. Sibling to `McpRunner` (which exposes an agent over MCP rather than over an interactive prompt).

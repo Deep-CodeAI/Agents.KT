@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/mcp/McpRunner.kt — McpRunner.serve(agent, args) { } one-line main returning exit code. CLI flags: --port N (0=auto), --expose NAME (repeatable, overrides block exposes), -h/--help, -V/--version. Picocli-shaped. CountDownLatch-based graceful shutdown on SIGTERM/SIGINT. Sibling to LiveRunner. Call when the IDE LLM needs to reason about exposing an agent over MCP from a CLI.
+---
+
 # `agents_engine/mcp/McpRunner.kt` — one-line MCP main
 
 Wraps the entire "expose an agent over MCP" sequence into a single helper.

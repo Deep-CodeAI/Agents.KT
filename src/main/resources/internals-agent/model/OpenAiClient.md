@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/model/OpenAiClient.kt — OpenAI Chat Completions adapter (#1656). POST /v1/chat/completions wire mapping: system kept in messages array (vs Anthropic's hoisted field), stringified function.arguments JSON (not object), synthetic call_<n> IDs, parameters spelling (vs Anthropic's input_schema), SSE streaming with [DONE] terminator, openAiBaseUrl override for Azure/regional/proxy, open sendChat seam. Call when the IDE LLM needs to reason about wiring the framework to OpenAI.
+---
+
 # `agents_engine/model/OpenAiClient.kt` — OpenAI Chat Completions adapter (#1656)
 
 One of the three shipped `ModelClient` implementations. Wraps OpenAI's `POST /v1/chat/completions`.

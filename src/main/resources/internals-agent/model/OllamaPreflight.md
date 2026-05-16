@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/model/OllamaPreflight.kt — fail-fast reachability check (#1132). GET /api/tags with 2s connect / 3s request timeouts. Wire into LiveShowBuilder.precheck so REPL aborts at startup with a clear error naming host:port instead of failing mid-turn behind the spinner. Throws LlmProviderException on IOException or non-2xx. Call when the IDE LLM needs to reason about REPL startup health checks.
+---
+
 # `agents_engine/model/OllamaPreflight.kt` — fail-fast Ollama reachability check
 
 A tiny class with one method (#1132):

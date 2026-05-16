@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents-kt-ksp/agents_engine/ksp/AgentsKtSymbolProcessorProvider.kt — two-line service-loader factory. KSP discovers it via META-INF/services/com.google.devtools.ksp.processing.SymbolProcessorProvider. Consumers apply the KSP plugin and add ksp("ai.deep-code:agents-kt-ksp:<v>"). KSP instantiates one processor per round via create(env). Call when the IDE LLM needs to reason about wiring the KSP module into a consumer build.
+---
+
 # `agents-kt-ksp/agents_engine/ksp/AgentsKtSymbolProcessorProvider.kt` — service-loader entry
 
 Two-line factory KSP picks up via service loading.

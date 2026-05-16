@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents-kt-ksp/agents_engine/ksp/GenerableValidator.kt — KSP-free pure-data validation rules for @Generable (#1700). Tests don't need kctfork (which lags Kotlin metadata; project on 2.3.x). GenerableClass is the minimal extracted shape. Rules: data class or sealed root, primary ctor with params, supported field types, sealed variants must be @Generable, nullable allowed. env.logger.error per violation surfaces in IDE underlines. Call when the IDE LLM needs to reason about what makes a type @Generable-eligible.
+---
+
 # `agents-kt-ksp/agents_engine/ksp/GenerableValidator.kt` — compile-time `@Generable` rules
 
 Pure-data shape rules for `@Generable` classes (#1700). Lifts diagnosis to the IDE / compile step.

@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/composition/pipeline/Pipeline.kt — sequential composition via then infix. Many then overloads (Agent/Pipeline/Forum/Loop/Parallel/Branch). Suspend execution lambda lets cross-operator chains run in one coroutine without nested runBlocking (#638). sessionExec (#1745) declared BEFORE execution for trailing-lambda binding safety. effectiveSessionExec falls back to execution when null. Single-placement enforcement. Call when the IDE LLM needs to reason about chaining agents into a pipeline.
+---
+
 # `agents_engine/composition/pipeline/Pipeline.kt` — sequential composition
 
 The `then` infix produces a `Pipeline<IN, OUT>` that runs one agent's output into the next.

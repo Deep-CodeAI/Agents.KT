@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/core/SkillRoute.kt — the @Generable SkillRoute structured output (skillName, confidence, rationale) the LLM router returns when picking among candidate skills (#641), the skillSelectionConfidenceThreshold (default 0.6), SkillRoutingException, and how rationale surfaces via the routerRationale listener. Call when the IDE LLM needs to reason about multi-skill agents and routing decisions.
+---
+
 # `agents_engine/core/SkillRoute.kt` — LLM skill-routing decision
 
 The structured output the framework asks the LLM to produce when an agent has multiple candidate skills and no manual `skillSelection { }` override (#641).

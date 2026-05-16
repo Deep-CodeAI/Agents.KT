@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/composition/pipeline/PipelineSessionExtension.kt — pipeline.session(input) (#1745). Runs effectiveSessionExec — explicit sessionExec streams inner agents, null fallback runs execution surfacing only terminal events. Terminal Completed uses last agent's name. Channel.BUFFERED + SupervisorJob + Dispatchers.Default. Known gap: un-converted then overloads don't stream inner events. Call when the IDE LLM needs to reason about streaming a pipeline.
+---
+
 # `agents_engine/composition/pipeline/PipelineSessionExtension.kt` — streaming pipelines
 
 Adds `Pipeline<IN, OUT>.session(input): AgentSession<OUT>` (#1745).

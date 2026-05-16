@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/generation/Annotations.kt — the three annotations behind @Generable types: @Generable marker (CLASS, RUNTIME), @LlmDescription override (verbatim multi-line description), @Guide per-field/per-variant guidance. Read by both runtime reflection (GenerableSupport) and KSP processor. Call when the IDE LLM needs to reason about declaring an LLM-generable type.
+---
+
 # `agents_engine/generation/Annotations.kt` — `@Generable`, `@LlmDescription`, `@Guide`
 
 The three annotations that turn ordinary Kotlin types into LLM-generable structured outputs.

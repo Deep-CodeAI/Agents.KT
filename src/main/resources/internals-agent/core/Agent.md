@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/core/Agent.kt — the Agent<IN, OUT> class, single-placement rule, invoke / invokeSuspend / session entry points, observability hooks (skillChosenListener, toolUseListener, knowledgeUsedListener, errorListener, budgetThresholdListener), freeze-after-construction contract. Call when the IDE LLM needs to reason about how Agents are constructed, invoked, or observed.
+---
+
 # `agents_engine/core/Agent.kt` — the typed-agent class
 
 `Agent<IN, OUT>` is the framework's primary type. One input type, one output type, one job. Type mismatches at composition boundaries are caught by the compiler; structural misuses fail fast at construction time.

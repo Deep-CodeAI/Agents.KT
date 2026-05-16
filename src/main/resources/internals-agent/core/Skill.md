@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/core/Skill.kt — the Skill<IN, OUT> unit-of-work class, deterministic vs agentic flavors (implementedBy vs tools(...)), the freeze contract (#668), knowledge entries surfaced via toLlmContext() and knowledgeTools(), memory opt-in (#856 useMemory()), output transformer for typed OUT, auto-description with kotlin-reflect graceful degradation (#1718). Call when the IDE LLM needs to reason about how skills are declared, what they do, or how they're frozen.
+---
+
 # `agents_engine/core/Skill.kt` — the unit of work
 
 `Skill<IN, OUT>` is what an `Agent<IN, OUT>` dispatches to. The agent picks one skill per invocation (by skill-selection rules); the skill produces the output.

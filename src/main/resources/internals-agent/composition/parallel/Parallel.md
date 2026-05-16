@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/composition/parallel/Parallel.kt — concurrent fan-out via / operator. Parallel<IN,OUT> runs N branches concurrently returning List<OUT>. Same IN and OUT required. coroutineScope (#638) — caller owns scope/cancellation/dispatcher. sessionExecutions for per-branch session streaming (#1750). Sibling cancel on failure. Call when the IDE LLM needs to reason about homogeneous concurrent execution vs heterogeneous Forum.
+---
+
 # `agents_engine/composition/parallel/Parallel.kt` — concurrent fan-out
 
 `Parallel<IN, OUT>` runs N branches concurrently against the same input. Returns `List<OUT>` (one element per branch, in registration order).

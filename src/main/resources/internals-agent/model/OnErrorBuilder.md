@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/model/OnErrorBuilder.kt — the onError { } tool-failure recovery DSL. Three handler slots (invalidArgs, deserializationError, executionError) returning RepairResult (Fixed / Retry / Escalated / Unrecoverable). RepairScope.fix(agent, retries) delegates repair to a sibling string→string agent. executeAgentFix retry loop handles EscalationException by switching to Escalated. Call when the IDE LLM needs to reason about graceful recovery from broken tool calls.
+---
+
 # `agents_engine/model/OnErrorBuilder.kt` — the `onError { }` recovery DSL
 
 Lets the user intercept tool failures and either repair them, retry them, escalate, or surrender.

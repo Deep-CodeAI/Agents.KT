@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents-kt-ksp/agents_engine/ksp/LlmDescriptionEmitter.kt — emits the markdown KClass.toLlmDescription() produces via reflection (#1703). Contract: byte-identical to GenerableSupport.dataClassLlmDescription/sealedLlmDescription. Format: ## ClassName + description + bulleted fields with @Guide text; sealed: 'Choose one of the following variants:' + ### Variant blocks. Prompt-cache determinism depends on this matching. Call when the IDE LLM needs to reason about LLM-facing type descriptions.
+---
+
 # `agents-kt-ksp/agents_engine/ksp/LlmDescriptionEmitter.kt` — emits LLM-facing markdown
 
 Emits the markdown the framework's runtime `KClass.toLlmDescription()` produces via reflection (#1703). The string the parent agent's prompt embeds for skill selection.

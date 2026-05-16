@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/model/ModelConfig.kt — the model { } DSL slot. ModelProvider enum (OLLAMA/ANTHROPIC/OPENAI), immutable ModelConfig with masked-apiKey toString (security), ModelBuilder with ollama/claude/openai factory methods, lazy client construction at AgenticLoop time, build() requires apiKey for Anthropic/OpenAI. Call when the IDE LLM needs to reason about configuring an agent's LLM provider.
+---
+
 # `agents_engine/model/ModelConfig.kt` — the `model { }` slot
 
 The DSL slot every agent must fill (or supply a `client` directly) to talk to an LLM.

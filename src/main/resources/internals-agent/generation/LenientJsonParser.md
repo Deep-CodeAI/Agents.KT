@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/generation/LenientJsonParser.kt — tolerant JSON parser for LLM output. Strips markdown fences, removes trailing commas, extracts first balanced {...}/[...] from explanatory text. MAX_NESTING_DEPTH=64 guards StackOverflowError (#854 — Error not Exception so try/catch can't catch it). Returns null on any failure (never throws). Call when the IDE LLM needs to reason about parsing LLM-emitted JSON.
+---
+
 # `agents_engine/generation/LenientJsonParser.kt` — JSON for LLM output
 
 A small JSON parser tuned for the messy reality of LLM text output.

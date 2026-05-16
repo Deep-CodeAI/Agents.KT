@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/generation/ReflectionFallback.kt — withReflection inline wrapper for graceful degradation (#1705 #1718). Catches LinkageError (incl. NoClassDefFoundError) and KotlinReflectionNotSupportedError → returns null. Other exceptions propagate (real bugs aren't swallowed). Enables compileOnly kotlin-reflect when consumers apply :agents-kt-ksp. Call when the IDE LLM needs to reason about reflection-vs-KSP dispatch or no-reflect environments.
+---
+
 # `agents_engine/generation/ReflectionFallback.kt` — graceful degradation when reflection is absent
 
 A tiny utility object that wraps reflection-using code so consumers without `kotlin-reflect` on the runtime classpath get `null` instead of a crash.

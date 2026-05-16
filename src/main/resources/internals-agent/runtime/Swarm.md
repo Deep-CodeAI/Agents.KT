@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/runtime/Swarm.kt — multi-JAR agent assembly via ServiceLoader (#984). AgentProvider SAM is implemented per sibling JAR (META-INF/services); Swarm.discover() iterates them all. Captain calls Agent.absorb on each sibling to wire it as a session-aware tool (#1752). JVM-only (not MCP-stdio) to preserve full Agent<IN,OUT> surface — trade-off: no process isolation. Call when the IDE LLM needs to reason about composing many agents into one binary.
+---
+
 # `agents_engine/runtime/Swarm.kt` — multi-JAR agent assembly
 
 Each sibling agent ships as its own JAR with its own `META-INF/services/agents_engine.runtime.AgentProvider`. The captain JAR uses `Swarm.discover()` to find them, then `Agent.absorb` to wire each as a tool on itself.

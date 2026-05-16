@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/model/LlmProviderException.kt — single-class file (#702). Boundary error for LLM-provider protocol failures (auth, capability, model-not-found, malformed request, 4xx/5xx). Distinguished from IllegalStateException (output parse) and BudgetExceededException. All three shipped clients throw this. Call when the IDE LLM needs to reason about retry policy for provider failures.
+---
+
 # `agents_engine/model/LlmProviderException.kt` — provider boundary error
 
 Single-class file (#702):

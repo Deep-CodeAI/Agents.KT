@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/composition/forum/ForumSessionExtension.kt — forum.session(input). Participants run concurrently via runAgentInSession; events interleave on shared channel demultiplexable by agentId. Captain runs after deliberation completes; its events stream too. Terminal Completed carries captain's output or the transcript. Call when the IDE LLM needs to reason about streaming a forum.
+---
+
 # `agents_engine/composition/forum/ForumSessionExtension.kt` — streaming forums
 
 Adds `Forum<IN, OUT>.session(input): AgentSession<OUT>`.

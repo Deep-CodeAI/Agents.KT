@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/generation/GenerableSupport.kt — runtime support for @Generable. Three surfaces (jsonSchema, toLlmDescription, constructFromMap/fromLlmOutput/toLlmInput). Two-path dispatch: KSP-generated __GeneratedSchema lookup first (#1701-#1704 zero-reflection), reflection fallback otherwise. ConcurrentHashMap caching with MISS sentinel. Sealed-interface discriminator handling. Call when the IDE LLM needs to reason about typed structured-output coercion.
+---
+
 # `agents_engine/generation/GenerableSupport.kt` — runtime support for `@Generable`
 
 The big workhorse file behind `@Generable`. Three public surfaces (`jsonSchema`, `toLlmDescription`, `constructFromMap`), each with a KSP-generated fast path and a reflection fallback.

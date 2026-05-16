@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents-kt-ksp/agents_engine/ksp/SchemaEmitter.kt — emits JSON Schema for @Generable data class (#1701). Contract: byte-identical to KClass.dataClassJsonSchema(). Same field ordering, separator placement, @Guide quoting — prompt-cache determinism depends on this. shouldEmit() #1705 defensive gate skips when sealed parent has empty variants list (incremental-compile race). Sealed types out of scope this iteration (separate emitter). Call when the IDE LLM needs to reason about LLM structured-output schemas.
+---
+
 # `agents-kt-ksp/agents_engine/ksp/SchemaEmitter.kt` — emits JSON Schema strings
 
 Emits a JSON Schema for a `@Generable` data class (#1701).

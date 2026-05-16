@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/runtime/LiveShow.kt — interactive demo REPL. Wraps any of the six top-level types (Agent / Pipeline / Branch / Loop / Parallel / Forum). UI surface (#983): ANSI color enum, themed Style records, ASCII banner, spinner, slash-command hooks, history trimming, optional precheck (typical: OllamaPreflight). Reader/PrintWriter abstraction for tests. Used by every runnable demo in the repo. Call when the IDE LLM needs to reason about building a REPL frontend.
+---
+
 # `agents_engine/runtime/LiveShow.kt` — interactive demo REPL
 
 The line-by-line REPL behind every demo in the repo. Builds a colorful, themable interactive runner around any of the six top-level types: `Agent`, `Pipeline`, `Branch`, `Loop`, `Parallel`, `Forum`.

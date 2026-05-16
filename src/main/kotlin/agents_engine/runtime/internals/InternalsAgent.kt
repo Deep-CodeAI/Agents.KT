@@ -3,6 +3,8 @@ package agents_engine.runtime.internals
 import agents_engine.core.Agent
 import agents_engine.core.agent
 import agents_engine.core.loadResource
+import java.io.File
+import java.net.JarURLConnection
 
 /**
  * #1837 — Agents.KT InternalsAgent: a self-hosting docs agent whose skills
@@ -10,488 +12,145 @@ import agents_engine.core.loadResource
  * `McpServer.from(buildInternalsAgent())` so IDE-side AI agents (Cursor,
  * Claude Desktop) can query the framework's own structure as tools.
  *
- * **Design.** Each skill is `implementedBy { _ -> loadResource("internals-agent/<path>.md") }`
- * — a pure data fetch. The IDE's LLM (not ours) decides which skill to
- * call based on the skill's `description` (sold to the LLM as a tool);
- * the skill returns the curated KDoc adjunct as text content. No
- * framework-side LLM round-trip is needed — the InternalsAgent has no
- * `model { }` configured because its skills don't use one.
+ * **Single source of truth: the adjunct `.md`.** Each adjunct under
+ * `src/main/resources/internals-agent/<package>/<File>.md` begins with a
+ * YAML-style frontmatter block:
  *
- * **Adjunct files.** Each skill loads from `src/main/resources/internals-agent/<package>/<File>.md`.
- * These are curated markdown summaries kept synchronized with each source
- * file's top-of-file `/** ... */` description (a deliberate-redundancy
- * choice: the .md is what the IDE LLM sees, the KDoc is what a human
- * reading the source sees, and they say the same thing).
+ * ```markdown
+ * ---
+ * description: <one-line tool description shown to the IDE LLM>
+ * ---
  *
- * **Per-file children.** Skills are added incrementally as the v0.6.0
- * per-file children of #1837 get worked. The pattern is:
- * 1. Pick the next open child (e.g., `redmine_get_issue 1839` for
- *    `core/Skill.kt`).
- * 2. Add the top-of-file KDoc to the source file.
- * 3. Create the adjunct `.md` at `internals-agent/<path>.md`.
- * 4. Register a skill in this file's `skills { }` block.
- * 5. Commit referencing the child issue; close it with the SHA.
+ * # <heading>
+ * <body returned as tool result>
+ * ```
  *
- * Running locally: `./gradlew runInternalsAgent` (or via the [Main]
- * companion file). Configure Cursor / Claude Desktop to point at the
- * advertised loopback URL.
+ * [buildInternalsAgent] scans the classpath for every `.md` under
+ * `internals-agent/`, derives the skill name from the path
+ * (`internals-agent/core/Agent.md` → `core_agent_kt`), reads the
+ * `description:` line from frontmatter, and registers one skill per file.
+ * Adding a new source file means dropping in one .md — no code edit.
+ *
+ * **No model {}.** The IDE's LLM (not ours) does the reasoning. Each
+ * skill is a pure data fetch via `loadResource(path)`. The framework-side
+ * agent has no model configured.
+ *
+ * Running locally: `Main.kt` exposes this over MCP on port 8765.
  */
 fun buildInternalsAgent(): Agent<String, String> = agent<String, String>("agents-kt-internals") {
     skills {
-        // ── core/ ──────────────────────────────────────────────────────
-        skill<String, String>(
-            name = "core_agent_kt",
-            description = "Source-file knowledge for agents_engine/core/Agent.kt — the Agent<IN, OUT> class, single-placement rule, invoke / invokeSuspend / session entry points, observability hooks (skillChosenListener, toolUseListener, knowledgeUsedListener, errorListener, budgetThresholdListener), freeze-after-construction contract. Call when the IDE LLM needs to reason about how Agents are constructed, invoked, or observed.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/core/Agent.md") }
+        scanInternalsAdjuncts().forEach { adjunct ->
+            skill<String, String>(
+                name = adjunct.skillName,
+                description = adjunct.description,
+            ) {
+                implementedBy { _ -> loadResource(adjunct.resourcePath) }
+            }
         }
+    }
+}
 
-        skill<String, String>(
-            name = "core_skill_kt",
-            description = "Source-file knowledge for agents_engine/core/Skill.kt — the Skill<IN, OUT> unit-of-work class, deterministic vs agentic flavors (implementedBy vs tools(...)), the freeze contract (#668), knowledge entries surfaced via toLlmContext() and knowledgeTools(), memory opt-in (#856 useMemory()), output transformer for typed OUT, auto-description with kotlin-reflect graceful degradation (#1718). Call when the IDE LLM needs to reason about how skills are declared, what they do, or how they're frozen.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/core/Skill.md") }
+private const val ADJUNCT_PREFIX = "internals-agent/"
+
+private data class InternalsAdjunct(
+    /** Classpath-relative resource path, e.g. `internals-agent/core/Agent.md`. */
+    val resourcePath: String,
+    /** Skill name derived from [resourcePath], e.g. `core_agent_kt`. */
+    val skillName: String,
+    /** One-line description read from the .md's `description:` frontmatter line. */
+    val description: String,
+)
+
+/**
+ * Scans the classpath for every `.md` under [ADJUNCT_PREFIX], returns one
+ * [InternalsAdjunct] per file sorted by path (so skill registration order
+ * is stable across runs).
+ */
+private fun scanInternalsAdjuncts(): List<InternalsAdjunct> =
+    listAdjunctPaths().sorted().map { path ->
+        InternalsAdjunct(
+            resourcePath = path,
+            skillName = deriveSkillName(path),
+            description = readFrontmatterDescription(path),
+        )
+    }
+
+/**
+ * Path → skill name mapping. The reverse derivation (skill name → path)
+ * is not lossless (case is dropped), so the path is authoritative —
+ * the skill name is derived from it, not the other way around.
+ *
+ * Examples:
+ * - `internals-agent/core/Agent.md`                          → `core_agent_kt`
+ * - `internals-agent/composition/branch/BranchBuilder.md`    → `composition_branch_branchbuilder_kt`
+ * - `internals-agent/ksp/AgentsKtSymbolProcessor.md`         → `ksp_agentsktsymbolprocessor_kt`
+ */
+private fun deriveSkillName(resourcePath: String): String =
+    resourcePath.removePrefix(ADJUNCT_PREFIX).removeSuffix(".md")
+        .replace('/', '_').lowercase() + "_kt"
+
+/**
+ * Reads the `description:` line from the .md's YAML-style frontmatter.
+ * Format:
+ *
+ * ```
+ * ---
+ * description: <text>
+ * ---
+ *
+ * <body>
+ * ```
+ *
+ * Fails fast at agent construction if the frontmatter is missing,
+ * malformed, or has no `description:` line.
+ */
+private fun readFrontmatterDescription(resourcePath: String): String {
+    val content = loadResource(resourcePath)
+    require(content.startsWith("---\n")) {
+        "$resourcePath is missing the leading `---` frontmatter block."
+    }
+    val end = content.indexOf("\n---\n", startIndex = 4)
+    require(end >= 0) {
+        "$resourcePath has an unterminated frontmatter block (no closing `---`)."
+    }
+    val frontmatter = content.substring(4, end)
+    val line = frontmatter.lineSequence().firstOrNull { it.startsWith("description:") }
+        ?: error("$resourcePath frontmatter is missing a `description:` line.")
+    return line.removePrefix("description:").trim()
+}
+
+/**
+ * Enumerates `.md` files under [ADJUNCT_PREFIX] on the runtime classpath.
+ * Handles both file-system layouts (development / IDE runs) and JAR
+ * layouts (production / shaded distributions).
+ */
+private fun listAdjunctPaths(): List<String> {
+    val cl = Thread.currentThread().contextClassLoader
+        ?: ::listAdjunctPaths.javaClass.classLoader
+    val url = cl.getResource(ADJUNCT_PREFIX.removeSuffix("/"))
+        ?: error(
+            "Classpath resource `$ADJUNCT_PREFIX` not found. " +
+                "Adjuncts must live under src/main/resources/$ADJUNCT_PREFIX.",
+        )
+    return when (url.protocol) {
+        "file" -> {
+            val root = File(url.toURI())
+            root.walkTopDown()
+                .filter { it.isFile && it.extension == "md" }
+                .map { ADJUNCT_PREFIX + it.relativeTo(root).invariantSeparatorsPath }
+                .toList()
         }
-
-        skill<String, String>(
-            name = "core_memory_kt",
-            description = "Source-file knowledge for agents_engine/core/Memory.kt — the MemoryBank ConcurrentHashMap-backed scratch-pad keyed by agent name, the three built-in tools (memory_read / memory_write / memory_search), per-agent vs shared-workspace topologies, maxLines line-history truncation, opt-in mechanics under #856. Call when the IDE LLM needs to reason about how agents persist or share state across turns.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/core/Memory.md") }
+        "jar" -> {
+            val conn = url.openConnection() as JarURLConnection
+            conn.jarFile.entries().asSequence()
+                .filter {
+                    !it.isDirectory &&
+                        it.name.startsWith(ADJUNCT_PREFIX) &&
+                        it.name.endsWith(".md")
+                }
+                .map { it.name }
+                .toList()
         }
-
-        skill<String, String>(
-            name = "core_resources_kt",
-            description = "Source-file knowledge for agents_engine/core/Resources.kt — the loadResource / loadResourceOrNull classpath helpers (#980): UTF-8 decoding, leading-slash tolerance, fail-fast on missing, contextClassLoader-first lookup. Call when the IDE LLM needs to reason about prompt/knowledge resource loading or InternalsAgent's adjunct mechanism.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/core/Resources.md") }
-        }
-
-        skill<String, String>(
-            name = "core_pipelineevent_kt",
-            description = "Source-file knowledge for agents_engine/core/PipelineEvent.kt — the sealed PipelineEvent (SkillChosen, ToolCalled, KnowledgeLoaded, ErrorOccurred) and the Agent.observe { } extension that chains it over the four per-event listeners additively (#965). Call when the IDE LLM needs to reason about post-hoc observability vs the in-loop AgentEvent stream.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/core/PipelineEvent.md") }
-        }
-
-        skill<String, String>(
-            name = "core_skillroute_kt",
-            description = "Source-file knowledge for agents_engine/core/SkillRoute.kt — the @Generable SkillRoute structured output (skillName, confidence, rationale) the LLM router returns when picking among candidate skills (#641), the skillSelectionConfidenceThreshold (default 0.6), SkillRoutingException, and how rationale surfaces via the routerRationale listener. Call when the IDE LLM needs to reason about multi-skill agents and routing decisions.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/core/SkillRoute.md") }
-        }
-
-        // ── model/ ─────────────────────────────────────────────────────
-        skill<String, String>(
-            name = "model_agenticloop_kt",
-            description = "Source-file knowledge for agents_engine/model/AgenticLoop.kt — the multi-turn chat↔tool loop (executeAgentic) at the heart of every agentic-skill invocation. Builds per-skill tool allowlist (skill tools + agent capabilities + #856 memory + knowledge), runs turns until final answer or budget cap, honors maxTurns/maxToolCalls/maxDuration/perToolTimeout/maxTokens/maxConsecutiveSameTool, argument repair up to 8 retries, streaming-aware emitter (#1739), wrap-friendly effectivePrompt (#1707), cumulative TokenUsage (#1740). Call when the IDE LLM needs to reason about how agentic skills actually execute.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/model/AgenticLoop.md") }
-        }
-
-        skill<String, String>(
-            name = "model_budgetconfig_kt",
-            description = "Source-file knowledge for agents_engine/model/BudgetConfig.kt — six caps (maxTurns 8, maxToolCalls 32, maxDuration 5m, perToolTimeout null, maxTokens null #963, maxConsecutiveSameTool null #969), the BudgetBuilder DSL, BudgetReason enum, BudgetExceededException, and pre-cap threshold warnings via onBudgetThreshold. Call when the IDE LLM needs to reason about cost/runaway control for agentic invocations.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/model/BudgetConfig.md") }
-        }
-
-        skill<String, String>(
-            name = "model_claudeclient_kt",
-            description = "Source-file knowledge for agents_engine/model/ClaudeClient.kt — Anthropic Messages API adapter (#1644). LlmMessage→Anthropic JSON wire mapping (system field, tool_use/tool_result blocks with synthetic toolu_<n> IDs, input_schema spelling), streaming via SSE (text_delta and input_json_delta chunks), boundary errors via LlmProviderException (#702), open sendChat seam for tests. Call when the IDE LLM needs to reason about wiring the framework to Anthropic.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/model/ClaudeClient.md") }
-        }
-
-        skill<String, String>(
-            name = "model_inlinetoolcallparser_kt",
-            description = "Source-file knowledge for agents_engine/model/InlineToolCallParser.kt — parses {\"tool\":\"name\",\"arguments\":{...}} text into ToolCall and the reverse JSON encoder. Used by providers without native function-calling that instruct the LLM to emit inline tool-call JSON. Lenient parsing via generation.LenientJsonParser, strict encoding. Call when the IDE LLM needs to reason about how LLM text becomes a ToolCall.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/model/InlineToolCallParser.md") }
-        }
-
-        skill<String, String>(
-            name = "model_llmchunk_kt",
-            description = "Source-file knowledge for agents_engine/model/LlmChunk.kt — provider-level streaming chunk union (TextDelta, ToolCallStarted/ArgumentsDelta/Finished, End) per #1722. Narrow — no agentic concepts. Flow shape is [TextDelta]* [Started Δ* Finished]* End. Default ModelClient.chatStream wraps non-streaming chat with this shape. callId honored from ToolCall when present (#1739). Call when the IDE LLM needs to reason about LLM streaming.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/model/LlmChunk.md") }
-        }
-
-        skill<String, String>(
-            name = "model_llmproviderexception_kt",
-            description = "Source-file knowledge for agents_engine/model/LlmProviderException.kt — single-class file (#702). Boundary error for LLM-provider protocol failures (auth, capability, model-not-found, malformed request, 4xx/5xx). Distinguished from IllegalStateException (output parse) and BudgetExceededException. All three shipped clients throw this. Call when the IDE LLM needs to reason about retry policy for provider failures.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/model/LlmProviderException.md") }
-        }
-
-        skill<String, String>(
-            name = "model_modelclient_kt",
-            description = "Source-file knowledge for agents_engine/model/ModelClient.kt — the LLM transport fun interface and shared types (LlmMessage, ToolCall with callId #1739, TokenUsage #963, LlmResponse.Text/ToolCalls). Default chatStream wraps non-streaming chat with LlmChunk emission. Three shipped impls: Ollama, Claude, OpenAI. Custom clients implement the SAM. Call when the IDE LLM needs to reason about adding a new LLM provider or testing with a fake client.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/model/ModelClient.md") }
-        }
-
-        skill<String, String>(
-            name = "model_modelconfig_kt",
-            description = "Source-file knowledge for agents_engine/model/ModelConfig.kt — the model { } DSL slot. ModelProvider enum (OLLAMA/ANTHROPIC/OPENAI), immutable ModelConfig with masked-apiKey toString (security), ModelBuilder with ollama/claude/openai factory methods, lazy client construction at AgenticLoop time, build() requires apiKey for Anthropic/OpenAI. Call when the IDE LLM needs to reason about configuring an agent's LLM provider.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/model/ModelConfig.md") }
-        }
-
-        skill<String, String>(
-            name = "model_ollamaclient_kt",
-            description = "Source-file knowledge for agents_engine/model/OllamaClient.kt — local Ollama HTTP adapter (default ModelClient). POST /api/chat at localhost:11434, OpenAI-style tool schema (Ollama emulates), parseToolArguments handling Map / JSON-string / null shapes, NDJSON streaming, LlmProviderException on errors (#702), open sendChat seam for tests. Call when the IDE LLM needs to reason about local LLM integration.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/model/OllamaClient.md") }
-        }
-
-        skill<String, String>(
-            name = "model_ollamapreflight_kt",
-            description = "Source-file knowledge for agents_engine/model/OllamaPreflight.kt — fail-fast reachability check (#1132). GET /api/tags with 2s connect / 3s request timeouts. Wire into LiveShowBuilder.precheck so REPL aborts at startup with a clear error naming host:port instead of failing mid-turn behind the spinner. Throws LlmProviderException on IOException or non-2xx. Call when the IDE LLM needs to reason about REPL startup health checks.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/model/OllamaPreflight.md") }
-        }
-
-        skill<String, String>(
-            name = "model_onerrorbuilder_kt",
-            description = "Source-file knowledge for agents_engine/model/OnErrorBuilder.kt — the onError { } tool-failure recovery DSL. Three handler slots (invalidArgs, deserializationError, executionError) returning RepairResult (Fixed / Retry / Escalated / Unrecoverable). RepairScope.fix(agent, retries) delegates repair to a sibling string→string agent. executeAgentFix retry loop handles EscalationException by switching to Escalated. Call when the IDE LLM needs to reason about graceful recovery from broken tool calls.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/model/OnErrorBuilder.md") }
-        }
-
-        skill<String, String>(
-            name = "model_openaiclient_kt",
-            description = "Source-file knowledge for agents_engine/model/OpenAiClient.kt — OpenAI Chat Completions adapter (#1656). POST /v1/chat/completions wire mapping: system kept in messages array (vs Anthropic's hoisted field), stringified function.arguments JSON (not object), synthetic call_<n> IDs, parameters spelling (vs Anthropic's input_schema), SSE streaming with [DONE] terminator, openAiBaseUrl override for Azure/regional/proxy, open sendChat seam. Call when the IDE LLM needs to reason about wiring the framework to OpenAI.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/model/OpenAiClient.md") }
-        }
-
-        skill<String, String>(
-            name = "model_streamingaggregator_kt",
-            description = "Source-file knowledge for agents_engine/model/StreamingAggregator.kt — chatOrStream entry point (#1739) the agentic loop calls per turn. emitter==null → client.chat() unchanged; emitter!=null → collect client.chatStream() while emitting AgentEvent.Token / ToolCallStarted / ToolCallArgumentsDelta, rebuild LlmResponse with stable callIds. AgentEventEmitter typealias (non-suspend per #1745). ToolCallFinished fires later in the loop with executor result. Interleaving-safe via callId routing. Call when the IDE LLM needs to reason about streaming plumbing.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/model/StreamingAggregator.md") }
-        }
-
-        skill<String, String>(
-            name = "model_tooldef_kt",
-            description = "Source-file knowledge for agents_engine/model/ToolDef.kt — ToolDef (wire shape: Map<String,Any?>→Any? executor + optional session-aware sessionExecutor #1752 + untrustedOutput sandbox flag + argsType KClass for typed coercion), Tool<Args,Result> compile-time-checked handle (#1015/#1016) returned by tool(...) builders. argsType drives constructFromMap deserialization with @Generable. errorHandler slot wired by onError { }. Call when the IDE LLM needs to reason about declaring tools or about typed-vs-stringly-typed tool refs.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/model/ToolDef.md") }
-        }
-
-        skill<String, String>(
-            name = "model_toolerror_kt",
-            description = "Source-file knowledge for agents_engine/model/ToolError.kt — sealed ToolError (InvalidArgs / DeserializationError / ExecutionError / EscalationError), Severity enum (LOW/MEDIUM/HIGH/CRITICAL), EscalationException + ToolExecutionException. The wire format consumed by the onError { } DSL. Call when the IDE LLM needs to reason about classifying or handling tool failures.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/model/ToolError.md") }
-        }
-
-        // ── generation/ ────────────────────────────────────────────────
-        skill<String, String>(
-            name = "generation_annotations_kt",
-            description = "Source-file knowledge for agents_engine/generation/Annotations.kt — the three annotations behind @Generable types: @Generable marker (CLASS, RUNTIME), @LlmDescription override (verbatim multi-line description), @Guide per-field/per-variant guidance. Read by both runtime reflection (GenerableSupport) and KSP processor. Call when the IDE LLM needs to reason about declaring an LLM-generable type.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/generation/Annotations.md") }
-        }
-
-        skill<String, String>(
-            name = "generation_generablesupport_kt",
-            description = "Source-file knowledge for agents_engine/generation/GenerableSupport.kt — runtime support for @Generable. Three surfaces (jsonSchema, toLlmDescription, constructFromMap/fromLlmOutput/toLlmInput). Two-path dispatch: KSP-generated __GeneratedSchema lookup first (#1701-#1704 zero-reflection), reflection fallback otherwise. ConcurrentHashMap caching with MISS sentinel. Sealed-interface discriminator handling. Call when the IDE LLM needs to reason about typed structured-output coercion.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/generation/GenerableSupport.md") }
-        }
-
-        skill<String, String>(
-            name = "generation_lenientjsonparser_kt",
-            description = "Source-file knowledge for agents_engine/generation/LenientJsonParser.kt — tolerant JSON parser for LLM output. Strips markdown fences, removes trailing commas, extracts first balanced {...}/[...] from explanatory text. MAX_NESTING_DEPTH=64 guards StackOverflowError (#854 — Error not Exception so try/catch can't catch it). Returns null on any failure (never throws). Call when the IDE LLM needs to reason about parsing LLM-emitted JSON.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/generation/LenientJsonParser.md") }
-        }
-
-        skill<String, String>(
-            name = "generation_partiallygenerated_kt",
-            description = "Source-file knowledge for agents_engine/generation/PartiallyGenerated.kt — immutable accumulator for fields arriving incrementally from an LLM stream. withField folds in deltas (returns new instance), toComplete delegates to constructFromMap and returns T? or null when required fields missing. Typed property access is a planned KSP Phase 2 affordance. Call when the IDE LLM needs to reason about streaming structured-output consumption.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/generation/PartiallyGenerated.md") }
-        }
-
-        skill<String, String>(
-            name = "generation_reflectionfallback_kt",
-            description = "Source-file knowledge for agents_engine/generation/ReflectionFallback.kt — withReflection inline wrapper for graceful degradation (#1705 #1718). Catches LinkageError (incl. NoClassDefFoundError) and KotlinReflectionNotSupportedError → returns null. Other exceptions propagate (real bugs aren't swallowed). Enables compileOnly kotlin-reflect when consumers apply :agents-kt-ksp. Call when the IDE LLM needs to reason about reflection-vs-KSP dispatch or no-reflect environments.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/generation/ReflectionFallback.md") }
-        }
-
-        // ── composition/branch/ ────────────────────────────────────────
-        skill<String, String>(
-            name = "composition_branch_branch_kt",
-            description = "Source-file knowledge for agents_engine/composition/branch/Branch.kt — the routing operator. Branch<IN, OUT> runs a source agent then dispatches on result type/null/else to a registered route. Order matters — first matching route wins. Suspend executors (#638) compose with agents/pipelines. Session-aware sessionExecutor + routedAgentName (#1748). Call when the IDE LLM needs to reason about type-dispatch routing.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/composition/branch/Branch.md") }
-        }
-
-        skill<String, String>(
-            name = "composition_branch_branchbuilder_kt",
-            description = "Source-file knowledge for agents_engine/composition/branch/BranchBuilder.kt — the Branch DSL. on<T>() then agent / then pipeline, onNull(), orElse(). Each then marks the target placed (single-placement) and wires sessionExecutor (#1748) via runAgentInSession or pipeline.effectiveSessionExec. ReflectionFallback for the cast lambda. Call when the IDE LLM needs to reason about how Branch routes are assembled.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/composition/branch/BranchBuilder.md") }
-        }
-
-        skill<String, String>(
-            name = "composition_branch_branchsessionextension_kt",
-            description = "Source-file knowledge for agents_engine/composition/branch/BranchSessionExtension.kt — branch.session(input) (#1748). Source agent streams first (agentId=source.name), matched route streams with routedAgentName, terminal Completed uses routedAgentName. Routes built outside BranchBuilder fall back gracefully. Channel.BUFFERED + SupervisorJob + Dispatchers.Default. Call when the IDE LLM needs to reason about streaming a branch.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/composition/branch/BranchSessionExtension.md") }
-        }
-
-        // ── composition/forum/ ─────────────────────────────────────────
-        skill<String, String>(
-            name = "composition_forum_forum_kt",
-            description = "Source-file knowledge for agents_engine/composition/forum/Forum.kt — the deliberation operator. Forum<IN,OUT> fans input out to N heterogeneous Agent<IN,*> participants concurrently, collects as ForumTranscript<IN>, optional captain synthesizes final OUT. ParticipantContribution(agentName, output: Any?). @Mention text routing via onMentionEmitted. coroutineScope concurrency (#638). Call when the IDE LLM needs to reason about multi-agent voting/debate/ensemble.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/composition/forum/Forum.md") }
-        }
-
-        skill<String, String>(
-            name = "composition_forum_forumsessionextension_kt",
-            description = "Source-file knowledge for agents_engine/composition/forum/ForumSessionExtension.kt — forum.session(input). Participants run concurrently via runAgentInSession; events interleave on shared channel demultiplexable by agentId. Captain runs after deliberation completes; its events stream too. Terminal Completed carries captain's output or the transcript. Call when the IDE LLM needs to reason about streaming a forum.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/composition/forum/ForumSessionExtension.md") }
-        }
-
-        // ── composition/loop/ ──────────────────────────────────────────
-        skill<String, String>(
-            name = "composition_loop_loop_kt",
-            description = "Source-file knowledge for agents_engine/composition/loop/Loop.kt — feedback-loop operator. execution(input) → output, next(output)→IN? derives next input (null terminates), maxIterations=1000 default with require(>0). Suspend execution (#638) composes with operators. sessionExec for streaming iterations (#1749), loopAgentId for terminal Completed. Call when the IDE LLM needs to reason about iterative refinement.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/composition/loop/Loop.md") }
-        }
-
-        skill<String, String>(
-            name = "composition_loop_loopsessionextension_kt",
-            description = "Source-file knowledge for agents_engine/composition/loop/LoopSessionExtension.kt — loop.session(input) (#1749). Iterations run serially (loops are sequential — events interleave one iteration at a time). Same termination rules as non-streaming. maxIterations breach → Failed. Constructed outside factory functions falls back to non-streaming execution. Call when the IDE LLM needs to reason about streaming a loop.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/composition/loop/LoopSessionExtension.md") }
-        }
-
-        // ── composition/parallel/ ──────────────────────────────────────
-        skill<String, String>(
-            name = "composition_parallel_parallel_kt",
-            description = "Source-file knowledge for agents_engine/composition/parallel/Parallel.kt — concurrent fan-out via / operator. Parallel<IN,OUT> runs N branches concurrently returning List<OUT>. Same IN and OUT required. coroutineScope (#638) — caller owns scope/cancellation/dispatcher. sessionExecutions for per-branch session streaming (#1750). Sibling cancel on failure. Call when the IDE LLM needs to reason about homogeneous concurrent execution vs heterogeneous Forum.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/composition/parallel/Parallel.md") }
-        }
-
-        skill<String, String>(
-            name = "composition_parallel_parallelsessionextension_kt",
-            description = "Source-file knowledge for agents_engine/composition/parallel/ParallelSessionExtension.kt — parallel.session(input) (#1750). Branches launched concurrently via async; events interleave by arrival on shared channel demultiplexable by agentId. awaitAll() before terminal Completed(List<OUT>) — result order preserved. Sibling cancellation on failure. sessionExecutions=null → fall back to executions without emitter. Call when the IDE LLM needs to reason about streaming a parallel.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/composition/parallel/ParallelSessionExtension.md") }
-        }
-
-        // ── composition/pipeline/ ──────────────────────────────────────
-        skill<String, String>(
-            name = "composition_pipeline_pipeline_kt",
-            description = "Source-file knowledge for agents_engine/composition/pipeline/Pipeline.kt — sequential composition via then infix. Many then overloads (Agent/Pipeline/Forum/Loop/Parallel/Branch). Suspend execution lambda lets cross-operator chains run in one coroutine without nested runBlocking (#638). sessionExec (#1745) declared BEFORE execution for trailing-lambda binding safety. effectiveSessionExec falls back to execution when null. Single-placement enforcement. Call when the IDE LLM needs to reason about chaining agents into a pipeline.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/composition/pipeline/Pipeline.md") }
-        }
-
-        skill<String, String>(
-            name = "composition_pipeline_pipelinesessionextension_kt",
-            description = "Source-file knowledge for agents_engine/composition/pipeline/PipelineSessionExtension.kt — pipeline.session(input) (#1745). Runs effectiveSessionExec — explicit sessionExec streams inner agents, null fallback runs execution surfacing only terminal events. Terminal Completed uses last agent's name. Channel.BUFFERED + SupervisorJob + Dispatchers.Default. Known gap: un-converted then overloads don't stream inner events. Call when the IDE LLM needs to reason about streaming a pipeline.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/composition/pipeline/PipelineSessionExtension.md") }
-        }
-
-        // ── composition/wrap/ ──────────────────────────────────────────
-        skill<String, String>(
-            name = "composition_wrap_wrap_kt",
-            description = "Source-file knowledge for agents_engine/composition/wrap/Wrap.kt — teacher-student prompt override (#1698 / 'wrap' / PRD's '>>' operator). teacher wrap student returns Pipeline where teacher's String output becomes student's system prompt for that one call. Race-safe via effectivePrompt passthrough (#1707) — student's baked prompt never mutated. Two framings: education (specialize generalist) and security (lock task surface). Call when the IDE LLM needs to reason about dynamic prompt overrides.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/composition/wrap/Wrap.md") }
-        }
-
-        // ── mcp/ ───────────────────────────────────────────────────────
-        skill<String, String>(
-            name = "mcp_agentmcpdsl_kt",
-            description = "Source-file knowledge for agents_engine/mcp/AgentMcpDsl.kt — agent { mcp { server(...) } } declarative MCP registration. Three connection shapes (url=HTTP / command=stdio / host+port=TCP), tool prefixing by server name, v0.5.0 toolSkills/promptSkills/resourceSkills shortcuts. Fail-fast at agent-build time. mcpClients accessor for lifecycle. Call when the IDE LLM needs to reason about wiring an MCP server into an agent.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/mcp/AgentMcpDsl.md") }
-        }
-
-        skill<String, String>(
-            name = "mcp_httpmcptransport_kt",
-            description = "Source-file knowledge for agents_engine/mcp/HttpMcpTransport.kt — Streamable HTTP MCP transport. POST → JSON or SSE response. Captures Mcp-Session-Id from any response, replays on subsequent requests. Honors McpAuth.Bearer. requestTimeout and maxResponseBytes limits. Shared JDK HttpClient. Call when the IDE LLM needs to reason about HTTP MCP connectivity.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/mcp/HttpMcpTransport.md") }
-        }
-
-        skill<String, String>(
-            name = "mcp_linedelimitedmcptransport_kt",
-            description = "Source-file knowledge for agents_engine/mcp/LineDelimitedMcpTransport.kt — abstract base for stdio + TCP transports. \\n-terminated UTF-8 JSON-RPC envelopes. Notifications (no id field) dropped silently. Single-flight: callers must serialize rpc() calls. Subclasses override only close() for their own teardown. Call when the IDE LLM needs to reason about line-delimited MCP framing.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/mcp/LineDelimitedMcpTransport.md") }
-        }
-
-        skill<String, String>(
-            name = "mcp_mcpauth_kt",
-            description = "Source-file knowledge for agents_engine/mcp/McpAuth.kt — sealed McpAuth (None / Bearer(token)). Bearer.toString() redacts the token to keep it out of logs (#857). Sealed for future variants (OAuth, ApiKeyHeader). Stdio + TCP derive auth from connection identity; only HTTP currently consumes Bearer. Call when the IDE LLM needs to reason about MCP authentication.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/mcp/McpAuth.md") }
-        }
-
-        skill<String, String>(
-            name = "mcp_mcpclient_kt",
-            description = "Source-file knowledge for agents_engine/mcp/McpClient.kt — wraps an McpTransport. Lifecycle: handshake() → loadTools() / loadResources() / loadResourceTemplates() / loadPrompts() → snapshot populated (#1734). Synchronous single-threaded; concurrent agentic-loop calls are externally serialized. AtomicLong id counter starting at 2 (initialize uses 1). Factories: McpClient.http/.stdio/.tcp. AutoCloseable. Call when the IDE LLM needs to reason about consuming a remote MCP server.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/mcp/McpClient.md") }
-        }
-
-        skill<String, String>(
-            name = "mcp_mcpjson_kt",
-            description = "Source-file knowledge for agents_engine/mcp/McpJson.kt — internal strict JSON encoder for MCP RPC envelopes. ~25 lines. Supports null/Boolean/Number/String/Map/Iterable/Array; falls back to escape(toString()). Full string escapes including \\uXXXX for control chars under 0x20. Reads use generation.LenientJsonParser (different concern). Call when the IDE LLM needs to reason about MCP wire encoding.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/mcp/McpJson.md") }
-        }
-
-        skill<String, String>(
-            name = "mcp_mcpprotocolversion_kt",
-            description = "Source-file knowledge for agents_engine/mcp/McpProtocolVersion.kt — one-line file holding MCP_PROTOCOL_VERSION constant (currently \"2025-03-26\"). Single source of truth — bump here when upgrading MCP spec revision. Used by McpClient.handshake() and McpServer identity. Call when the IDE LLM needs to know the MCP version targeted.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/mcp/McpProtocolVersion.md") }
-        }
-
-        skill<String, String>(
-            name = "mcp_mcprunner_kt",
-            description = "Source-file knowledge for agents_engine/mcp/McpRunner.kt — McpRunner.serve(agent, args) { } one-line main returning exit code. CLI flags: --port N (0=auto), --expose NAME (repeatable, overrides block exposes), -h/--help, -V/--version. Picocli-shaped. CountDownLatch-based graceful shutdown on SIGTERM/SIGINT. Sibling to LiveRunner. Call when the IDE LLM needs to reason about exposing an agent over MCP from a CLI.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/mcp/McpRunner.md") }
-        }
-
-        skill<String, String>(
-            name = "mcp_mcpserver_kt",
-            description = "Source-file knowledge for agents_engine/mcp/McpServer.kt — exposes an Agent as an MCP server over HTTP (JDK HttpServer at POST /mcp). McpServer.from(agent) { port, expose(...) }. Non-agentic skills only (implementedBy { }); IN must be String or @Generable; output rendered as text block via toString(). v0.5.0 (#1796) adds prompt and resource registration. RegisteredPrompt mirrors MCP wire shape. The InternalsAgent runs on this. Call when the IDE LLM needs to reason about hosting an MCP server.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/mcp/McpServer.md") }
-        }
-
-        skill<String, String>(
-            name = "mcp_mcpserverinfo_kt",
-            description = "Source-file knowledge for agents_engine/mcp/McpServerInfo.kt — immutable pure-data snapshot of an MCP server's surface (#1734). identity + protocolVersion + capabilities + tools + resources + resourceTemplates + prompts. Populated by McpClient over time as RPCs land. Constructible directly in tests without a transport stub. Forward-looking — fields land here before the RPC support arrives. Call when the IDE LLM needs to reason about reading MCP server state.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/mcp/McpServerInfo.md") }
-        }
-
-        skill<String, String>(
-            name = "mcp_mcptransport_kt",
-            description = "Source-file knowledge for agents_engine/mcp/McpTransport.kt — internal interface. rpc(envelope): String for request/response, notify(envelope) for fire-and-forget. AutoCloseable. Single-flight (callers serialize). Three implementations: HttpMcpTransport (Streamable HTTP), TcpMcpTransport (line-delimited TCP), StdioMcpTransport (line-delimited stdio). Same JSON-RPC envelope, different framing. Call when the IDE LLM needs to reason about MCP transports.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/mcp/McpTransport.md") }
-        }
-
-        skill<String, String>(
-            name = "mcp_stdiomcptransport_kt",
-            description = "Source-file knowledge for agents_engine/mcp/StdioMcpTransport.kt — line-delimited JSON over stdin/stdout. Two factories: forStreams (test pipes / custom IPC) and forProcess (spawns child via ProcessBuilder, drains stderr on daemon thread to avoid full-buffer deadlock). close() destroys gracefully (SIGTERM, 2s wait, SIGKILL). Robust to Linux CI fast-exit races. Call when the IDE LLM needs to reason about subprocess MCP servers.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/mcp/StdioMcpTransport.md") }
-        }
-
-        skill<String, String>(
-            name = "mcp_tcpmcptransport_kt",
-            description = "Source-file knowledge for agents_engine/mcp/TcpMcpTransport.kt — thin subclass of LineDelimitedMcpTransport delegating to the socket's streams. close() runCatching { socket.close() } for idempotence (peer may have closed). Caller builds the Socket; transport owns its lifetime. No built-in TLS or auth — use HTTPS-fronted HTTP transport for untrusted networks. Call when the IDE LLM needs to reason about TCP MCP connectivity.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/mcp/TcpMcpTransport.md") }
-        }
-
-        // ── runtime/ ───────────────────────────────────────────────────
-        skill<String, String>(
-            name = "runtime_liverunner_kt",
-            description = "Source-file knowledge for agents_engine/runtime/LiveRunner.kt — picocli-shaped one-line main for the LiveShow REPL (#981). CLI flags: --once \"<prompt>\" (non-interactive single invocation for scripting/pipes), --max-history N, -h/--help, -V/--version. Sibling to McpRunner. Returns process exit code. Call when the IDE LLM needs to reason about wrapping an agent in a CLI.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/runtime/LiveRunner.md") }
-        }
-
-        skill<String, String>(
-            name = "runtime_liveshow_kt",
-            description = "Source-file knowledge for agents_engine/runtime/LiveShow.kt — interactive demo REPL. Wraps any of the six top-level types (Agent / Pipeline / Branch / Loop / Parallel / Forum). UI surface (#983): ANSI color enum, themed Style records, ASCII banner, spinner, slash-command hooks, history trimming, optional precheck (typical: OllamaPreflight). Reader/PrintWriter abstraction for tests. Used by every runnable demo in the repo. Call when the IDE LLM needs to reason about building a REPL frontend.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/runtime/LiveShow.md") }
-        }
-
-        skill<String, String>(
-            name = "runtime_swarm_kt",
-            description = "Source-file knowledge for agents_engine/runtime/Swarm.kt — multi-JAR agent assembly via ServiceLoader (#984). AgentProvider SAM is implemented per sibling JAR (META-INF/services); Swarm.discover() iterates them all. Captain calls Agent.absorb on each sibling to wire it as a session-aware tool (#1752). JVM-only (not MCP-stdio) to preserve full Agent<IN,OUT> surface — trade-off: no process isolation. Call when the IDE LLM needs to reason about composing many agents into one binary.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/runtime/Swarm.md") }
-        }
-
-        // ── runtime/events/ ────────────────────────────────────────────
-        skill<String, String>(
-            name = "runtime_events_agentevent_kt",
-            description = "Source-file knowledge for agents_engine/runtime/events/AgentEvent.kt — typed sealed event union for sessions (#1736). Variants: SkillStarted, SkillCompleted, Completed (carries OUT), Failed (step 2); Token, ToolCallStarted, ToolCallArgumentsDelta, ToolCallFinished (step 3). agentId on every variant preserves provenance through composition. AgentEvent<Nothing> for non-OUT variants flows through any AgentSession<OUT>. Call when the IDE LLM needs to reason about consuming streamed agent events.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/runtime/events/AgentEvent.md") }
-        }
-
-        skill<String, String>(
-            name = "runtime_events_agentsession_kt",
-            description = "Source-file knowledge for agents_engine/runtime/events/AgentSession.kt — handle returned by agent.session(input). events: cold Flow<AgentEvent<OUT>>, await(): suspend OUT (throws original exception unwrapped on failure). Each session(...) call is a fresh invocation; share via events.shareIn(...). Cancellation propagates both ways into the agent invocation and (step 3) the upstream LLM HTTP call. internal constructor. Call when the IDE LLM needs to reason about consuming session results.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/runtime/events/AgentSession.md") }
-        }
-
-        skill<String, String>(
-            name = "runtime_events_agentsessionextension_kt",
-            description = "Source-file knowledge for agents_engine/runtime/events/AgentSessionExtension.kt — agent.session(input) entry. Builds Channel.BUFFERED + CompletableDeferred + dedicated SupervisorJob+Dispatchers.Default scope per session. Producer coroutine forwards AgentEvents via emitter to channel.trySend. Completed/Failed terminal events close the channel and complete/fail the deferred. Sibling session extensions for Pipeline/Branch/Loop/Forum/Parallel follow the same pattern. Call when the IDE LLM needs to reason about session plumbing internals.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/runtime/events/AgentSessionExtension.md") }
-        }
-
-        // ── ksp/ (sibling :agents-kt-ksp module) ───────────────────────
-        skill<String, String>(
-            name = "ksp_agentsktsymbolprocessor_kt",
-            description = "Source-file knowledge for agents-kt-ksp/agents_engine/ksp/AgentsKtSymbolProcessor.kt — KSP processor entry (#1018). Two passes per round: validation via GenerableValidator (#1700), then schema/description/constructor emission via SchemaEmitter/LlmDescriptionEmitter/ConstructFromMapEmitter (#1701/#1703/#1704). Emits <package>/<ClassName>__GeneratedSchema.kt; runtime GenerableSupport reads via Class.forName, falls back to reflection. Sealed roots and default-valued-param classes fall through to reflection. Call when the IDE LLM needs to reason about KSP-vs-reflection dispatch.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/ksp/AgentsKtSymbolProcessor.md") }
-        }
-
-        skill<String, String>(
-            name = "ksp_agentsktsymbolprocessorprovider_kt",
-            description = "Source-file knowledge for agents-kt-ksp/agents_engine/ksp/AgentsKtSymbolProcessorProvider.kt — two-line service-loader factory. KSP discovers it via META-INF/services/com.google.devtools.ksp.processing.SymbolProcessorProvider. Consumers apply the KSP plugin and add ksp(\"ai.deep-code:agents-kt-ksp:<v>\"). KSP instantiates one processor per round via create(env). Call when the IDE LLM needs to reason about wiring the KSP module into a consumer build.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/ksp/AgentsKtSymbolProcessorProvider.md") }
-        }
-
-        skill<String, String>(
-            name = "ksp_constructfrommapemitter_kt",
-            description = "Source-file knowledge for agents-kt-ksp/agents_engine/ksp/ConstructFromMapEmitter.kt — emits constructFromMap body (#1704). Reproduces runtime contract byte-for-byte: strict extras rejection (#665), sealed-variant type discriminator (#699), per-field coercion via @PublishedApi helpers (coerceString/coerceInt/coerceList), null short-circuit for non-nullable required. Skips classes with default-valued params (Kotlin synthetic constructor-with-mask not callable from generated source — falls through to reflection). Pure object, no KSP types in signature. Call when the IDE LLM needs to reason about typed map→instance coercion.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/ksp/ConstructFromMapEmitter.md") }
-        }
-
-        skill<String, String>(
-            name = "ksp_generablevalidator_kt",
-            description = "Source-file knowledge for agents-kt-ksp/agents_engine/ksp/GenerableValidator.kt — KSP-free pure-data validation rules for @Generable (#1700). Tests don't need kctfork (which lags Kotlin metadata; project on 2.3.x). GenerableClass is the minimal extracted shape. Rules: data class or sealed root, primary ctor with params, supported field types, sealed variants must be @Generable, nullable allowed. env.logger.error per violation surfaces in IDE underlines. Call when the IDE LLM needs to reason about what makes a type @Generable-eligible.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/ksp/GenerableValidator.md") }
-        }
-
-        skill<String, String>(
-            name = "ksp_llmdescriptionemitter_kt",
-            description = "Source-file knowledge for agents-kt-ksp/agents_engine/ksp/LlmDescriptionEmitter.kt — emits the markdown KClass.toLlmDescription() produces via reflection (#1703). Contract: byte-identical to GenerableSupport.dataClassLlmDescription/sealedLlmDescription. Format: ## ClassName + description + bulleted fields with @Guide text; sealed: 'Choose one of the following variants:' + ### Variant blocks. Prompt-cache determinism depends on this matching. Call when the IDE LLM needs to reason about LLM-facing type descriptions.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/ksp/LlmDescriptionEmitter.md") }
-        }
-
-        skill<String, String>(
-            name = "ksp_schemaemitter_kt",
-            description = "Source-file knowledge for agents-kt-ksp/agents_engine/ksp/SchemaEmitter.kt — emits JSON Schema for @Generable data class (#1701). Contract: byte-identical to KClass.dataClassJsonSchema(). Same field ordering, separator placement, @Guide quoting — prompt-cache determinism depends on this. shouldEmit() #1705 defensive gate skips when sealed parent has empty variants list (incremental-compile race). Sealed types out of scope this iteration (separate emitter). Call when the IDE LLM needs to reason about LLM structured-output schemas.",
-        ) {
-            implementedBy { _ -> loadResource("internals-agent/ksp/SchemaEmitter.md") }
-        }
-
-        // 63 children done — closes out the v0.6.0 InternalsAgent surface.
+        else -> error("Unsupported classpath resource protocol: ${url.protocol}")
     }
 }

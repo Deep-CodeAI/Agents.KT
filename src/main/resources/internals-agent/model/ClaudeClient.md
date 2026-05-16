@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/model/ClaudeClient.kt — Anthropic Messages API adapter (#1644). LlmMessage→Anthropic JSON wire mapping (system field, tool_use/tool_result blocks with synthetic toolu_<n> IDs, input_schema spelling), streaming via SSE (text_delta and input_json_delta chunks), boundary errors via LlmProviderException (#702), open sendChat seam for tests. Call when the IDE LLM needs to reason about wiring the framework to Anthropic.
+---
+
 # `agents_engine/model/ClaudeClient.kt` — Anthropic Messages adapter (#1644)
 
 One of the three shipped `ModelClient` implementations. Wraps Anthropic's `POST /v1/messages` API.

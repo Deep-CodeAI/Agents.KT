@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/mcp/McpTransport.kt — internal interface. rpc(envelope): String for request/response, notify(envelope) for fire-and-forget. AutoCloseable. Single-flight (callers serialize). Three implementations: HttpMcpTransport (Streamable HTTP), TcpMcpTransport (line-delimited TCP), StdioMcpTransport (line-delimited stdio). Same JSON-RPC envelope, different framing. Call when the IDE LLM needs to reason about MCP transports.
+---
+
 # `agents_engine/mcp/McpTransport.kt` — MCP wire transport interface
 
 The seam between `McpClient` and the three concrete transports.

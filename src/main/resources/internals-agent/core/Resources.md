@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/core/Resources.kt — the loadResource / loadResourceOrNull classpath helpers (#980): UTF-8 decoding, leading-slash tolerance, fail-fast on missing, contextClassLoader-first lookup. Call when the IDE LLM needs to reason about prompt/knowledge resource loading or InternalsAgent's adjunct mechanism.
+---
+
 # `agents_engine/core/Resources.kt` — classpath resource loading
 
 Two free functions for pulling UTF-8 text resources off the classpath. The canonical "load a prompt from a .md file" helper.

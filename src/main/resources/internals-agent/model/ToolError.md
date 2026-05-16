@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/model/ToolError.kt — sealed ToolError (InvalidArgs / DeserializationError / ExecutionError / EscalationError), Severity enum (LOW/MEDIUM/HIGH/CRITICAL), EscalationException + ToolExecutionException. The wire format consumed by the onError { } DSL. Call when the IDE LLM needs to reason about classifying or handling tool failures.
+---
+
 # `agents_engine/model/ToolError.kt` — typed tool-failure union
 
 The four failure shapes plus the `Severity` enum and the two helper exceptions.

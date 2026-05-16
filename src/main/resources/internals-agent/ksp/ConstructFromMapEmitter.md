@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents-kt-ksp/agents_engine/ksp/ConstructFromMapEmitter.kt — emits constructFromMap body (#1704). Reproduces runtime contract byte-for-byte: strict extras rejection (#665), sealed-variant type discriminator (#699), per-field coercion via @PublishedApi helpers (coerceString/coerceInt/coerceList), null short-circuit for non-nullable required. Skips classes with default-valued params (Kotlin synthetic constructor-with-mask not callable from generated source — falls through to reflection). Pure object, no KSP types in signature. Call when the IDE LLM needs to reason about typed map→instance coercion.
+---
+
 # `agents-kt-ksp/agents_engine/ksp/ConstructFromMapEmitter.kt` — emits `constructFromMap` body
 
 Emits the source body of `constructFromMap(fields: Map<*, Any?>): Foo?` for `@Generable data class` and `@Generable sealed` types (#1704).

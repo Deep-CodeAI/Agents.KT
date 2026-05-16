@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/model/OllamaClient.kt — local Ollama HTTP adapter (default ModelClient). POST /api/chat at localhost:11434, OpenAI-style tool schema (Ollama emulates), parseToolArguments handling Map / JSON-string / null shapes, NDJSON streaming, LlmProviderException on errors (#702), open sendChat seam for tests. Call when the IDE LLM needs to reason about local LLM integration.
+---
+
 # `agents_engine/model/OllamaClient.kt` — local Ollama HTTP adapter
 
 The framework's default `ModelClient`. Targets a local Ollama daemon on `localhost:11434` by default.

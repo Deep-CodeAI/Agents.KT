@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/mcp/McpServerInfo.kt — immutable pure-data snapshot of an MCP server's surface (#1734). identity + protocolVersion + capabilities + tools + resources + resourceTemplates + prompts. Populated by McpClient over time as RPCs land. Constructible directly in tests without a transport stub. Forward-looking — fields land here before the RPC support arrives. Call when the IDE LLM needs to reason about reading MCP server state.
+---
+
 # `agents_engine/mcp/McpServerInfo.kt` — pure-data MCP server snapshot
 
 An immutable, fully-populated view of an MCP server's surface (#1734). What `McpClient` produces after handshake + listings; what tests can build directly without a transport stub.

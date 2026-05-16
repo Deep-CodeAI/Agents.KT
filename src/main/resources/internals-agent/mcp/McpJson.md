@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/mcp/McpJson.kt — internal strict JSON encoder for MCP RPC envelopes. ~25 lines. Supports null/Boolean/Number/String/Map/Iterable/Array; falls back to escape(toString()). Full string escapes including \uXXXX for control chars under 0x20. Reads use generation.LenientJsonParser (different concern). Call when the IDE LLM needs to reason about MCP wire encoding.
+---
+
 # `agents_engine/mcp/McpJson.kt` — minimal JSON encoder for MCP wire
 
 A tiny internal encoder for building JSON-RPC envelopes the framework sends out. Reads use `generation/LenientJsonParser` — different concern.

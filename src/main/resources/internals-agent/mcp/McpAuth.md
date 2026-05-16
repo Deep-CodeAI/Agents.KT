@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/mcp/McpAuth.kt — sealed McpAuth (None / Bearer(token)). Bearer.toString() redacts the token to keep it out of logs (#857). Sealed for future variants (OAuth, ApiKeyHeader). Stdio + TCP derive auth from connection identity; only HTTP currently consumes Bearer. Call when the IDE LLM needs to reason about MCP authentication.
+---
+
 # `agents_engine/mcp/McpAuth.kt` — auth scheme for MCP transports
 
 A `sealed interface McpAuth` with two variants today: `None` (default) and `Bearer(token)`.

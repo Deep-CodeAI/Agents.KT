@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/composition/branch/BranchSessionExtension.kt — branch.session(input) (#1748). Source agent streams first (agentId=source.name), matched route streams with routedAgentName, terminal Completed uses routedAgentName. Routes built outside BranchBuilder fall back gracefully. Channel.BUFFERED + SupervisorJob + Dispatchers.Default. Call when the IDE LLM needs to reason about streaming a branch.
+---
+
 # `agents_engine/composition/branch/BranchSessionExtension.kt` — streaming branches
 
 Adds `Branch<IN, OUT>.session(input): AgentSession<OUT>` (#1748). The session surface for `Branch`.

@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/core/Memory.kt — the MemoryBank ConcurrentHashMap-backed scratch-pad keyed by agent name, the three built-in tools (memory_read / memory_write / memory_search), per-agent vs shared-workspace topologies, maxLines line-history truncation, opt-in mechanics under #856. Call when the IDE LLM needs to reason about how agents persist or share state across turns.
+---
+
 # `agents_engine/core/Memory.kt` — memory bank + `memory_*` tools
 
 A simple per-agent scratch-pad backed by a `ConcurrentHashMap<String, String>`. Each agent reads/writes under its own name; sharing is opt-in.

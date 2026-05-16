@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/composition/wrap/Wrap.kt — teacher-student prompt override (#1698 / 'wrap' / PRD's '>>' operator). teacher wrap student returns Pipeline where teacher's String output becomes student's system prompt for that one call. Race-safe via effectivePrompt passthrough (#1707) — student's baked prompt never mutated. Two framings: education (specialize generalist) and security (lock task surface). Call when the IDE LLM needs to reason about dynamic prompt overrides.
+---
+
 # `agents_engine/composition/wrap/Wrap.kt` — teacher-student prompt override
 
 The `teacher wrap student` operator (#1698). Returns a `Pipeline` where:

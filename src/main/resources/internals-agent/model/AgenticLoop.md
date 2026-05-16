@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/model/AgenticLoop.kt — the multi-turn chat↔tool loop (executeAgentic) at the heart of every agentic-skill invocation. Builds per-skill tool allowlist (skill tools + agent capabilities + #856 memory + knowledge), runs turns until final answer or budget cap, honors maxTurns/maxToolCalls/maxDuration/perToolTimeout/maxTokens/maxConsecutiveSameTool, argument repair up to 8 retries, streaming-aware emitter (#1739), wrap-friendly effectivePrompt (#1707), cumulative TokenUsage (#1740). Call when the IDE LLM needs to reason about how agentic skills actually execute.
+---
+
 # `agents_engine/model/AgenticLoop.kt` — the multi-turn `chat ↔ tool` loop
 
 The heart of every agentic-skill invocation. When `Skill.isAgentic == true`, `Agent.invoke` dispatches here.

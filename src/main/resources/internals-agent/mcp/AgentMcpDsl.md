@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/mcp/AgentMcpDsl.kt — agent { mcp { server(...) } } declarative MCP registration. Three connection shapes (url=HTTP / command=stdio / host+port=TCP), tool prefixing by server name, v0.5.0 toolSkills/promptSkills/resourceSkills shortcuts. Fail-fast at agent-build time. mcpClients accessor for lifecycle. Call when the IDE LLM needs to reason about wiring an MCP server into an agent.
+---
+
 # `agents_engine/mcp/AgentMcpDsl.kt` — declarative MCP server registration
 
 The `agent { mcp { server(...) } }` DSL. Connects to MCP servers at agent-construction time and registers their tools.

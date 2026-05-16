@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/model/StreamingAggregator.kt — chatOrStream entry point (#1739) the agentic loop calls per turn. emitter==null → client.chat() unchanged; emitter!=null → collect client.chatStream() while emitting AgentEvent.Token / ToolCallStarted / ToolCallArgumentsDelta, rebuild LlmResponse with stable callIds. AgentEventEmitter typealias (non-suspend per #1745). ToolCallFinished fires later in the loop with executor result. Interleaving-safe via callId routing. Call when the IDE LLM needs to reason about streaming plumbing.
+---
+
 # `agents_engine/model/StreamingAggregator.kt` — chat-or-stream entry point
 
 A single internal `suspend fun chatOrStream(client, messages, agentId, skillName, emitter): LlmResponse` plus the `AgentEventEmitter` typealias. The agentic loop calls this once per turn.

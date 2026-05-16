@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/model/ModelClient.kt — the LLM transport fun interface and shared types (LlmMessage, ToolCall with callId #1739, TokenUsage #963, LlmResponse.Text/ToolCalls). Default chatStream wraps non-streaming chat with LlmChunk emission. Three shipped impls: Ollama, Claude, OpenAI. Custom clients implement the SAM. Call when the IDE LLM needs to reason about adding a new LLM provider or testing with a fake client.
+---
+
 # `agents_engine/model/ModelClient.kt` — LLM transport interface
 
 The seam between the framework and the underlying LLM provider. Three implementations ship with the framework: `OllamaClient`, `ClaudeClient`, `OpenAiClient`. Users plug in their own by implementing the `ModelClient` `fun interface`.

@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents-kt-ksp/agents_engine/ksp/AgentsKtSymbolProcessor.kt — KSP processor entry (#1018). Two passes per round: validation via GenerableValidator (#1700), then schema/description/constructor emission via SchemaEmitter/LlmDescriptionEmitter/ConstructFromMapEmitter (#1701/#1703/#1704). Emits <package>/<ClassName>__GeneratedSchema.kt; runtime GenerableSupport reads via Class.forName, falls back to reflection. Sealed roots and default-valued-param classes fall through to reflection. Call when the IDE LLM needs to reason about KSP-vs-reflection dispatch.
+---
+
 # `agents-kt-ksp/agents_engine/ksp/AgentsKtSymbolProcessor.kt` — KSP processor entry
 
 The KSP `SymbolProcessor` impl. Discovered via the service-loader provider; runs over the consumer's source tree at compile time.

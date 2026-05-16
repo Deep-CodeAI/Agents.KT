@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/composition/loop/Loop.kt — feedback-loop operator. execution(input) → output, next(output)→IN? derives next input (null terminates), maxIterations=1000 default with require(>0). Suspend execution (#638) composes with operators. sessionExec for streaming iterations (#1749), loopAgentId for terminal Completed. Call when the IDE LLM needs to reason about iterative refinement.
+---
+
 # `agents_engine/composition/loop/Loop.kt` — feedback-loop operator
 
 `Loop<IN, OUT>` runs an execution repeatedly, feeding each output back through a `next` function to derive the next input. Terminates when `next` returns `null` or `maxIterations` (default 1000) is hit.

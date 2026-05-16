@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/model/ToolDef.kt — ToolDef (wire shape: Map<String,Any?>→Any? executor + optional session-aware sessionExecutor #1752 + untrustedOutput sandbox flag + argsType KClass for typed coercion), Tool<Args,Result> compile-time-checked handle (#1015/#1016) returned by tool(...) builders. argsType drives constructFromMap deserialization with @Generable. errorHandler slot wired by onError { }. Call when the IDE LLM needs to reason about declaring tools or about typed-vs-stringly-typed tool refs.
+---
+
 # `agents_engine/model/ToolDef.kt` — tool shape + typed handles
 
 The wire-level tool the agentic loop invokes, plus the compile-time-checked `Tool<Args, Result>` handle the `tool(...)` DSL returns.

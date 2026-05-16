@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/mcp/LineDelimitedMcpTransport.kt — abstract base for stdio + TCP transports. \n-terminated UTF-8 JSON-RPC envelopes. Notifications (no id field) dropped silently. Single-flight: callers must serialize rpc() calls. Subclasses override only close() for their own teardown. Call when the IDE LLM needs to reason about line-delimited MCP framing.
+---
+
 # `agents_engine/mcp/LineDelimitedMcpTransport.kt` — base for stdio + TCP
 
 Shared logic for the two line-delimited transports.

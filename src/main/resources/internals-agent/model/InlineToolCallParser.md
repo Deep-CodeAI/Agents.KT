@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/model/InlineToolCallParser.kt — parses {"tool":"name","arguments":{...}} text into ToolCall and the reverse JSON encoder. Used by providers without native function-calling that instruct the LLM to emit inline tool-call JSON. Lenient parsing via generation.LenientJsonParser, strict encoding. Call when the IDE LLM needs to reason about how LLM text becomes a ToolCall.
+---
+
 # `agents_engine/model/InlineToolCallParser.kt` — inline tool-call JSON
 
 Parses `{"tool": "name", "arguments": {...}}` text into a `ToolCall`, and the reverse JSON encoder.

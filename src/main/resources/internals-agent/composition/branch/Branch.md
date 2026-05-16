@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/composition/branch/Branch.kt — the routing operator. Branch<IN, OUT> runs a source agent then dispatches on result type/null/else to a registered route. Order matters — first matching route wins. Suspend executors (#638) compose with agents/pipelines. Session-aware sessionExecutor + routedAgentName (#1748). Call when the IDE LLM needs to reason about type-dispatch routing.
+---
+
 # `agents_engine/composition/branch/Branch.kt` — the routing operator
 
 `Branch<IN, OUT>` runs a source agent and dispatches on the result to a registered route. First matching route wins (registration order matters).

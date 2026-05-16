@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/runtime/events/AgentSession.kt — handle returned by agent.session(input). events: cold Flow<AgentEvent<OUT>>, await(): suspend OUT (throws original exception unwrapped on failure). Each session(...) call is a fresh invocation; share via events.shareIn(...). Cancellation propagates both ways into the agent invocation and (step 3) the upstream LLM HTTP call. internal constructor. Call when the IDE LLM needs to reason about consuming session results.
+---
+
 # `agents_engine/runtime/events/AgentSession.kt` — the session handle
 
 The return type of `Agent.session(input)`.

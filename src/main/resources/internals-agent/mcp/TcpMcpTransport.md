@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/mcp/TcpMcpTransport.kt — thin subclass of LineDelimitedMcpTransport delegating to the socket's streams. close() runCatching { socket.close() } for idempotence (peer may have closed). Caller builds the Socket; transport owns its lifetime. No built-in TLS or auth — use HTTPS-fronted HTTP transport for untrusted networks. Call when the IDE LLM needs to reason about TCP MCP connectivity.
+---
+
 # `agents_engine/mcp/TcpMcpTransport.kt` — TCP MCP transport
 
 A thin subclass of `LineDelimitedMcpTransport` that delegates framing to its parent and adds socket lifecycle.

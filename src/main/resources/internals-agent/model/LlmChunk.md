@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/model/LlmChunk.kt — provider-level streaming chunk union (TextDelta, ToolCallStarted/ArgumentsDelta/Finished, End) per #1722. Narrow — no agentic concepts. Flow shape is [TextDelta]* [Started Δ* Finished]* End. Default ModelClient.chatStream wraps non-streaming chat with this shape. callId honored from ToolCall when present (#1739). Call when the IDE LLM needs to reason about LLM streaming.
+---
+
 # `agents_engine/model/LlmChunk.kt` — provider-level streaming chunk
 
 A narrow sealed-interface union over the deltas a streaming LLM provider emits during a single chat round-trip (#1722). Nothing here references agentic concepts (`skillName`, `agentId`) — those belong upstream in `AgentEvent`.

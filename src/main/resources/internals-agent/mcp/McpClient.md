@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/mcp/McpClient.kt — wraps an McpTransport. Lifecycle: handshake() → loadTools() / loadResources() / loadResourceTemplates() / loadPrompts() → snapshot populated (#1734). Synchronous single-threaded; concurrent agentic-loop calls are externally serialized. AtomicLong id counter starting at 2 (initialize uses 1). Factories: McpClient.http/.stdio/.tcp. AutoCloseable. Call when the IDE LLM needs to reason about consuming a remote MCP server.
+---
+
 # `agents_engine/mcp/McpClient.kt` — MCP client
 
 Wraps an `McpTransport` and speaks JSON-RPC. The single point of contact with a remote MCP server.

@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/mcp/McpServer.kt — exposes an Agent as an MCP server over HTTP (JDK HttpServer at POST /mcp). McpServer.from(agent) { port, expose(...) }. Non-agentic skills only (implementedBy { }); IN must be String or @Generable; output rendered as text block via toString(). v0.5.0 (#1796) adds prompt and resource registration. RegisteredPrompt mirrors MCP wire shape. The InternalsAgent runs on this. Call when the IDE LLM needs to reason about hosting an MCP server.
+---
+
 # `agents_engine/mcp/McpServer.kt` — expose an agent over MCP
 
 Turns an `Agent` into an MCP server. `from(agent) { ... }` registers selected skills as MCP tools (and optionally prompts/resources) and starts an HTTP server on a configurable port.

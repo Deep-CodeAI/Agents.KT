@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/runtime/events/AgentEvent.kt — typed sealed event union for sessions (#1736). Variants: SkillStarted, SkillCompleted, Completed (carries OUT), Failed (step 2); Token, ToolCallStarted, ToolCallArgumentsDelta, ToolCallFinished (step 3). agentId on every variant preserves provenance through composition. AgentEvent<Nothing> for non-OUT variants flows through any AgentSession<OUT>. Call when the IDE LLM needs to reason about consuming streamed agent events.
+---
+
 # `agents_engine/runtime/events/AgentEvent.kt` — typed session event union
 
 The events flowing through `Agent.session(input).events`. Sealed so consumers can write exhaustive `when` matches today.

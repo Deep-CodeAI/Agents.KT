@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/mcp/StdioMcpTransport.kt — line-delimited JSON over stdin/stdout. Two factories: forStreams (test pipes / custom IPC) and forProcess (spawns child via ProcessBuilder, drains stderr on daemon thread to avoid full-buffer deadlock). close() destroys gracefully (SIGTERM, 2s wait, SIGKILL). Robust to Linux CI fast-exit races. Call when the IDE LLM needs to reason about subprocess MCP servers.
+---
+
 # `agents_engine/mcp/StdioMcpTransport.kt` — stdio MCP transport
 
 Line-delimited JSON over stdin/stdout. Two factory paths.

@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/composition/loop/LoopSessionExtension.kt — loop.session(input) (#1749). Iterations run serially (loops are sequential — events interleave one iteration at a time). Same termination rules as non-streaming. maxIterations breach → Failed. Constructed outside factory functions falls back to non-streaming execution. Call when the IDE LLM needs to reason about streaming a loop.
+---
+
 # `agents_engine/composition/loop/LoopSessionExtension.kt` — streaming loops
 
 Adds `Loop<IN, OUT>.session(input): AgentSession<OUT>` (#1749).

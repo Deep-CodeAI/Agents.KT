@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/composition/branch/BranchBuilder.kt — the Branch DSL. on<T>() then agent / then pipeline, onNull(), orElse(). Each then marks the target placed (single-placement) and wires sessionExecutor (#1748) via runAgentInSession or pipeline.effectiveSessionExec. ReflectionFallback for the cast lambda. Call when the IDE LLM needs to reason about how Branch routes are assembled.
+---
+
 # `agents_engine/composition/branch/BranchBuilder.kt` — the Branch DSL
 
 The builder behind `sourceAgent.branch<OUT> { ... }`.

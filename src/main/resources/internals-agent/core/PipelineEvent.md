@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/core/PipelineEvent.kt — the sealed PipelineEvent (SkillChosen, ToolCalled, KnowledgeLoaded, ErrorOccurred) and the Agent.observe { } extension that chains it over the four per-event listeners additively (#965). Call when the IDE LLM needs to reason about post-hoc observability vs the in-loop AgentEvent stream.
+---
+
 # `agents_engine/core/PipelineEvent.kt` — unified observability event
 
 A typed sealed-interface union over the four per-event listener hooks an `Agent` exposes. Lets integrators wire telemetry with a single `when` block instead of four separate registrations (#965).

@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/model/BudgetConfig.kt — six caps (maxTurns 8, maxToolCalls 32, maxDuration 5m, perToolTimeout null, maxTokens null #963, maxConsecutiveSameTool null #969), the BudgetBuilder DSL, BudgetReason enum, BudgetExceededException, and pre-cap threshold warnings via onBudgetThreshold. Call when the IDE LLM needs to reason about cost/runaway control for agentic invocations.
+---
+
 # `agents_engine/model/BudgetConfig.kt` — agentic invocation caps
 
 Six budget caps, plus a `BudgetBuilder` for the DSL and a `BudgetExceededException(message, reason: BudgetReason)` that fires when any cap trips.

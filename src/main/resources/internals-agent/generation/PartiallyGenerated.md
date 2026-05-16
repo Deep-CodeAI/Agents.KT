@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/generation/PartiallyGenerated.kt — immutable accumulator for fields arriving incrementally from an LLM stream. withField folds in deltas (returns new instance), toComplete delegates to constructFromMap and returns T? or null when required fields missing. Typed property access is a planned KSP Phase 2 affordance. Call when the IDE LLM needs to reason about streaming structured-output consumption.
+---
+
 # `agents_engine/generation/PartiallyGenerated.kt` — incremental field accumulator
 
 An immutable accumulator for fields arriving one-at-a-time. Designed for streaming structured-output scenarios where an LLM produces `{"a": 1, "b": "hello", "c": [...]}` token by token, and the consumer wants to react as each field completes.

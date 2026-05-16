@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/runtime/events/AgentSessionExtension.kt — agent.session(input) entry. Builds Channel.BUFFERED + CompletableDeferred + dedicated SupervisorJob+Dispatchers.Default scope per session. Producer coroutine forwards AgentEvents via emitter to channel.trySend. Completed/Failed terminal events close the channel and complete/fail the deferred. Sibling session extensions for Pipeline/Branch/Loop/Forum/Parallel follow the same pattern. Call when the IDE LLM needs to reason about session plumbing internals.
+---
+
 # `agents_engine/runtime/events/AgentSessionExtension.kt` — the `agent.session(input)` entry
 
 The extension that turns a plain `Agent` into a streaming session.

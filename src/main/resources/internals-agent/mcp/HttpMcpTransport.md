@@ -1,3 +1,7 @@
+---
+description: Source-file knowledge for agents_engine/mcp/HttpMcpTransport.kt — Streamable HTTP MCP transport. POST → JSON or SSE response. Captures Mcp-Session-Id from any response, replays on subsequent requests. Honors McpAuth.Bearer. requestTimeout and maxResponseBytes limits. Shared JDK HttpClient. Call when the IDE LLM needs to reason about HTTP MCP connectivity.
+---
+
 # `agents_engine/mcp/HttpMcpTransport.kt` — Streamable HTTP transport
 
 The MCP spec's primary transport. POST request → JSON or SSE response.
