@@ -22,6 +22,22 @@ class ToolDef(
     val description: String = "",
     val argsType: KClass<*>? = null,
     val untrustedOutput: Boolean = false,
+    /**
+     * #1752 — session-aware tool executor. When non-null AND the
+     * agentic loop runs under a session (`emitter != null`), this is
+     * used instead of [executor]. Allows tools that wrap a sibling
+     * agent (Swarm absorb path) to stream the sibling's inner events
+     * into the captain's session.
+     *
+     * Falls back to [executor] when null — preserves byte-for-byte
+     * behavior for plain function tools and for non-streaming
+     * invocations.
+     *
+     * Declared BEFORE [executor] so the trailing-lambda construction
+     * `ToolDef(name, desc) { args -> ... }` still binds the lambda
+     * to [executor].
+     */
+    val sessionExecutor: (suspend (Map<String, Any?>, agents_engine.model.AgentEventEmitter) -> Any?)? = null,
     val executor: (Map<String, Any?>) -> Any?,
 ) {
     var errorHandler: ToolErrorHandler? = null

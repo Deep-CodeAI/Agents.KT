@@ -85,22 +85,33 @@ fun Agent<*, *>.absorb(sibling: Agent<*, *>) {
             "Consider exposing the typed agent via a String-input adapter."
     }
 
+    @Suppress("UNCHECKED_CAST")
+    val asString = sibling as Agent<String, Any?>
+    val toolDescription = buildString {
+        append("Delegate to the \"")
+        append(sibling.name)
+        append("\" agent. Skills: ")
+        append(sibling.skills.values.joinToString("; ") { "${it.name} — ${it.description}" })
+    }
     val tool = ToolDef(
         name = sibling.name,
-        description = buildString {
-            append("Delegate to the \"")
-            append(sibling.name)
-            append("\" agent. Skills: ")
-            append(sibling.skills.values.joinToString("; ") { "${it.name} — ${it.description}" })
+        description = toolDescription,
+        executor = { args ->
+            val query = args["query"]?.toString()
+                ?: args.values.firstOrNull()?.toString()
+                ?: ""
+            asString.invoke(query)?.toString() ?: "null"
         },
-    ) { args ->
-        val query = args["query"]?.toString()
-            ?: args.values.firstOrNull()?.toString()
-            ?: ""
-        @Suppress("UNCHECKED_CAST")
-        val asString = sibling as Agent<String, *>
-        asString.invoke(query)?.toString() ?: "null"
-    }
+        // #1752 — under captain.session(input), route the sibling through
+        // runAgentInSession so its inner events stream into the captain's
+        // session events Flow with the sibling's own agentId.
+        sessionExecutor = { args, emitter ->
+            val query = args["query"]?.toString()
+                ?: args.values.firstOrNull()?.toString()
+                ?: ""
+            agents_engine.runtime.events.runAgentInSession(asString, query, emitter).first?.toString() ?: "null"
+        },
+    )
     registerBuiltInTool(tool)
     enableAutoTool(tool.name)
 }

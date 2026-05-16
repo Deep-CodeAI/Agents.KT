@@ -243,7 +243,7 @@ internal suspend fun <IN> executeAgentic(
                                 "Allowed: ${allowedToolMap.keys}"
                         )
                     val result = try {
-                        executeToolWithBudget(agent, tool, call, budget)
+                        executeToolWithBudget(agent, tool, call, budget, emitter)
                     } catch (t: Throwable) {
                         // #1739: tool executor threw and onError didn't recover.
                         // Surface a ToolCallFinished event with isError=true so
@@ -344,12 +344,26 @@ suspend fun <IN> selectSkillByLlm(
  * Uses a sacrificial worker thread + join(timeout) — pre-#638 (suspend refactor) we don't
  * have coroutine `withTimeout` available here.
  */
-private fun <IN> executeToolWithBudget(
+private suspend fun <IN> executeToolWithBudget(
     agent: Agent<IN, *>,
     tool: ToolDef,
     call: ToolCall,
     budget: BudgetConfig,
+    emitter: AgentEventEmitter? = null,
 ): Any? {
+    // #1752: when running under a session AND the tool has a session-aware
+    // executor (Swarm absorb installs one for sibling agents), use the
+    // session path directly. The per-tool wall-clock timeout from the
+    // Thread.join() trick doesn't apply here — siblings are suspend agents
+    // bounded by their own budgets; the captain's overall maxDuration and
+    // maxToolCalls still gate them. Documented gap: session-tool execution
+    // doesn't enforce perToolTimeout. Step 5 (HTTP cancellation via
+    // sendAsync) is the right place to add coroutine-aware per-tool timeouts.
+    if (emitter != null) {
+        tool.sessionExecutor?.let { sessionExec ->
+            return sessionExec(call.arguments, emitter)
+        }
+    }
     val timeout = budget.perToolTimeout ?: return executeToolWithRecovery(agent, tool, call)
     val resultRef = AtomicReference<Any?>(null)
     val errorRef = AtomicReference<Throwable?>(null)
