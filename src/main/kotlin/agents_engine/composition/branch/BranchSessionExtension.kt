@@ -1,0 +1,80 @@
+package agents_engine.composition.branch
+
+import agents_engine.model.AgentEventEmitter
+import agents_engine.runtime.events.AgentEvent
+import agents_engine.runtime.events.AgentSession
+import agents_engine.runtime.events.runAgentInSession
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.launch
+
+/**
+ * #1748 — start a streaming session against [this] branch.
+ *
+ * The source agent runs first to produce the routing value; its events
+ * stream with `agentId=source.name`. The matched route's agent (or
+ * pipeline) then runs; its events stream with their own `agentId`s.
+ * Terminal `Completed` carries the routed agent's name as `agentId` —
+ * that's the agent whose output is the Branch's output.
+ *
+ * Failure handling: if either the source or the routed agent throws,
+ * the terminal event is `Failed` with the original cause; `await()`
+ * rethrows. Routes constructed outside `BranchBuilder` (no
+ * `sessionExecutor`) fall back to the regular executor — events from
+ * the routed agent won't stream, but the route still executes and
+ * the terminal `Completed`/`Failed` fires correctly.
+ */
+fun <IN, OUT> Branch<IN, OUT>.session(input: IN): AgentSession<OUT> {
+    val branch = this
+    val channel = Channel<AgentEvent<OUT>>(Channel.BUFFERED)
+    val result = CompletableDeferred<OUT>()
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+
+    scope.launch {
+        @Suppress("UNCHECKED_CAST")
+        val emitter: AgentEventEmitter = { event -> channel.trySend(event as AgentEvent<OUT>) }
+        var terminalAgentId = branch.source.name
+        try {
+            // Source agent streams first.
+            @Suppress("UNCHECKED_CAST")
+            val sourcePair = runAgentInSession(
+                branch.source as agents_engine.core.Agent<IN, Any?>,
+                input,
+                emitter,
+            )
+            val sourceOut = sourcePair.first
+
+            // Pick the matching route and run it.
+            val route = branch.matchRoute(sourceOut)
+                ?: error(
+                    "No branch route matched for ${sourceOut?.let { it::class.simpleName } ?: "null"} " +
+                        "and no onElse clause was declared."
+                )
+            // Terminal Completed gets the routed agent's name — that's the
+            // agent whose output became the Branch's typed output. Falls
+            // back to source.name when the route was built outside
+            // BranchBuilder (no recorded routedAgentName).
+            terminalAgentId = route.routedAgentName ?: branch.source.name
+
+            val output: OUT = route.sessionExecutor?.invoke(sourceOut, emitter)
+                ?: route.executor(sourceOut)
+
+            channel.trySend(AgentEvent.Completed(terminalAgentId, output, null))
+            channel.close()
+            result.complete(output)
+        } catch (t: Throwable) {
+            channel.trySend(AgentEvent.Failed(terminalAgentId, t))
+            channel.close()
+            result.completeExceptionally(t)
+        }
+    }
+
+    return AgentSession(
+        events = channel.consumeAsFlow(),
+        resultDeferred = result,
+    )
+}

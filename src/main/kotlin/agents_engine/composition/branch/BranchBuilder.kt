@@ -14,11 +14,28 @@ class BranchBuilder<OUT> {
     ) {
         infix fun then(agent: Agent<T, OUT>) {
             agent.markPlaced("branch")
-            routes += BranchRoute.TypeRoute(klass) { input -> agent.invokeSuspend(castFn(input)) }
+            routes += BranchRoute.TypeRoute(
+                klass = klass,
+                executor = { input -> agent.invokeSuspend(castFn(input)) },
+                // #1748: stream the routed agent's events under branch.session.
+                sessionExecutor = { input, emitter ->
+                    agents_engine.runtime.events.runAgentInSession(agent, castFn(input), emitter).first
+                },
+                routedAgentName = agent.name,
+            )
         }
 
         infix fun then(pipeline: Pipeline<T, OUT>) {
-            routes += BranchRoute.TypeRoute(klass) { input -> pipeline.invokeSuspend(castFn(input)) }
+            routes += BranchRoute.TypeRoute(
+                klass = klass,
+                executor = { input -> pipeline.invokeSuspend(castFn(input)) },
+                // #1748: pipeline's effectiveSessionExec streams the chain's events.
+                sessionExecutor = { input, emitter ->
+                    pipeline.effectiveSessionExec(castFn(input), emitter)
+                },
+                // Last agent in the pipeline produces the OUT, so use its name.
+                routedAgentName = pipeline.agents.lastOrNull()?.name,
+            )
         }
     }
 
@@ -38,14 +55,28 @@ class BranchBuilder<OUT> {
 
     infix fun OnNull.then(agent: Agent<*, OUT>) {
         @Suppress("UNCHECKED_CAST")
-        (agent as Agent<Any?, OUT>).markPlaced("branch")
-        routes += BranchRoute.NullRoute { _ -> @Suppress("UNCHECKED_CAST") (agent as Agent<Any?, OUT>).invokeSuspend(null) }
+        val a = agent as Agent<Any?, OUT>
+        a.markPlaced("branch")
+        routes += BranchRoute.NullRoute(
+            executor = { _ -> a.invokeSuspend(null) },
+            sessionExecutor = { _, emitter ->
+                agents_engine.runtime.events.runAgentInSession(a, null, emitter).first
+            },
+            routedAgentName = a.name,
+        )
     }
 
     infix fun OnElse.then(agent: Agent<*, OUT>) {
         @Suppress("UNCHECKED_CAST")
-        (agent as Agent<Any?, OUT>).markPlaced("branch")
-        routes += BranchRoute.ElseRoute { input -> @Suppress("UNCHECKED_CAST") (agent as Agent<Any?, OUT>).invokeSuspend(input) }
+        val a = agent as Agent<Any?, OUT>
+        a.markPlaced("branch")
+        routes += BranchRoute.ElseRoute(
+            executor = { input -> a.invokeSuspend(input) },
+            sessionExecutor = { input, emitter ->
+                agents_engine.runtime.events.runAgentInSession(a, input, emitter).first
+            },
+            routedAgentName = a.name,
+        )
     }
 
     inline fun <reified T : Any> on(): OnClause<T> = OnClause(T::class) { it as T }

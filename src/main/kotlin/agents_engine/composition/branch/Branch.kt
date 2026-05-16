@@ -18,14 +18,42 @@ import kotlin.reflect.KClass
  */
 sealed interface BranchRoute<OUT> {
     val executor: suspend (Any?) -> OUT
-    data class TypeRoute<OUT>(val klass: KClass<*>, override val executor: suspend (Any?) -> OUT) : BranchRoute<OUT>
-    data class NullRoute<OUT>(override val executor: suspend (Any?) -> OUT) : BranchRoute<OUT>
-    data class ElseRoute<OUT>(override val executor: suspend (Any?) -> OUT) : BranchRoute<OUT>
+    /**
+     * #1748 — session-aware executor used when the branch runs inside a
+     * `branch.session(input)` call. Null when the route was constructed
+     * outside `BranchBuilder` (the regular `executor` wins; routed events
+     * don't flow through, only the source agent's events do).
+     */
+    val sessionExecutor: (suspend (Any?, agents_engine.model.AgentEventEmitter) -> OUT)?
+    /**
+     * #1748 — name of the agent (or last agent in the routed pipeline)
+     * whose output becomes the Branch's output. Used as `agentId` for
+     * the terminal `AgentEvent.Completed`. Null when the route was
+     * constructed outside `BranchBuilder` — in that case the terminal
+     * Completed falls back to the source agent's name.
+     */
+    val routedAgentName: String?
+    data class TypeRoute<OUT>(
+        val klass: KClass<*>,
+        override val executor: suspend (Any?) -> OUT,
+        override val sessionExecutor: (suspend (Any?, agents_engine.model.AgentEventEmitter) -> OUT)? = null,
+        override val routedAgentName: String? = null,
+    ) : BranchRoute<OUT>
+    data class NullRoute<OUT>(
+        override val executor: suspend (Any?) -> OUT,
+        override val sessionExecutor: (suspend (Any?, agents_engine.model.AgentEventEmitter) -> OUT)? = null,
+        override val routedAgentName: String? = null,
+    ) : BranchRoute<OUT>
+    data class ElseRoute<OUT>(
+        override val executor: suspend (Any?) -> OUT,
+        override val sessionExecutor: (suspend (Any?, agents_engine.model.AgentEventEmitter) -> OUT)? = null,
+        override val routedAgentName: String? = null,
+    ) : BranchRoute<OUT>
 }
 
 class Branch<IN, OUT> internal constructor(
-    private val source: Agent<IN, *>,
-    private val routes: List<BranchRoute<OUT>>,
+    internal val source: Agent<IN, *>,
+    internal val routes: List<BranchRoute<OUT>>,
 ) {
     operator fun invoke(input: IN): OUT = runBlocking { invokeSuspend(input) }
 
@@ -48,5 +76,24 @@ class Branch<IN, OUT> internal constructor(
             }
         }
         error("No branch defined for ${result::class.simpleName} (and no onElse clause).")
+    }
+
+    /**
+     * #1748 — picks the matching route for [result] using the same order/precedence
+     * as [invokeSuspend]. Returns null if no route matches (caller can `error()`).
+     */
+    internal fun matchRoute(result: Any?): BranchRoute<OUT>? {
+        if (result == null) {
+            return routes.firstOrNull { it is BranchRoute.NullRoute }
+                ?: routes.firstOrNull { it is BranchRoute.ElseRoute }
+        }
+        for (route in routes) {
+            when (route) {
+                is BranchRoute.TypeRoute -> if (route.klass.isInstance(result)) return route
+                is BranchRoute.NullRoute -> { /* skipped */ }
+                is BranchRoute.ElseRoute -> return route
+            }
+        }
+        return null
     }
 }
