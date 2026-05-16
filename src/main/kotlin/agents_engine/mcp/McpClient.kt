@@ -88,6 +88,75 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
         }
     }
 
+    /**
+     * #1796 — fetch prompt listings from the server (`prompts/list`).
+     * Returns the raw `McpPromptInfo` records; for the Skill view use
+     * [promptSkills].
+     */
+    fun listPrompts(): List<McpPromptInfo> {
+        val result = post("prompts/list", emptyMap<String, Any?>())
+        val resultMap = result as? Map<*, *> ?: return emptyList()
+        val promptsList = resultMap["prompts"] as? List<*> ?: return emptyList()
+        return promptsList.mapNotNull { raw ->
+            val m = raw as? Map<*, *> ?: return@mapNotNull null
+            val name = m["name"] as? String ?: return@mapNotNull null
+            val description = m["description"] as? String
+            val args = (m["arguments"] as? List<*>)?.mapNotNull { a ->
+                val argMap = a as? Map<*, *> ?: return@mapNotNull null
+                val argName = argMap["name"] as? String ?: return@mapNotNull null
+                McpPromptArgument(
+                    name = argName,
+                    description = argMap["description"] as? String,
+                    required = argMap["required"] as? Boolean ?: false,
+                )
+            } ?: emptyList()
+            McpPromptInfo(
+                name = name,
+                title = m["title"] as? String,
+                description = description,
+                arguments = args,
+            )
+        }
+    }
+
+    /**
+     * #1796 — render a server-side prompt template (`prompts/get`).
+     * Joins all returned message text content blocks into a single
+     * string. Consumers needing the structured message form should
+     * use the raw RPC.
+     */
+    fun getPrompt(name: String, arguments: Map<String, Any?>): String {
+        val result = post("prompts/get", mapOf("name" to name, "arguments" to arguments))
+        val resultMap = result as? Map<*, *>
+            ?: error("prompts/get returned non-object: $result")
+        val messages = resultMap["messages"] as? List<*> ?: emptyList<Any?>()
+        return messages.mapNotNull { msg ->
+            val m = msg as? Map<*, *> ?: return@mapNotNull null
+            val content = m["content"] as? Map<*, *> ?: return@mapNotNull null
+            content["text"] as? String
+        }.joinToString("\n")
+    }
+
+    /**
+     * #1796 — MCP-as-skills (2/3): expose every server-side prompt as a
+     * [Skill] usable as an agent primary skill. Each skill's
+     * `implementedBy` invokes [getPrompt] with the call-time args and
+     * returns the rendered text.
+     */
+    fun promptSkills(prefix: String? = null): List<agents_engine.core.Skill<Map<String, Any?>, String>> {
+        return listPrompts().map { info ->
+            val displayName = if (prefix != null) "$prefix.${info.name}" else info.name
+            agents_engine.core.Skill<Map<String, Any?>, String>(
+                name = displayName,
+                description = info.description ?: "MCP prompt ${info.name}",
+                inType = Map::class,
+                outType = String::class,
+            ).also { skill ->
+                skill.implementedBy { args -> getPrompt(info.name, args) }
+            }
+        }
+    }
+
     fun call(toolName: String, args: Map<String, Any?>): Any? {
         val result = post("tools/call", mapOf("name" to toolName, "arguments" to args))
         val resultMap = result as? Map<*, *>

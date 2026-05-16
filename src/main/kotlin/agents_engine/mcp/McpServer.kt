@@ -29,11 +29,24 @@ import agents_engine.generation.hasGenerableAnnotation
  * - Skill `IN` must be `String` or a `@Generable` class. Other types rejected at [start].
  * - Skill output rendered as a single text content block (`toString()`).
  */
+/**
+ * #1796 — a server-side prompt registration. Mirrors the MCP wire shape
+ * for prompts: a name, description, argument spec, and a render closure
+ * that turns the call-time args map into the prompt text.
+ */
+internal data class RegisteredPrompt(
+    val name: String,
+    val description: String,
+    val arguments: List<McpPromptArgument>,
+    val render: (Map<String, Any?>) -> String,
+)
+
 class McpServer private constructor(
     private val agent: Agent<*, *>,
     private val exposedSkills: List<ExposedSkill>,
     private val portRequest: Int,
     private val maxRequestBytes: Long = DEFAULT_MAX_REQUEST_BYTES,
+    private val registeredPrompts: List<RegisteredPrompt> = emptyList(),
 ) {
     private var http: HttpServer? = null
     private val sessionId: String = java.util.UUID.randomUUID().toString()
@@ -100,6 +113,11 @@ class McpServer private constructor(
                     "nextCursor" to null,
                 ))
                 "tools/call" -> handleToolCall(id, request)
+                "prompts/list" -> jsonRpcResult(id, mapOf(
+                    "prompts" to registeredPrompts.map { it.toMcpDescriptor() },
+                    "nextCursor" to null,
+                ))
+                "prompts/get" -> handlePromptGet(id, request)
                 else -> jsonRpcError(id, -32601, "Method not found: $method")
             }
             respond(exchange, 200, response)
@@ -120,11 +138,56 @@ class McpServer private constructor(
                 "Unsupported protocolVersion: \"$requested\". Server speaks: \"$MCP_PROTOCOL_VERSION\".",
             )
         }
+        // #1796: declare prompts capability when prompts are registered.
+        val capabilities = buildMap<String, Any?> {
+            put("tools", mapOf("listChanged" to false))
+            if (registeredPrompts.isNotEmpty()) {
+                put("prompts", mapOf("listChanged" to false))
+            }
+        }
         return jsonRpcResult(id, mapOf(
             "protocolVersion" to MCP_PROTOCOL_VERSION,
-            "capabilities" to mapOf("tools" to mapOf("listChanged" to false)),
+            "capabilities" to capabilities,
             "serverInfo" to mapOf("name" to "agents-kt-mcp-server", "version" to "0.1.3"),
         ))
+    }
+
+    private fun handlePromptGet(id: Any?, request: Map<*, *>): String {
+        val params = request["params"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+        val name = params["name"] as? String
+            ?: return jsonRpcError(id, -32602, "Missing prompt name")
+        val prompt = registeredPrompts.firstOrNull { it.name == name }
+            ?: return jsonRpcError(id, -32601, "Unknown prompt: $name")
+        @Suppress("UNCHECKED_CAST")
+        val args = (params["arguments"] as? Map<String, Any?>) ?: emptyMap()
+        return try {
+            val rendered = prompt.render(args)
+            jsonRpcResult(id, mapOf(
+                "description" to prompt.description,
+                "messages" to listOf(
+                    mapOf(
+                        "role" to "user",
+                        "content" to mapOf("type" to "text", "text" to rendered),
+                    ),
+                ),
+            ))
+        } catch (e: Exception) {
+            jsonRpcError(id, -32603, "Prompt '$name' rendering failed: ${e.message ?: e.toString()}")
+        }
+    }
+
+    private fun RegisteredPrompt.toMcpDescriptor(): Map<String, Any?> = buildMap {
+        put("name", name)
+        put("description", description)
+        if (arguments.isNotEmpty()) {
+            put("arguments", arguments.map { arg ->
+                buildMap<String, Any?> {
+                    put("name", arg.name)
+                    arg.description?.let { put("description", it) }
+                    put("required", arg.required)
+                }
+            })
+        }
     }
 
     private fun handleToolCall(id: Any?, request: Map<*, *>): String {
@@ -171,8 +234,8 @@ class McpServer private constructor(
 
         fun from(agent: Agent<*, *>, block: McpExposeBuilder.() -> Unit): McpServer {
             val builder = McpExposeBuilder().apply(block)
-            require(builder.exposedNames.isNotEmpty()) {
-                "McpServer requires at least one expose(skillName) call."
+            require(builder.exposedNames.isNotEmpty() || builder.prompts.isNotEmpty()) {
+                "McpServer requires at least one expose(skillName) or prompt(...) registration."
             }
             val exposed = builder.exposedNames.map { name ->
                 val skill = agent.skills[name]
@@ -184,7 +247,13 @@ class McpServer private constructor(
                 }
                 ExposedSkill.of(skill)
             }
-            return McpServer(agent, exposed, builder.port, builder.maxRequestBytes)
+            return McpServer(
+                agent = agent,
+                exposedSkills = exposed,
+                portRequest = builder.port,
+                maxRequestBytes = builder.maxRequestBytes,
+                registeredPrompts = builder.prompts,
+            )
         }
     }
 }
@@ -194,8 +263,26 @@ class McpExposeBuilder internal constructor() {
     /** Hard cap on inbound request body size. See #851. */
     var maxRequestBytes: Long = McpServer.DEFAULT_MAX_REQUEST_BYTES
     internal val exposedNames = mutableListOf<String>()
+    internal val prompts = mutableListOf<RegisteredPrompt>()
 
     fun expose(skillName: String) { exposedNames += skillName }
+
+    /**
+     * #1796 — register a server-side prompt template. [render] is invoked
+     * per `prompts/get` call with the client-supplied argument map; its
+     * String output becomes the prompt text returned to the client.
+     */
+    fun prompt(
+        name: String,
+        description: String,
+        arguments: List<McpPromptArgument> = emptyList(),
+        render: (Map<String, Any?>) -> String,
+    ) {
+        require(prompts.none { it.name == name }) {
+            "Prompt \"$name\" already registered on this McpServer."
+        }
+        prompts += RegisteredPrompt(name, description, arguments, render)
+    }
 }
 
 internal class ExposedSkill private constructor(
