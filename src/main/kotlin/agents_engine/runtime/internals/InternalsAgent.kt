@@ -81,8 +81,16 @@ fun buildInternalsAgent(): Agent<String, String> = agent<String, String>("agents
             implementedBy { _ -> loadResource("internals-agent/core/SkillRoute.md") }
         }
 
+        // ── model/ ─────────────────────────────────────────────────────
+        skill<String, String>(
+            name = "model_agenticloop_kt",
+            description = "Source-file knowledge for agents_engine/model/AgenticLoop.kt — the multi-turn chat↔tool loop (executeAgentic) at the heart of every agentic-skill invocation. Builds per-skill tool allowlist (skill tools + agent capabilities + #856 memory + knowledge), runs turns until final answer or budget cap, honors maxTurns/maxToolCalls/maxDuration/perToolTimeout/maxTokens/maxConsecutiveSameTool, argument repair up to 8 retries, streaming-aware emitter (#1739), wrap-friendly effectivePrompt (#1707), cumulative TokenUsage (#1740). Call when the IDE LLM needs to reason about how agentic skills actually execute.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/model/AgenticLoop.md") }
+        }
+
         // Future skills (one per src file) land here as their child issues
-        // (#1844 → #1900) get worked. Keep entries grouped by package to
+        // (#1845 → #1900) get worked. Keep entries grouped by package to
         // mirror the source tree's structure for readability.
     }
 }

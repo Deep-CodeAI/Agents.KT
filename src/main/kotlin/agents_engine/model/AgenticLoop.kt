@@ -11,6 +11,44 @@ import kotlin.reflect.KClass
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * `agents_engine/model/AgenticLoop.kt` — the multi-turn LLM-tool dispatch
+ * loop ([executeAgentic]) at the heart of every agentic-skill invocation.
+ *
+ * **Responsibilities.** Builds the per-skill tool allowlist (skill tools +
+ * agent-capability tools + per-skill memory tools per #856 + knowledge-on-
+ * demand tools), runs `chat ↔ tool` turns until the LLM produces a final
+ * answer or a budget cap fires, coerces the final text into the typed
+ * `OUT` via the skill's transformer or [agents_engine.generation]
+ * structured-output decoder, and returns an [AgenticResult] carrying both
+ * the output and the cumulative [TokenUsage] (#1740).
+ *
+ * **Streaming-aware (#1739).** When [executeAgentic]'s `emitter` is
+ * non-null, the loop switches to `client.chatStream(...)` and surfaces
+ * `Token` / `ToolCallStarted` / `ToolCallArgumentsDelta` /
+ * `ToolCallFinished` `AgentEvent`s. When null, behaves byte-for-byte as
+ * the non-streaming `chat(...)` path — `Agent.invoke` / `invokeSuspend`
+ * pay no overhead.
+ *
+ * **Budget enforcement.** Honors `maxTurns`, `maxToolCalls`, `maxDuration`,
+ * `perToolTimeout`, `maxTokens`, `maxConsecutiveSameTool`. Pre-cap warnings
+ * fire via the agent's `budgetThresholdListener` before the hard throw.
+ *
+ * **Argument repair.** Up to [MAX_ARGUMENT_REPAIR_STEPS] retries (8) when
+ * the LLM produces a tool call whose JSON arguments fail to parse or
+ * deserialize — the loop reflects the parser error back to the LLM and
+ * asks for corrected arguments.
+ *
+ * **Wrap-friendly effective prompt.** [executeAgentic]'s `effectivePrompt`
+ * defaults to `agent.prompt` but the `wrap` operator passes the teacher's
+ * output instead — avoids the race where the wrap operator would have to
+ * mutate `agent.prompt` on shared pipeline invocations (#1707).
+ *
+ * See `src/main/resources/internals-agent/model/AgenticLoop.md` for the
+ * adjunct surfaced to IDE-side LLM tools via `agents-kt-internals`
+ * (#1837 / #1844).
+ */
+
 private const val MAX_ARGUMENT_REPAIR_STEPS = 8
 
 /**
