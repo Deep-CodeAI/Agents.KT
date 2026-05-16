@@ -46,8 +46,15 @@ fun buildInternalsAgent(): Agent<String, String> = agent<String, String>("agents
             implementedBy { _ -> loadResource("internals-agent/core/Agent.md") }
         }
 
+        skill<String, String>(
+            name = "core_skill_kt",
+            description = "Source-file knowledge for agents_engine/core/Skill.kt — the Skill<IN, OUT> unit-of-work class, deterministic vs agentic flavors (implementedBy vs tools(...)), the freeze contract (#668), knowledge entries surfaced via toLlmContext() and knowledgeTools(), memory opt-in (#856 useMemory()), output transformer for typed OUT, auto-description with kotlin-reflect graceful degradation (#1718). Call when the IDE LLM needs to reason about how skills are declared, what they do, or how they're frozen.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/core/Skill.md") }
+        }
+
         // Future skills (one per src file) land here as their child issues
-        // (#1839 → #1900) get worked. Keep entries grouped by package to
+        // (#1840 → #1900) get worked. Keep entries grouped by package to
         // mirror the source tree's structure for readability.
     }
 }

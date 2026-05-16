@@ -15,6 +15,46 @@ data class KnowledgeTool(
 
 private data class KnowledgeEntry(val description: String, val provider: () -> String)
 
+/**
+ * `agents_engine/core/Skill.kt` — the unit of work an `Agent<IN, OUT>` dispatches to.
+ *
+ * **Two flavors.** A skill is either:
+ * - **Deterministic** — declared with `implementedBy { input -> ... }`. A pure
+ *   Kotlin lambda; no LLM round-trip. The agentic loop is bypassed.
+ * - **Agentic** — declared with `tools(toolA, toolB, ...)` (typed) or the
+ *   soft-deprecated `tools("name", ...)` (string) overload. Marks the skill
+ *   LLM-driven and pins the tool allowlist. The empty `tools()` form is
+ *   also valid — LLM-driven with no tools (memory + built-ins only).
+ *
+ * **Freeze contract.** `frozen = true` after `Agent.validate()` runs. All
+ * mutator methods (`implementedBy`, `tools(...)`, `llmDescription`,
+ * `knowledge`, `transformOutput`, `useMemory`) guard with [checkNotFrozen]
+ * and throw `IllegalStateException` post-freeze (#668). Prevents drift via
+ * a Skill reference held outside the agent.
+ *
+ * **Knowledge entries.** `knowledge(key, description) { provider }` attaches
+ * named callable docs to the skill, surfaced into the LLM prompt via
+ * [toLlmContext] and exposed as separately-invocable tools via
+ * [knowledgeTools].
+ *
+ * **Memory opt-in (#856).** Calling `useMemory()` opts the skill into
+ * `memory_read` / `memory_write` / `memory_search` tools. When ANY skill
+ * on the agent opts in, only opted-in skills get memory tools — the legacy
+ * "every skill gets memory if memoryBank is set" auto-inject is bypassed.
+ *
+ * **Output transformer.** `transformOutput { rawString -> OUT }` runs over
+ * the LLM's final text to coerce it into the typed `OUT`. Used by agentic
+ * skills where `OUT != String`.
+ *
+ * **Auto-description.** When `_llmDescription` is unset, [toLlmDescription]
+ * synthesizes a markdown block from `name`, `description`, `inType`,
+ * `outType`, and attached knowledge. Reflection is wrapped in
+ * [agents_engine.generation.ReflectionFallback] so the framework degrades
+ * gracefully when `kotlin-reflect` is missing from the classpath (#1718).
+ *
+ * See `src/main/resources/internals-agent/core/Skill.md` for the adjunct
+ * surfaced to IDE-side LLM tools via `agents-kt-internals` (#1837 / #1839).
+ */
 class Skill<IN, OUT>(
     val name: String,
     val description: String,
