@@ -812,6 +812,31 @@ The progression matches how agents earn their independence: start as an in-proce
 
 This three-mode model is what §13's distributed framework, §14's Gradle plugin, and §15's runtime distribution are all in service of: making the autonomous mode as cheap operationally as the library mode is at compile time. See the [Agent Deployment Modes](https://github.com/Deep-CodeAI/Agents.KT/wiki/Agent-Deployment-Modes) wiki page for the full narrative and tradeoff table.
 
+### Self-Hosting Documentation: The InternalsAgent Pattern
+
+The framework eats its own dogfood. `buildInternalsAgent()` (in `agents_engine.runtime.internals`) is an `Agent<String, String>` whose skills correspond 1:1 to source files in the framework — `core_agent_kt` returns the curated docs for `Agent.kt`, `mcp_mcpclient_kt` for `McpClient.kt`, and so on. The agent is exposed via `McpServer.from(...)` over HTTP; IDE-side LLMs (Cursor, Claude Desktop, anything that speaks MCP) call those skills as tools and reason about the framework using authoritative source-file knowledge.
+
+Two architectural ideas worth naming:
+
+**1. Adjuncts as the single source of truth.** Each skill loads from a markdown file under `src/main/resources/internals-agent/<package>/<File>.md`. Each file begins with a YAML-style frontmatter block:
+
+```markdown
+---
+description: <one-line tool description shown to the IDE LLM>
+---
+
+# <heading>
+<body returned as the tool result>
+```
+
+The `description:` line is the LLM-facing tool description; the body is the tool's return value. No per-skill code edit is required to add a new file — drop in one `.md` and the next agent construction picks it up.
+
+**2. Classpath-scan registration.** `buildInternalsAgent()` enumerates every `.md` under `internals-agent/` at construction time, deriving the skill name mechanically from the path (`internals-agent/core/Agent.md` → `core_agent_kt`). Works in both file-system layouts (dev / IDE) and JAR layouts (production / shaded distributions) via `URL.protocol` dispatch. The framework-side agent declares no `model { }` — the IDE's LLM does all the reasoning; each skill is a pure `loadResource(path)` data fetch.
+
+The pattern generalizes: any agent whose skills are "describe a resource" can use a directory of frontmatter-headed `.md` files as its skill registry. The reduction from "63 hand-written `skill<String, String>(name, description) { implementedBy { ... } }` blocks" to "scan the classpath, loop" is the canonical version of why this pattern matters.
+
+See `docs/internals-agent.md` for IDE-wiring instructions and the InternalsAgent quickstart (`./gradlew runInternalsAgent`).
+
 ---
 
 ## 6. Skill Model: Independent Typed Functions
@@ -3950,6 +3975,7 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [ ] `grants { tools(...) }` — Layer 2 permissions use actual `Tool<*,*>` references
 - [ ] Permission model: 3 states — Granted (auto-runs), Confirmed (user approval), Absent (unavailable)
 - [x] KSP annotation processor for compile-time `@Generable` (replaces runtime reflection); constrained decoding (Ollama/vLLM) + guided JSON mode (Anthropic/OpenAI). **Validation pass shipped (#1700)** — compile-time errors for non-sealed interfaces, annotation classes, enums, abstract classes, classes without a parameterised primary constructor. **Schema-generation pass shipped (#1701)** — `*__GeneratedSchema.kt` per non-sealed `@Generable data class`. **Sealed-root schema gen shipped (#1702)** — `{"oneOf":[...]}` shape with `"type"` discriminators per variant. **`toLlmDescription` codegen shipped (#1703)** — second `LLM_DESCRIPTION` const in the same generated object, byte-identical to the runtime markdown. **`constructFromMap` codegen shipped (#1704)** — generated companion exposes `@JvmStatic fun constructFromMap(Map<*, Any?>): T?` that calls @PublishedApi coercion helpers in `GenerableSupport`. **Phase 3 shipped (#1705)** — `kotlin-reflect` dropped from the consumer-visible runtime classpath via `compileOnly` scope; reflection-using fallback paths wrapped via `ReflectionFallback.withReflection { ... }` for graceful `NoClassDefFoundError` degradation; defensive emission gate skips sealed parents with no visible variants (incremental-compile race). Constrained-decoding integration with provider-side schema endpoints remains the next chunk of work for this PRD line — that's about wiring the already-generated schemas into Ollama's structured-output mode / Anthropic & OpenAI's `tool` JSON-mode rather than further codegen.
+- [x] **InternalsAgent — self-hosting docs surface (#1837 + 63 children #1838–#1900).** `buildInternalsAgent(): Agent<String, String>` in `agents_engine.runtime.internals` registers one skill per source file in the framework (~63 today). Each skill is an `implementedBy { _ -> loadResource("internals-agent/<path>.md") }` pure data fetch — no `model { }` configured, because the IDE's LLM does the reasoning. Skills are registered by classpath-scan at construction time (file:// in dev, jar:// in production), deriving names from paths (`internals-agent/core/Agent.md` → `core_agent_kt`); each adjunct begins with a YAML-style `description:` frontmatter that becomes the LLM-facing tool description. `Main.kt` exposes the agent over MCP via `McpServer.from(...)` on port 8765 (default; configurable via `runInternalsAgent --args="<port>"`). Cursor / Claude Desktop / any MCP client points at `http://localhost:8765/mcp` and queries the framework's own internals as tools. Adding a new source file is one `.md` drop-in — no `InternalsAgent.kt` edit needed. See `docs/internals-agent.md` and §5.8.
 - [ ] Native CLI binary (GraalVM — no JRE required); `brew`, npm, pip, curl, apt
 - [ ] jlink minimal JRE bundle for runtime (~35 MB)
 - [ ] Structure-level budgets — `budget { }` on Pipeline / Forum / Parallel / Loop (§5.6)
