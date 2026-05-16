@@ -15,8 +15,29 @@ import kotlinx.coroutines.runBlocking
  */
 class Pipeline<IN, OUT>(
     val agents: List<Agent<*, *>>,
+    /**
+     * #1745 — session-aware execution path. When `pipeline.session(input)`
+     * is called, this runs instead of [execution] with a non-null emitter,
+     * surfacing inner-agent events with their own `agentId`s. Defaults to
+     * the non-streaming `execution` so any `then` overload that hasn't been
+     * converted yet still works (Pipeline session emits only the terminal
+     * Completed, no inner events — known gap, see #1745 follow-ups).
+     *
+     * Declared BEFORE [execution] so the trailing-lambda construction
+     * `Pipeline(agents) { ... }` still binds the lambda to [execution].
+     */
+    internal val sessionExec: (suspend (
+        input: IN,
+        emitter: agents_engine.model.AgentEventEmitter,
+    ) -> OUT)? = null,
     private val execution: suspend (IN) -> OUT,
 ) {
+    /** Effective sessionExec: explicit when supplied, otherwise falls back to execution (no events). */
+    internal val effectiveSessionExec: suspend (
+        input: IN,
+        emitter: agents_engine.model.AgentEventEmitter,
+    ) -> OUT = sessionExec ?: { input, _ -> execution(input) }
+
     operator fun invoke(input: IN): OUT = runBlocking { execution(input) }
 
     suspend fun invokeSuspend(input: IN): OUT = execution(input)
@@ -25,7 +46,18 @@ class Pipeline<IN, OUT>(
 infix fun <A, B, C> Agent<A, B>.then(other: Agent<B, C>): Pipeline<A, C> {
     this.markPlaced("pipeline")
     other.markPlaced("pipeline")
-    return Pipeline(listOf(this, other)) { input -> other.invokeSuspend(this.invokeSuspend(input)) }
+    val first = this
+    return Pipeline(
+        agents = listOf(first, other),
+        // #1745: streaming path runs both agents through runAgentInSession
+        // so events from both flow into the emitter with their own agentIds.
+        sessionExec = { input, emitter ->
+            val (mid, _) = agents_engine.runtime.events.runAgentInSession(first, input, emitter)
+            val (out, _) = agents_engine.runtime.events.runAgentInSession(other, mid, emitter)
+            out
+        },
+        execution = { input -> other.invokeSuspend(first.invokeSuspend(input)) },
+    )
 }
 
 infix fun <A, B, C> Pipeline<A, B>.then(other: Agent<B, C>): Pipeline<A, C> {

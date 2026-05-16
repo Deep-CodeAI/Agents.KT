@@ -10,7 +10,12 @@ import kotlinx.coroutines.withContext
 // subtypes (Token, ToolCall*, SkillStarted, SkillCompleted, Failed);
 // only `AgentEvent.Completed<OUT>` carries the typed payload and that's
 // emitted in `Agent.session(input)` after the loop returns.
-internal typealias AgentEventEmitter = suspend (AgentEvent<*>) -> Unit
+//
+// Non-suspend (#1745) so it can be called from non-suspend callbacks
+// like `Agent.invokeSuspendForSession`'s `onSkillStarted` lambda.
+// Implementations typically forward to `channel.trySend(event)`, which
+// is itself non-blocking — appropriate for BUFFERED-channel-backed Flows.
+internal typealias AgentEventEmitter = (AgentEvent<*>) -> Unit
 
 /**
  * #1739 — round-trip the model: either via the existing non-streaming

@@ -1,6 +1,8 @@
 package agents_engine.runtime.events
 
 import agents_engine.core.Agent
+import agents_engine.model.AgentEventEmitter
+import agents_engine.model.TokenUsage
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,33 +41,17 @@ fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
     // of any unrelated coroutine the consumer happens to be running in.
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
     scope.launch {
-        // Captured-on-the-stack: each session has its own holder, so
-        // concurrent sessions can't race on a shared field.
-        var capturedSkillName: String? = null
-        // #1740: per-session usage capture from the agentic loop's cumulative
-        // total. Stays null for implementedBy skills (no LLM round-trip).
-        var capturedUsage: agents_engine.model.TokenUsage? = null
         // #1739: emitter forwards AgentEvents from inside the agentic loop
         // (Token, ToolCallStarted, ToolCallArgumentsDelta, ToolCallFinished)
         // into the same channel as the bracket events. trySend is non-
         // suspending — appropriate for a BUFFERED channel; if the buffer
         // ever fills (it has high capacity), excess events would be
-        // dropped silently. Step 4 will tighten this for high-throughput
-        // streaming.
-        val streamingEmitter: agents_engine.model.AgentEventEmitter = { event ->
-            channel.trySend(event as AgentEvent<OUT>)
-        }
+        // dropped silently.
+        @Suppress("UNCHECKED_CAST")
+        val emitter: AgentEventEmitter = { event -> channel.trySend(event as AgentEvent<OUT>) }
         try {
-            val output = agent.invokeSuspendForSession(
-                input,
-                emitter = streamingEmitter,
-                onSkillCompleted = { usage -> capturedUsage = usage },
-            ) { skillName ->
-                capturedSkillName = skillName
-                channel.trySend(AgentEvent.SkillStarted(agent.name, skillName))
-            }
-            channel.trySend(AgentEvent.SkillCompleted(agent.name, capturedSkillName ?: "?", capturedUsage))
-            channel.trySend(AgentEvent.Completed(agent.name, output, capturedUsage))
+            val (output, usage) = runAgentInSession(agent, input, emitter)
+            channel.trySend(AgentEvent.Completed(agent.name, output, usage))
             channel.close()
             result.complete(output)
         } catch (t: Throwable) {
@@ -79,4 +65,37 @@ fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
         events = channel.consumeAsFlow(),
         resultDeferred = result,
     )
+}
+
+/**
+ * #1745 — shared "run an agent and surface its bracket + inner events
+ * onto [emitter]" helper. Used by both `Agent.session(input)` and
+ * `Pipeline.session(input)`. Emits `SkillStarted` and `SkillCompleted`
+ * around the agent's execution; does NOT emit `Completed` (the composing
+ * caller emits exactly one terminal `Completed` after all stages run).
+ *
+ * Returns the typed output paired with the cumulative `TokenUsage` for
+ * this agent's skill (null for `implementedBy`).
+ */
+internal suspend fun <IN, OUT> runAgentInSession(
+    agent: Agent<IN, OUT>,
+    input: IN,
+    emitter: AgentEventEmitter,
+): Pair<OUT, TokenUsage?> {
+    var capturedSkillName: String? = null
+    var capturedUsage: TokenUsage? = null
+    val output = agent.invokeSuspendForSession(
+        input,
+        emitter = emitter,
+        onSkillCompleted = { usage -> capturedUsage = usage },
+    ) { skillName ->
+        // SkillStarted fires BEFORE the skill body runs — emitting from
+        // this onSkillStarted callback (non-suspend; emitter is also
+        // non-suspend per #1745) means the event reaches the consumer
+        // before any Token / ToolCall* events from this skill's loop.
+        capturedSkillName = skillName
+        emitter(AgentEvent.SkillStarted(agent.name, skillName))
+    }
+    emitter(AgentEvent.SkillCompleted(agent.name, capturedSkillName ?: "?", capturedUsage))
+    return output to capturedUsage
 }
