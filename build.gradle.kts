@@ -476,6 +476,25 @@ publishing {
                 password = findProperty("sonatypePassword") as String? ?: ""
             }
         }
+
+        // #1927 — secondary distribution channel. NOT a Maven Central replacement.
+        // Use for: CI snapshots (Central doesn't accept them from outside OSSRH),
+        // PR-preview builds, Sonatype-outage redundancy, authenticated early-access
+        // for collaborators without hosting our own Nexus.
+        //
+        // Auth: GITHUB_ACTOR / GITHUB_TOKEN are auto-provisioned inside GitHub
+        // Actions runs for same-repo packages — no PAT needed. For local
+        // publishing, set gpr.user / gpr.key in ~/.gradle/gradle.properties
+        // (NOT this repo's gradle.properties). See PUBLISHING.md for the
+        // consumer-side wiring + when to use which channel.
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/Deep-CodeAI/Agents.KT")
+            credentials {
+                username = findProperty("gpr.user") as String? ?: System.getenv("GITHUB_ACTOR")
+                password = findProperty("gpr.key") as String? ?: System.getenv("GITHUB_TOKEN")
+            }
+        }
     }
 }
 

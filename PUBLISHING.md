@@ -153,3 +153,121 @@ ai/deep-code/agents-kt/0.5.0/
 ## Version Bump
 
 For the next release, update `version` in `build.gradle.kts` and repeat the process.
+
+---
+
+## GitHub Packages (Secondary Channel)
+
+In addition to Maven Central, the framework publishes to **GitHub Packages** at `https://maven.pkg.github.com/Deep-CodeAI/Agents.KT`. This is a secondary channel — Maven Central remains the primary public distribution.
+
+**When to use GitHub Packages:**
+
+| Use case | Why |
+|---|---|
+| CI snapshots | Maven Central doesn't accept snapshots from outside Sonatype OSSRH; GitHub Packages does. |
+| PR-preview builds | Reviewers can depend on a published `0.x.y-pr<NN>-<sha>` artifact instead of doing a local build. |
+| Sonatype outage redundancy | When Central is having a bad day (it happens), consumers can pin GitHub Packages temporarily. |
+| Authenticated early-access | Private collaborators / partners consume pre-release builds with a GitHub token — no Nexus to operate. |
+| Internal same-org use | Internal projects within the same org pull builds via `gradle.properties` auth — no waiting on the manual Sonatype publish click. |
+
+**When NOT to use it:**
+
+- Don't tell public consumers to depend on GitHub Packages for stable releases. Stable releases go to Central. GitHub Packages is for the use cases above.
+
+### Publishing locally
+
+Set credentials in `~/.gradle/gradle.properties` (NOT this repo's `gradle.properties`):
+
+```properties
+gpr.user=your-github-username
+gpr.key=ghp_<personal-access-token-with-write-packages-scope>
+```
+
+Then:
+
+```bash
+./gradlew publishAllPublicationsToGitHubPackagesRepository \
+          :agents-kt-ksp:publishAllPublicationsToGitHubPackagesRepository
+```
+
+Artifacts land at the [Agents.KT packages page](https://github.com/Deep-CodeAI/Agents.KT/packages).
+
+### Consumer-side wiring
+
+Downstream consumers need to authenticate to GitHub Packages even for *public* repo packages (that's GitHub Packages' authn model; there's nothing we can do about it).
+
+```kotlin
+// build.gradle.kts (consumer side)
+repositories {
+    mavenCentral()
+    maven {
+        url = uri("https://maven.pkg.github.com/Deep-CodeAI/Agents.KT")
+        credentials {
+            username = providers.gradleProperty("gpr.user").orNull
+                ?: System.getenv("GITHUB_ACTOR")
+            password = providers.gradleProperty("gpr.key").orNull
+                ?: System.getenv("GITHUB_TOKEN")
+        }
+    }
+}
+
+dependencies {
+    implementation("ai.deep-code:agents-kt:0.6.0-SNAPSHOT")
+}
+```
+
+**Token scopes:**
+
+- **Consumer (reading packages):** PAT with `read:packages`.
+- **Publisher (this repo's CI):** the auto-provisioned `GITHUB_TOKEN` inside a GitHub Actions run already has `write:packages` for same-repo packages. No PAT needed.
+
+**Token storage:**
+
+- Never commit a PAT to a repository's `gradle.properties`.
+- For local dev: `~/.gradle/gradle.properties` (chmod 600).
+- For CI in other projects: a secrets-manager / GitHub Actions secret injected as env var.
+
+### CI workflow (not yet shipped)
+
+The GitHub Actions workflow that auto-publishes snapshots on every push to `main` and releases on `v*.*.*` tag is **not yet committed** — it needs CI-environment verification on a controlled push before being enabled. The shape (for reference; commit when ready):
+
+```yaml
+# .github/workflows/publish-github-packages.yml (DRAFT — not yet active)
+name: Publish to GitHub Packages
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - uses: gradle/actions/setup-gradle@v3
+      - run: |
+          ./gradlew \
+            publishAllPublicationsToGitHubPackagesRepository \
+            :agents-kt-ksp:publishAllPublicationsToGitHubPackagesRepository
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Snapshot-version derivation (whether to bump to `<next>-SNAPSHOT` on push to main, or use `<next>-pr<NN>-<sha>` for PR builds) is a separate decision pending discussion before the workflow goes live.
+
+### Smoke test
+
+After publishing, validate by creating a fresh consumer project:
+
+```bash
+mkdir /tmp/agents-kt-gpr-smoke && cd /tmp/agents-kt-gpr-smoke
+gradle init --type kotlin-application
+# Edit build.gradle.kts to add the GitHub Packages repo + dependency above
+gradle run
+```
+
+If the consumer compiles + runs against the published snapshot, the channel works end-to-end.
