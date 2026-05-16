@@ -6,25 +6,45 @@
 2. **Namespace verified** — `ai.deep-code` verified via DNS TXT record on `deep-code.ai`
 3. **GPG key** — for signing artifacts
 
-## GPG Key Setup 
+## GPG Key Setup
 
-Generate a key (if you don't have one):
+Generate a key (if you don't have one). **Use a strong passphrase** — the
+private key gets stored on disk in `~/.gradle/gradle.properties` (or in
+CI secrets); the passphrase is the second factor that protects it if the
+file leaks.
 
 ```bash
-gpg --pinentry-mode loopback --batch --gen-key <<'EOF'
+gpg --full-generate-key
+# Prompts: RSA, 4096, 2y expiry, your name + email, then enter a passphrase.
+```
+
+If you need an unattended/batch flow (e.g. building inside a fresh CI
+runner), pass the passphrase via `Passphrase:` in the batch file — never
+use `%no-protection`:
+
+```bash
+PASSPHRASE="$(openssl rand -base64 32)"   # generate; store in your password manager
+gpg --pinentry-mode loopback --batch --gen-key <<EOF
 Key-Type: RSA
 Key-Length: 4096
 Subkey-Type: RSA
 Subkey-Length: 4096
-Name-Real: Konstantin Skobeltsyn
-Name-Email: konstantin@skobeltsyn.com
+Name-Real: Your Name
+Name-Email: you@example.com
 Expire-Date: 2y
-%no-protection
+Passphrase: $PASSPHRASE
 %commit
 EOF
 ```
 
-Upload public key to keyserver:
+> **Why not `%no-protection`?** An unprotected private key is a single-file
+> compromise. If `~/.gradle/gradle.properties`, a CI cache, or a stray
+> backup leaks the file, the attacker can sign artifacts as you with no
+> further work. A passphrase forces a second factor at use-time. The
+> small ergonomic cost (typing the passphrase once into your password
+> manager → Gradle property) is worth it.
+
+Upload the public key to a keyserver:
 
 ```bash
 gpg --keyserver keyserver.ubuntu.com --send-keys YOUR_KEY_ID
@@ -32,22 +52,30 @@ gpg --keyserver keyserver.ubuntu.com --send-keys YOUR_KEY_ID
 
 ## Gradle Credentials
 
-Create `~/.gradle/gradle.properties`:
+Create `~/.gradle/gradle.properties` (chmod 600 — the file holds your
+signing key and Sonatype token):
 
 ```properties
 sonatypeUsername=your-token-username
 sonatypePassword=your-token-password
 signing.key=-----BEGIN PGP PRIVATE KEY BLOCK-----\n...\n-----END PGP PRIVATE KEY BLOCK-----
-signing.password=
+signing.password=your-gpg-passphrase
 ```
 
-To get the signing key value:
+Export the key value (prompted for the passphrase):
 
 ```bash
-gpg --pinentry-mode loopback --passphrase "" --armor --export-secret-keys konstantin@skobeltsyn.com
+gpg --armor --export-secret-keys you@example.com
 ```
 
-Escape newlines as `\n` for the property file.
+Escape newlines as `\n` for the property file. The passphrase set during
+key generation goes into `signing.password=` verbatim.
+
+> **Empty-passphrase fallback.** If you genuinely need an unprotected
+> key for a constrained environment, use `--passphrase ""` on the export
+> and leave `signing.password=` empty. Keep that key isolated — different
+> identity, no upload to a keyserver bound to your real identity, scope
+> it to one project. Avoid for anything that ships to Maven Central.
 
 ## Build & Bundle
 
