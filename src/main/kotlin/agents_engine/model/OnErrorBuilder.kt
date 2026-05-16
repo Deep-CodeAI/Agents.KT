@@ -2,6 +2,18 @@ package agents_engine.model
 
 import agents_engine.core.Agent
 
+/**
+ * `agents_engine/model/OnErrorBuilder.kt` — the `onError { }` recovery
+ * DSL: three handler slots ([invalidArgs], [deserializationError],
+ * [executionError]) returning a [RepairResult] (`Fixed`, `Retry`,
+ * `Escalated`, `Unrecoverable`). The agentic loop consults these when a
+ * tool call's args fail to parse, the result fails to deserialize, or
+ * the executor throws. The `fix(agent)` helper inside [RepairScope]
+ * delegates the repair to a sibling string→string agent. See
+ * `src/main/resources/internals-agent/model/OnErrorBuilder.md`
+ * (#1837 / #1854).
+ */
+
 sealed interface RepairResult {
     data class Fixed(val value: String) : RepairResult
     data class Retry(val maxAttempts: Int) : RepairResult

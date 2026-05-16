@@ -5,6 +5,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 
+/**
+ * `agents_engine/model/StreamingAggregator.kt` — the [AgentEventEmitter]
+ * typealias and [chatOrStream], the single chat-or-stream entry point
+ * the agentic loop calls per turn. When `emitter` is null, behaves
+ * byte-for-byte as `client.chat(...)`; when non-null, collects
+ * `client.chatStream(...)` while emitting `AgentEvent.Token` /
+ * `ToolCallStarted` / `ToolCallArgumentsDelta` chunks, and rebuilds
+ * an `LlmResponse` for the loop (#1739). See
+ * `src/main/resources/internals-agent/model/StreamingAggregator.md`
+ * (#1837 / #1856).
+ */
+
 // #1739 — emitter shape used to plumb AgentEvents out of the agentic
 // loop. `AgentEvent<*>` because the loop only ever produces non-`OUT`
 // subtypes (Token, ToolCall*, SkillStarted, SkillCompleted, Failed);

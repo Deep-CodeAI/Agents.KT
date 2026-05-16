@@ -6,6 +6,17 @@ import kotlin.reflect.KClass
 import agents_engine.generation.hasGenerableAnnotation
 
 /**
+ * `agents_engine/model/ToolDef.kt` — the `ToolDef` shape (wire-level
+ * `Map<String, Any?> -> Any?` executor with optional session-aware
+ * variant #1752), plus the `Tool<Args, Result>` typed handle (#1015 /
+ * #1016) returned by `tool(...)` builders so `Skill.tools(...)` accepts
+ * compile-time-checked refs. Includes typed builder overloads, the
+ * `argsType` introspection slot, and the `untrustedOutput` flag for
+ * sandboxed tool wiring. See
+ * `src/main/resources/internals-agent/model/ToolDef.md` (#1837 / #1857).
+ */
+
+/**
  * A tool the agentic loop can invoke on the model's behalf.
  *
  * The wire signature is intentionally `Map<String, Any?> -> Any?` because that's

@@ -131,8 +131,64 @@ fun buildInternalsAgent(): Agent<String, String> = agent<String, String>("agents
             implementedBy { _ -> loadResource("internals-agent/model/ModelClient.md") }
         }
 
+        skill<String, String>(
+            name = "model_modelconfig_kt",
+            description = "Source-file knowledge for agents_engine/model/ModelConfig.kt — the model { } DSL slot. ModelProvider enum (OLLAMA/ANTHROPIC/OPENAI), immutable ModelConfig with masked-apiKey toString (security), ModelBuilder with ollama/claude/openai factory methods, lazy client construction at AgenticLoop time, build() requires apiKey for Anthropic/OpenAI. Call when the IDE LLM needs to reason about configuring an agent's LLM provider.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/model/ModelConfig.md") }
+        }
+
+        skill<String, String>(
+            name = "model_ollamaclient_kt",
+            description = "Source-file knowledge for agents_engine/model/OllamaClient.kt — local Ollama HTTP adapter (default ModelClient). POST /api/chat at localhost:11434, OpenAI-style tool schema (Ollama emulates), parseToolArguments handling Map / JSON-string / null shapes, NDJSON streaming, LlmProviderException on errors (#702), open sendChat seam for tests. Call when the IDE LLM needs to reason about local LLM integration.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/model/OllamaClient.md") }
+        }
+
+        skill<String, String>(
+            name = "model_ollamapreflight_kt",
+            description = "Source-file knowledge for agents_engine/model/OllamaPreflight.kt — fail-fast reachability check (#1132). GET /api/tags with 2s connect / 3s request timeouts. Wire into LiveShowBuilder.precheck so REPL aborts at startup with a clear error naming host:port instead of failing mid-turn behind the spinner. Throws LlmProviderException on IOException or non-2xx. Call when the IDE LLM needs to reason about REPL startup health checks.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/model/OllamaPreflight.md") }
+        }
+
+        skill<String, String>(
+            name = "model_onerrorbuilder_kt",
+            description = "Source-file knowledge for agents_engine/model/OnErrorBuilder.kt — the onError { } tool-failure recovery DSL. Three handler slots (invalidArgs, deserializationError, executionError) returning RepairResult (Fixed / Retry / Escalated / Unrecoverable). RepairScope.fix(agent, retries) delegates repair to a sibling string→string agent. executeAgentFix retry loop handles EscalationException by switching to Escalated. Call when the IDE LLM needs to reason about graceful recovery from broken tool calls.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/model/OnErrorBuilder.md") }
+        }
+
+        skill<String, String>(
+            name = "model_openaiclient_kt",
+            description = "Source-file knowledge for agents_engine/model/OpenAiClient.kt — OpenAI Chat Completions adapter (#1656). POST /v1/chat/completions wire mapping: system kept in messages array (vs Anthropic's hoisted field), stringified function.arguments JSON (not object), synthetic call_<n> IDs, parameters spelling (vs Anthropic's input_schema), SSE streaming with [DONE] terminator, openAiBaseUrl override for Azure/regional/proxy, open sendChat seam. Call when the IDE LLM needs to reason about wiring the framework to OpenAI.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/model/OpenAiClient.md") }
+        }
+
+        skill<String, String>(
+            name = "model_streamingaggregator_kt",
+            description = "Source-file knowledge for agents_engine/model/StreamingAggregator.kt — chatOrStream entry point (#1739) the agentic loop calls per turn. emitter==null → client.chat() unchanged; emitter!=null → collect client.chatStream() while emitting AgentEvent.Token / ToolCallStarted / ToolCallArgumentsDelta, rebuild LlmResponse with stable callIds. AgentEventEmitter typealias (non-suspend per #1745). ToolCallFinished fires later in the loop with executor result. Interleaving-safe via callId routing. Call when the IDE LLM needs to reason about streaming plumbing.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/model/StreamingAggregator.md") }
+        }
+
+        skill<String, String>(
+            name = "model_tooldef_kt",
+            description = "Source-file knowledge for agents_engine/model/ToolDef.kt — ToolDef (wire shape: Map<String,Any?>→Any? executor + optional session-aware sessionExecutor #1752 + untrustedOutput sandbox flag + argsType KClass for typed coercion), Tool<Args,Result> compile-time-checked handle (#1015/#1016) returned by tool(...) builders. argsType drives constructFromMap deserialization with @Generable. errorHandler slot wired by onError { }. Call when the IDE LLM needs to reason about declaring tools or about typed-vs-stringly-typed tool refs.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/model/ToolDef.md") }
+        }
+
+        skill<String, String>(
+            name = "model_toolerror_kt",
+            description = "Source-file knowledge for agents_engine/model/ToolError.kt — sealed ToolError (InvalidArgs / DeserializationError / ExecutionError / EscalationError), Severity enum (LOW/MEDIUM/HIGH/CRITICAL), EscalationException + ToolExecutionException. The wire format consumed by the onError { } DSL. Call when the IDE LLM needs to reason about classifying or handling tool failures.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/model/ToolError.md") }
+        }
+
         // Future skills (one per src file) land here as their child issues
-        // (#1851 → #1900) get worked. Keep entries grouped by package to
+        // (#1859 → #1900) get worked. Keep entries grouped by package to
         // mirror the source tree's structure for readability.
     }
 }

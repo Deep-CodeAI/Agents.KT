@@ -2,6 +2,15 @@ package agents_engine.model
 
 import kotlin.reflect.KType
 
+/**
+ * `agents_engine/model/ToolError.kt` — the typed error union for tool
+ * failures ([ToolError.InvalidArgs], [DeserializationError],
+ * [ExecutionError], [EscalationError]), the [Severity] enum, and the
+ * companion exceptions ([EscalationException], [ToolExecutionException]).
+ * Consumed by the `onError { }` repair DSL in [OnErrorBuilder]. See
+ * `src/main/resources/internals-agent/model/ToolError.md` (#1837 / #1858).
+ */
+
 enum class Severity { LOW, MEDIUM, HIGH, CRITICAL }
 
 sealed interface ToolError {

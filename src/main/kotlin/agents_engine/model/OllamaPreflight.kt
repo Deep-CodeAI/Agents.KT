@@ -10,6 +10,15 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 
 /**
+ * `agents_engine/model/OllamaPreflight.kt` — fail-fast reachability check
+ * for an Ollama HTTP endpoint. Wire into `LiveShowBuilder.precheck` so
+ * the REPL aborts at startup with a clear error instead of failing
+ * mid-turn behind the spinner (#1132). See
+ * `src/main/resources/internals-agent/model/OllamaPreflight.md` for the
+ * adjunct (#1837 / #1853).
+ */
+
+/**
  * Fail-fast reachability check for an Ollama HTTP endpoint (#1132).
  *
  * Wire into [agents_engine.runtime.LiveShowBuilder.precheck] so the REPL aborts

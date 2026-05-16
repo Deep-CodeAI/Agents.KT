@@ -18,6 +18,13 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 
 /**
+ * `agents_engine/model/OpenAiClient.kt` — OpenAI Chat Completions adapter
+ * (#1656), one of the three shipped [ModelClient] implementations. See
+ * `src/main/resources/internals-agent/model/OpenAiClient.md` for the
+ * adjunct surfaced to IDE-side LLM tools (#1837 / #1855).
+ */
+
+/**
  * OpenAI Chat Completions adapter (#1656). Mirrors [OllamaClient] and
  * [ClaudeClient] in shape: one shot of `chat()` per turn, `LlmMessage` /
  * `LlmResponse` in/out, an overridable [sendChat] seam for tests.

@@ -1,5 +1,15 @@
 package agents_engine.model
 
+/**
+ * `agents_engine/model/ModelConfig.kt` — the `model { }` DSL slot:
+ * provider enum, immutable config record, and the builder that maps
+ * `ollama(...)` / `claude(...)` / `openai(...)` factory calls into a
+ * [ModelConfig]. `toString` masks `apiKey` to avoid leaking it via
+ * logger/stack-trace surfaces. See
+ * `src/main/resources/internals-agent/model/ModelConfig.md` for the
+ * adjunct surfaced to IDE-side LLM tools (#1837 / #1851).
+ */
+
 enum class ModelProvider { OLLAMA, ANTHROPIC, OPENAI }
 
 data class ModelConfig(

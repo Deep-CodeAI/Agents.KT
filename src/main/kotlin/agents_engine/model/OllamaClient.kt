@@ -17,6 +17,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 
+/**
+ * `agents_engine/model/OllamaClient.kt` — the local Ollama HTTP adapter,
+ * the framework's default `ModelClient`. Targets `POST /api/chat` on
+ * `localhost:11434` by default; tools surface as native Ollama tool calls.
+ * Streaming via NDJSON. See
+ * `src/main/resources/internals-agent/model/OllamaClient.md` for the
+ * adjunct surfaced to IDE-side LLM tools (#1837 / #1852).
+ */
+
 internal data class ParsedToolArguments(
     val arguments: Map<String, Any?>,
     val rawArguments: String? = null,
