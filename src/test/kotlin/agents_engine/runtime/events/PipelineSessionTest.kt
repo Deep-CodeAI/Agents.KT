@@ -51,6 +51,39 @@ class PipelineSessionTest {
     }
 
     @Test
+    fun `three-stage pipeline emits events from all three agents — proves Pipeline then Agent overload flows events through`() = runTest {
+        // a then b then c is left-associative: (a then b) then c, which goes
+        // through the Pipeline<*, *>.then(Agent<*, *>) overload. Before #1746
+        // that overload's sessionExec fell back to the default (no events from
+        // a or b) — only c's events appeared. After: all three.
+        val a = agent<String, Int>("a") {
+            skills { skill<String, Int>("len", "Length") { implementedBy { it.length } } }
+        }
+        val b = agent<Int, Int>("b") {
+            skills { skill<Int, Int>("doubled", "Doubles") { implementedBy { it * 2 } } }
+        }
+        val c = agent<Int, String>("c") {
+            skills { skill<Int, String>("describe", "Describe") { implementedBy { "n=$it" } } }
+        }
+        val pipeline = a then b then c
+
+        val session = pipeline.session("hello")
+        val events = session.events.toList()
+        val output = session.await()
+
+        assertEquals("n=10", output, "pipeline output: 5 → 10 → \"n=10\"")
+        assertEquals(7, events.size, "expected 3× SkillStarted/SkillCompleted + 1 Completed; got: $events")
+
+        // Ordered: each agent's pair appears in chain order before the next agent runs.
+        val agentIds = events.filterIsInstance<AgentEvent.SkillStarted>().map { it.agentId }
+        assertEquals(listOf("a", "b", "c"), agentIds, "SkillStarted events must fire in chain order; got: $agentIds")
+
+        val completed = events.last()
+        assertIs<AgentEvent.Completed<String>>(completed)
+        assertEquals("c", completed.agentId, "terminal Completed uses the LAST agent's name")
+    }
+
+    @Test
     fun `pipeline session terminates with Failed when the second agent throws — only first agent's events precede`() = runTest {
         val boom = IllegalStateException("middle blew up")
         val first = agent<String, Int>("first") {

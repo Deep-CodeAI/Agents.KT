@@ -62,7 +62,20 @@ infix fun <A, B, C> Agent<A, B>.then(other: Agent<B, C>): Pipeline<A, C> {
 
 infix fun <A, B, C> Pipeline<A, B>.then(other: Agent<B, C>): Pipeline<A, C> {
     other.markPlaced("pipeline")
-    return Pipeline(agents + other) { input -> other.invokeSuspend(this.invokeSuspend(input)) }
+    val inner = this
+    return Pipeline(
+        agents = inner.agents + other,
+        // #1746: chain the inner Pipeline's streaming output into the new
+        // Agent's session run. Inner Pipeline's effectiveSessionExec
+        // forwards events from each of its stages; runAgentInSession then
+        // emits the trailing Agent's bracket events.
+        sessionExec = { input, emitter ->
+            val mid = inner.effectiveSessionExec(input, emitter)
+            val (out, _) = agents_engine.runtime.events.runAgentInSession(other, mid, emitter)
+            out
+        },
+        execution = { input -> other.invokeSuspend(inner.invokeSuspend(input)) },
+    )
 }
 
 infix fun <A, B, C> Agent<A, B>.then(other: Forum<B, C>): Pipeline<A, C> {
@@ -75,7 +88,16 @@ infix fun <A, B, C> Pipeline<A, B>.then(other: Forum<B, C>): Pipeline<A, C> {
 }
 
 infix fun <A, B, C> Pipeline<A, B>.then(other: Pipeline<B, C>): Pipeline<A, C> {
-    return Pipeline(agents + other.agents) { input -> other.invokeSuspend(this.invokeSuspend(input)) }
+    val left = this
+    return Pipeline(
+        agents = left.agents + other.agents,
+        // #1746: chain both pipelines' streaming exec paths.
+        sessionExec = { input, emitter ->
+            val mid = left.effectiveSessionExec(input, emitter)
+            other.effectiveSessionExec(mid, emitter)
+        },
+        execution = { input -> other.invokeSuspend(left.invokeSuspend(input)) },
+    )
 }
 
 infix fun <A, B, C> Agent<A, B>.then(other: Parallel<B, C>): Pipeline<A, List<C>> {
