@@ -6,6 +6,20 @@ import kotlin.reflect.KParameter
 import kotlin.reflect.KType
 import kotlin.reflect.full.*
 
+/**
+ * `agents_engine/generation/GenerableSupport.kt` — the runtime support
+ * for `@Generable` types. Three public surfaces: `jsonSchema`,
+ * `toLlmDescription`, and `constructFromMap` (the reverse — JSON-ish
+ * Map back into a typed instance). Each tries the KSP-generated path
+ * first (#1701 / #1702 / #1703 / #1704 via the
+ * `:agents-kt-ksp` processor, looked up as `<ClassName>__GeneratedSchema`
+ * objects) and falls back to reflection via [ReflectionFallback]. With
+ * KSP applied, consumers can run without `kotlin-reflect` on the
+ * classpath entirely (#1718). See
+ * `src/main/resources/internals-agent/generation/GenerableSupport.md`
+ * (#1837 / #1860).
+ */
+
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 private fun String.escapeJson(): String =

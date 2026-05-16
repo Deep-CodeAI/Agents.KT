@@ -3,6 +3,17 @@ package agents_engine.generation
 import kotlin.reflect.KClass
 
 /**
+ * `agents_engine/generation/PartiallyGenerated.kt` — immutable
+ * accumulator for fields arriving over time (e.g. an LLM streaming a
+ * JSON object). Use [PartiallyGenerated.withField] to fold deltas in,
+ * [PartiallyGenerated.toComplete] to attempt full construction once
+ * enough fields have arrived. Typed property access via KSP codegen
+ * is a planned Phase 2 affordance; for now use `partial["fieldName"]`.
+ * See `src/main/resources/internals-agent/generation/PartiallyGenerated.md`
+ * (#1837 / #1862).
+ */
+
+/**
  * A partially constructed instance of [T] where fields arrive incrementally —
  * for example, as an LLM streams tokens.
  *

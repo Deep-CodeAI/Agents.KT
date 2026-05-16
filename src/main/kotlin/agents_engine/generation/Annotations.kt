@@ -1,6 +1,16 @@
 package agents_engine.generation
 
 /**
+ * `agents_engine/generation/Annotations.kt` — the three annotations that
+ * make a type LLM-generable: [Generable] (the marker), [LlmDescription]
+ * (overrides auto-generated description), [Guide] (per-field/variant
+ * guidance text). Consumed at runtime by [agents_engine.generation]
+ * helpers and at compile time by `:agents-kt-ksp`. See
+ * `src/main/resources/internals-agent/generation/Annotations.md`
+ * (#1837 / #1859).
+ */
+
+/**
  * Marks a data class or sealed interface as an LLM generation target.
  *
  * The framework uses this annotation at runtime to generate:

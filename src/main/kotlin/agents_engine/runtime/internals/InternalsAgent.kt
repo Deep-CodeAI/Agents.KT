@@ -187,8 +187,44 @@ fun buildInternalsAgent(): Agent<String, String> = agent<String, String>("agents
             implementedBy { _ -> loadResource("internals-agent/model/ToolError.md") }
         }
 
+        // ── generation/ ────────────────────────────────────────────────
+        skill<String, String>(
+            name = "generation_annotations_kt",
+            description = "Source-file knowledge for agents_engine/generation/Annotations.kt — the three annotations behind @Generable types: @Generable marker (CLASS, RUNTIME), @LlmDescription override (verbatim multi-line description), @Guide per-field/per-variant guidance. Read by both runtime reflection (GenerableSupport) and KSP processor. Call when the IDE LLM needs to reason about declaring an LLM-generable type.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/generation/Annotations.md") }
+        }
+
+        skill<String, String>(
+            name = "generation_generablesupport_kt",
+            description = "Source-file knowledge for agents_engine/generation/GenerableSupport.kt — runtime support for @Generable. Three surfaces (jsonSchema, toLlmDescription, constructFromMap/fromLlmOutput/toLlmInput). Two-path dispatch: KSP-generated __GeneratedSchema lookup first (#1701-#1704 zero-reflection), reflection fallback otherwise. ConcurrentHashMap caching with MISS sentinel. Sealed-interface discriminator handling. Call when the IDE LLM needs to reason about typed structured-output coercion.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/generation/GenerableSupport.md") }
+        }
+
+        skill<String, String>(
+            name = "generation_lenientjsonparser_kt",
+            description = "Source-file knowledge for agents_engine/generation/LenientJsonParser.kt — tolerant JSON parser for LLM output. Strips markdown fences, removes trailing commas, extracts first balanced {...}/[...] from explanatory text. MAX_NESTING_DEPTH=64 guards StackOverflowError (#854 — Error not Exception so try/catch can't catch it). Returns null on any failure (never throws). Call when the IDE LLM needs to reason about parsing LLM-emitted JSON.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/generation/LenientJsonParser.md") }
+        }
+
+        skill<String, String>(
+            name = "generation_partiallygenerated_kt",
+            description = "Source-file knowledge for agents_engine/generation/PartiallyGenerated.kt — immutable accumulator for fields arriving incrementally from an LLM stream. withField folds in deltas (returns new instance), toComplete delegates to constructFromMap and returns T? or null when required fields missing. Typed property access is a planned KSP Phase 2 affordance. Call when the IDE LLM needs to reason about streaming structured-output consumption.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/generation/PartiallyGenerated.md") }
+        }
+
+        skill<String, String>(
+            name = "generation_reflectionfallback_kt",
+            description = "Source-file knowledge for agents_engine/generation/ReflectionFallback.kt — withReflection inline wrapper for graceful degradation (#1705 #1718). Catches LinkageError (incl. NoClassDefFoundError) and KotlinReflectionNotSupportedError → returns null. Other exceptions propagate (real bugs aren't swallowed). Enables compileOnly kotlin-reflect when consumers apply :agents-kt-ksp. Call when the IDE LLM needs to reason about reflection-vs-KSP dispatch or no-reflect environments.",
+        ) {
+            implementedBy { _ -> loadResource("internals-agent/generation/ReflectionFallback.md") }
+        }
+
         // Future skills (one per src file) land here as their child issues
-        // (#1859 → #1900) get worked. Keep entries grouped by package to
+        // (#1864 → #1900) get worked. Keep entries grouped by package to
         // mirror the source tree's structure for readability.
     }
 }

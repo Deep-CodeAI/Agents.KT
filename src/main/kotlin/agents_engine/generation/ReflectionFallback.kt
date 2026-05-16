@@ -1,6 +1,17 @@
 package agents_engine.generation
 
 /**
+ * `agents_engine/generation/ReflectionFallback.kt` — wraps reflection
+ * bodies so consumers without `kotlin-reflect` on the classpath
+ * gracefully degrade (return `null`) instead of crashing with
+ * `NoClassDefFoundError` (#1705, #1718). Catches `LinkageError` and
+ * `KotlinReflectionNotSupportedError`; lets other exceptions
+ * propagate so real bugs aren't swallowed. See
+ * `src/main/resources/internals-agent/generation/ReflectionFallback.md`
+ * (#1837 / #1863).
+ */
+
+/**
  * Wraps reflection-using fallback bodies so consumers without `kotlin-reflect`
  * on their runtime classpath get graceful degradation (returns null) instead
  * of crashing with `NoClassDefFoundError` (#1705).

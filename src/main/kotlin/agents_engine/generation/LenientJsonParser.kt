@@ -1,6 +1,17 @@
 package agents_engine.generation
 
 /**
+ * `agents_engine/generation/LenientJsonParser.kt` — JSON parser that
+ * tolerates LLM output quirks (markdown fences, trailing commas,
+ * pre/post explanation text). Hard-capped at 64 levels of nesting
+ * to prevent `StackOverflowError` from adversarial / malformed input
+ * (#854). Returns `null` on any parse failure — callers must handle
+ * the absent case. See
+ * `src/main/resources/internals-agent/generation/LenientJsonParser.md`
+ * (#1837 / #1861).
+ */
+
+/**
  * A lenient JSON parser that tolerates common LLM output formatting issues:
  * - Markdown code fences (```json ... ```)
  * - Trailing commas before } or ]
