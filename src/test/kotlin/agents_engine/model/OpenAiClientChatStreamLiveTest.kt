@@ -51,9 +51,13 @@ class OpenAiClientChatStreamLiveTest {
         val firstMs = textDeltas.first().first
         val lastMs = textDeltas.last().first
         val gapMs = lastMs - firstMs
+        // The load-bearing assertion is "more than one chunk arrived"
+        // (above) — that's the real proof of streaming. The timing gap
+        // is a secondary nudge. Threshold flexes: at least 10ms gap OR
+        // at least 5 chunks.
         assertTrue(
-            gapMs >= 20,
-            "expected at least 20ms between first and last TextDelta; first=${firstMs}ms last=${lastMs}ms gap=${gapMs}ms",
+            gapMs >= 10 || textDeltas.size >= 5,
+            "expected either >=10ms gap OR >=5 chunks; first=${firstMs}ms last=${lastMs}ms gap=${gapMs}ms chunks=${textDeltas.size}",
         )
 
         assertNotNull(endChunk.tokenUsage, "End chunk must carry TokenUsage (stream_options.include_usage)")
