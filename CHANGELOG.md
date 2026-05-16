@@ -2,6 +2,104 @@
 
 All notable changes to Agents.KT are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0, minor bumps may add new public API; existing API surface is preserved.
 
+## [0.5.0] — 2026-05-16
+
+The platform release. Streaming runtime end-to-end, MCP-as-skills unification, every composition operator surfacing typed event flows. v0.4.x was about correctness (typed boundaries, KSP, reflect-optional); v0.5.0 is about visibility — what's happening inside an agent's loop and across the wire is now first-class.
+
+### Added
+
+#### Streaming runtime
+- **`agent.session(input): AgentSession<OUT>`** — primary entry point for observing agent execution. Returns a cold `Flow<AgentEvent<OUT>>` of typed events plus a `suspend fun await(): OUT` terminal. Each call starts a fresh invocation; sharing across collectors is via `events.shareIn(...)`. Defined in `agents_engine.runtime.events`. Backward compat preserved — existing `agent.invoke(input)` and `agent.invokeSuspend(input)` go through the same internal path with a no-op emitter, byte-for-byte unchanged behavior.
+- **`AgentEvent<OUT>` sealed hierarchy** — eight subtypes covering the full lifecycle: `Token(skillName, text)`, `ToolCallStarted(callId, toolName)`, `ToolCallArgumentsDelta(callId, deltaJson)`, `ToolCallFinished(callId, toolName, arguments, result, isError)`, `SkillStarted(skillName)`, `SkillCompleted(skillName, tokensUsed)`, `Completed<OUT>(output, tokensUsed)`, `Failed(cause)`. Every event carries `agentId` so consumers can demultiplex composed streams. Only `Completed<OUT>` is parameterized on the typed output; the rest are `AgentEvent<Nothing>` and flow through any `AgentSession<OUT>`.
+- **`ModelClient.chatStream(messages): Flow<LlmChunk>`** as a default-implementing sibling of `chat`. Non-streaming providers keep working unchanged; the default wraps `chat()` and emits a chunk-equivalent sequence.
+- **`LlmChunk` sealed type** — provider-level chunks: `TextDelta`, `ToolCallStarted`, `ToolCallArgumentsDelta`, `ToolCallFinished`, `End(tokenUsage)`. Sits between adapters and `chatOrStream`, keeping provider quirks from leaking into `AgentEvent`.
+- **Cumulative `TokenUsage` on `SkillCompleted` and `Completed`** — summed across every LLM turn of one skill invocation (prompt and completion tokens summed independently). Null for `implementedBy` skills (no LLM round-trip).
+
+#### Native streaming adapters
+Three adapters override the default `chatStream` with real wire-level streaming:
+- **Ollama (NDJSON)** — `POST /api/chat` with `stream: true`. Line-by-line parser; tool calls land in the final chunk (Ollama limitation), emitted as the canonical `ToolCallStarted` / `ArgumentsDelta` / `ToolCallFinished` triple. Live integration: ~19 chunks per response, measurable timing gap between first and last.
+- **Anthropic SSE** — `POST /v1/messages` with `stream: true`. Indexed content-block aware: tracks `Map<Int, BlockState>` so interleaved `content_block_delta` events for text + tool_use can be routed to the right block. `tool_use` blocks carry the canonical Anthropic `toolu_*` id; we use it verbatim as `LlmChunk.ToolCallStarted.callId` (the case `ToolCall.callId` was designed for). Live integration verified against `claude-haiku-4-5-20251001`.
+- **OpenAI SSE** — `POST /v1/chat/completions` with `stream: true` + `stream_options.include_usage: true`. Per-index tool-call state (id from first delta, args accumulated across deltas). Terminator: `data: [DONE]`. Live integration verified against `gpt-4o-mini`.
+
+Cancellation contract verified by regression-guard tests on all three adapters: Kotlin Flow's channel-backed `emit` propagates collector cancellation back through `useLines` + `.use { stream }`, closing the underlying InputStream before the next blocking read.
+
+#### Composition session support
+Every composition operator now exposes a `.session(input)` entry point. Inner events from each contained agent flow with their own `agentId`s; the operator emits a single terminal `Completed`/`Failed`:
+
+- **`Pipeline.session(input)`** (#1745, #1746) — sequential composition. Each stage runs to completion (streaming its tokens), then the next starts with the typed `MID` value. Three-stage chains (`a then b then c`) emit events from all three.
+- **`wrap` (`teacher wrap student`)** (#1747) — teacher streams; its output becomes the student's prompt override; student streams. Consolidated `invokeSuspendForSession` to take an optional `promptOverride`, collapsing two near-identical entry points.
+- **`Branch.session(input)`** (#1748) — source agent streams, matched route streams. `BranchRoute` gains `sessionExecutor` and `routedAgentName` so terminal `Completed.agentId` points at the agent that actually produced the output.
+- **`Loop.session(input)`** (#1749) — bracket events emitted per iteration; same `agentId` repeated each iteration.
+- **`Parallel.session(input)`** (#1750) — branches run concurrently on `Dispatchers.Default`; their events interleave by arrival order in the shared Flow, demultiplexable by `agentId`. Terminal `Completed.agentId = "parallel"`.
+- **`Forum.session(input)`** (#1751) — participants stream concurrently, captain streams sequentially after. Preserves the `ForumReturnException` short-circuit.
+- **`Swarm.absorb(sibling)`** (#1752) — absorbed siblings stream their inner events into the captain's session, between the captain's own `ToolCallStarted` and `ToolCallFinished` brackets. `ToolDef` gains an optional `sessionExecutor` channel that any future sub-agent-wrapping tool can use.
+
+#### MCP-as-skills unification
+The conceptual point of v0.5.0: an MCP capability and an agent `Skill` share the same shape (named, described, typed unit of work). All three MCP capability surfaces now expose as `Skill<Map<String, Any?>, String>`:
+
+- **`mcp.toolSkills()`** (#1795) — every MCP-exposed tool wrapped as a Skill whose `implementedBy` invokes `mcp.call(toolName, args)`. Sits alongside the existing `mcp.toolDefs()` (tools as auxiliary functions a skill calls); consumers pick the shape that matches their agent design.
+- **`mcp.promptSkills()`** (#1796) — every server-side prompt template wrapped as a Skill whose `implementedBy` invokes `mcp.getPrompt(name, args)`. New `McpClient.listPrompts()` and `McpClient.getPrompt(name, args)` methods.
+- **`mcp.resourceSkills()`** (#1810) — every URI-addressable resource wrapped as a Skill whose `implementedBy` invokes `mcp.readResource(uri)`. Skill args are ignored — the URI is captured in the skill's closure. New `McpClient.listResources()` and `McpClient.readResource(uri)` methods.
+
+`McpServer` gains DSLs for the server side:
+```kotlin
+McpServer.from(agent) {
+    port = 0
+    expose("skill-name")                                          // tool (existing)
+    prompt("greet", "Greeting template") { args -> "Hello ${args["name"]}" }  // new
+    resource("policy:///precision.md", "precision-policy",
+             description = "...", mimeType = "text/markdown") {   // new
+        "Be precise. Cite sources."
+    }
+}
+```
+Handlers added for `prompts/list`, `prompts/get`, `resources/list`, `resources/read`. Initialize capabilities now declare prompts and resources when registered.
+
+- **`McpClient.snapshot: McpServerInfo`** (#1734) — immutable view of the connected server's full surface (identity, capabilities matrix, tools, prompts, resources, resource templates). Populated after `handshake()` + `loadTools()`.
+
+#### Test infrastructure
+- **Loopback MCP fixture (`LoopbackMcpAlgebraTest`, #1754)** — agent → `McpServer.from(...)` → `McpClient.connect(server.url)` → tool invocation, all in-JVM. Round-trip verified by computing `sqrt(π/e)` (digits-as-arrays + BigInteger) and checking the result with both a Math.sqrt sanity floor and a BigDecimal square-back proving `result² ≈ π/e` to 20 decimal places.
+- **Three pre-existing MCP tests converted to loopback** (#1794) — no more `MCP_REDMINE_URL` requirement. `./gradlew mcpIntegrationTest` runs fully out of the box.
+- **`./gradlew testAll`** task (#1720) aggregates unit + KSP + no-reflect smoke + live-llm integration + live-mcp integration into one command for pre-push verification.
+- **`docs/streaming.md`** (#1744) — consumer guide for the session API, native streaming status, cancellation contract, test coverage map, composition note.
+- **`docs/premortem-0.5.0-streaming.md`** (#1721) — design-before-code premortem listing the typed event hierarchy, cancellation contract, composition fidelity matrix, success criteria. Every claim in this release notes points at a criterion this premortem listed.
+
+### Roadmap updates
+- **Sandboxed tool execution** refined in `docs/roadmap.md` Phase 3 with concrete backends: `ProcessSandbox` (Seatbelt on macOS, bwrap on Linux), `WasmSandbox` (Chicory pure-Java), `DockerSandbox` (docker-java extras module). Scoped to subprocess-shaped tools only — `grants { }` covers in-process lambdas.
+- **Multimodal I/O** added — image/audio input (Phase 2) via `LlmContent` sealed-block evolution of `LlmMessage`; image generation (`ImageModelClient`) and TTS (`TTSModelClient`) in Phase 3.
+- **HTTP `sendAsync` migration** documented as the cancellation latency optimization deferred past v0.5.0 — correctness already holds via Flow semantics (verified by adapter regression-guard tests); `sendAsync` would tighten mid-line cancellation but is not blocking.
+
+### Migration notes
+v0.5.0 is **drop-in for v0.4.6** consumers. Every existing API still works:
+- `agent.invoke(input)` and `agent.invokeSuspend(input)` unchanged.
+- `agent.observe { PipelineEvent -> ... }` unchanged (the v0.4.x event surface for post-hoc skill/tool/error observability).
+- `model { ollama / claude / openai }` adapters unchanged; `chatStream` is a default-impl addition.
+
+To opt into streaming:
+```kotlin
+val session = myAgent.session(input)
+session.events.collect { event -> /* render Token, log ToolCall*, ... */ }
+val output: OUT = session.await()  // typed terminal
+```
+
+To consume an MCP server via the unified surface:
+```kotlin
+val mcp = McpClient.connect(url)
+val agent = agent<Map<String, Any?>, String>("wrapper") {
+    skills {
+        mcp.toolSkills().forEach { +it }
+        mcp.promptSkills().forEach { +it }
+        mcp.resourceSkills().forEach { +it }
+    }
+}
+```
+
+### Stats
+- **1,074+ unit tests** across root + KSP + no-reflect smoke subprojects — 0 failures
+- **54 live-LLM integration tests** — green on clean runs against `gpt-oss:120b-cloud`, `claude-haiku-4-5-20251001`, `gpt-4o-mini`
+- **7 live-MCP integration tests** — fully self-contained loopback coverage, no external infrastructure
+- v0.4.6 → v0.5.0: ~30 commits, ~25 new test files
+
 ## [0.4.6] — 2026-05-15
 
 Follow-up to v0.4.5's open thread: actually make `kotlin-reflect` optional at runtime, and ship the smoke test that proves it. The premortem (`docs/premortem-0.4.6.md`) defined the success criteria; this release meets them.
