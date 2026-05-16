@@ -4,6 +4,16 @@
 
 Only the latest release and current `main` receive security fixes.
 
+## Threat model and deployment guidance
+
+Before deploying anything that touches money, PII, or production data:
+
+- **[`docs/threat-model.md`](docs/threat-model.md)** — five deployment scenarios (safe-local / internal-tool / MCP-gateway / multi-agent swarm / anti-patterns) with concrete config recipes and the framework's-guarantees-vs-yours boundary at each.
+- **[`docs/production-hardening.md`](docs/production-hardening.md)** — actionable pre-launch checklist; every item names which Agents.KT primitive enforces it (or "deployer responsibility — framework doesn't help here yet").
+- **[`docs/regulated-deployment.md`](docs/regulated-deployment.md)** — capability inventory, action log, decision points; EU AI Act mapping for regulated JVM teams.
+
+If your deployment is internet-facing, multi-tenant, or in scope for statutory audit obligations, read all three before going live.
+
 ## Reporting a vulnerability
 
 Please email **security@deep-code.ai** with:

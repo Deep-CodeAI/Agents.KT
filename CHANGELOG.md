@@ -2,6 +2,45 @@
 
 All notable changes to Agents.KT are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0, minor bumps may add new public API; existing API surface is preserved.
 
+## [Unreleased]
+
+### Added
+
+#### InternalsAgent — framework documents itself via MCP (#1837)
+
+- **`buildInternalsAgent(): Agent<String, String>`** in `agents_engine.runtime.internals` — a self-hosting docs agent whose skills correspond 1:1 to source files in the framework (63 today). Each skill is `implementedBy { _ -> loadResource("internals-agent/<path>.md") }` — no `model { }` configured because the IDE's LLM does the reasoning.
+- **`Main.kt`** runner exposes the agent via `McpServer.from(...)` over Streamable HTTP. Default port 8765; override via `--args="<port>"`.
+- **`./gradlew runInternalsAgent`** Gradle task. See `docs/internals-agent.md` for Claude Desktop / Cursor MCP wiring.
+- **Classpath-scan registration** — `buildInternalsAgent()` walks `src/main/resources/internals-agent/` at construction time, deriving skill names from paths (`internals-agent/core/Agent.md` → `core_agent_kt`) and pulling `description:` from YAML-style frontmatter. Adding a new source-file adjunct is a one-`.md`-file change — no `InternalsAgent.kt` edit.
+- **`validateInternalsAdjuncts` Gradle task** wired into `check` — CI guardrail that fails the build if any adjunct lacks `description:` frontmatter.
+
+#### Distribution
+
+- **GitHub Packages as secondary publication target (#1927)** — `publishAllPublicationsToGitHubPackagesRepository` published alongside the existing Sonatype path. Maven Central remains the primary public channel; GitHub Packages is for CI snapshots, PR previews, Sonatype-outage redundancy, and authenticated early-access. See `PUBLISHING.md` GitHub Packages section for consumer-side wiring + when to use which channel.
+
+#### Documentation
+
+- **`docs/internals-agent.md`** — InternalsAgent quickstart + IDE wiring (Claude Desktop, Cursor) (#1837).
+- **`docs/threat-model.md`** — five deployment scenarios (safe-local / internal-tool / MCP-gateway / multi-agent swarm / anti-patterns), trust boundaries, gap-vs-framework matrix (#1904).
+- **`docs/production-hardening.md`** — actionable pre-launch checklist organized by tool surface / MCP / budgets / secrets / observability / governance / operational; pre-launch ritual (#1919).
+- **`docs/regulated-deployment.md`** — capability inventory, action log, decision points, failure modes, data lineage, vendor risk; EU AI Act mapping (Art. 9 / 12 / 13 / 14 / 15 → Agents.KT artefact); evidence-pack template (#1919).
+- **`docs/comparison.md`** — side-by-side against LangChain / Semantic Kernel / AutoGen / raw MCP. Honest about losses; 8-shortcut "Choosing" subsection that sometimes points away from Agents.KT (#1906).
+- **`docs/interceptors.md`** — design draft for `onBefore*` interceptor family + `Decision` sealed type. Marked "NOT YET IMPLEMENTED"; tracks #1907.
+- **`docs/observability.md`** — design draft for `ObservabilityBridge` contract + `agents-kt-otel` adapter. Marked "NOT YET IMPLEMENTED"; tracks #1908.
+
+### Changed
+
+- **`InternalsAgent.kt` refactored from 63 hand-written skill blocks to a single classpath scanner** (#1837). 493 → 152 lines. Adding a source-file adjunct is now a one-`.md`-file change. Frontmatter is the single source of truth for the LLM-facing tool description.
+- **README streaming-claims reconciliation** (#1901) — dropped the stale "no per-adapter native streaming yet" bullet that contradicted the next bullet's "all three adapters stream natively". Phase 2 roadmap entry updated to reflect v0.5.0-shipped per-adapter streaming.
+- **PUBLISHING.md GPG setup** (#1905) — passphrase-protected key is now the recommended default. Empty-passphrase path preserved as a labelled fallback for isolated environments. "Why not `%no-protection`?" callout explains the threat model.
+
+### Tests
+
+- **`McpServerLifecycleTest`** (#889) — 8 new assertions covering `url`/`isRunning`/`stop` lifecycle invariants. Kills ~6–8 PIT mutants in `McpServer.kt:82-95` that the response-code tests couldn't reach.
+- **`McpRunnerMissingFlagValueTest`** (#889) — 5 tests covering the `--port` / `--expose` missing-value error paths and multi-error accumulation.
+- **`LenientJsonParserUnterminatedTest`** (#889) — 9 tests pinning the parser's "lenient on shape, strict on safety" contract: unterminated string / object / array at EOF doesn't hang; backslash-at-EOF; unicode-escape-at-EOF boundary; empty / whitespace-only / non-JSON-garbage returns null cleanly.
+- **`InternalsAgentTest`** (#1837) — replaced hard-coded `63` skill-count assertion with `assertEquals(countAdjunctsOnClasspath(), agent.skills.size)`. Test no longer breaks when adjuncts are added.
+
 ## [0.5.0] — 2026-05-16
 
 The platform release. Streaming runtime end-to-end, MCP-as-skills unification, every composition operator surfacing typed event flows. v0.4.x was about correctness (typed boundaries, KSP, reflect-optional); v0.5.0 is about visibility — what's happening inside an agent's loop and across the wire is now first-class.
