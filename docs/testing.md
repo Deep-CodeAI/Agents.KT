@@ -120,6 +120,10 @@ Two canonical patterns to crib from:
 - **Synchronous unit test** — see `src/test/kotlin/agents_engine/model/ModelClientChatStreamDefaultTest.kt`. Inline stub via `ModelClient { _ -> ... }`, asserts a Flow output.
 - **Whole-loop test with a fake provider** — see `src/test/kotlin/agents_engine/model/AgenticLoopTest.kt`. Multi-turn stub that returns different responses per call to exercise tool-call → result → final-text sequences.
 
+### Testing streaming agents
+
+Sessions (`agent.session(input)`) and the adapter-level `chatStream` overrides have their own test pattern — inline NDJSON or SSE payloads for non-live tests, optional live-LLM coverage for end-to-end. The full taxonomy of streaming tests with what each pins is in [docs/streaming.md → Test coverage map](streaming.md#test-coverage-map).
+
 ### Reflection-fallback paths
 
 If you change anything in `ReflectionFallback` or any wrapped `kotlin.reflect.full.*` callsite, **also** add or update assertions in `agents-kt-no-reflect-test/src/test/kotlin/smoke/`. The main suite has `kotlin-reflect` on its `testImplementation` — it cannot catch a regression where the reflect-absent branch breaks. The smoke subproject is the only place that can.
