@@ -269,6 +269,72 @@ tasks.register<JavaExec>("runInternalsAgent") {
     mainClass.set("agents_engine.runtime.internals.MainKt")
 }
 
+// #1837 — guardrail. Every `src/main/resources/internals-agent/**/*.md`
+// must begin with a YAML-style frontmatter block carrying a non-blank
+// `description:` line. The runtime InternalsAgent's classpath scanner
+// fails fast at agent construction if any adjunct lacks frontmatter, but
+// that's a runtime failure — we want CI to catch it BEFORE the change
+// ships. This task is the build-time gate. Wired into `check` so every
+// `./gradlew check` (and therefore every CI run) validates the layout.
+tasks.register("validateInternalsAdjuncts") {
+    description = "Validates that every internals-agent/*.md has the required `description:` frontmatter"
+    group = "verification"
+    val adjunctRoot = layout.projectDirectory.dir("src/main/resources/internals-agent")
+    inputs.dir(adjunctRoot).withPathSensitivity(org.gradle.api.tasks.PathSensitivity.RELATIVE)
+    // No outputs — task is pure validation. Mark as up-to-date when inputs unchanged.
+    outputs.upToDateWhen { true }
+    doLast {
+        val root = adjunctRoot.asFile
+        if (!root.exists()) {
+            logger.lifecycle("No internals-agent directory at ${root.path} — nothing to validate.")
+            return@doLast
+        }
+        val violations = mutableListOf<String>()
+        root.walkTopDown()
+            .filter { it.isFile && it.extension == "md" }
+            .forEach { md ->
+                val rel = md.relativeTo(root).invariantSeparatorsPath
+                val content = md.readText(Charsets.UTF_8)
+                when {
+                    !content.startsWith("---\n") ->
+                        violations += "$rel: missing leading `---` frontmatter block"
+
+                    content.indexOf("\n---\n", startIndex = 4) < 0 ->
+                        violations += "$rel: unterminated frontmatter block (no closing `---`)"
+
+                    else -> {
+                        val end = content.indexOf("\n---\n", startIndex = 4)
+                        val frontmatter = content.substring(4, end)
+                        val descLine = frontmatter.lineSequence()
+                            .firstOrNull { it.startsWith("description:") }
+                        when {
+                            descLine == null ->
+                                violations += "$rel: frontmatter missing `description:` line"
+
+                            descLine.removePrefix("description:").trim().isEmpty() ->
+                                violations += "$rel: `description:` line is blank"
+                        }
+                    }
+                }
+            }
+        if (violations.isNotEmpty()) {
+            val report = violations.joinToString("\n  - ", prefix = "  - ")
+            throw GradleException(
+                "Internals-agent adjunct validation failed (${violations.size} issue(s)):\n$report\n\n" +
+                    "Every internals-agent/*.md must start with:\n" +
+                    "  ---\n" +
+                    "  description: <one-line tool description shown to the IDE LLM>\n" +
+                    "  ---\n\n" +
+                    "  <markdown body>"
+            )
+        }
+        val count = root.walkTopDown().count { it.isFile && it.extension == "md" }
+        logger.lifecycle("Validated $count internals-agent adjunct(s) — all have `description:` frontmatter.")
+    }
+}
+
+tasks.named("check") { dependsOn("validateInternalsAdjuncts") }
+
 // #984 — full swarm demo. Three sibling agents (fib / factor / exit) live as
 // SEPARATE JAR files in build/tmp/jars_swarm_demo/, each with its own
 // META-INF/services descriptor. The captain main is packaged inside fib.jar.
