@@ -243,4 +243,12 @@ class LiveRunnerCliAndOnceTest {
         val errExit = LiveRunner.serve(trivialAgent(), arrayOf("--nonsense")) { output = pw }
         assertNotEquals(0, errExit, "error path must NOT return 0 (happy-path exit code)")
     }
+
+    // ── Note: the four other serve() overloads (Forum/Parallel/Loop/Branch) ─
+    // ── have their own serve$lambda$4/6/8/10 + corresponding int-return    ─
+    // ── mutants that survive this batch. Killing them needs an --once test ─
+    // ── per overload — each composition operator's DSL is slightly         ─
+    // ── different (Forum uses participants + captain DSL; Loop's loop      ─
+    // ── factory varies by what's wrapped; Branch's branch DSL takes a      ─
+    // ── routing block). Left as a follow-up to keep this batch small.      ─
 }
