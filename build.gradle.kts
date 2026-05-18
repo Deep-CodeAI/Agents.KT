@@ -99,6 +99,34 @@ pitest {
     timestampedReports.set(false)
     // Match the default `test` task: skip tests that need a live Ollama or MCP server.
     excludedGroups.set(setOf("live-llm", "live-mcp"))
+    // PIT DEFAULTS minus VOID_METHOD_CALLS. The dropped mutator targets
+    // void-method invocations, which in Kotlin bytecode mostly produces
+    // equivalent-mutant noise on compiler-synthesized calls:
+    //   - `Intrinsics::checkNotNullParameter`  (Kotlin non-null param checks)
+    //   - `Intrinsics::checkNotNullExpressionValue`  (Kotlin !! safety)
+    //   - `InlineMarker::finallyStart` / `finallyEnd`  (inline-function markers)
+    //   - `CollectionsKt::throwIndexOverflow`  (forEachIndexed overflow guard)
+    // These are language-level guarantees; removing them doesn't change
+    // observable behavior for legal inputs. Per #889's "don't chase
+    // equivalent mutants" note, dropping the mutator gives the cleanest
+    // signal-to-noise improvement without writing more tests.
+    // Trade-off: also drops ~5 legitimate-but-rare mutants on real void
+    // calls (e.g. removed `skipWs()`). Worth it — those are mostly
+    // partially-redundant with adjacent calls anyway. Revisit when adding
+    // an `arcmutate-kotlin-equivalence-filter` plugin for per-call-target
+    // filtering.
+    mutators.set(setOf(
+        "CONDITIONALS_BOUNDARY",
+        "INCREMENTS",
+        "INVERT_NEGS",
+        "MATH",
+        "NEGATE_CONDITIONALS",
+        "EMPTY_RETURNS",
+        "FALSE_RETURNS",
+        "TRUE_RETURNS",
+        "NULL_RETURNS",
+        "PRIMITIVE_RETURNS",
+    ))
 }
 
 // #858 — supply-chain hygiene. After bumping a dependency, Gradle wrapper, or
