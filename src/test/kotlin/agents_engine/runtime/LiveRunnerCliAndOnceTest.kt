@@ -1,5 +1,8 @@
 package agents_engine.runtime
 
+import agents_engine.composition.branch.branch
+import agents_engine.composition.loop.loop
+import agents_engine.composition.parallel.div
 import agents_engine.composition.pipeline.then
 import agents_engine.core.agent
 import java.io.ByteArrayOutputStream
@@ -244,11 +247,78 @@ class LiveRunnerCliAndOnceTest {
         assertNotEquals(0, errExit, "error path must NOT return 0 (happy-path exit code)")
     }
 
-    // ── Note: the four other serve() overloads (Forum/Parallel/Loop/Branch) ─
-    // ── have their own serve$lambda$4/6/8/10 + corresponding int-return    ─
-    // ── mutants that survive this batch. Killing them needs an --once test ─
-    // ── per overload — each composition operator's DSL is slightly         ─
-    // ── different (Forum uses participants + captain DSL; Loop's loop      ─
-    // ── factory varies by what's wrapped; Branch's branch DSL takes a      ─
-    // ── routing block). Left as a follow-up to keep this batch small.      ─
+    // ── Phase 2: --once tests for the remaining 4 serve() overloads ──────────
+    // Each kills its serve$lambda$N "replaced return with null" mutant plus
+    // the `replaced int return with 0` mutant on the overload's serve() method.
+
+    @Test
+    fun `serve --once for Forum overload invokes participants and captain`() {
+        val a = agent<String, String>("a") {
+            skills { skill<String, String>("op", "_") { implementedBy { "from-a" } } }
+        }
+        val b = agent<String, String>("b") {
+            skills { skill<String, String>("op", "_") { implementedBy { "from-b" } } }
+        }
+        val captain = agent<String, String>("captain") {
+            skills { skill<String, String>("op", "_") { implementedBy { "captain-saw:$it" } } }
+        }
+        val forum = agents_engine.composition.forum.forum<String, String> {
+            participant(a)
+            participant(b)
+            captain(captain)
+        }
+        val (pw, baos) = captureOut()
+        val exit = LiveRunner.serve(forum, arrayOf("--once", "trigger")) { output = pw }
+        assertEquals(0, exit)
+        val out = baos.toString().trim()
+        assertTrue(out.startsWith("captain-saw:"), "captain output must reach stdout: '$out'")
+    }
+
+    @Test
+    fun `serve --once for Parallel overload invokes all branches`() {
+        val a = agent<String, String>("a") {
+            skills { skill<String, String>("op", "_") { implementedBy { "a:$it" } } }
+        }
+        val b = agent<String, String>("b") {
+            skills { skill<String, String>("op", "_") { implementedBy { "b:$it" } } }
+        }
+        val parallel = a / b
+        val (pw, baos) = captureOut()
+        val exit = LiveRunner.serve(parallel, arrayOf("--once", "x")) { output = pw }
+        assertEquals(0, exit)
+        val out = baos.toString()
+        assertTrue(out.contains("a:x") && out.contains("b:x"),
+            "both branches must reach stdout: '$out'")
+    }
+
+    @Test
+    fun `serve --once for Loop overload runs the loop once and terminates`() {
+        val counter = agent<String, String>("counter") {
+            skills { skill<String, String>("op", "_") { implementedBy { "step:$it" } } }
+        }
+        // Single-step loop: next returns null after the first iteration.
+        val loop = counter.loop<String, String> { _ -> null }
+        val (pw, baos) = captureOut()
+        val exit = LiveRunner.serve(loop, arrayOf("--once", "go")) { output = pw }
+        assertEquals(0, exit)
+        assertEquals("step:go", baos.toString().trim())
+    }
+
+    @Test
+    fun `serve --once for Branch overload routes through onElse arm`() {
+        val source = agent<String, String>("source") {
+            skills { skill<String, String>("op", "_") { implementedBy { "src:$it" } } }
+        }
+        val handler = agent<String, String>("handler") {
+            skills { skill<String, String>("op", "_") { implementedBy { "handled:$it" } } }
+        }
+        val branch = source.branch<String, String, String> {
+            onElse then handler
+        }
+        val (pw, baos) = captureOut()
+        val exit = LiveRunner.serve(branch, arrayOf("--once", "trigger")) { output = pw }
+        assertEquals(0, exit)
+        assertTrue(baos.toString().trim().startsWith("handled:"),
+            "branch onElse arm must route source output through handler: '${baos.toString().trim()}'")
+    }
 }
