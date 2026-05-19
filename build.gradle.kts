@@ -115,6 +115,19 @@ pitest {
     // partially-redundant with adjacent calls anyway. Revisit when adding
     // an `arcmutate-kotlin-equivalence-filter` plugin for per-call-target
     // filtering.
+    //
+    // NULL_RETURNS is KEPT but produces known equivalent-mutant noise on
+    // `suspend fun ... ): Unit` methods. The Kotlin compiler lowers such
+    // functions to JVM `Object foo(Continuation)` (returns either
+    // `kotlin.Unit` or `COROUTINE_SUSPENDED`), so PIT applies NULL_RETURNS
+    // and the mutated `return null` is observationally indistinguishable
+    // from `return Unit` for any caller. Concrete impact (PIT 2026-05-19):
+    // 26 SURVIVED+NO_COVERAGE in `ClaudeClient.dispatchSseEvent` are this
+    // pattern, plus ~7 more in `parseSseStream`/`lambda$*$dispatch`.
+    // Don't chase these — same convention as the lambda$N inline-attribution
+    // and VOID_METHOD_CALLS noise. Dropping NULL_RETURNS entirely would
+    // lose real coverage on object-returning functions (`parseResponse`,
+    // `materializeSnapshot`, etc), which is a worse trade.
     mutators.set(setOf(
         "CONDITIONALS_BOUNDARY",
         "INCREMENTS",
