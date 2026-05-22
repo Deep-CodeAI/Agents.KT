@@ -220,12 +220,19 @@ internal suspend fun <IN> executeAgentic(
         // Check after the round-trip so the LAST turn's tokens are counted
         // even if it tips us over: the throw still surfaces the breach.
         response.tokenUsage?.let { usage ->
+            agent.fireTokenUsage(usage)
             totalTokens += usage.total
             // #1740: build cumulative TokenUsage for the event surface.
             cumulativeUsage = cumulativeUsage?.let { prev ->
                 TokenUsage(
                     promptTokens = prev.promptTokens + usage.promptTokens,
                     completionTokens = prev.completionTokens + usage.completionTokens,
+                    cachedInputTokens = when {
+                        prev.cachedInputTokens == null && usage.cachedInputTokens == null -> null
+                        else -> (prev.cachedInputTokens ?: 0) + (usage.cachedInputTokens ?: 0)
+                    },
+                    provider = usage.provider,
+                    model = usage.model,
                 )
             } ?: usage
             val cap = budget.maxTokens

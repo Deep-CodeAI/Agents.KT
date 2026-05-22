@@ -6,12 +6,15 @@ import agents_engine.model.BudgetReason
 import agents_engine.model.ModelBuilder
 import agents_engine.model.ModelConfig
 import agents_engine.model.OnErrorBuilder
+import agents_engine.model.TokenUsage
 import agents_engine.model.ToolDef
 import agents_engine.model.ToolErrorHandler
 import agents_engine.model.ToolsBuilder
 import agents_engine.model.buildBuiltInTools
 import agents_engine.model.executeAgentic
 import agents_engine.model.selectSkillByLlm
+import java.util.logging.Level
+import java.util.logging.Logger
 
 /**
  * `agents_engine/core/Agent.kt` — the typed-agent class. One input type,
@@ -39,8 +42,8 @@ import agents_engine.model.selectSkillByLlm
  *
  * **Observability hooks (post-hoc PipelineEvent).** Separate from
  * `AgentEvent` (the streaming session surface): `onSkillChosen`,
- * `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`, and
- * the unified `observe { event -> }` sealed-event view.
+ * `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`,
+ * `onTokenUsage`, and the unified `observe { event -> }` sealed-event view.
  *
  * **Internal session entry point.** [invokeSuspendForSession] is the
  * streaming-aware variant called only by `Agent.session(input)` and
@@ -117,6 +120,7 @@ class Agent<IN, OUT>(
     internal fun unregisterTool(name: String) { _toolMap.remove(name) }
     var toolUseListener: ((name: String, args: Map<String, Any?>, result: Any?) -> Unit)? = null
         private set
+    private val tokenUsageListeners = mutableListOf<(TokenUsage) -> Unit>()
     var knowledgeUsedListener: ((name: String, content: String) -> Unit)? = null
         private set
     var skillChosenListener: ((name: String) -> Unit)? = null
@@ -161,8 +165,8 @@ class Agent<IN, OUT>(
     /**
      * Set true at end of [validate] (#697). Structural mutators (skills, tools,
      * memory, model, budget, prompt, error handlers, routing config) check this
-     * and refuse post-construction mutation. Listeners (onToolUse, onKnowledgeUsed,
-     * onSkillChosen, routerRationale) intentionally remain settable for
+     * and refuse post-construction mutation. Listeners (onToolUse, onTokenUsage,
+     * onKnowledgeUsed, onSkillChosen, routerRationale) intentionally remain settable for
      * tracing / instrumentation use cases.
      */
     @PublishedApi internal var frozen: Boolean = false
@@ -192,6 +196,38 @@ class Agent<IN, OUT>(
 
     fun onToolUse(block: (name: String, args: Map<String, Any?>, result: Any?) -> Unit) {
         toolUseListener = block
+    }
+
+    /**
+     * Observe provider-reported token usage for each successful LLM round-trip.
+     *
+     * Semantics:
+     * - Fires once per LLM response carrying usage, not once per agent invocation.
+     *   Tool-use cycles can therefore fire more than once.
+     * - Fires after the provider response is parsed and before tool callbacks for
+     *   that same turn.
+     * - Does not fire when the LLM call throws; pair with [onError] for failures.
+     * - Streaming providers fire once at end-of-stream with their final usage.
+     * - Listener failures are logged and swallowed so user telemetry cannot break
+     *   the agent run.
+     * - Multiple registrations are invoked in registration order.
+     *
+     * Provider adapters normalize usage into [TokenUsage]. Providers that do not
+     * report cache reads set `cachedInputTokens = null`; successful responses
+     * with no usage payload do not fire.
+     */
+    fun onTokenUsage(block: (TokenUsage) -> Unit) {
+        tokenUsageListeners += block
+    }
+
+    internal fun fireTokenUsage(usage: TokenUsage) {
+        tokenUsageListeners.toList().forEach { listener ->
+            try {
+                listener(usage)
+            } catch (t: Throwable) {
+                LOGGER.log(Level.WARNING, "onTokenUsage listener failed; swallowing", t)
+            }
+        }
     }
 
     fun onKnowledgeUsed(block: (name: String, content: String) -> Unit) {
@@ -523,6 +559,8 @@ class Agent<IN, OUT>(
         frozen = true
     }
 }
+
+private val LOGGER: Logger = Logger.getLogger(Agent::class.java.name)
 
 inline fun <IN, reified OUT : Any> agent(name: String, block: Agent<IN, OUT>.() -> Unit): Agent<IN, OUT> {
     val agent = Agent<IN, OUT>(name, OUT::class) { it as OUT }

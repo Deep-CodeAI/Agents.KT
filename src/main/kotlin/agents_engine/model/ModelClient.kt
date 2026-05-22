@@ -36,11 +36,15 @@ data class ToolCall(
 /**
  * Token consumption for one LLM round-trip — null on the response when the
  * provider doesn't report it. Sum of prompt + completion is what counts toward
- * [BudgetConfig.maxTokens]. See #963.
+ * [BudgetConfig.maxTokens]. Cached input tokens are a provider-visible subset
+ * of prompt tokens, not extra billable tokens to add to [total]. See #963/#2355.
  */
 data class TokenUsage(
     val promptTokens: Int,
     val completionTokens: Int,
+    val cachedInputTokens: Int? = null,
+    val provider: String = "unknown",
+    val model: String = "unknown",
 ) {
     val total: Int get() = promptTokens + completionTokens
 }
