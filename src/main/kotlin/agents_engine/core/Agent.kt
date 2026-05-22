@@ -215,6 +215,14 @@ class Agent<IN, OUT>(
      * Provider adapters normalize usage into [TokenUsage]. Providers that do not
      * report cache reads set `cachedInputTokens = null`; successful responses
      * with no usage payload do not fire.
+     *
+     * Provider mapping:
+     * - Anthropic: `usage.input_tokens`, `usage.output_tokens`,
+     *   `usage.cache_read_input_tokens` → `provider = "claude"`.
+     * - OpenAI: `usage.prompt_tokens`, `usage.completion_tokens`,
+     *   `usage.prompt_tokens_details.cached_tokens` → `provider = "openai"`.
+     * - Ollama: `prompt_eval_count`, `eval_count`, no cache field
+     *   → `provider = "ollama"`.
      */
     fun onTokenUsage(block: (TokenUsage) -> Unit) {
         tokenUsageListeners += block

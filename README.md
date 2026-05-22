@@ -197,7 +197,7 @@ Topical guides:
 
 ## Current Release
 
-`main` is currently `0.5.0` — the platform release. **Streaming runtime**: `agent.session(input).events: Flow<AgentEvent<OUT>>` surfaces typed `Token` / `ToolCall*` / bracket events as the agentic loop runs. All three adapters (Ollama NDJSON, Anthropic SSE, OpenAI SSE) stream natively at the wire. Every composition operator (`then` / `wrap` / `Branch` / `Loop` / `Parallel` / `Forum` / `Swarm`) surfaces sessions with `agentId`-tagged inner events. **MCP-as-skills unification**: `mcp.toolSkills()` + `mcp.promptSkills()` + `mcp.resourceSkills()` — every MCP capability shape exposes as a `Skill` consumable in `skills { +... }`. `McpServer` gains DSLs to register prompts and resources alongside agents-as-tools, plus `McpServerInfo` snapshot for the full capability matrix. The 0.4 line (kotlin-reflect compileOnly, KSP @Generable, BouncyCastle hardening, wrap operator, three providers) is included.
+`main` is currently `0.6.0` — an additive telemetry release on top of the v0.5.0 platform. **Token usage telemetry**: `onTokenUsage { usage -> }` exposes provider-reported `TokenUsage(promptTokens, completionTokens, cachedInputTokens, provider, model)` once per successful LLM round-trip, including end-of-stream usage for streaming adapters. **Streaming runtime**: `agent.session(input).events: Flow<AgentEvent<OUT>>` surfaces typed `Token` / `ToolCall*` / bracket events as the agentic loop runs. All three adapters (Ollama NDJSON, Anthropic SSE, OpenAI SSE) stream natively at the wire. Every composition operator (`then` / `wrap` / `Branch` / `Loop` / `Parallel` / `Forum` / `Swarm`) surfaces sessions with `agentId`-tagged inner events. **MCP-as-skills unification**: `mcp.toolSkills()` + `mcp.promptSkills()` + `mcp.resourceSkills()` — every MCP capability shape exposes as a `Skill` consumable in `skills { +... }`. `McpServer` gains DSLs to register prompts and resources alongside agents-as-tools, plus `McpServerInfo` snapshot for the full capability matrix. The 0.4 line (kotlin-reflect compileOnly, KSP @Generable, BouncyCastle hardening, wrap operator, three providers) is included.
 
 Use Maven Central for published artifacts and tags for immutable release points.
 
@@ -210,7 +210,7 @@ Use Maven Central for published artifacts and tags for immutable release points.
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("ai.deep-code:agents-kt:0.5.0")
+    implementation("ai.deep-code:agents-kt:0.6.0")
 }
 ```
 

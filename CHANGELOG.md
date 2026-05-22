@@ -4,6 +4,24 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-05-23
+
+Additive telemetry release for downstream billing and budget dashboards. Existing consumers without an `onTokenUsage` listener see no behavior change.
+
+### Added
+
+#### Token usage telemetry (#2354, #2355, #2356, #2357)
+
+- **Public `Agent.onTokenUsage { usage: TokenUsage -> }` listener** — fires once per successful LLM round-trip that reports usage, including streaming paths at end-of-stream. Tool-use cycles fire once per provider response, not once per agent invocation.
+- **Widened `TokenUsage`** — now carries `promptTokens`, `completionTokens`, `cachedInputTokens`, `provider`, and `model`. `total` remains prompt + completion; cached tokens are a provider-visible subset of prompt tokens, not an extra addend.
+- **Provider-normalized usage mapping** — Anthropic maps `input_tokens` / `output_tokens` / `cache_read_input_tokens` with `provider = "claude"`; OpenAI maps `prompt_tokens` / `completion_tokens` / `prompt_tokens_details.cached_tokens` with `provider = "openai"`; Ollama maps `prompt_eval_count` / `eval_count` with `cachedInputTokens = null` and `provider = "ollama"`.
+- **Listener safety semantics** — missing usage does not fire, LLM failures do not fire and remain covered by `onError`, multiple listeners run in registration order, and listener exceptions are logged and swallowed so telemetry cannot break the agent run.
+
+### Tests
+
+- Added `OnTokenUsageTest` coverage for widened fields, multi-listener ordering, listener-error swallowing, missing-usage skip, model-failure skip with `onError`, multi-turn tool-use ordering, and streaming single-fire behavior.
+- Updated Anthropic, OpenAI, and Ollama adapter tests to assert provider/model/cache mapping for normal and streaming responses.
+
 ### Added
 
 #### InternalsAgent — framework documents itself via MCP (#1837)
