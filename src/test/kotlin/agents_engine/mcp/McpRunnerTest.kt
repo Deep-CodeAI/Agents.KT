@@ -1,6 +1,9 @@
 package agents_engine.mcp
 
 import agents_engine.core.agent
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -41,6 +44,7 @@ class McpRunnerTest {
         assertEquals(listOf("greet"), cfg.exposeNames)
         assertEquals(false, cfg.helpRequested)
         assertEquals(false, cfg.versionRequested)
+        assertEquals(false, cfg.stdioRequested)
         assertTrue(cfg.errors.isEmpty(), "errors: ${cfg.errors}")
     }
 
@@ -76,6 +80,17 @@ class McpRunnerTest {
             val cfg = McpRunner.resolveConfig(arrayOf(flag)) { port = 0 }
             assertTrue(cfg.versionRequested, "$flag should set versionRequested")
         }
+    }
+
+    @Test
+    fun `--stdio is recognized`() {
+        val cfg = McpRunner.resolveConfig(arrayOf("--stdio")) {
+            port = 8080
+            expose("greet")
+        }
+        assertTrue(cfg.stdioRequested, "--stdio should select stdio serving")
+        assertEquals(8080, cfg.port, "stdio selection should not mutate the configured HTTP default")
+        assertEquals(listOf("greet"), cfg.exposeNames)
     }
 
     @Test
@@ -117,6 +132,30 @@ class McpRunnerTest {
     fun `unknown flag returns non-zero exit code without binding a port`() {
         val code = McpRunner.serve(trivial(), arrayOf("--bogus")) { port = 0; expose("greet") }
         assertTrue(code != 0, "expected non-zero, got $code")
+    }
+
+    @Test
+    fun `stdio serve responds on stdout without HTTP listening line`() {
+        val originalIn = System.`in`
+        val originalOut = System.out
+        val request = """{"jsonrpc":"2.0","id":1,"method":"ping"}""" + "\n"
+        val stdout = ByteArrayOutputStream()
+        System.setIn(ByteArrayInputStream(request.toByteArray(Charsets.UTF_8)))
+        System.setOut(PrintStream(stdout, true))
+        try {
+            val code = McpRunner.serve(trivial(), arrayOf("--stdio")) {
+                expose("greet")
+            }
+            assertEquals(0, code)
+        } finally {
+            System.setIn(originalIn)
+            System.setOut(originalOut)
+        }
+
+        val text = stdout.toString(Charsets.UTF_8)
+        assertTrue(text.startsWith("""{"jsonrpc":"2.0""""),
+            "stdout must contain only MCP JSON-RPC, got: $text")
+        assertTrue(!text.contains("Listening on"), "stdio mode must not print HTTP listening text to stdout: $text")
     }
 
     // ────────────────────────────────────────────────────────────

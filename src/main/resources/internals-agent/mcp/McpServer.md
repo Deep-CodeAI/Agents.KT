@@ -1,10 +1,10 @@
 ---
-description: Source-file knowledge for agents_engine/mcp/McpServer.kt — exposes an Agent as an MCP server over HTTP (JDK HttpServer at POST /mcp). McpServer.from(agent) { port, expose(...) }. Non-agentic skills only (implementedBy { }); IN must be String or @Generable; output rendered as text block via toString(). v0.5.0 (#1796) adds prompt and resource registration. RegisteredPrompt mirrors MCP wire shape. The InternalsAgent runs on this. Call when the IDE LLM needs to reason about hosting an MCP server.
+description: Source-file knowledge for agents_engine/mcp/McpServer.kt — exposes an Agent as an MCP server over HTTP (JDK HttpServer at POST /mcp) and owns the shared JSON-RPC dispatcher reused by McpStdioServer. McpServer.from(agent) { port, expose(...) }. Non-agentic skills only (implementedBy { }); IN must be String or @Generable; output rendered as text block via toString(). Prompts/resources mirror MCP wire shape. The InternalsAgent runs on this. Call when the IDE LLM needs to reason about hosting an MCP server.
 ---
 
 # `agents_engine/mcp/McpServer.kt` — expose an agent over MCP
 
-Turns an `Agent` into an MCP server. `from(agent) { ... }` registers selected skills as MCP tools (and optionally prompts/resources) and starts an HTTP server on a configurable port.
+Turns an `Agent` into an MCP server. `from(agent) { ... }` registers selected skills as MCP tools (and optionally prompts/resources) and starts an HTTP server on a configurable port. The same instance also owns the internal JSON-RPC dispatcher that `McpStdioServer` calls for line-delimited stdio.
 
 ## Quick usage
 
@@ -18,9 +18,10 @@ println("MCP server at ${server.url}")
 
 The InternalsAgent runs on this same server class (see `runtime/internals/Main.kt`).
 
-## Scope (first cut)
+## Scope
 
-- **HTTP transport only** — uses the JDK `com.sun.net.httpserver.HttpServer`. No stdio or TCP server-side yet.
+- **HTTP transport** — uses the JDK `com.sun.net.httpserver.HttpServer`.
+- **Shared dispatch** — `dispatchJsonRpc(...)` returns one response envelope or `null` for notifications, letting `McpStdioServer` share the tool/prompt/resource behavior without duplicating handlers.
 - **Non-agentic skills only** — skills declared via `implementedBy { }`. Agentic skills require server-side LLM access, which is out of scope here.
 - **Skill `IN` constraints** — must be `String` OR a `@Generable` class. Other types rejected at `start()` with a descriptive error.
 - **Skill output rendering** — single text content block (`toString()`).
@@ -73,11 +74,14 @@ Similarly for resources and resource templates. The server holds a registered li
 
 Serves at `POST /mcp` by default. Each request body is one JSON-RPC envelope; response is JSON or SSE depending on the operation.
 
+Malformed JSON and requests without `method` preserve the historical HTTP behavior: `400` with an empty JSON body. Notifications return `202` with no response body. Request/response JSON-RPC methods are delegated to the shared dispatcher.
+
 ## Related files
 
 - `Agent.kt` — the source of skills.
 - `Skill.kt` — the unit registered as a tool.
 - `McpRunner.kt` — the CLI wrapper around this.
+- `McpStdioServer.kt` — stdio hosting over the same dispatcher.
 - `McpClient.kt` — the inverse — consuming MCP servers from agents.
 - `generation/jsonSchema.kt` — derives `inputSchema`.
 - `runtime/internals/InternalsAgent.kt` — the framework's most prolific user.

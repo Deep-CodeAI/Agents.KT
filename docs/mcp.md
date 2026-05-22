@@ -67,6 +67,31 @@ Exposed skills become MCP tools. The `inputSchema` is generated from the skill's
 | Cursor / IDEs | Same URL, the IDE's MCP config block |
 | Anything that speaks MCP | Standard JSON-RPC 2.0 over Streamable HTTP, protocol version `2025-03-26` |
 
+### Stdio server transport — `McpStdioServer.from(agent)`
+
+Use stdio when the MCP client wants to spawn your agent process directly instead of connecting to an HTTP port. The registration DSL is the same as `McpServer`: exposed skills become tools, and registered prompts/resources use the same JSON-RPC handlers.
+
+```kotlin
+McpStdioServer.from(greeter) {
+    expose("greet")
+}.serve()
+```
+
+Stdio framing is one UTF-8 JSON-RPC envelope per line. Requests with no `id` and `notifications/*` methods produce no response. Malformed input is returned as a JSON-RPC error envelope with `id: null`. `stdout` is protocol-only; diagnostics belong on `stderr`.
+
+Example client config for a JAR:
+
+```json
+{
+  "mcpServers": {
+    "my-agent": {
+      "command": "java",
+      "args": ["-jar", "/path/to/my-agent.jar", "--stdio"]
+    }
+  }
+}
+```
+
 ### Standalone server with `McpRunner` — picocli-style one-liner main
 
 Wrap any agent in a real runnable JAR with one line:
@@ -78,9 +103,9 @@ fun main(args: Array<String>) = exitProcess(McpRunner.serve(greeter, args) {
 })
 ```
 
-The runner parses CLI args, builds the `McpServer`, prints the listening URL + session id, registers a JVM shutdown hook for graceful `stop()`, and blocks until SIGTERM/SIGINT. Returns the process exit code.
+The runner parses CLI args and serves HTTP by default: it builds the `McpServer`, prints the listening URL, registers a JVM shutdown hook for graceful `stop()`, and blocks until SIGTERM/SIGINT. With `--stdio`, it builds `McpStdioServer`, reads line-delimited JSON-RPC from stdin, writes only protocol responses to stdout, and returns when stdin closes.
 
-Flags: `--port N`, `--expose NAME` (repeatable), `-h/--help`, `-V/--version`. Hand-rolled CLI parser, zero new dependencies.
+Flags: `--port N`, `--stdio`, `--expose NAME` (repeatable), `-h/--help`, `-V/--version`. Hand-rolled CLI parser, zero new dependencies.
 
 ### Three ways to run an agent — library, hosted, autonomous
 

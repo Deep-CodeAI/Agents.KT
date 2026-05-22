@@ -14,9 +14,10 @@ import agents_engine.generation.hasGenerableAnnotation
 
 /**
  * `agents_engine/mcp/McpServer.kt` — exposes an [Agent]'s skills as MCP
- * tools (and prompts/resources per #1796) over Streamable HTTP. Built
+ * tools (and prompts/resources per #1796) over Streamable HTTP. Stdio
+ * hosting reuses the JSON-RPC dispatcher through [McpStdioServer]. Built
  * via `McpServer.from(agent) { expose(...) }`. Scope (first cut):
- * HTTP only (JDK `HttpServer`); non-agentic skills only (declared via
+ * HTTP (JDK `HttpServer`); non-agentic skills only (declared via
  * `implementedBy { }`); skill `IN` must be `String` or a `@Generable`
  * class. Server-side prompts mirror MCP wire shape (RegisteredPrompt).
  * The InternalsAgent itself runs on this. See
@@ -33,8 +34,9 @@ import agents_engine.generation.hasGenerableAnnotation
  * }.start()
  * ```
  *
- * Scope (first cut):
- * - HTTP transport only (uses JDK [HttpServer])
+ * Scope:
+ * - HTTP transport here (uses JDK [HttpServer]); [McpStdioServer] reuses this
+ *   class's JSON-RPC dispatcher for server-side stdio.
  * - Non-agentic skills only (skills declared via `implementedBy { }`).
  *   Agentic skills require server-side LLM access — out of scope here.
  * - Skill `IN` must be `String` or a `@Generable` class. Other types rejected at [start].
@@ -124,38 +126,54 @@ class McpServer private constructor(
             val request = LenientJsonParser.parse(bodyText) as? Map<*, *>
                 ?: return respond(exchange, 400, "{}")
             val method = request["method"] as? String ?: return respond(exchange, 400, "{}")
-            val id = request["id"]
 
-            if (method.startsWith("notifications/")) { respond(exchange, 202, ""); return }
-
-            val response: String = when (method) {
-                "initialize" -> {
-                    exchange.responseHeaders.add("Mcp-Session-Id", sessionId)
-                    handleInitialize(id, request)
-                }
-                "ping" -> jsonRpcResult(id, emptyMap<String, Any?>())
-                "tools/list" -> jsonRpcResult(id, mapOf(
-                    "tools" to exposedSkills.map { it.toMcpDescriptor() },
-                    "nextCursor" to null,
-                ))
-                "tools/call" -> handleToolCall(id, request)
-                "prompts/list" -> jsonRpcResult(id, mapOf(
-                    "prompts" to registeredPrompts.map { it.toMcpDescriptor() },
-                    "nextCursor" to null,
-                ))
-                "prompts/get" -> handlePromptGet(id, request)
-                "resources/list" -> jsonRpcResult(id, mapOf(
-                    "resources" to registeredResources.map { it.toMcpDescriptor() },
-                    "nextCursor" to null,
-                ))
-                "resources/read" -> handleResourceRead(id, request)
-                else -> jsonRpcError(id, -32601, "Method not found: $method")
+            if (!request.containsKey("id") || method.startsWith("notifications/")) {
+                respond(exchange, 202, "")
+                return
             }
-            respond(exchange, 200, response)
+            if (method == "initialize") exchange.responseHeaders.add("Mcp-Session-Id", sessionId)
+            respond(exchange, 200, dispatchJsonRpcRequest(request))
         } catch (e: Exception) {
             respond(exchange, 500, """{"error":${McpJson.encode(e.message ?: e.toString())}}""")
         } finally {
             exchange.close()
+        }
+    }
+
+    internal fun dispatchJsonRpc(bodyText: String): String? = try {
+        val request = LenientJsonParser.parse(bodyText) as? Map<*, *>
+            ?: return jsonRpcError(null, -32700, "Parse error")
+        val method = request["method"] as? String
+            ?: return jsonRpcError(null, -32600, "Missing method")
+        if (!request.containsKey("id") || method.startsWith("notifications/")) return null
+        dispatchJsonRpcRequest(request)
+    } catch (e: Exception) {
+        jsonRpcError(null, -32603, e.message ?: e.toString())
+    }
+
+    private fun dispatchJsonRpcRequest(request: Map<*, *>): String {
+        val method = request["method"] as? String
+            ?: return jsonRpcError(request["id"], -32600, "Missing method")
+        val id = request["id"]
+        return when (method) {
+            "initialize" -> handleInitialize(id, request)
+            "ping" -> jsonRpcResult(id, emptyMap<String, Any?>())
+            "tools/list" -> jsonRpcResult(id, mapOf(
+                "tools" to exposedSkills.map { it.toMcpDescriptor() },
+                "nextCursor" to null,
+            ))
+            "tools/call" -> handleToolCall(id, request)
+            "prompts/list" -> jsonRpcResult(id, mapOf(
+                "prompts" to registeredPrompts.map { it.toMcpDescriptor() },
+                "nextCursor" to null,
+            ))
+            "prompts/get" -> handlePromptGet(id, request)
+            "resources/list" -> jsonRpcResult(id, mapOf(
+                "resources" to registeredResources.map { it.toMcpDescriptor() },
+                "nextCursor" to null,
+            ))
+            "resources/read" -> handleResourceRead(id, request)
+            else -> jsonRpcError(id, -32601, "Method not found: $method")
         }
     }
 

@@ -20,6 +20,8 @@ To pick a different port:
 
 The server runs until you `Ctrl+C` it.
 
+If your MCP client prefers to spawn tools over stdio, pass `--stdio` to the same InternalsAgent entrypoint. Stdio mode reads one JSON-RPC envelope per stdin line and writes only MCP response envelopes to stdout. Use a packaged app/JAR entrypoint for IDE config; Gradle itself prints build output to stdout and is not a clean stdio MCP command.
+
 ## IDE wiring
 
 ### Claude Desktop
@@ -60,7 +62,20 @@ Restart Cursor (or reload the MCP config from the command palette).
 
 ### Other MCP clients
 
-Anything that speaks the MCP Streamable HTTP transport can connect — point it at `http://localhost:8765/mcp`. See [the MCP spec](https://modelcontextprotocol.io) for client conformance.
+Anything that speaks the MCP Streamable HTTP transport can connect — point it at `http://localhost:8765/mcp`. Stdio-capable clients can instead spawn a runner process with `--stdio`. See [the MCP spec](https://modelcontextprotocol.io) for client conformance.
+
+Example stdio shape for a packaged InternalsAgent command:
+
+```json
+{
+  "mcpServers": {
+    "agents-kt-internals": {
+      "command": "/path/to/agents-kt-internals",
+      "args": ["--stdio"]
+    }
+  }
+}
+```
 
 ## Skill naming convention
 
@@ -113,7 +128,8 @@ That's it — no `InternalsAgent.kt` edit needed. The agent scans `src/main/reso
 See:
 - `src/main/kotlin/agents_engine/runtime/internals/InternalsAgent.kt` — the scanner + registration.
 - `src/main/kotlin/agents_engine/runtime/internals/Main.kt` — the MCP server runner.
-- `src/main/kotlin/agents_engine/mcp/McpServer.kt` — the HTTP/MCP transport.
+- `src/main/kotlin/agents_engine/mcp/McpServer.kt` — the HTTP/MCP transport and shared server dispatch.
+- `src/main/kotlin/agents_engine/mcp/McpStdioServer.kt` — the server-side stdio transport.
 - `src/main/kotlin/agents_engine/core/Resources.kt` — `loadResource` classpath helper.
 
 ## Troubleshooting
