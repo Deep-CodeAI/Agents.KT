@@ -71,6 +71,18 @@ tools {
 
 **`skill { tools(...) }`** — marks a skill as LLM-driven. The listed tool names are the ones the model may call. The model decides which tools to call and in what order.
 
+**Provider constrained decoding for `@Generable` outputs** — when an agentic skill returns an `@Generable` type and does not provide a custom `transformOutput { }`, the agentic loop passes that type's JSON Schema to clients that report `supportsConstrainedDecoding()`.
+
+Provider mappings:
+
+| Provider | Wire shape |
+|---|---|
+| OpenAI | `response_format: { type: "json_schema", json_schema: { name, schema, strict: true } }` |
+| Ollama | `format: <json schema>` |
+| Anthropic | A forced `structured_output` tool with `input_schema: <json schema>`; its tool input is converted back into final JSON text before output parsing. |
+
+This is a first-line defense: the provider is asked to produce the typed shape up front. The existing `@Generable` deserializer, tool-output wrapping, and repair/error paths remain defense-in-depth for unsupported clients, provider drift, and malformed responses.
+
 **`onToolUse { name, args, result -> }`** — fires after every action tool execution. Useful for logging, tracing, and test assertions.
 
 **`onKnowledgeUsed { name, content -> }`** — fires when the LLM fetches a knowledge entry. Receives the key name and loaded content. Does not fire for action tools.

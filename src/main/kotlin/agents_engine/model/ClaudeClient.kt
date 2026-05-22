@@ -43,6 +43,9 @@ import kotlinx.coroutines.flow.flowOn
  *   ids only need to be unique within one request.
  * - Tool defs → `{name, description, input_schema}` (Anthropic's spelling;
  *   not OpenAI's `parameters`).
+ * - `JsonSchema` constrained decoding → a forced `structured_output`
+ *   tool when no real tools are present; the response is converted back
+ *   into final JSON text for the normal `@Generable` parser (#1949).
  *
  * Top-level `error` envelope on the response surfaces as [LlmProviderException]
  * — same boundary contract as [OllamaClient] (#702).
@@ -64,15 +67,20 @@ open class ClaudeClient(
         .connectTimeout(connectTimeout.toJavaDuration())
         .build()
 
-    override fun chat(messages: List<LlmMessage>): LlmResponse {
-        val body = buildRequestJson(messages)
+    override fun supportsConstrainedDecoding(): Boolean = true
+
+    override fun chat(messages: List<LlmMessage>): LlmResponse =
+        chat(messages, jsonSchema = null)
+
+    override fun chat(messages: List<LlmMessage>, jsonSchema: JsonSchema?): LlmResponse {
+        val body = buildRequestJson(messages, jsonSchema = jsonSchema)
         val headers = mapOf(
             "x-api-key" to apiKey,
             "anthropic-version" to anthropicVersion,
             "content-type" to "application/json",
         )
         val responseBody = sendChat(body, headers)
-        return parseResponse(responseBody)
+        return parseResponse(responseBody, jsonSchema = jsonSchema)
     }
 
     /**
@@ -278,7 +286,11 @@ open class ClaudeClient(
         return String(bytes, Charsets.UTF_8)
     }
 
-    internal fun buildRequestJson(messages: List<LlmMessage>, stream: Boolean = false): String {
+    internal fun buildRequestJson(
+        messages: List<LlmMessage>,
+        stream: Boolean = false,
+        jsonSchema: JsonSchema? = null,
+    ): String {
         val systemText = messages.firstOrNull { it.role == "system" }?.content
         val nonSystem = messages.filter { it.role != "system" }
 
@@ -322,20 +334,29 @@ open class ClaudeClient(
         }
 
         val systemField = systemText?.let { ""","system":${it.toJsonString()}""" } ?: ""
-        val toolsField = if (tools.isNotEmpty()) {
-            val defs = tools.joinToString(",") { t ->
+        val structuredSchema = jsonSchema?.takeIf { tools.isEmpty() }
+        val toolDefs = buildList {
+            tools.forEach { t ->
                 val schema = t.argsType?.jsonSchema()
                     ?: """{"type":"object","properties":{},"additionalProperties":true}"""
-                """{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"input_schema":$schema}"""
+                add("""{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"input_schema":$schema}""")
             }
-            ""","tools":[$defs]"""
+            structuredSchema?.let { schema ->
+                add(
+                    """{"name":${STRUCTURED_OUTPUT_TOOL_NAME.toJsonString()},"description":"Return the final response using the requested JSON schema.","input_schema":${schema.schema}}"""
+                )
+            }
+        }
+        val toolsField = if (toolDefs.isNotEmpty()) ""","tools":[${toolDefs.joinToString(",")}]""" else ""
+        val toolChoiceField = if (structuredSchema != null) {
+            ""","tool_choice":{"type":"tool","name":${STRUCTURED_OUTPUT_TOOL_NAME.toJsonString()}}"""
         } else ""
 
         val streamField = if (stream) ""","stream":true""" else ""
-        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$streamField$systemField,"messages":[${messageObjects.joinToString(",")}]$toolsField}"""
+        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$streamField$systemField,"messages":[${messageObjects.joinToString(",")}]$toolsField$toolChoiceField}"""
     }
 
-    internal fun parseResponse(body: String): LlmResponse {
+    internal fun parseResponse(body: String, jsonSchema: JsonSchema? = null): LlmResponse {
         val root = LenientJsonParser.parse(body) as? Map<*, *>
             ?: return LlmResponse.Text(body)
 
@@ -353,6 +374,13 @@ open class ClaudeClient(
         val content = root["content"] as? List<*> ?: return LlmResponse.Text(body, tokenUsage)
 
         val toolUses = content.mapNotNull { it as? Map<*, *> }.filter { it["type"] == "tool_use" }
+        if (jsonSchema != null) {
+            val structured = toolUses.firstOrNull { it["name"] == STRUCTURED_OUTPUT_TOOL_NAME }
+            if (structured != null) {
+                val parsed = parseToolArguments(structured["input"])
+                return LlmResponse.Text(InlineToolCallParser.argsToJson(parsed.arguments), tokenUsage)
+            }
+        }
         if (toolUses.isNotEmpty()) {
             val calls = toolUses.mapNotNull { tu ->
                 val name = tu["name"] as? String ?: return@mapNotNull null
@@ -392,6 +420,8 @@ open class ClaudeClient(
     }
 
     companion object {
+        private const val STRUCTURED_OUTPUT_TOOL_NAME = "structured_output"
+
         val DEFAULT_REQUEST_TIMEOUT: Duration = 60.seconds
         val DEFAULT_CONNECT_TIMEOUT: Duration = 10.seconds
         const val DEFAULT_MAX_RESPONSE_BYTES: Long = 16L * 1024 * 1024

@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/model/AgenticLoop.kt — the multi-turn chat↔tool loop (executeAgentic) at the heart of every agentic-skill invocation. Builds per-skill tool allowlist (skill tools + agent capabilities + #856 memory + knowledge), runs turns until final answer or budget cap, honors maxTurns/maxToolCalls/maxDuration/perToolTimeout/maxTokens/maxConsecutiveSameTool, argument repair up to 8 retries, streaming-aware emitter (#1739), wrap-friendly effectivePrompt (#1707), cumulative TokenUsage (#1740). Call when the IDE LLM needs to reason about how agentic skills actually execute.
+description: Source-file knowledge for agents_engine/model/AgenticLoop.kt — the multi-turn chat↔tool loop (executeAgentic) at the heart of every agentic-skill invocation. Builds per-skill tool allowlist (skill tools + agent capabilities + #856 memory + knowledge), runs turns until final answer or budget cap, threads @Generable output JsonSchema to supporting ModelClient providers (#1949), honors maxTurns/maxToolCalls/maxDuration/perToolTimeout/maxTokens/maxConsecutiveSameTool, argument repair up to 8 retries, streaming-aware emitter (#1739), wrap-friendly effectivePrompt (#1707), cumulative TokenUsage (#1740). Call when the IDE LLM needs to reason about how agentic skills actually execute.
 ---
 
 # `agents_engine/model/AgenticLoop.kt` — the multi-turn `chat ↔ tool` loop
@@ -31,8 +31,9 @@ internal suspend fun <IN> executeAgentic(
 2. **Fail-fast on duplicate tool names** across the allowed sources. Helps catch name collisions between skill tools, agent capabilities, memory, and knowledge.
 
 3. **Runs `chat ↔ tool` turns** via either:
-   - `client.chat(messages, tools)` — non-streaming, when `emitter == null`.
-   - `client.chatStream(messages, tools)` — streaming, when `emitter != null`. Emits `Token` / `ToolCallStarted` / `ToolCallArgumentsDelta` chunks as they arrive.
+   - `client.chat(messages, jsonSchema)` — non-streaming, when `emitter == null`.
+   - `client.chatStream(messages, jsonSchema)` — streaming, when `emitter != null`. Emits `Token` / `ToolCallStarted` / `ToolCallArgumentsDelta` chunks as they arrive.
+   - `jsonSchema` is non-null only when the output type is `@Generable`, the skill has no custom `transformOutput { }`, and the client reports `supportsConstrainedDecoding()`.
 
 4. **Executes tool calls** by name lookup against the allowlist. Each tool invocation:
    - Honors `perToolTimeout` (per-call deadline) wrapped via `withTimeout`.
@@ -40,7 +41,7 @@ internal suspend fun <IN> executeAgentic(
    - Emits `ToolCallFinished` AgentEvent when streaming.
    - Increments `toolCallCount`, checked against `maxToolCalls` after each call.
 
-5. **Coerces final text into `OUT`** via the skill's `transformOutput { }` OR — if no transformer is set and `OUT` is `@Generable` — via the structured-output decoder in `agents_engine.generation`.
+5. **Coerces final text into `OUT`** via the skill's `transformOutput { }` OR — if no transformer is set and `OUT` is `@Generable` — via the structured-output decoder in `agents_engine.generation`. Constrained decoding is a first-line provider request; the decoder is still the local trust boundary.
 
 6. **Returns** an `AgenticResult` with the typed output (still as `Any` — the caller casts via the agent's `castOut`) and the cumulative `TokenUsage`.
 

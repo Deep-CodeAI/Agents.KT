@@ -5,6 +5,8 @@ import agents_engine.core.Skill
 import agents_engine.core.SkillRoute
 import agents_engine.generation.constructFromMap
 import agents_engine.generation.fromLlmOutput
+import agents_engine.generation.hasGenerableAnnotation
+import agents_engine.generation.jsonSchema
 import agents_engine.generation.toLlmInput
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.reflect.KClass
@@ -22,6 +24,9 @@ import kotlinx.coroutines.withContext
  * `OUT` via the skill's transformer or [agents_engine.generation]
  * structured-output decoder, and returns an [AgenticResult] carrying both
  * the output and the cumulative [TokenUsage] (#1740).
+ * For `@Generable` outputs, the loop passes a provider-neutral [JsonSchema]
+ * to clients that support constrained decoding (#1949), then still validates
+ * the returned text locally.
  *
  * **Streaming-aware (#1739).** When [executeAgentic]'s `emitter` is
  * non-null, the loop switches to `client.chatStream(...)` and surfaces
@@ -132,6 +137,7 @@ internal suspend fun <IN> executeAgentic(
     val allowedToolMap = allToolDefs.associateBy { it.name }
 
     val client = config.client ?: defaultClientFor(config, allToolDefs)
+    val constrainedOutputSchema = constrainedOutputSchemaFor(agent.outType, skill, client)
 
     val hasUntrustedTools = allToolDefs.any { it.untrustedOutput }
     val systemContent = buildString {
@@ -211,7 +217,14 @@ internal suspend fun <IN> executeAgentic(
             elapsedNanos.toDouble() / budget.maxDuration.inWholeNanoseconds,
         )
 
-        val response = chatOrStream(client, messages, agent.name, skill.name, emitter)
+        val response = chatOrStream(
+            client = client,
+            messages = messages,
+            agentId = agent.name,
+            skillName = skill.name,
+            emitter = emitter,
+            jsonSchema = constrainedOutputSchema,
+        )
         turns++
         maybeFireThreshold(BudgetReason.TURNS, turns.toDouble() / budget.maxTurns)
 
@@ -373,7 +386,10 @@ suspend fun <IN> selectSkillByLlm(
     )
 
     val client = config.client ?: defaultClientFor(config, emptyList())
-    val response = withContext(Dispatchers.IO) { client.chat(messages) }
+    val routeSchema = if (client.supportsConstrainedDecoding()) {
+        JsonSchema("SkillRoute", SkillRoute::class.jsonSchema())
+    } else null
+    val response = withContext(Dispatchers.IO) { client.chat(messages, routeSchema) }
 
     val raw = when (response) {
         is LlmResponse.Text -> response.content.trim()
@@ -613,6 +629,20 @@ private fun wrapUntrustedToolResult(toolName: String, result: Any?): String {
 private fun parseOutput(text: String, outType: KClass<*>): Any? = when {
     outType == String::class -> text
     else -> @Suppress("UNCHECKED_CAST") (outType as KClass<Any>).fromLlmOutput(text)
+}
+
+private fun constrainedOutputSchemaFor(
+    outType: KClass<*>,
+    skill: Skill<*, *>,
+    client: ModelClient,
+): JsonSchema? {
+    if (!client.supportsConstrainedDecoding()) return null
+    if (skill.outputTransformer != null) return null
+    if (!outType.hasGenerableAnnotation()) return null
+    return JsonSchema(
+        name = outType.simpleName ?: "structured_output",
+        schema = outType.jsonSchema(),
+    )
 }
 
 // #1644 / #1656 — provider dispatch for the default client. Mirrors the prior

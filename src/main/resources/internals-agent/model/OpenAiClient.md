@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/model/OpenAiClient.kt — OpenAI Chat Completions adapter (#1656). POST /v1/chat/completions wire mapping: system kept in messages array (vs Anthropic's hoisted field), stringified function.arguments JSON (not object), synthetic call_<n> IDs, parameters spelling (vs Anthropic's input_schema), SSE streaming with [DONE] terminator, openAiBaseUrl override for Azure/regional/proxy, open sendChat seam. Call when the IDE LLM needs to reason about wiring the framework to OpenAI.
+description: Source-file knowledge for agents_engine/model/OpenAiClient.kt — OpenAI Chat Completions adapter (#1656). POST /v1/chat/completions wire mapping: system kept in messages array, stringified function.arguments JSON, synthetic call_<n> IDs, parameters spelling, JsonSchema constrained decoding via response_format.json_schema strict=true (#1949), SSE streaming with [DONE], openAiBaseUrl override, open sendChat seam. Call when the IDE LLM needs to reason about wiring the framework to OpenAI.
 ---
 
 # `agents_engine/model/OpenAiClient.kt` — OpenAI Chat Completions adapter (#1656)
@@ -40,6 +40,16 @@ agent<X, Y>("...") {
 ```
 
 OpenAI's `parameters` (not Anthropic's `input_schema`). Built from `agents_engine.generation.jsonSchema(toolDef.argType)`.
+
+## Constrained Decoding
+
+When `chat(messages, jsonSchema)` receives a non-null `JsonSchema`, the request includes:
+
+```json
+{"response_format": {"type": "json_schema", "json_schema": {"name": "...", "schema": {...}, "strict": true}}}
+```
+
+`AgenticLoop` supplies this automatically for `@Generable` output types when the skill has no custom `transformOutput { }`.
 
 ## Streaming
 

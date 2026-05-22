@@ -61,10 +61,11 @@ internal suspend fun chatOrStream(
     messages: List<LlmMessage>,
     agentId: String,
     skillName: String,
+    jsonSchema: JsonSchema? = null,
     emitter: AgentEventEmitter?,
 ): LlmResponse {
     if (emitter == null) {
-        return withContext(Dispatchers.IO) { client.chat(messages) }
+        return withContext(Dispatchers.IO) { client.chat(messages, jsonSchema) }
     }
     val textBuilder = StringBuilder()
     val callOrder = mutableListOf<String>()
@@ -72,7 +73,12 @@ internal suspend fun chatOrStream(
     val pendingArgs = mutableMapOf<String, Map<String, Any?>>()
     var tokenUsage: TokenUsage? = null
 
-    client.chatStream(messages).collect { chunk ->
+    val chunks = if (jsonSchema == null) {
+        client.chatStream(messages)
+    } else {
+        client.chatStream(messages, jsonSchema)
+    }
+    chunks.collect { chunk ->
         when (chunk) {
             is LlmChunk.TextDelta -> {
                 textBuilder.append(chunk.text)

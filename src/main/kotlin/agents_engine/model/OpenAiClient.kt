@@ -43,6 +43,8 @@ import kotlinx.coroutines.flow.flowOn
  *   provider id, and ids only need to be unique within one request.
  * - Tool defs → `[{type:"function", function:{name, description, parameters}}]`
  *   — OpenAI's `parameters`, not Anthropic's `input_schema`.
+ * - `JsonSchema` constrained decoding → top-level `response_format` with
+ *   `type:"json_schema"` and `strict:true` (#1949).
  *
  * Top-level `error` envelope on the response surfaces as [LlmProviderException]
  * — same boundary contract as [OllamaClient] (#702).
@@ -63,8 +65,13 @@ open class OpenAiClient(
         .connectTimeout(connectTimeout.toJavaDuration())
         .build()
 
-    override fun chat(messages: List<LlmMessage>): LlmResponse {
-        val body = buildRequestJson(messages)
+    override fun supportsConstrainedDecoding(): Boolean = true
+
+    override fun chat(messages: List<LlmMessage>): LlmResponse =
+        chat(messages, jsonSchema = null)
+
+    override fun chat(messages: List<LlmMessage>, jsonSchema: JsonSchema?): LlmResponse {
+        val body = buildRequestJson(messages, jsonSchema = jsonSchema)
         val headers = mapOf(
             "Authorization" to "Bearer $apiKey",
             "content-type" to "application/json",
@@ -91,8 +98,11 @@ open class OpenAiClient(
      * usage-only delta with `choices: []` and `usage: {...}`. We capture
      * it and emit `LlmChunk.End(usage)` when `[DONE]` arrives.
      */
-    override suspend fun chatStream(messages: List<LlmMessage>): Flow<LlmChunk> {
-        val body = buildRequestJson(messages, stream = true)
+    override suspend fun chatStream(messages: List<LlmMessage>): Flow<LlmChunk> =
+        chatStream(messages, jsonSchema = null)
+
+    override suspend fun chatStream(messages: List<LlmMessage>, jsonSchema: JsonSchema?): Flow<LlmChunk> {
+        val body = buildRequestJson(messages, stream = true, jsonSchema = jsonSchema)
         val headers = mapOf(
             "Authorization" to "Bearer $apiKey",
             "content-type" to "application/json",
@@ -218,7 +228,11 @@ open class OpenAiClient(
         return String(bytes, Charsets.UTF_8)
     }
 
-    internal fun buildRequestJson(messages: List<LlmMessage>, stream: Boolean = false): String {
+    internal fun buildRequestJson(
+        messages: List<LlmMessage>,
+        stream: Boolean = false,
+        jsonSchema: JsonSchema? = null,
+    ): String {
         val pendingToolCallIds: ArrayDeque<String> = ArrayDeque()
         var toolCallCounter = 0
 
@@ -264,7 +278,10 @@ open class OpenAiClient(
         // #1743: stream_options.include_usage opts into a final usage-only
         // delta after finish_reason — required to get TokenUsage on stream.
         val streamField = if (stream) ""","stream":true,"stream_options":{"include_usage":true}""" else ""
-        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$streamField,"messages":[${messageObjects.joinToString(",")}]$toolsField}"""
+        val responseFormatField = jsonSchema?.let { schema ->
+            ""","response_format":{"type":"json_schema","json_schema":{"name":${schema.wireName().toJsonString()},"schema":${schema.schema},"strict":true}}"""
+        } ?: ""
+        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$streamField,"messages":[${messageObjects.joinToString(",")}]$toolsField$responseFormatField}"""
     }
 
     internal fun parseResponse(body: String): LlmResponse {

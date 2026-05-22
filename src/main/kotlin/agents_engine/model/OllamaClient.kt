@@ -21,7 +21,8 @@ import kotlinx.coroutines.flow.flowOn
  * `agents_engine/model/OllamaClient.kt` — the local Ollama HTTP adapter,
  * the framework's default `ModelClient`. Targets `POST /api/chat` on
  * `localhost:11434` by default; tools surface as native Ollama tool calls.
- * Streaming via NDJSON. See
+ * `JsonSchema` constrained decoding uses Ollama's top-level `format`
+ * field (#1949). Streaming via NDJSON. See
  * `src/main/resources/internals-agent/model/OllamaClient.md` for the
  * adjunct surfaced to IDE-side LLM tools (#1837 / #1852).
  */
@@ -96,11 +97,20 @@ open class OllamaClient(
      */
     @Volatile private var nativeToolsKnownUnsupported: Boolean = false
 
-    override fun chat(messages: List<LlmMessage>): LlmResponse {
+    override fun supportsConstrainedDecoding(): Boolean = true
+
+    override fun chat(messages: List<LlmMessage>): LlmResponse =
+        chat(messages, jsonSchema = null)
+
+    override fun chat(messages: List<LlmMessage>, jsonSchema: JsonSchema?): LlmResponse {
         if (tools.isNotEmpty() && nativeToolsKnownUnsupported) {
-            return parseResponse(sendChat(buildRequestJson(withInlineToolPrompt(messages), includeTools = false)))
+            return parseResponse(sendChat(buildRequestJson(
+                messages = withInlineToolPrompt(messages),
+                includeTools = false,
+                jsonSchema = jsonSchema,
+            )))
         }
-        val body = buildRequestJson(messages, includeTools = true)
+        val body = buildRequestJson(messages, includeTools = true, jsonSchema = jsonSchema)
         val responseBody = sendChat(body)
         return try {
             parseResponse(responseBody)
@@ -113,7 +123,7 @@ open class OllamaClient(
             if (tools.isNotEmpty() && isNativeToolCapabilityError(e.message)) {
                 nativeToolsKnownUnsupported = true
                 val inlineMessages = withInlineToolPrompt(messages)
-                val inlineBody = buildRequestJson(inlineMessages, includeTools = false)
+                val inlineBody = buildRequestJson(inlineMessages, includeTools = false, jsonSchema = jsonSchema)
                 parseResponse(sendChat(inlineBody))
             } else {
                 throw e
@@ -139,14 +149,22 @@ open class OllamaClient(
      * interrupt the blocking read mid-line. Step 4 will migrate to
      * `sendAsync` for true cancellation propagation.
      */
-    override suspend fun chatStream(messages: List<LlmMessage>): Flow<LlmChunk> {
+    override suspend fun chatStream(messages: List<LlmMessage>): Flow<LlmChunk> =
+        chatStream(messages, jsonSchema = null)
+
+    override suspend fun chatStream(messages: List<LlmMessage>, jsonSchema: JsonSchema?): Flow<LlmChunk> {
         val nativeToolsActive = tools.isNotEmpty() && !nativeToolsKnownUnsupported
         val effectiveMessages = if (tools.isNotEmpty() && nativeToolsKnownUnsupported) {
             withInlineToolPrompt(messages)
         } else {
             messages
         }
-        val body = buildRequestJson(effectiveMessages, includeTools = nativeToolsActive, stream = true)
+        val body = buildRequestJson(
+            messages = effectiveMessages,
+            includeTools = nativeToolsActive,
+            stream = true,
+            jsonSchema = jsonSchema,
+        )
         return flow {
             sendChatStream(body).use { stream ->
                 BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).useLines { lines ->
@@ -257,6 +275,7 @@ open class OllamaClient(
         messages: List<LlmMessage>,
         includeTools: Boolean = true,
         stream: Boolean = false,
+        jsonSchema: JsonSchema? = null,
     ): String {
         val messagesJson = messages.joinToString(",") { msg ->
             buildString {
@@ -268,7 +287,8 @@ open class OllamaClient(
                 //   role == assistant AND tool_calls non-empty AND content blank.
                 // A genuine empty-string assistant turn with no tool_calls is
                 // preserved as "content":"" (different semantics).
-                val toolCallsPresent = !msg.toolCalls.isNullOrEmpty()
+                val toolCalls = msg.toolCalls
+                val toolCallsPresent = !toolCalls.isNullOrEmpty()
                 val contentJson = if (msg.role == "assistant" && toolCallsPresent && msg.content.isEmpty()) {
                     "null"
                 } else {
@@ -277,7 +297,7 @@ open class OllamaClient(
                 append("""{"role":${msg.role.toJsonString()},"content":$contentJson""")
                 if (toolCallsPresent) {
                     append(""","tool_calls":[""")
-                    append(msg.toolCalls!!.joinToString(",") { tc ->
+                    append(toolCalls.orEmpty().joinToString(",") { tc ->
                         """{"function":{"name":${tc.name.toJsonString()},"arguments":${InlineToolCallParser.argsToJson(tc.arguments)}}}"""
                     })
                     append("]")
@@ -293,7 +313,8 @@ open class OllamaClient(
             }
             ""","tools":[$defs]"""
         } else ""
-        return """{"model":${model.toJsonString()},"stream":$stream,"temperature":$temperature,"messages":[$messagesJson]$toolsJson}"""
+        val formatJson = jsonSchema?.let { ""","format":${it.schema}""" } ?: ""
+        return """{"model":${model.toJsonString()},"stream":$stream,"temperature":$temperature,"messages":[$messagesJson]$toolsJson$formatJson}"""
     }
 
     internal fun parseResponse(body: String): LlmResponse {
