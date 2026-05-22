@@ -570,8 +570,17 @@ class ClaudeClientCoverageTest {
         """.trimIndent()
         val end = stubbedClaude(sse).chatStream(emptyList()).toList()
             .filterIsInstance<LlmChunk.End>().single()
-        assertEquals(TokenUsage(3, 2), end.tokenUsage,
-            "id:/retry:/comment lines must be ignored, real events still flow")
+        assertEquals(
+            TokenUsage(
+                promptTokens = 3,
+                completionTokens = 2,
+                cachedInputTokens = null,
+                provider = "claude",
+                model = "test-model",
+            ),
+            end.tokenUsage,
+            "id:/retry:/comment lines must be ignored, real events still flow",
+        )
     }
 
     @Test
@@ -667,7 +676,17 @@ class ClaudeClientCoverageTest {
         val body = """{"content":"oops not a list","usage":{"input_tokens":5,"output_tokens":3}}"""
         val response = stubbedClaudeChat(body).parseResponse(body) as LlmResponse.Text
         assertEquals(body, response.content, "non-list content → raw body wrapped as Text: ${response.content}")
-        assertEquals(TokenUsage(5, 3), response.tokenUsage, "usage still extracted on fallback path")
+        assertEquals(
+            TokenUsage(
+                promptTokens = 5,
+                completionTokens = 3,
+                cachedInputTokens = null,
+                provider = "claude",
+                model = "test-model",
+            ),
+            response.tokenUsage,
+            "usage still extracted on fallback path",
+        )
     }
 
     @Test
@@ -707,7 +726,16 @@ class ClaudeClientCoverageTest {
     fun `parseResponse usage extraction propagates both tokens to response`() {
         val body = """{"content":[{"type":"text","text":"x"}],"usage":{"input_tokens":11,"output_tokens":22}}"""
         val response = stubbedClaudeChat(body).parseResponse(body)
-        assertEquals(TokenUsage(11, 22), response.tokenUsage)
+        assertEquals(
+            TokenUsage(
+                promptTokens = 11,
+                completionTokens = 22,
+                cachedInputTokens = null,
+                provider = "claude",
+                model = "test-model",
+            ),
+            response.tokenUsage,
+        )
     }
 
     @Test

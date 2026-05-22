@@ -137,6 +137,7 @@ open class ClaudeClient(
         val blocks = mutableMapOf<Int, BlockState>()
         var inputTokens: Int? = null
         var outputTokens: Int? = null
+        var cachedInputTokens: Int? = null
 
         BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).useLines { lines ->
             // SSE: lines are `event: <name>`, `data: <json>`, or blank.
@@ -154,12 +155,21 @@ open class ClaudeClient(
                 if (evt != null && data != null) {
                     dispatchSseEvent(evt, data, blocks, collector,
                         onInputTokens = { inputTokens = it },
+                        onCachedInputTokens = { cachedInputTokens = it },
                         onOutputTokens = { outputTokens = it },
                         onMessageStop = {
+                            val prompt = inputTokens
+                            val completion = outputTokens
                             collector.emit(
                                 LlmChunk.End(
-                                    tokenUsage = if (inputTokens != null && outputTokens != null) {
-                                        TokenUsage(inputTokens!!, outputTokens!!)
+                                    tokenUsage = if (prompt != null && completion != null) {
+                                        TokenUsage(
+                                            promptTokens = prompt,
+                                            completionTokens = completion,
+                                            cachedInputTokens = cachedInputTokens,
+                                            provider = "claude",
+                                            model = model,
+                                        )
                                     } else null,
                                 )
                             )
@@ -187,6 +197,7 @@ open class ClaudeClient(
         blocks: MutableMap<Int, BlockState>,
         collector: kotlinx.coroutines.flow.FlowCollector<LlmChunk>,
         onInputTokens: (Int) -> Unit,
+        onCachedInputTokens: (Int) -> Unit,
         onOutputTokens: (Int) -> Unit,
         onMessageStop: suspend () -> Unit,
     ) {
@@ -196,6 +207,7 @@ open class ClaudeClient(
                 val message = data["message"] as? Map<String, Any?> ?: return
                 val usage = message["usage"] as? Map<String, Any?> ?: return
                 (usage["input_tokens"] as? Number)?.toInt()?.let(onInputTokens)
+                (usage["cache_read_input_tokens"] as? Number)?.toInt()?.let(onCachedInputTokens)
             }
             "content_block_start" -> {
                 val index = (data["index"] as? Number)?.toInt() ?: return
@@ -367,7 +379,16 @@ open class ClaudeClient(
         val usage = root["usage"] as? Map<*, *> ?: return null
         val input = (usage["input_tokens"] as? Number)?.toInt()
         val output = (usage["output_tokens"] as? Number)?.toInt()
-        return if (input != null && output != null) TokenUsage(input, output) else null
+        val cached = (usage["cache_read_input_tokens"] as? Number)?.toInt()
+        return if (input != null && output != null) {
+            TokenUsage(
+                promptTokens = input,
+                completionTokens = output,
+                cachedInputTokens = cached,
+                provider = "claude",
+                model = model,
+            )
+        } else null
     }
 
     companion object {

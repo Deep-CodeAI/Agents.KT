@@ -139,9 +139,7 @@ open class OpenAiClient(
                 val data = LenientJsonParser.parse(payload) as? Map<String, Any?> ?: continue
                 // Final usage-only delta: choices is empty, usage non-null.
                 (data["usage"] as? Map<*, *>)?.let { u ->
-                    val prompt = (u["prompt_tokens"] as? Number)?.toInt()
-                    val completion = (u["completion_tokens"] as? Number)?.toInt()
-                    if (prompt != null && completion != null) usage = TokenUsage(prompt, completion)
+                    usage = tokenUsageFromUsageMap(u)
                 }
                 val choices = data["choices"] as? List<*> ?: continue
                 val choice = choices.firstOrNull() as? Map<*, *> ?: continue
@@ -313,9 +311,23 @@ open class OpenAiClient(
 
     private fun extractTokenUsage(root: Map<*, *>): TokenUsage? {
         val usage = root["usage"] as? Map<*, *> ?: return null
+        return tokenUsageFromUsageMap(usage)
+    }
+
+    private fun tokenUsageFromUsageMap(usage: Map<*, *>): TokenUsage? {
         val prompt = (usage["prompt_tokens"] as? Number)?.toInt()
         val completion = (usage["completion_tokens"] as? Number)?.toInt()
-        return if (prompt != null && completion != null) TokenUsage(prompt, completion) else null
+        val details = usage["prompt_tokens_details"] as? Map<*, *>
+        val cached = (details?.get("cached_tokens") as? Number)?.toInt()
+        return if (prompt != null && completion != null) {
+            TokenUsage(
+                promptTokens = prompt,
+                completionTokens = completion,
+                cachedInputTokens = cached,
+                provider = "openai",
+                model = model,
+            )
+        } else null
     }
 
     companion object {

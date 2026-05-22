@@ -44,14 +44,24 @@ class OpenAiClientTest {
                 "choices":[{"index":0,
                   "message":{"role":"assistant","content":"hello world"},
                   "finish_reason":"stop"}],
-                "usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15}}""".trimIndent(),
+                "usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15,
+                  "prompt_tokens_details":{"cached_tokens":2}}}""".trimIndent(),
         )
 
         val resp = client.chat(listOf(LlmMessage("user", "hi")))
 
         assertTrue(resp is LlmResponse.Text, "expected Text, got ${resp::class.simpleName}")
         assertEquals("hello world", resp.content)
-        assertEquals(TokenUsage(12, 3), resp.tokenUsage)
+        assertEquals(
+            TokenUsage(
+                promptTokens = 12,
+                completionTokens = 3,
+                cachedInputTokens = 2,
+                provider = "openai",
+                model = "gpt-4o",
+            ),
+            resp.tokenUsage,
+        )
     }
 
     @Test
@@ -72,7 +82,16 @@ class OpenAiClientTest {
         val call = resp.calls.single()
         assertEquals("fibonacci", call.name)
         assertEquals(10, (call.arguments["n"] as Number).toInt())
-        assertEquals(TokenUsage(20, 5), resp.tokenUsage)
+        assertEquals(
+            TokenUsage(
+                promptTokens = 20,
+                completionTokens = 5,
+                cachedInputTokens = null,
+                provider = "openai",
+                model = "gpt-4o",
+            ),
+            resp.tokenUsage,
+        )
     }
 
     @Test

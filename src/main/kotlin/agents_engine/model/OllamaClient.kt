@@ -344,7 +344,15 @@ open class OllamaClient(
     private fun extractOllamaTokenUsage(root: Map<*, *>): TokenUsage? {
         val prompt = (root["prompt_eval_count"] as? Number)?.toInt()
         val completion = (root["eval_count"] as? Number)?.toInt()
-        return if (prompt != null && completion != null) TokenUsage(prompt, completion) else null
+        return if (prompt != null && completion != null) {
+            TokenUsage(
+                promptTokens = prompt,
+                completionTokens = completion,
+                cachedInputTokens = null,
+                provider = "ollama",
+                model = model,
+            )
+        } else null
     }
 }
 

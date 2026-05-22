@@ -34,7 +34,16 @@ class OllamaClientChatStreamTest {
         val d1 = chunks[1]; assertIs<LlmChunk.TextDelta>(d1); assertEquals("streaming ", d1.text)
         val d2 = chunks[2]; assertIs<LlmChunk.TextDelta>(d2); assertEquals("world", d2.text)
         val end = chunks[3]; assertIs<LlmChunk.End>(end)
-        assertEquals(TokenUsage(promptTokens = 12, completionTokens = 8), end.tokenUsage)
+        assertEquals(
+            TokenUsage(
+                promptTokens = 12,
+                completionTokens = 8,
+                cachedInputTokens = null,
+                provider = "ollama",
+                model = "test-model",
+            ),
+            end.tokenUsage,
+        )
     }
 
     @Test
@@ -59,7 +68,16 @@ class OllamaClientChatStreamTest {
         assertEquals(started.callId, finished.callId, "Finished must share callId with Started")
         assertEquals(mapOf("id" to 42), finished.arguments)
         val end = chunks[3]; assertIs<LlmChunk.End>(end)
-        assertEquals(TokenUsage(promptTokens = 20, completionTokens = 3), end.tokenUsage)
+        assertEquals(
+            TokenUsage(
+                promptTokens = 20,
+                completionTokens = 3,
+                cachedInputTokens = null,
+                provider = "ollama",
+                model = "test-model",
+            ),
+            end.tokenUsage,
+        )
     }
 
     @Test
