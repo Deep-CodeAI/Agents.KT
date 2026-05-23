@@ -27,6 +27,7 @@ class Loop<IN, OUT>(
     internal val execution: suspend (IN) -> OUT,
     internal val next: (OUT) -> IN?,
     internal val maxIterations: Int = DEFAULT_MAX_ITERATIONS,
+    val agents: List<Agent<*, *>> = emptyList(),
     /**
      * #1749 — session-aware execution path. When non-null and called via
      * `loop.session(input)`, each iteration's wrapped agent (or pipeline)
@@ -70,6 +71,7 @@ fun <A, B> Agent<A, B>.loop(
         execution = { input -> agent.invokeSuspend(input) },
         next = next,
         maxIterations = maxIterations,
+        agents = listOf(agent),
         // #1749: stream the wrapped agent's events per iteration.
         sessionExec = { input, emitter ->
             agents_engine.runtime.events.runAgentInSession(agent, input, emitter).first
@@ -87,6 +89,7 @@ fun <A, B> Pipeline<A, B>.loop(
         execution = { input -> inner.invokeSuspend(input) },
         next = next,
         maxIterations = maxIterations,
+        agents = inner.agents,
         // #1749: pipeline's effectiveSessionExec streams every stage's events per iteration.
         sessionExec = { input, emitter -> inner.effectiveSessionExec(input, emitter) },
         loopAgentId = inner.agents.lastOrNull()?.name,

@@ -81,7 +81,7 @@ The framework gives you the primitives. Wiring them to your runtime, infra, and 
 
 ### Governance
 
-- [ ] **Permission manifest reviewed in CI.** *Not yet shipped — #1912 (0.6.0 hero feature).* When it lands, every PR that changes the agent / tool / MCP-exposed surface should print a diff of the capability graph and require explicit reviewer sign-off.
+- [ ] **Permission manifest reviewed in CI.** Use `:agents-kt-manifest` to generate `agentManifest` JSON/YAML and run `verifyAgentManifest` against an approved baseline. Every PR that changes the agent / tool / MCP-exposed surface should print the capability-graph diff and require explicit reviewer sign-off. *Enforced by:* `permissionManifest()` and the Gradle plugin (#1912); you own the approval workflow.
 
 - [ ] **Human oversight on high-risk decisions.** Use `onBeforeToolCall` / `onBeforeTurn` to deny, mutate, or substitute high-risk actions before they reach tools or the model. For approvals, have the interceptor deny or substitute a pending-action result until your host app records user approval. *Enforced by:* `Decision` before interceptors.
 

@@ -44,28 +44,35 @@ sealed interface BranchRoute<OUT> {
      * Completed falls back to the source agent's name.
      */
     val routedAgentName: String?
+    val targetAgents: List<Agent<*, *>>
     data class TypeRoute<OUT>(
         val klass: KClass<*>,
         override val executor: suspend (Any?) -> OUT,
         override val sessionExecutor: (suspend (Any?, agents_engine.model.AgentEventEmitter) -> OUT)? = null,
         override val routedAgentName: String? = null,
+        override val targetAgents: List<Agent<*, *>> = emptyList(),
     ) : BranchRoute<OUT>
     data class NullRoute<OUT>(
         override val executor: suspend (Any?) -> OUT,
         override val sessionExecutor: (suspend (Any?, agents_engine.model.AgentEventEmitter) -> OUT)? = null,
         override val routedAgentName: String? = null,
+        override val targetAgents: List<Agent<*, *>> = emptyList(),
     ) : BranchRoute<OUT>
     data class ElseRoute<OUT>(
         override val executor: suspend (Any?) -> OUT,
         override val sessionExecutor: (suspend (Any?, agents_engine.model.AgentEventEmitter) -> OUT)? = null,
         override val routedAgentName: String? = null,
+        override val targetAgents: List<Agent<*, *>> = emptyList(),
     ) : BranchRoute<OUT>
 }
 
 class Branch<IN, OUT> internal constructor(
-    internal val source: Agent<IN, *>,
-    internal val routes: List<BranchRoute<OUT>>,
+    val source: Agent<IN, *>,
+    val routes: List<BranchRoute<OUT>>,
 ) {
+    val agents: List<Agent<*, *>>
+        get() = (listOf(source) + routes.flatMap { it.targetAgents }).distinct()
+
     operator fun invoke(input: IN): OUT = runBlocking { invokeSuspend(input) }
 
     suspend fun invokeSuspend(input: IN): OUT {

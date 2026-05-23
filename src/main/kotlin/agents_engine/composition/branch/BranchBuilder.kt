@@ -32,6 +32,7 @@ class BranchBuilder<OUT> {
                     agents_engine.runtime.events.runAgentInSession(agent, castFn(input), emitter).first
                 },
                 routedAgentName = agent.name,
+                targetAgents = listOf(agent),
             )
         }
 
@@ -45,6 +46,7 @@ class BranchBuilder<OUT> {
                 },
                 // Last agent in the pipeline produces the OUT, so use its name.
                 routedAgentName = pipeline.agents.lastOrNull()?.name,
+                targetAgents = pipeline.agents,
             )
         }
     }
@@ -73,6 +75,7 @@ class BranchBuilder<OUT> {
                 agents_engine.runtime.events.runAgentInSession(a, null, emitter).first
             },
             routedAgentName = a.name,
+            targetAgents = listOf(a),
         )
     }
 
@@ -86,6 +89,7 @@ class BranchBuilder<OUT> {
                 agents_engine.runtime.events.runAgentInSession(a, input, emitter).first
             },
             routedAgentName = a.name,
+            targetAgents = listOf(a),
         )
     }
 

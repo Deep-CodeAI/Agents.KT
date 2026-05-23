@@ -53,7 +53,7 @@ Set via the builder:
 
 These are separate from `AgentEvent` (the v0.5.0 streaming session surface) — observability hooks fire post-hoc per skill; AgentEvent fires inside the loop.
 
-Every `PipelineEvent` and `AgentEvent` carries runtime audit context: `requestId`, `sessionId`, and `manifestHash`. `invokeSuspend` creates a fresh request context; `agent.session(input)` additionally creates a session id.
+Every `PipelineEvent` and `AgentEvent` carries runtime audit context: `requestId`, `sessionId`, and `manifestHash`. `invokeSuspend` creates a fresh request context; `agent.session(input)` additionally creates a session id. `attachManifestHash(hash)` is the public hook used by `:agents-kt-manifest` after deterministic manifest generation so future invocations correlate with the reviewed capability graph.
 
 ## Before interceptors
 
@@ -64,6 +64,8 @@ Every `PipelineEvent` and `AgentEvent` carries runtime audit context: `requestId
 - `onBeforeToolCall` runs after the static per-skill allowlist check and before dispatch; it can mutate args, deny with a model-visible tool error, or substitute a tool result. It covers both regular `executor` and session-aware `sessionExecutor` paths.
 
 Interceptor registrations are listener-shaped and remain settable after freeze.
+
+Read-only counts (`beforeSkillInterceptorCount`, `beforeToolCallInterceptorCount`, `beforeTurnInterceptorCount`, `tokenUsageListenerCount`) exist for manifest generation and diagnostics. They expose the presence/shape of guardrail hooks without leaking callback implementations.
 
 ## Skill resolution
 

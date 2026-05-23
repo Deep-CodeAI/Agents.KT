@@ -20,7 +20,9 @@ description: Source-file knowledge for agents_engine/composition/branch/Branch.k
 
 ## Session-aware (#1748)
 
-Each route can carry an optional `sessionExecutor: suspend (Any?, AgentEventEmitter) -> OUT` and a `routedAgentName: String?` populated by `BranchBuilder`. When `branch.session(input)` runs and the route matches, the executor streams the routed agent's inner events into the channel. Routes built outside `BranchBuilder` (no `sessionExecutor`) fall back to the regular `executor` — events from the routed agent won't stream, but the terminal `Completed`/`Failed` still fires.
+Each route can carry an optional `sessionExecutor: suspend (Any?, AgentEventEmitter) -> OUT`, a `routedAgentName: String?`, and `targetAgents: List<Agent<*, *>>` populated by `BranchBuilder`. When `branch.session(input)` runs and the route matches, the executor streams the routed agent's inner events into the channel. Routes built outside `BranchBuilder` (no `sessionExecutor`) fall back to the regular `executor` — events from the routed agent won't stream, but the terminal `Completed`/`Failed` still fires.
+
+`Branch.agents` exposes the source plus routed target agents for permission-manifest graph traversal. Directly constructed routes default `targetAgents` to empty so existing low-level tests and custom route construction stay source-compatible.
 
 ## Construction
 

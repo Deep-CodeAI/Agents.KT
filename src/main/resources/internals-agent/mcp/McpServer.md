@@ -48,6 +48,8 @@ McpServer.from(agent) {
 
 The default `McpServerAuth.TrustedLocal` accepts loopback callers and rejects non-loopback callers. `snapshotFor(principal)` returns the same filtered capability surface used during `initialize`.
 
+`agent` is exposed as a read-only property so `:agents-kt-manifest` can bind the MCP server capability snapshot back to the source agent graph and attach the generated manifest hash to the same runtime agent.
+
 ## Tool registration
 
 ```kotlin

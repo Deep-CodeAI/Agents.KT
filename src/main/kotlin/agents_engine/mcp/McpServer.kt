@@ -77,7 +77,7 @@ internal data class RegisteredResource(
 )
 
 class McpServer private constructor(
-    private val agent: Agent<*, *>,
+    val agent: Agent<*, *>,
     private val exposedSkills: List<ExposedSkill>,
     private val portRequest: Int,
     private val maxRequestBytes: Long = DEFAULT_MAX_REQUEST_BYTES,

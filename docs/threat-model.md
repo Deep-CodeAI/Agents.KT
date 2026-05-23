@@ -215,7 +215,7 @@ Swarm.discover().forEach { sibling ->
 | Per-client MCP tool policy | | #1902 |
 | Prompt-injection filtering | | None (this is your problem) |
 | PII redaction in tool I/O | | None (use `onToolUse` to roll your own) |
-| Permission manifest / capability graph | | #1912 (0.6.0 hero feature) |
+| Permission manifest / capability graph | ✓ (static audit artifact; no sandbox enforcement) | Enforcement via #1916 |
 | JSONL audit log exporter | ✓ | |
 | `onBefore*` interceptors (deny/substitute/proceed) | ✓ | |
 

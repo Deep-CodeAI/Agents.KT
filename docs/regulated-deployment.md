@@ -22,10 +22,10 @@ This guide maps each of those questions to Agents.KT primitives and your operati
 **The artifact:** a static document — checked into the repo and reviewed in CI — that lists every agent, every skill, every tool, every MCP server the agent talks to, and every LLM provider it can invoke.
 
 **Framework support:**
-- **Today:** the agent DSL IS the inventory. `agent { skills { skill { tools(...) } } mcp { server() } model { } }` is reviewable Kotlin code. Tag every PR that changes the surface for compliance review.
-- **0.6.0:** the permission manifest (#1912) ships this as a generated artifact — a serialized capability graph emitted at build time, hashable, reviewable as a diff in CI. Until it lands, generate by hand: per agent, write down `skills × tools × MCP capabilities` as a markdown table.
+- **Today:** the agent DSL is reviewable Kotlin code, and `:agents-kt-manifest` emits the serialized inventory from that DSL. `permissionManifest()` produces a deterministic capability graph with agents, skills, tools, memory, MCP clients/server exposure, providers, budgets, guardrails, composition structure, and masked provider secrets (#1912).
+- **CI:** run `agentManifest` to write JSON/YAML and `verifyAgentManifest` against an approved baseline. Treat high-risk widening as a compliance-review trigger.
 
-**Recommended template** (use until #1912 ships):
+**Recommended template** (use alongside the generated manifest for human-readable review notes):
 
 ```markdown
 # Capability Inventory — <agent-name>
@@ -152,7 +152,7 @@ The AI Act treats different deployment shapes differently. Where your deployment
 
 When a regulator or buyer asks "show me what this AI system does," ship:
 
-1. **Capability inventory** for the agent (or the generated manifest once #1912 lands).
+1. **Capability inventory** for the agent, including the generated permission manifest.
 2. **Hardening checklist** marked with the items in effect for this deployment (from [production-hardening.md](production-hardening.md)).
 3. **Threat model + scenario classification** — which of the 5 scenarios in [threat-model.md](threat-model.md) this deployment matches.
 4. **Action log sample** for the requested time window.

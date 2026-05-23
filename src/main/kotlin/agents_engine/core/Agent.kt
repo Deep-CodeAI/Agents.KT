@@ -171,6 +171,18 @@ class Agent<IN, OUT>(
         private set
     internal val autoToolNames: MutableSet<String> = mutableSetOf()
 
+    val beforeSkillInterceptorCount: Int
+        get() = beforeSkillInterceptors.size
+
+    val beforeToolCallInterceptorCount: Int
+        get() = beforeToolCallInterceptors.size
+
+    val beforeTurnInterceptorCount: Int
+        get() = beforeTurnInterceptors.size
+
+    val tokenUsageListenerCount: Int
+        get() = tokenUsageListeners.size
+
     /**
      * Set true at end of [validate] (#697). Structural mutators (skills, tools,
      * memory, model, budget, prompt, error handlers, routing config) check this
@@ -190,6 +202,10 @@ class Agent<IN, OUT>(
     }
 
     fun prompt(text: String) { checkNotFrozen(); prompt = text }
+
+    fun attachManifestHash(hash: String?) {
+        manifestHash = hash
+    }
 
     fun model(block: ModelBuilder.() -> Unit) {
         checkNotFrozen()
