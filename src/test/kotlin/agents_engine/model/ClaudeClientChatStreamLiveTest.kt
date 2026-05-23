@@ -20,7 +20,7 @@ class ClaudeClientChatStreamLiveTest {
     private val apiKey: String? = loadKey()
     private val claudeModel: String = System.getenv("CLAUDE_TEST_MODEL") ?: "claude-haiku-4-5-20251001"
 
-    @Tag("live-llm")
+    @Tag("live-cloud-api")
     @Test
     fun `native chatStream against Anthropic emits multiple TextDelta chunks incrementally with token usage`() = runBlocking {
         assumeTrue(apiKey != null, "skipping: no Anthropic key at .secrets/anthropic-key or ANTHROPIC_API_KEY")

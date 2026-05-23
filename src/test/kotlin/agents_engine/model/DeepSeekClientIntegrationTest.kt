@@ -30,7 +30,7 @@ class DeepSeekClientIntegrationTest {
     private val apiKey: String? = loadApiKey()
     private val model: String = System.getenv("DEEPSEEK_TEST_MODEL") ?: "deepseek-v4-flash"
 
-    @Tag("live-llm")
+    @Tag("live-cloud-api")
     @Test
     fun `returns text response for simple prompt`() {
         assumeTrue(apiKey != null, "skipping: no DeepSeek key at .secrets/deepseek-key or DEEPSEEK_API_KEY")
@@ -48,7 +48,7 @@ class DeepSeekClientIntegrationTest {
         )
     }
 
-    @Tag("live-llm")
+    @Tag("live-cloud-api")
     @Test
     fun `streaming response emits text deltas and DeepSeek usage`() = runBlocking {
         assumeTrue(apiKey != null, "skipping: no DeepSeek key at .secrets/deepseek-key or DEEPSEEK_API_KEY")
@@ -68,7 +68,7 @@ class DeepSeekClientIntegrationTest {
         assertTrue((end.tokenUsage?.total ?: 0) > 0, "expected DeepSeek stream usage, got ${end.tokenUsage}")
     }
 
-    @Tag("live-llm")
+    @Tag("live-cloud-api")
     @Test
     fun `model invokes typed tool through DeepSeek function calling`() {
         assumeTrue(apiKey != null, "skipping: no DeepSeek key at .secrets/deepseek-key or DEEPSEEK_API_KEY")
@@ -97,7 +97,7 @@ class DeepSeekClientIntegrationTest {
         assertEquals("deepseek", calls.tokenUsage?.provider)
     }
 
-    @Tag("live-llm")
+    @Tag("live-cloud-api")
     @Test
     fun `full agentic loop with DeepSeek typed tool returns final answer`() {
         assumeTrue(apiKey != null, "skipping: no DeepSeek key at .secrets/deepseek-key or DEEPSEEK_API_KEY")

@@ -31,7 +31,7 @@ class ClaudeClientIntegrationTest {
     private val apiKey: String? = loadApiKey()
     private val model: String = System.getenv("CLAUDE_TEST_MODEL") ?: "claude-haiku-4-5-20251001"
 
-    @Tag("live-llm")
+    @Tag("live-cloud-api")
     @Test
     fun `returns text response for simple prompt`() {
         assumeTrue(apiKey != null, "skipping: no Anthropic key at .secrets/anthropic-key or ANTHROPIC_API_KEY")
@@ -50,7 +50,7 @@ class ClaudeClientIntegrationTest {
         )
     }
 
-    @Tag("live-llm")
+    @Tag("live-cloud-api")
     @Test
     fun `model invokes a tool when given one and asked to use it`() {
         assumeTrue(apiKey != null, "skipping: no Anthropic key at .secrets/anthropic-key or ANTHROPIC_API_KEY")
@@ -77,7 +77,7 @@ class ClaudeClientIntegrationTest {
         )
     }
 
-    @Tag("live-llm")
+    @Tag("live-cloud-api")
     @Test
     fun `full agentic loop on Claude — tool result flows back as final answer`() {
         assumeTrue(apiKey != null, "skipping: no Anthropic key at .secrets/anthropic-key or ANTHROPIC_API_KEY")

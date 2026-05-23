@@ -30,7 +30,7 @@ class OpenAiClientIntegrationTest {
     private val apiKey: String? = loadApiKey()
     private val model: String = System.getenv("OPENAI_TEST_MODEL") ?: "gpt-4o-mini"
 
-    @Tag("live-llm")
+    @Tag("live-cloud-api")
     @Test
     fun `returns text response for simple prompt`() {
         assumeTrue(apiKey != null, "skipping: no OpenAI key at .secrets/openai-key or OPENAI_API_KEY")
@@ -48,7 +48,7 @@ class OpenAiClientIntegrationTest {
         )
     }
 
-    @Tag("live-llm")
+    @Tag("live-cloud-api")
     @Test
     fun `model invokes a tool when given one and asked to use it`() {
         assumeTrue(apiKey != null, "skipping: no OpenAI key at .secrets/openai-key or OPENAI_API_KEY")
@@ -76,7 +76,7 @@ class OpenAiClientIntegrationTest {
         assertTrue(call.name == "greet", "expected greet, got ${call.name}")
     }
 
-    @Tag("live-llm")
+    @Tag("live-cloud-api")
     @Test
     fun `full agentic loop on OpenAI — tool result flows back as final answer`() {
         assumeTrue(apiKey != null, "skipping: no OpenAI key at .secrets/openai-key or OPENAI_API_KEY")
