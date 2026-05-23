@@ -208,6 +208,7 @@ Swarm.discover().forEach { sibling ->
 | Single-placement rule | ✓ | |
 | Observability hooks (`onToolUse`, `onError`, `onBudgetThreshold`) | ✓ | |
 | `untrustedOutput` flag on `ToolDef` | ✓ (signal flag; no enforcement yet) | Enforcement via sandbox — Phase 3 |
+| Declarative `ToolPolicy` risk / fs / network / env scope | ✓ (manifest/audit metadata; no enforcement yet) | Enforcement via #1916 |
 | Tool sandboxing (process / WASM / Docker) | | Phase 3 |
 | MCP server incoming auth | x | #1902 |
 | MCP server origin validation | x | #1902 |
@@ -215,8 +216,8 @@ Swarm.discover().forEach { sibling ->
 | Prompt-injection filtering | | None (this is your problem) |
 | PII redaction in tool I/O | | None (use `onToolUse` to roll your own) |
 | Permission manifest / capability graph | | #1912 (0.6.0 hero feature) |
-| JSONL audit log exporter | | #1914 |
-| `onBefore*` interceptors (deny/substitute/proceed) | | #1907 |
+| JSONL audit log exporter | ✓ | |
+| `onBefore*` interceptors (deny/substitute/proceed) | ✓ | |
 
 ## Related docs
 

@@ -28,8 +28,29 @@ class ToolDef(
 - `sessionExecutor` (#1752): an alternate executor used when the agentic loop is running under a session. Receives an `AgentEventEmitter` so the tool body can stream sub-events (e.g., a sibling agent's inner events) into the captain's session. Falls back to `executor` when null — preserves byte-for-byte behavior for plain tools.
 - `sessionExecutor` is declared BEFORE `executor` so the trailing-lambda construction `ToolDef(name, desc) { args -> ... }` still binds to `executor`. (Removing this ordering broke many call sites — see related test failures in the v0.5.0 release.)
 - `untrustedOutput`: marks tool outputs as untrusted (sandbox boundary signalling).
-- `risk` / `policy`: provider-neutral boundary metadata for the common `core.Tool` contract. `policy` is a marker hook until #1915 lands.
+- `risk` / `policy`: provider-neutral boundary metadata for the common `core.Tool` contract. Local builder policies set `risk = policy.risk`.
 - `errorHandler` is wired via the typed `tool { ... } onError { ... }` infix.
+
+## Declarative policy DSL
+
+The block-style local builder accepts `policy { }`:
+
+```kotlin
+tool("readUploadedDocument") {
+    description("Read KYC upload")
+    policy {
+        risk = ToolRisk.Medium
+        filesystem { read("/uploads/kyc/**"); writeNone() }
+        network { denyAll() }
+        environment { allow("OCR_REGION") }
+    }
+    executor { args -> /* ... */ }
+}
+```
+
+Typed tool builders also accept an optional `policy = toolPolicy { ... }` argument before the executor lambda.
+
+The policy is declarative only in 0.6.0. It is captured for manifest/audit consumers; sandbox enforcement is not in `ToolDef`.
 
 ## Typed handle: `Tool<Args, Result>`
 
@@ -59,6 +80,7 @@ Typed builders register `argsType: KClass<Args>` with `ToolDef`. When the LLM se
 
 - `Tool.kt` (separate file, if present) — extension functions on `Tool<*, *>` for composition.
 - `core/Tool.kt` — provider-neutral tool boundary contract implemented by local and MCP handles.
+- `core/ToolPolicy.kt` — declarative policy data classes/builders and manifest helpers.
 - `OnErrorBuilder.kt` — the `onError { }` recovery DSL wired to `errorHandler`.
 - `ToolError.kt` — typed error union.
 - `generation/Generable.kt`, `generation/constructFromMap.kt` — annotation + reflective constructor.

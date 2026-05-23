@@ -111,6 +111,8 @@ class JsonlAuditExporterTest {
         val row = parse(line)
         assertEquals("call_api", row["toolId"])
         assertEquals("ToolCalled", row["eventType"])
+        assertEquals("Unknown", row["toolPolicyRisk"])
+        assertEquals(false, row["usedDeclaredCapability"])
     }
 
     @Test
@@ -179,6 +181,14 @@ class JsonlAuditExporterTest {
                 'n' -> {
                     expect("null")
                     null
+                }
+                't' -> {
+                    expect("true")
+                    true
+                }
+                'f' -> {
+                    expect("false")
+                    false
                 }
                 else -> error("unexpected JSON token at $index in $text")
             }
@@ -274,6 +284,8 @@ class JsonlAuditExporterTest {
             "budgetState",
             "guardrailDecision",
             "mcpClientId",
+            "toolPolicyRisk",
+            "usedDeclaredCapability",
             "provider",
             "model",
         )

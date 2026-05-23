@@ -4,6 +4,8 @@ import agents_engine.generation.Generable
 import agents_engine.generation.LenientJsonParser
 import agents_engine.generation.constructFromMap
 import agents_engine.generation.toLlmInput
+import agents_engine.core.ToolPolicy
+import agents_engine.core.toolPolicy
 import kotlin.reflect.KClass
 import agents_engine.generation.hasGenerableAnnotation
 
@@ -209,6 +211,7 @@ class ToolsBuilder {
     inline fun <reified Args : Any, Result> tool(
         name: String,
         description: String,
+        policy: ToolPolicy? = null,
         crossinline executor: (Args) -> Result,
     ): Tool<Args, Result> {
         requireUserNotReservedToolName(name)
@@ -238,7 +241,14 @@ class ToolsBuilder {
                 )
             executor(typed)
         }
-        val def = ToolDef(name = name, description = description, executor = wrapped, argsType = argsClass)
+        val def = ToolDef(
+            name = name,
+            description = description,
+            executor = wrapped,
+            argsType = argsClass,
+            risk = policy?.risk ?: agents_engine.core.ToolRisk.LOW,
+            policy = policy,
+        )
         defs.add(def)
         return Tool(def, argsClass, Any::class, ::generableInputToMap)
     }
@@ -249,10 +259,15 @@ class ToolDefBuilder(private val name: String) {
     private var exec: ((Map<String, Any?>) -> Any?)? = null
     private var handler: ToolErrorHandler? = null
     private var untrusted: Boolean = false
+    private var policy: ToolPolicy? = null
 
     fun description(text: String) { desc = text }
 
     fun executor(block: (Map<String, Any?>) -> Any?) { exec = block }
+
+    fun policy(block: agents_engine.core.ToolPolicyBuilder.() -> Unit) {
+        policy = toolPolicy(block)
+    }
 
     fun onError(block: OnErrorBuilder.() -> Unit) {
         handler = OnErrorBuilder().apply(block).build()
@@ -272,6 +287,8 @@ class ToolDefBuilder(private val name: String) {
             name = name,
             description = desc,
             untrustedOutput = untrusted,
+            risk = policy?.risk ?: agents_engine.core.ToolRisk.LOW,
+            policy = policy,
             executor = requireNotNull(exec) { "Tool \"$name\" must have an executor { } block." },
         )
         handler?.let { def.errorHandler = it }

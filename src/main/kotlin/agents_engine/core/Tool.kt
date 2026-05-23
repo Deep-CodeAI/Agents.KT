@@ -25,11 +25,33 @@ enum class ToolRisk {
     HIGH,
     CRITICAL,
     UNKNOWN,
-}
 
-/**
- * Placeholder policy marker for #1915. Kept deliberately small here so the
- * typed tool hierarchy can carry an optional policy reference without
- * committing to the sandbox DSL before that issue lands.
- */
-interface ToolPolicy
+    ;
+
+    val manifestName: String
+        get() = when (this) {
+            LOW -> "Low"
+            MEDIUM -> "Medium"
+            HIGH -> "High"
+            CRITICAL -> "Critical"
+            UNKNOWN -> "Unknown"
+        }
+
+    companion object {
+        val Low: ToolRisk get() = LOW
+        val Medium: ToolRisk get() = MEDIUM
+        val High: ToolRisk get() = HIGH
+        val Critical: ToolRisk get() = CRITICAL
+        val Unknown: ToolRisk get() = UNKNOWN
+
+        fun fromManifest(value: String?): ToolRisk =
+            when (value?.trim()?.lowercase()) {
+                "low" -> LOW
+                "medium" -> MEDIUM
+                "high" -> HIGH
+                "critical" -> CRITICAL
+                "unknown" -> UNKNOWN
+                else -> UNKNOWN
+            }
+    }
+}

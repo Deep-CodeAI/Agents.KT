@@ -159,6 +159,41 @@ The error names the offending skill and lists only the allowed tools — it does
 - Don't rely on the system prompt's "Available tools" list as a fence; it isn't one.
 - Use a typo-safe `tools(...)` call — the framework fails fast at agent construction if a name doesn't exist.
 
+### Declarative tool policy DSL
+
+Tools can also declare what they are expected to touch. This is **declarative only in 0.6.0**: it feeds manifest/audit evidence, but it does not sandbox the executor. Process/container enforcement is the sibling #1916 track.
+
+```kotlin
+tools {
+    val readUploadedDocument = tool("readUploadedDocument") {
+        description("Read an uploaded KYC document")
+        policy {
+            risk = ToolRisk.Medium
+            filesystem {
+                read("/uploads/kyc/**")
+                writeNone()
+            }
+            network { denyAll() }
+            environment { allow("OCR_REGION") }
+        }
+        executor { args ->
+            Files.readString(Path.of(args["path"].toString()))
+        }
+    }
+}
+```
+
+Policy fields:
+
+| Field | DSL |
+|---|---|
+| Risk | `ToolRisk.Low`, `Medium`, `High`, `Critical` |
+| Filesystem | `read(glob)`, `write(glob)`, `readNone()`, `writeNone()` |
+| Network | `allow(host)`, `denyAll()`, `allowAll()` |
+| Environment | `allow(varName)`, `denyAll()` |
+
+`network { allowAll() }` logs a warning when the policy is built so broad egress is visible during review. `ToolPolicy` exposes `toManifestMap()`, `toManifestJson()`, and `toManifestYaml()` so the permission-manifest module can capture the policy verbatim. `PipelineEvent.ToolCalled` includes `toolPolicyRisk` and `usedDeclaredCapability`; the JSONL audit exporter writes those fields too.
+
 ### Skill Selection
 
 When an agent has multiple skills with the same type signature, the framework decides which one to run. Three strategies, in priority order:

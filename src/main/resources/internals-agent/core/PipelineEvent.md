@@ -17,13 +17,15 @@ sealed interface PipelineEvent {
     val manifestHash: String?
 
     data class SkillChosen(...,    skillName: String)
-    data class ToolCalled(...,     toolName: String, arguments: Map<String, Any?>, result: Any?)
+    data class ToolCalled(...,     toolName: String, arguments: Map<String, Any?>, result: Any?, toolPolicyRisk, usedDeclaredCapability)
     data class KnowledgeLoaded(..., entryName: String, contentLength: Int)
     data class ErrorOccurred(...,  error: Throwable)
 }
 ```
 
 `agentName`, `timestamp`, `requestId`, `sessionId`, and `manifestHash` are present on every variant — sort, filter, attribute, and audit-correlate without inspecting the variant.
+
+`ToolCalled` also carries `toolPolicyRisk` and `usedDeclaredCapability` from the executed `ToolDef` (#1915). The flag means "the tool declared at least one filesystem/network/environment capability"; it is audit metadata, not sandbox proof.
 
 ## Wiring
 
@@ -33,7 +35,7 @@ val tracer = agent<String, String>("tracer") { /* ... */ }
 tracer.observe { event ->
     when (event) {
         is PipelineEvent.SkillChosen     -> emit("skill", event.skillName)
-        is PipelineEvent.ToolCalled      -> emit("tool",  event.toolName)
+        is PipelineEvent.ToolCalled      -> emit("tool",  "${event.toolName}:${event.toolPolicyRisk}")
         is PipelineEvent.KnowledgeLoaded -> emit("know",  event.entryName)
         is PipelineEvent.ErrorOccurred   -> emit("error", event.error.message ?: "<no msg>")
     }

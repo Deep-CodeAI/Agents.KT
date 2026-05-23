@@ -206,6 +206,14 @@ class JsonlAuditExporter(
                 is PipelineEvent.ToolCalled -> typeName(event.result)
                 else -> null
             },
+            toolPolicyRisk = when (event) {
+                is PipelineEvent.ToolCalled -> event.toolPolicyRisk.manifestName
+                else -> null
+            },
+            usedDeclaredCapability = when (event) {
+                is PipelineEvent.ToolCalled -> event.usedDeclaredCapability
+                else -> null
+            },
             usage = null,
         )
 
@@ -237,6 +245,8 @@ class JsonlAuditExporter(
                 is AgentEvent.ToolCallFinished -> typeName(event.result)
                 else -> null
             },
+            toolPolicyRisk = null,
+            usedDeclaredCapability = null,
             usage = usage,
         )
     }
@@ -257,6 +267,8 @@ class JsonlAuditExporter(
         timestamp: String,
         inputType: String?,
         outputType: String?,
+        toolPolicyRisk: String?,
+        usedDeclaredCapability: Boolean?,
         usage: TokenUsage?,
     ): Map<String, Any?> =
         linkedMapOf(
@@ -273,6 +285,8 @@ class JsonlAuditExporter(
             "budgetState" to null,
             "guardrailDecision" to null,
             "mcpClientId" to null,
+            "toolPolicyRisk" to toolPolicyRisk,
+            "usedDeclaredCapability" to usedDeclaredCapability,
             "provider" to usage?.provider,
             "model" to usage?.model,
         )

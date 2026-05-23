@@ -42,10 +42,11 @@ Each row uses the same field set:
 ```text
 requestId, sessionId, manifestHash, agentId, skillId, toolId, eventType,
 timestamp, inputType, outputType, budgetState, guardrailDecision,
-mcpClientId, provider, model
+mcpClientId, toolPolicyRisk, usedDeclaredCapability, provider, model
 ```
 
 The exporter deliberately does **not** serialize raw tool arguments, tool results, streamed text, generated output, or exception messages. It emits identifiers, event names, type names, and provider/model metadata so secret-like values do not leak into audit logs by default. `manifestHash` is populated when the runtime event carries one.
+For `ToolCalled` rows, `toolPolicyRisk` mirrors the tool's declarative `ToolPolicy.risk`, and `usedDeclaredCapability` is true when the executed tool declares at least one filesystem/network/environment capability.
 
 You can also write streaming/session events directly:
 

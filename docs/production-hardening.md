@@ -13,7 +13,7 @@ This is the **actionable companion** to [`docs/threat-model.md`](threat-model.md
 | Tool implementation safety (what your lambdas reach) | Tool allowlist per skill |
 | Sandboxing tool execution | Budget caps, freeze contract, observability hooks |
 | PII redaction in prompts/logs | The hooks to do that redaction (`onToolUse`, etc.) |
-| Network policy / egress control | `untrustedOutput` signal flag on `ToolDef` |
+| Network policy / egress control | Declarative `ToolPolicy` metadata for review; deployer-enforced network controls |
 | Audit log retention + chain-of-custody | Lifecycle events (`AgentEvent`, `PipelineEvent`) with `requestId` / `sessionId` / `manifestHash` |
 | Secret rotation | API-key-masked `toString()` on `ModelConfig` |
 
@@ -29,7 +29,7 @@ The framework gives you the primitives. Wiring them to your runtime, infra, and 
 
 - [ ] **Tool output wrapped or sanitised** before feeding into the next LLM turn. Use `ToolDef(... untrustedOutput = true)` for tools that ingest user-provided content. The flag is currently a signal (no enforcement); use it as a documentation marker AND wrap the lambda's return value yourself: `"--- BEGIN UNTRUSTED CONTENT ---\n$raw\n--- END ---"`. *Partial enforcement:* `untrustedOutput` flag exists; sandbox enforcement ships in Phase 3.
 
-- [ ] **Filesystem / network tools never exposed without a policy.** If a tool does `Files.read(Path.of(args["path"]))`, the tool body must validate `path` against an allowlist before reading. The framework's `tools(...)` allowlist controls WHICH tools the LLM may call; YOUR tool body controls WHAT each call may do. *Deployer responsibility.*
+- [ ] **Filesystem / network tools never exposed without a policy.** Declare expected scope with `tool { policy { filesystem { read("/uploads/**"); writeNone() }; network { denyAll() } } }`, then enforce that scope in the tool body or host sandbox. The framework's `tools(...)` allowlist controls WHICH tools the LLM may call; the declarative policy is audit evidence, not 0.6.0 enforcement. *Partial framework support:* `ToolPolicy` (#1915); enforcement remains deployer / #1916.
 
 - [ ] **Dangerous tools run out-of-process.** Until tool sandboxing ships (Phase 3), invoke shell-exec / subprocess / `eval`-style tools through a separate sandboxed process (Docker, gVisor, Firecracker, browser-based WASM). The agent's tool body becomes a thin RPC client to the sandbox. *Deployer responsibility.*
 

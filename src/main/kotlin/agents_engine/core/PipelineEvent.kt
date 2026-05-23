@@ -50,6 +50,8 @@ sealed interface PipelineEvent {
         val arguments: Map<String, Any?>,
         val result: Any?,
         override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
+        val toolPolicyRisk: ToolRisk = ToolRisk.UNKNOWN,
+        val usedDeclaredCapability: Boolean = false,
     ) : PipelineEvent
 
     data class KnowledgeLoaded(
@@ -96,7 +98,18 @@ fun Agent<*, *>.observe(handler: (PipelineEvent) -> Unit) {
     val priorTool = this.toolUseListener
     onToolUse { name, args, result ->
         priorTool?.invoke(name, args, result)
-        handler(PipelineEvent.ToolCalled(agentName, Instant.now(), name, args, result))
+        val toolDef = toolMap[name]
+        handler(
+            PipelineEvent.ToolCalled(
+                agentName = agentName,
+                timestamp = Instant.now(),
+                toolName = name,
+                arguments = args,
+                result = result,
+                toolPolicyRisk = toolDef?.risk ?: ToolRisk.UNKNOWN,
+                usedDeclaredCapability = toolDef?.policy?.declaresAnyCapability == true,
+            ),
+        )
     }
 
     val priorKnowledge = this.knowledgeUsedListener
