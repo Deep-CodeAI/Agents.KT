@@ -65,6 +65,11 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
         ToolDef(
             name = if (prefix != null) "$prefix.${t.name}" else t.name,
             description = describeForLlm(t),
+            // #2377 — forward the server's inputSchema as the tool's `parameters`
+            // field. Without this the LLM only sees the schema embedded in the
+            // description prose while the wire `parameters` falls back to the
+            // permissive empty-object — conflicting signal.
+            parametersSchemaJson = t.inputSchema?.let { McpJson.encode(it) },
             executor = { args -> call(t.name, args) },
         )
     }

@@ -338,7 +338,8 @@ open class ClaudeClient(
         val toolDefs = buildList {
             tools.forEach { t ->
                 val schema = t.argsType?.jsonSchema()
-                    ?: """{"type":"object","properties":{},"additionalProperties":true}"""
+                    ?: t.parametersSchemaJson
+                    ?: """{"type":"object","properties":{},"additionalProperties":false}"""
                 add("""{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"input_schema":$schema}""")
             }
             structuredSchema?.let { schema ->
@@ -433,9 +434,3 @@ open class ClaudeClient(
     }
 }
 
-private fun String.toJsonString(): String =
-    '"' + replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t") + '"'

@@ -36,6 +36,16 @@ class ToolDef(
     val name: String,
     val description: String = "",
     val argsType: KClass<*>? = null,
+    /**
+     * #2377 — raw JSON Schema for the tool's parameters when [argsType] is
+     * null but the schema is known from elsewhere (notably MCP imports that
+     * carry an upstream `inputSchema`). Providers prefer [argsType]'s
+     * generated schema first, then [parametersSchemaJson], then a closed
+     * `additionalProperties:false` empty-object fallback. Must be a valid
+     * JSON object literal — providers paste it verbatim into the request
+     * body.
+     */
+    val parametersSchemaJson: String? = null,
     val untrustedOutput: Boolean = false,
     val risk: agents_engine.core.ToolRisk = agents_engine.core.ToolRisk.LOW,
     val policy: agents_engine.core.ToolPolicy? = null,

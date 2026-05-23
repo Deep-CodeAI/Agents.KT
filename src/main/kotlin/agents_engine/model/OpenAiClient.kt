@@ -271,7 +271,8 @@ open class OpenAiClient(
         val toolsField = if (tools.isNotEmpty()) {
             val defs = tools.joinToString(",") { t ->
                 val schema = t.argsType?.jsonSchema()
-                    ?: """{"type":"object","properties":{},"additionalProperties":true}"""
+                    ?: t.parametersSchemaJson
+                    ?: """{"type":"object","properties":{},"additionalProperties":false}"""
                 """{"type":"function","function":{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"parameters":$schema}}"""
             }
             ""","tools":[$defs]"""
@@ -363,9 +364,3 @@ open class OpenAiClient(
     }
 }
 
-private fun String.toJsonString(): String =
-    '"' + replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t") + '"'
