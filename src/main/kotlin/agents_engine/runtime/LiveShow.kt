@@ -6,7 +6,6 @@ import agents_engine.composition.loop.Loop
 import agents_engine.composition.parallel.Parallel
 import agents_engine.composition.pipeline.Pipeline
 import agents_engine.core.Agent
-import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.io.Reader
@@ -225,30 +224,28 @@ class LiveShow internal constructor(
     fun runUntilTerminated() { terminated.await() }
 
     private fun runRepl() {
-        val reader = BufferedReader(cfg.input)
         val writer = cfg.output
+        val editor = cfg.createLineEditor(effectiveColors)
         val slashes = buildSlashTable()
         val history = ArrayDeque<Pair<String, String>>()
 
-        cfg.banner?.invoke()?.let { writer.println(themed(it, cfg.theme.banner)) }
-        writePrompt(writer)
+        try {
+            cfg.banner?.invoke()?.let { writer.println(themed(it, cfg.theme.banner)) }
 
-        while (running.get()) {
-            val raw = reader.readLine() ?: break
-            val line = raw.trim()
-            if (line.isEmpty()) {
-                writePrompt(writer)
-                continue
+            while (running.get()) {
+                val raw = editor.readLine(themed(cfg.prompt, cfg.theme.prompt)) ?: break
+                val line = raw.trim()
+                if (line.isEmpty()) continue
+
+                if (line.startsWith("/")) {
+                    handleSlash(writer, slashes, line, history)
+                    continue
+                }
+
+                handleTurn(writer, history, line)
             }
-
-            if (line.startsWith("/")) {
-                handleSlash(writer, slashes, line, history)
-                if (running.get()) writePrompt(writer)
-                continue
-            }
-
-            handleTurn(writer, history, line)
-            if (running.get()) writePrompt(writer)
+        } finally {
+            editor.close()
         }
     }
 
@@ -330,12 +327,6 @@ class LiveShow internal constructor(
         }
     }
 
-    private fun writePrompt(writer: PrintWriter) {
-        if (cfg.prompt.isEmpty()) return
-        writer.print(themed(cfg.prompt, cfg.theme.prompt))
-        writer.flush()
-    }
-
     private fun themed(s: String, color: AnsiColor): String =
         if (effectiveColors) color.wrap(s) else s
 
@@ -369,8 +360,8 @@ class LiveShow internal constructor(
     )
 
     companion object {
-        // Object-identity sentinel — distinguishable from any user value.
-        private val SENTINEL_FAILURE: Any = Object()
+        // Identity sentinel — distinguishable from any user value.
+        private val SENTINEL_FAILURE: Any = Any()
 
         fun from(agent: Agent<String, *>, block: LiveShowBuilder.() -> Unit = {}): LiveShow =
             buildShow({ agent.invokeSuspend(it) }, block)
@@ -423,10 +414,19 @@ class LiveShowBuilder {
     var maxHistoryTurns: Int = 20
     var historyDelimiter: String = "---"
     var input: Reader = InputStreamReader(System.`in`)
+        set(value) {
+            field = value
+            inputOverridden = true
+        }
     var output: PrintWriter = PrintWriter(System.out, /* autoFlush = */ true)
+
+    private var inputOverridden: Boolean = false
 
     /** Force colors on/off; null = auto-detect via `System.console()`. */
     var colors: Boolean? = null
+
+    /** Force JLine on/off; null = use JLine only for default interactive input. */
+    var useJLine: Boolean? = null
 
     /** Color scheme. [LiveShowTheme.NONE] disables theming regardless of [colors]. */
     var theme: LiveShowTheme = LiveShowTheme.DEFAULT
@@ -453,6 +453,11 @@ class LiveShowBuilder {
     internal var onTurnEnd: ((String, Any?) -> Unit)? = null
     internal var onErrorReported: ((Throwable) -> Unit)? = null
 
+    internal fun copyInputStateFrom(other: LiveShowBuilder) {
+        input = other.input
+        inputOverridden = other.inputOverridden
+    }
+
     fun slash(name: String, action: () -> Unit) {
         require(name.isNotBlank()) { "slash name must not be blank" }
         userSlashes[name] = action
@@ -472,8 +477,10 @@ class LiveShowBuilder {
         maxHistoryTurns = maxHistoryTurns,
         historyDelimiter = historyDelimiter,
         input = input,
+        inputIsDefault = !inputOverridden,
         output = output,
         colors = colors,
+        useJLine = useJLine,
         theme = theme,
         renderOutput = renderOutput,
         banner = banner,
@@ -491,8 +498,10 @@ internal data class LiveShowConfig(
     val maxHistoryTurns: Int,
     val historyDelimiter: String,
     val input: Reader,
+    val inputIsDefault: Boolean,
     val output: PrintWriter,
     val colors: Boolean?,
+    val useJLine: Boolean?,
     val theme: LiveShowTheme,
     val renderOutput: (Any?) -> String,
     val banner: (() -> String)?,

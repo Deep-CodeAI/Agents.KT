@@ -129,7 +129,7 @@ object LiveRunner {
             configure()
             // CLI flag wins: the parsed builder's maxHistoryTurns reflects --max-history.
             this.maxHistoryTurns = parsed.builder.maxHistoryTurns
-            this.input = parsed.builder.input
+            this.copyInputStateFrom(parsed.builder)
             this.output = parsed.builder.output
             this.prompt = parsed.builder.prompt
             this.historyDelimiter = parsed.builder.historyDelimiter

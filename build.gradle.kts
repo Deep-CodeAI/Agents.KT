@@ -56,6 +56,7 @@ dependencies {
     testImplementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+    implementation("org.jline:jline:3.27.1")
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 

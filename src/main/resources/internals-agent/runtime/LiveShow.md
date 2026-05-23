@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/runtime/LiveShow.kt — interactive demo REPL. Wraps any of the six top-level types (Agent / Pipeline / Branch / Loop / Parallel / Forum). UI surface (#983): ANSI color enum, themed Style records, ASCII banner, spinner, slash-command hooks, history trimming, optional precheck (typical: OllamaPreflight). Reader/PrintWriter abstraction for tests. Used by every runnable demo in the repo. Call when the IDE LLM needs to reason about building a REPL frontend.
+description: Source-file knowledge for agents_engine/runtime/LiveShow.kt — interactive demo REPL. Wraps any of the six top-level types (Agent / Pipeline / Branch / Loop / Parallel / Forum). UI surface (#983): ANSI color enum, themed Style records, ASCII banner, spinner, slash-command hooks, history trimming, optional precheck (typical: OllamaPreflight), and JLine line editing (#985). Reader/PrintWriter abstraction for tests. Used by every runnable demo in the repo. Call when the IDE LLM needs to reason about building a REPL frontend.
 ---
 
 # `agents_engine/runtime/LiveShow.kt` — interactive demo REPL
@@ -31,21 +31,27 @@ fun main() {
 - **Spinner** — animated `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` while the agent thinks. Goes away when output starts.
 - **Hooks** — `onCommand("/foo") { ... }` lets the user register slash-commands handled by the host (e.g., `/clear`, `/save`, `/quit`).
 - **Precheck** — optional `() -> Unit` invoked at startup. Throwing aborts the REPL with a clear error before any prompt is drawn (typical: `OllamaPreflight`).
+- **Line editing** — default interactive terminal input uses JLine 3 for cursor movement and in-memory up/down history. Scripted `Reader` input stays on the buffered path; `useJLine` can force the choice.
 
 ## History trimming
 
 `maxHistoryTurns` controls the history-trimming threshold. Useful for long-running REPLs where the conversation would otherwise grow unbounded. Default is some sensible value; pass `Int.MAX_VALUE` to disable.
 
-## Reader / Writer abstraction
+## Line input abstraction
 
-LiveShow takes a `Reader` (default: `System.in`) and a `PrintWriter` (default: `System.out`). Tests inject fake streams to drive the REPL without a real terminal.
+LiveShow takes a `Reader` (default: `System.in`) and a `PrintWriter` (default: `System.out`). `LineEditor` has two implementations:
+
+- `BufferedLineEditor` wraps the injected `Reader` / `PrintWriter` pair. Tests and scripted runs use this path.
+- `JLineLineEditor` wraps a JLine `LineReaderBuilder` with `DefaultHistory` for real interactive terminals.
+
+Selection is `useJLine ?: (effectiveColors && inputIsDefault)`. Custom `Reader` input defaults to buffered mode so tests, pipes, and `--once`-style scripted calls do not require a TTY.
 
 ## Lifecycle
 
 `LiveShow.run()`:
 1. Run `precheck()` if set; abort on failure.
 2. Print the banner.
-3. Loop: print prompt → read line → check for slash-command hook → invoke agent → print output → repeat.
+3. Loop: read a prompted line via `LineEditor` → check for slash-command hook → invoke agent → print output → repeat.
 4. `Ctrl+D` (EOF) or `/quit` terminates.
 
 The framework holds the agent's invocation in a `runBlocking` per turn — single-threaded by design (one user, one agent, one turn at a time).
