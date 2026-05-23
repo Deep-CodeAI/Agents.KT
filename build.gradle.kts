@@ -240,22 +240,31 @@ tasks.register("updateVerificationMetadata") {
 }
 
 // #1720 — single entry point for "run everything before pushing":
-//   - root :test (unit, excludes live-llm / live-mcp tags via useJUnitPlatform)
-//   - every subproject :test (KSP processor, no-reflect smoke)
-//   - :integrationTest (live-llm — needs a running Ollama)
+//   - root :test (unit + `live-llm` — the latter assume-skip when no API key
+//     / Ollama is present; `live-mcp` / `interactive` stay excluded here)
+//   - every subproject :test (KSP processor, no-reflect smoke, observability
+//     bridge, OTel / LangSmith / Langfuse adapters, permission manifest)
 //   - :mcpIntegrationTest (live-mcp — needs MCP_REDMINE_URL)
+//
+// Note: there's no `:integrationTest` dependency anymore — that task is now
+// a subset re-run of what `:test` already covers, kept around as an opt-in
+// for "run only the live-llm slice."
 //
 // CI keeps using `check`, which is unit-only — the live tasks need infra CI
 // doesn't have. testAll is for the developer who wants one command for the
 // full gate before release-cut.
 tasks.register("testAll") {
-    description = "Runs every test task across every subproject — unit, KSP, no-reflect smoke, live-llm integration, live-mcp integration."
+    description = "Runs every test task across every subproject — unit + live-llm in :test, KSP, no-reflect smoke, all 0.6.0 modules, live-mcp integration."
     group = "verification"
     dependsOn(
         ":test",
         ":agents-kt-ksp:test",
         ":agents-kt-no-reflect-test:test",
-        ":integrationTest",
+        ":agents-kt-manifest:test",
+        ":agents-kt-observability:test",
+        ":agents-kt-otel:test",
+        ":agents-kt-langsmith:test",
+        ":agents-kt-langfuse:test",
         ":mcpIntegrationTest",
     )
 }
