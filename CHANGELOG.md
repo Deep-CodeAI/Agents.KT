@@ -67,6 +67,7 @@ Additive telemetry release for downstream billing and budget dashboards. Existin
 
 - **`InternalsAgent.kt` refactored from 63 hand-written skill blocks to a single classpath scanner** (#1837). 493 → 152 lines. Adding a source-file adjunct is now a one-`.md`-file change. Frontmatter is the single source of truth for the LLM-facing tool description.
 - **README streaming-claims reconciliation** (#1901) — dropped the stale "no per-adapter native streaming yet" bullet that contradicted the next bullet's "all three adapters stream natively". Phase 2 roadmap entry updated to reflect v0.5.0-shipped per-adapter streaming.
+- **README release positioning** (#1922) — hero, section order, and non-goals now lead with the 0.6.0 "auditable Kotlin agent runtime" story: manifest evidence, runtime audit correlation, least-privilege tools, and explicit deployer responsibilities.
 - **PUBLISHING.md GPG setup** (#1905) — passphrase-protected key is now the recommended default. Empty-passphrase path preserved as a labelled fallback for isolated environments. "Why not `%no-protection`?" callout explains the threat model.
 
 ### Tests

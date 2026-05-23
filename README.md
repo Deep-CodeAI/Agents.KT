@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <strong>AI agents with boundaries. Through typed Kotlin.</strong><br/>
-  <em>One input. One output. Allowed tools only.</em>
+  <strong>The auditable Kotlin agent runtime for regulated teams.</strong><br/>
+  <em>Typed boundaries. Least-privilege tools. MCP-native.</em>
 </p>
 
 <p align="center">
@@ -18,9 +18,32 @@
 
 ---
 
-Every agent is `Agent<IN, OUT>`. One input type, one output type, one job. Type mismatches and wrong compositions are caught by the compiler where composition is purely type-driven, and structural misuses fail fast at construction time. Reused agent instances are caught at construction time.
+Agents.KT is built for teams that need to know exactly what an AI system is allowed to do. Every agent is `Agent<IN, OUT>`: one input type, one output type, one job. Type mismatches and wrong compositions are caught by the compiler where composition is purely type-driven, and structural misuses fail fast at construction time.
 
-Agents.KT is the runtime behind [agents-kt.dev](https://agents-kt.dev/): a local-first Kotlin/JVM framework for typed agent pipelines, explicit per-skill tool authorization, MCP integration, memory, budgets, observability hooks, and swarm-style agent delegation when a single agent stops being the right shape.
+The 0.6.0 line turns those boundaries into audit-ready evidence: deterministic permission manifests, runtime `manifestHash` correlation, JSONL audit export, OTel/LangSmith bridge adapters, before-interceptor policy hooks, and declarative tool policy metadata. Agents.KT is the runtime behind [agents-kt.dev](https://agents-kt.dev/).
+
+---
+
+## First 10 Minutes
+
+**Requirements:** JDK 21+, Kotlin 2.x, Gradle
+
+```kotlin
+// build.gradle.kts
+dependencies {
+    implementation("ai.deep-code:agents-kt:0.6.0")
+}
+```
+
+Or clone and build from source:
+
+```bash
+git clone https://github.com/Deep-CodeAI/Agents.KT.git
+cd Agents.KT
+./gradlew test
+```
+
+Then build one typed pipeline:
 
 ```kotlin
 val parse = agent<RawText, Specification>("parse") {
@@ -53,20 +76,32 @@ val result = pipeline(RawText("getUsers, createUser, deleteUser"))
 // ReviewResult(approved=true)
 ```
 
+Testing details — task names, integration test setup, mutation testing, and how to write tests with a stub `ModelClient` — are in [**`docs/testing.md`**](docs/testing.md). Build prerequisites are on the [**Building From Source**](https://github.com/Deep-CodeAI/Agents.KT/wiki/Building-From-Source) wiki page.
+
 ---
 
-## Product Shape
+## What Agents.KT Owns
 
-The public site is the short version of the runtime contract:
+Agents.KT owns the runtime boundary model:
 
-| Site scene | Runtime surface |
-|------------|-----------------|
-| **Typed by design** | `Agent<IN, OUT>` values compose like functions with `then`, `/`, `forum`, loops, and sealed branches. |
-| **Tools with limits** | Tools are registered on the agent but authorized per skill; typed tool handles catch allowlist mistakes early. |
-| **Local first** | Start with Ollama on the JVM, then add MCP when an agent needs external tools or should become an MCP endpoint. |
-| **Swarm when needed** | Drop sibling agent JARs onto the classpath; a captain discovers and absorbs them as delegated tools. |
-| **Start with one dependency** | Pin the Maven artifact, build one typed agent, then add memory, budgets, and observability as the workflow asks for them. |
-| **Docs for the full system** | The wiki and `docs/` cover first agents, composition, tools, MCP, memory, budgets, observability, and swarm. |
+- Typed `Agent<IN, OUT>` contracts and composition operators.
+- Per-skill tool authorization and typed tool handles.
+- MCP client/server surfaces that share the same tool/skill shape.
+- Permission manifests, declarative tool policies, and runtime audit correlation.
+- JSONL audit export plus OTel and LangSmith adapters through `ObservabilityBridge`.
+- Local-first JVM execution with Ollama by default and cloud providers when you choose them.
+
+These are the pieces the framework can make deterministic, testable, and reviewable in code. Start with [permission manifests](docs/permission-manifest.md), the [threat model](docs/threat-model.md), the [regulated deployment guide](docs/regulated-deployment.md), and the [comparison page](docs/comparison.md) for the release narrative.
+
+## What Agents.KT Does Not Own
+
+Agents.KT emits evidence and enforces in-runtime boundaries; it does not replace your deployment controls:
+
+- It is not a legal compliance product. It produces compliance-supporting artifacts and audit-ready evidence; your counsel and compliance team still classify the use case.
+- It does not sandbox arbitrary Kotlin lambdas in 0.6.0. `ToolPolicy` records intended filesystem/network/environment scope; OS/container enforcement remains a deployer responsibility until #1916.
+- It does not rate-limit public MCP ingress. Use `McpServer` auth/policy plus your gateway.
+- It does not ship a universal prompt-injection classifier. Wire your chosen detector through `onBeforeTurn`.
+- It does not try to be a vector-store, eval-suite, or hosted orchestration platform. It is the typed JVM runtime boundary underneath those integrations.
 
 ---
 
@@ -90,7 +125,7 @@ Most agent frameworks let you wire anything to anything. Agents.KT says no.
 
 ---
 
-## What's in the Box
+## What's Shipped
 
 This section is the index — every claim below points to working code in `main`, with the issue number that established it. Topical detail lives in [`docs/`](docs/).
 
@@ -137,7 +172,11 @@ APIs that exist in `main` and have tests, but haven't been exercised in producti
 - **Forum with `transcriptCaptain`** — captain receives the full `ForumTranscript<IN>` (all participant outputs) instead of only the original input (#639). Useful for synthesis patterns; semantics may sharpen with usage.
 - **Branch on sealed hierarchies** — `BranchRoute` sealed type with `onNull` / `onElse` markers and construction-time completeness validation (#640). Stable surface, limited real-world coverage.
 
-### Security model
+## What's Not Shipped
+
+The release is intentionally explicit about what the framework does not enforce yet.
+
+### Security Model
 
 What the framework enforces today:
 
@@ -162,7 +201,7 @@ What the framework does **not** enforce — your responsibility:
 - **Resource limits beyond budgets** — no automatic memory, file-descriptor, or network quotas.
 - **MCP request rate limits** — `McpServer` authenticates and filters tools, but per-client throttling still belongs in your gateway for now.
 
-### Known limitations
+### Known Limitations
 
 - **Four LLM providers shipped** — Ollama, Anthropic, OpenAI, and DeepSeek. Google (Gemini) adapter is Phase 2; the injectable `ModelClient` covers test stubs and your own adapters in the meantime.
 - **Synchronous agentic loop** — `runBlocking` inside the loop until the suspend refactor lands (#638). Calling agents from existing coroutine scopes works but doesn't propagate cancellation cleanly.
@@ -177,6 +216,20 @@ What the framework does **not** enforce — your responsibility:
 - **Text-only I/O today** — `LlmMessage.content: String` carries text. Image input (vision-capable adapters: Anthropic, OpenAI, Ollama, Gemini) and audio input land in Phase 2 alongside an `LlmContent` sealed-block evolution of the message model. Image generation (`ImageModelClient`: DALL-E, Imagen, Stability) and text-to-speech (`TTSModelClient`: OpenAI TTS, ElevenLabs, Google) are Phase 3.
 
 For planned features beyond these limitations, see [docs/roadmap.md](docs/roadmap.md).
+
+---
+
+## Roadmap (highlights)
+
+**Phase 1 — Core DSL** *(in progress)*: typed agents, skills, knowledge, composition operators (`then`, `/`, `*`, `forum`, `.loop`, `.branch`), MCP client + server, agent memory, `loadResource(path)` for prompts from classpath, agentic loop with full budget controls (`maxTurns` / `maxToolCalls` / `maxDuration` / `perToolTimeout` / `maxTokens` / `maxConsecutiveSameTool`), observability hooks (`onSkillChosen`, `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`, `Agent.observe { }`), runtime audit context (`requestId`, `sessionId`, `manifestHash`), JSONL audit export, declarative tool policy metadata, and before-interceptor policy hooks (`onBeforeSkill`, `onBeforeTurn`, `onBeforeToolCall`).
+
+**Phase 2 — Runtime + Distribution** *(Q2 2026)*: remaining provider (Google), native CLI / jlink, `grants {}` permissions, session model, Flow-based observability, **multimodal input** (image + audio content blocks; vision-capable adapters for Anthropic/OpenAI/Ollama/Gemini), `agent.json` serialization, Gradle plugin. *(Anthropic + OpenAI adapters landed in #1644 / #1656; KSP `@Generable` codegen shipped in v0.4.6; per-adapter native streaming overrides — Anthropic SSE, OpenAI SSE, Ollama NDJSON — shipped in v0.5.0; provider-level constrained decoding for `@Generable` outputs shipped in v0.6.0 via #1949; the provider-neutral `Tool<IN, OUT>` / `McpTool<IN, OUT>` hierarchy shipped in v0.6.0 via #1948.)*
+
+**Phase 3 — Production** *(Q3 2026)*: Layer 2 Structure DSL, all 37 compile-time validations, AgentUnit, A2A protocol, file-based knowledge with RAG, OpenTelemetry, **sandboxed tool execution** (`SandboxedExecutor` with `ProcessSandbox` (Seatbelt / bwrap), `WasmSandbox` (Chicory), `DockerSandbox` backends — opt-in per tool, subprocess-shaped tools only, default executor stays in-process), **generative outputs** (`ImageModelClient` for DALL-E / Imagen / Stability, `TTSModelClient` for OpenAI / ElevenLabs / Google).
+
+**Phase 4 — Ecosystem** *(Q4 2026)*: knowledge packs, NL → DSL generation, Skillify, visual editor, knowledge marketplace.
+
+Full per-feature breakdown in [**docs/roadmap.md**](docs/roadmap.md).
 
 ---
 
@@ -211,45 +264,6 @@ Topical guides:
 `main` is currently `0.6.0` — an additive telemetry release on top of the v0.5.0 platform. **Permission manifest**: `:agents-kt-manifest` emits deterministic JSON/YAML capability graphs for agents and compositions, masks provider secrets, verifies high-risk widening in CI, and attaches the manifest SHA-256 to runtime audit context. **Token usage telemetry**: `onTokenUsage { usage -> }` exposes provider-reported `TokenUsage(promptTokens, completionTokens, cachedInputTokens, provider, model)` once per successful LLM round-trip, including end-of-stream usage for streaming adapters. **JSONL audit export**: `:agents-kt-observability` writes canonical append-only audit rows for `PipelineEvent` and `AgentEvent` with request/session/manifest correlation and PII-safe default field selection. **Observability bridge**: `:agents-kt-observability` exposes `ObservabilityBridge` and `.observe(bridge)`, while `:agents-kt-otel` maps runtime events and before-interceptor decisions to OpenTelemetry spans and `:agents-kt-langsmith` maps the same events to LangSmith run trees without adding either vendor to the core classpath. **DeepSeek provider**: `model { deepseek(...) }` joins Ollama, Anthropic, and OpenAI as the fourth built-in `ModelClient`. **Declarative tool policy**: `ToolPolicy` records tool risk plus filesystem/network/environment declarations for manifest/audit consumers; enforcement remains #1916. **Provider constrained decoding**: agentic skills returning `@Generable` types now pass JSON Schema to supporting providers automatically (OpenAI `response_format.json_schema`, Ollama `format`, Anthropic structured-output tool), with parser retries still retained as defense-in-depth. **Streaming runtime**: `agent.session(input).events: Flow<AgentEvent<OUT>>` surfaces typed `Token` / `ToolCall*` / bracket events as the agentic loop runs, with `requestId`, `sessionId`, and `manifestHash` on every event. Ollama, Anthropic, OpenAI, and DeepSeek stream at the wire (DeepSeek through the OpenAI-compatible SSE path). Every composition operator (`then` / `wrap` / `Branch` / `Loop` / `Parallel` / `Forum` / `Swarm`) surfaces sessions with `agentId`-tagged inner events. **MCP-as-skills unification**: `mcp.toolSkills()` + `mcp.promptSkills()` + `mcp.resourceSkills()` — every MCP capability shape exposes as a `Skill` consumable in `skills { +... }`. `McpServer` gains DSLs to register prompts and resources alongside agents-as-tools, inbound bearer auth, Host/Origin allowlists, per-principal tool policy, plus `McpStdioServer` and `McpRunner --stdio` expose the same server-side capability set over line-delimited stdio. `McpServerInfo` snapshots the full capability matrix. The 0.4 line (kotlin-reflect compileOnly, KSP @Generable, BouncyCastle hardening, wrap operator, original three providers) is included.
 
 Use Maven Central for published artifacts and tags for immutable release points.
-
----
-
-## Getting Started
-
-**Requirements:** JDK 21+, Kotlin 2.x, Gradle
-
-```kotlin
-// build.gradle.kts
-dependencies {
-    implementation("ai.deep-code:agents-kt:0.6.0")
-}
-```
-
-Or clone and build from source:
-
-```bash
-git clone https://github.com/Deep-CodeAI/Agents.KT.git
-cd Agents.KT
-./gradlew test
-```
-
-Testing details — task names, integration test setup, mutation testing, how to write tests against the framework with a stub `ModelClient` — are in [**`docs/testing.md`**](docs/testing.md). IDE setup and build prerequisites are on the [**Building From Source**](https://github.com/Deep-CodeAI/Agents.KT/wiki/Building-From-Source) wiki page.
-
----
-
-## Roadmap (highlights)
-
-**Phase 1 — Core DSL** *(in progress)*: typed agents, skills, knowledge, composition operators (`then`, `/`, `*`, `forum`, `.loop`, `.branch`), MCP client + server, agent memory, `loadResource(path)` for prompts from classpath, agentic loop with full budget controls (`maxTurns` / `maxToolCalls` / `maxDuration` / `perToolTimeout` / `maxTokens` / `maxConsecutiveSameTool`), observability hooks (`onSkillChosen`, `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`, `Agent.observe { }`), runtime audit context (`requestId`, `sessionId`, `manifestHash`), JSONL audit export, declarative tool policy metadata, and before-interceptor policy hooks (`onBeforeSkill`, `onBeforeTurn`, `onBeforeToolCall`).
-
-**Phase 2 — Runtime + Distribution** *(Q2 2026)*: remaining provider (Google), native CLI / jlink, `grants {}` permissions, session model, Flow-based observability, **multimodal input** (image + audio content blocks; vision-capable adapters for Anthropic/OpenAI/Ollama/Gemini), `agent.json` serialization, Gradle plugin. *(Anthropic + OpenAI adapters landed in #1644 / #1656; KSP `@Generable` codegen shipped in v0.4.6; per-adapter native streaming overrides — Anthropic SSE, OpenAI SSE, Ollama NDJSON — shipped in v0.5.0; provider-level constrained decoding for `@Generable` outputs shipped in v0.6.0 via #1949; the provider-neutral `Tool<IN, OUT>` / `McpTool<IN, OUT>` hierarchy shipped in v0.6.0 via #1948.)*
-
-**Phase 3 — Production** *(Q3 2026)*: Layer 2 Structure DSL, all 37 compile-time validations, AgentUnit, A2A protocol, file-based knowledge with RAG, OpenTelemetry, **sandboxed tool execution** (`SandboxedExecutor` with `ProcessSandbox` (Seatbelt / bwrap), `WasmSandbox` (Chicory), `DockerSandbox` backends — opt-in per tool, subprocess-shaped tools only, default executor stays in-process), **generative outputs** (`ImageModelClient` for DALL-E / Imagen / Stability, `TTSModelClient` for OpenAI / ElevenLabs / Google).
-
-**Phase 4 — Ecosystem** *(Q4 2026)*: knowledge packs, NL → DSL generation, Skillify, visual editor, knowledge marketplace.
-
-Full per-feature breakdown in [**docs/roadmap.md**](docs/roadmap.md).
-
----
 
 ## License
 
