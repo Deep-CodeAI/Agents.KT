@@ -165,6 +165,8 @@ class Agent<IN, OUT>(
         mutableListOf<(name: String, args: Map<String, Any?>) -> Decision<Map<String, Any?>>>()
     private val beforeTurnInterceptors = mutableListOf<(List<ChatMessage>) -> Decision<List<ChatMessage>>>()
     private val toolErrorHandlers: MutableMap<String, ToolErrorHandler> = mutableMapOf()
+    internal var manifestHash: String? = null
+        private set
     internal var defaultToolErrorHandler: ToolErrorHandler? = null
         private set
     internal val autoToolNames: MutableSet<String> = mutableSetOf()
@@ -384,7 +386,13 @@ class Agent<IN, OUT>(
      * which lets parent-scope cancellation and `withTimeout` propagate cleanly into
      * the agentic loop. The blocking [invoke] is a thin shim over this.
      */
-    suspend fun invokeSuspend(input: IN): OUT = invokeSuspendForSession(input, emitter = null) { /* no-op */ }
+    suspend fun invokeSuspend(input: IN): OUT =
+        withAgentRuntimeContext(newRuntimeContext()) {
+            invokeSuspendForSession(input, emitter = null) { /* no-op */ }
+        }
+
+    internal fun newRuntimeContext(sessionId: String? = null): AgentRuntimeContext =
+        AgentRuntimeContext(sessionId = sessionId, manifestHash = manifestHash)
 
     /**
      * #1736 — session-aware sibling of [invokeSuspend]. Same logic, plus an
@@ -411,6 +419,7 @@ class Agent<IN, OUT>(
         onSkillCompleted: (agents_engine.model.TokenUsage?) -> Unit = { /* no-op */ },
         onSkillStarted: (String) -> Unit,
     ): OUT {
+        val runtimeContext = AgentRuntimeContext.current() ?: newRuntimeContext()
         try {
             var skill = resolveSkill(input)
             when (val decision = decideBeforeSkill(skill.name)) {
@@ -421,13 +430,16 @@ class Agent<IN, OUT>(
                 )
                 is Decision.Substitute<*> -> return castOut(decision.result)
             }
-            skillChosenListener?.invoke(skill.name)
+            withAgentRuntimeContext(runtimeContext) {
+                skillChosenListener?.invoke(skill.name)
+            }
             onSkillStarted(skill.name)
             return if (skill.isAgentic) {
                 val result = executeAgentic(
                     this, skill, input,
                     effectivePrompt = promptOverride ?: this.prompt,
                     emitter = emitter,
+                    runtimeContext = runtimeContext,
                 )
                 // #1740: surface cumulative usage on the way out. Non-agentic
                 // skills don't go through executeAgentic, so onSkillCompleted
@@ -445,7 +457,9 @@ class Agent<IN, OUT>(
             // so they can never swallow the original error.
             errorListener?.let { listener ->
                 try {
-                    listener(t)
+                    withAgentRuntimeContext(runtimeContext) {
+                        listener(t)
+                    }
                 } catch (callbackError: Throwable) {
                     t.addSuppressed(callbackError)
                 }
@@ -489,11 +503,13 @@ class Agent<IN, OUT>(
         // preserves the non-streaming behavior the wrap operator used pre-
         // step 4; the streaming variant goes through runAgentInSession with
         // the same promptOverride parameter.
-        return invokeSuspendForSession(
-            input = input,
-            emitter = null,
-            promptOverride = promptOverride,
-        ) { /* no-op onSkillStarted */ }
+        return withAgentRuntimeContext(newRuntimeContext()) {
+            invokeSuspendForSession(
+                input = input,
+                emitter = null,
+                promptOverride = promptOverride,
+            ) { /* no-op onSkillStarted */ }
+        }
     }
 
     private suspend fun resolveSkill(input: IN): Skill<*, *> {

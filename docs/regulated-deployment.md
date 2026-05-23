@@ -46,10 +46,10 @@ MCP server exposed: yes (port 8443, behind Envoy mTLS).
 
 **Framework support:**
 - **Today:** `Agent.observe { event -> ... }` (sealed `PipelineEvent` view) emits the events. You write them to your retained log. JSONL into a WORM bucket (S3 with Object Lock, GCS Bucket Lock, Azure Immutable Storage) is the typical shape.
+- **Runtime correlation:** every `PipelineEvent` and `AgentEvent` carries `requestId`, `sessionId`, and `manifestHash`. `manifestHash` is `null` until a permission manifest is generated.
 - **#1914:** ships a first-party JSONL exporter so the log format is canonical and you don't roll your own JSON shape.
-- **#1913:** adds a manifest hash + request/session IDs to every event so the log can prove "this invocation ran against THIS version of the capability inventory."
 
-**Until #1914 / #1913 land**, the rollable pattern:
+**Until #1914 lands**, the rollable pattern:
 
 ```kotlin
 val auditAppender = JsonlAuditAppender("/var/log/agents-kt/audit.jsonl")
@@ -58,8 +58,9 @@ agent.observe { event ->
         mapOf(
             "timestamp" to event.timestamp.toString(),
             "agentName" to event.agentName,
-            "requestId" to MDC.get("requestId"),       // your gateway sets this
-            "manifestHash" to MANIFEST_SHA,            // baked at build time
+            "requestId" to event.requestId,
+            "sessionId" to event.sessionId,
+            "manifestHash" to event.manifestHash,
             "event" to event::class.simpleName,
             // ... event-specific fields
         )

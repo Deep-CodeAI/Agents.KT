@@ -1,5 +1,6 @@
 package agents_engine.runtime.events
 
+import agents_engine.core.AgentRuntimeContext
 import agents_engine.model.TokenUsage
 
 /**
@@ -32,6 +33,8 @@ import agents_engine.model.TokenUsage
  * Composition operators (`then`, `Pipeline`, `Branch`, `wrap`, `Swarm`)
  * preserve provenance via this field so a consumer collecting from a
  * composed pipeline can still tell which agent emitted which event.
+ * [requestId], [sessionId], and [manifestHash] correlate the event with the
+ * runtime invocation and the static manifest that approved the agent surface.
  *
  * Only [Completed] carries the typed `OUT` payload; every other subtype
  * is `AgentEvent<Nothing>` so events flow through any `AgentSession<OUT>`
@@ -40,6 +43,10 @@ import agents_engine.model.TokenUsage
 sealed interface AgentEvent<out OUT> {
     /** The agent that produced this event. For composed pipelines this is the inner agent's name, not the composition's. */
     val agentId: String
+    val runtimeContext: AgentRuntimeContext
+    val requestId: String get() = runtimeContext.requestId
+    val sessionId: String? get() = runtimeContext.sessionId
+    val manifestHash: String? get() = runtimeContext.manifestHash
 
     /**
      * A chunk of LLM-streamed text from a single skill turn. Providers chunk at
@@ -52,6 +59,7 @@ sealed interface AgentEvent<out OUT> {
         override val agentId: String,
         val skillName: String,
         val text: String,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : AgentEvent<Nothing>
 
     /**
@@ -66,6 +74,7 @@ sealed interface AgentEvent<out OUT> {
         val skillName: String,
         val callId: String,
         val toolName: String,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : AgentEvent<Nothing>
 
     /**
@@ -79,6 +88,7 @@ sealed interface AgentEvent<out OUT> {
         override val agentId: String,
         val callId: String,
         val deltaJson: String,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : AgentEvent<Nothing>
 
     /**
@@ -96,12 +106,14 @@ sealed interface AgentEvent<out OUT> {
         val arguments: Map<String, Any?>,
         val result: Any?,
         val isError: Boolean,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : AgentEvent<Nothing>
 
     /** Agent has resolved a skill and is about to execute it (typed-tool dispatch OR an `implementedBy` lambda). */
     data class SkillStarted(
         override val agentId: String,
         val skillName: String,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : AgentEvent<Nothing>
 
     /**
@@ -113,6 +125,7 @@ sealed interface AgentEvent<out OUT> {
         override val agentId: String,
         val skillName: String,
         val tokensUsed: TokenUsage?,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : AgentEvent<Nothing>
 
     /** Terminal success — carries the typed output of the agent invocation. Emitted exactly once on the happy path. */
@@ -120,6 +133,7 @@ sealed interface AgentEvent<out OUT> {
         override val agentId: String,
         val output: OUT,
         val tokensUsed: TokenUsage?,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : AgentEvent<OUT>
 
     /**
@@ -130,5 +144,18 @@ sealed interface AgentEvent<out OUT> {
     data class Failed(
         override val agentId: String,
         val cause: Throwable,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : AgentEvent<Nothing>
 }
+
+internal fun AgentEvent<*>.withRuntimeContext(context: AgentRuntimeContext): AgentEvent<*> =
+    when (this) {
+        is AgentEvent.Token -> copy(runtimeContext = context)
+        is AgentEvent.ToolCallStarted -> copy(runtimeContext = context)
+        is AgentEvent.ToolCallArgumentsDelta -> copy(runtimeContext = context)
+        is AgentEvent.ToolCallFinished -> copy(runtimeContext = context)
+        is AgentEvent.SkillStarted -> copy(runtimeContext = context)
+        is AgentEvent.SkillCompleted -> copy(runtimeContext = context)
+        is AgentEvent.Completed<*> -> copy(runtimeContext = context)
+        is AgentEvent.Failed -> copy(runtimeContext = context)
+    }

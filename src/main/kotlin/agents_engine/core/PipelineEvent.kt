@@ -24,16 +24,23 @@ import java.time.Instant
  * machinery arrives.
  *
  * `agentName` and `timestamp` are present on every variant so consumers can
- * sort, filter, and attribute events without inspecting the variant.
+ * sort, filter, and attribute events without inspecting the variant. Runtime
+ * context fields correlate the event with a request/session and, when
+ * available, the static permission manifest that approved this agent shape.
  */
 sealed interface PipelineEvent {
     val agentName: String
     val timestamp: Instant
+    val runtimeContext: AgentRuntimeContext
+    val requestId: String get() = runtimeContext.requestId
+    val sessionId: String? get() = runtimeContext.sessionId
+    val manifestHash: String? get() = runtimeContext.manifestHash
 
     data class SkillChosen(
         override val agentName: String,
         override val timestamp: Instant,
         val skillName: String,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : PipelineEvent
 
     data class ToolCalled(
@@ -42,6 +49,7 @@ sealed interface PipelineEvent {
         val toolName: String,
         val arguments: Map<String, Any?>,
         val result: Any?,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : PipelineEvent
 
     data class KnowledgeLoaded(
@@ -49,12 +57,14 @@ sealed interface PipelineEvent {
         override val timestamp: Instant,
         val entryName: String,
         val contentLength: Int,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : PipelineEvent
 
     data class ErrorOccurred(
         override val agentName: String,
         override val timestamp: Instant,
         val error: Throwable,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : PipelineEvent
 }
 

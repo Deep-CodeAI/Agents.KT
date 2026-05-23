@@ -14,7 +14,7 @@ This is the **actionable companion** to [`docs/threat-model.md`](threat-model.md
 | Sandboxing tool execution | Budget caps, freeze contract, observability hooks |
 | PII redaction in prompts/logs | The hooks to do that redaction (`onToolUse`, etc.) |
 | Network policy / egress control | `untrustedOutput` signal flag on `ToolDef` |
-| Audit log retention + chain-of-custody | Lifecycle events (`AgentEvent`, `PipelineEvent`) |
+| Audit log retention + chain-of-custody | Lifecycle events (`AgentEvent`, `PipelineEvent`) with `requestId` / `sessionId` / `manifestHash` |
 | Secret rotation | API-key-masked `toString()` on `ModelConfig` |
 
 The framework gives you the primitives. Wiring them to your runtime, infra, and compliance posture is your job.

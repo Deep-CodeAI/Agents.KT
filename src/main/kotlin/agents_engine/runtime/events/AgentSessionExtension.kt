@@ -1,6 +1,7 @@
 package agents_engine.runtime.events
 
 import agents_engine.core.Agent
+import agents_engine.core.withAgentRuntimeContext
 import agents_engine.model.AgentEventEmitter
 import agents_engine.model.TokenUsage
 import kotlinx.coroutines.CompletableDeferred
@@ -42,6 +43,7 @@ import kotlinx.coroutines.launch
  */
 fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
     val agent = this
+    val runtimeContext = agent.newRuntimeContext(sessionId = java.util.UUID.randomUUID().toString())
     // BUFFERED keeps event production decoupled from consumer pace; an
     // implementedBy skill can complete and queue all four events before
     // the collector starts pulling. Step 3 may tune this for the
@@ -54,23 +56,27 @@ fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
     // of any unrelated coroutine the consumer happens to be running in.
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
     scope.launch {
-        // #1739: emitter forwards AgentEvents from inside the agentic loop
-        // (Token, ToolCallStarted, ToolCallArgumentsDelta, ToolCallFinished)
-        // into the same channel as the bracket events. trySend is non-
-        // suspending — appropriate for a BUFFERED channel; if the buffer
-        // ever fills (it has high capacity), excess events would be
-        // dropped silently.
-        @Suppress("UNCHECKED_CAST")
-        val emitter: AgentEventEmitter = { event -> channel.trySend(event as AgentEvent<OUT>) }
-        try {
-            val (output, usage) = runAgentInSession(agent, input, emitter)
-            channel.trySend(AgentEvent.Completed(agent.name, output, usage))
-            channel.close()
-            result.complete(output)
-        } catch (t: Throwable) {
-            channel.trySend(AgentEvent.Failed(agent.name, t))
-            channel.close()
-            result.completeExceptionally(t)
+        withAgentRuntimeContext(runtimeContext) {
+            // #1739: emitter forwards AgentEvents from inside the agentic loop
+            // (Token, ToolCallStarted, ToolCallArgumentsDelta, ToolCallFinished)
+            // into the same channel as the bracket events. trySend is non-
+            // suspending — appropriate for a BUFFERED channel; if the buffer
+            // ever fills (it has high capacity), excess events would be
+            // dropped silently.
+            @Suppress("UNCHECKED_CAST")
+            val emitter: AgentEventEmitter = { event ->
+                channel.trySend(event.withRuntimeContext(runtimeContext) as AgentEvent<OUT>)
+            }
+            try {
+                val (output, usage) = runAgentInSession(agent, input, emitter)
+                channel.trySend(AgentEvent.Completed(agent.name, output, usage))
+                channel.close()
+                result.complete(output)
+            } catch (t: Throwable) {
+                channel.trySend(AgentEvent.Failed(agent.name, t))
+                channel.close()
+                result.completeExceptionally(t)
+            }
         }
     }
 

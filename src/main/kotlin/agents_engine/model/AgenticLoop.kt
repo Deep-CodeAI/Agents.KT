@@ -1,10 +1,12 @@
 package agents_engine.model
 
 import agents_engine.core.Agent
+import agents_engine.core.AgentRuntimeContext
 import agents_engine.core.Decision
 import agents_engine.core.InterceptorDeniedException
 import agents_engine.core.Skill
 import agents_engine.core.SkillRoute
+import agents_engine.core.withAgentRuntimeContext
 import agents_engine.generation.constructFromMap
 import agents_engine.generation.fromLlmOutput
 import agents_engine.generation.hasGenerableAnnotation
@@ -97,6 +99,7 @@ internal suspend fun <IN> executeAgentic(
      * callers (`Agent.invoke`, `Agent.invokeSuspend`) pay no overhead.
      */
     emitter: AgentEventEmitter? = null,
+    runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
 ): AgenticResult {
     val config = requireNotNull(agent.modelConfig) {
         "Agent '${agent.name}' has no model configured. Add a model { } block."
@@ -358,8 +361,15 @@ internal suspend fun <IN> executeAgentic(
                             )
                         }
                     } else {
-                        if (isKnowledge) agent.knowledgeUsedListener?.invoke(call.name, result?.toString() ?: "")
-                        else agent.toolUseListener?.invoke(call.name, effectiveCall.arguments, result)
+                        if (isKnowledge) {
+                            withAgentRuntimeContext(runtimeContext) {
+                                agent.knowledgeUsedListener?.invoke(call.name, result?.toString() ?: "")
+                            }
+                        } else {
+                            withAgentRuntimeContext(runtimeContext) {
+                                agent.toolUseListener?.invoke(call.name, effectiveCall.arguments, result)
+                            }
+                        }
                         // #1739: emit ToolCallFinished on the success path with the
                         // executor's return value. callId is the one the streaming
                         // aggregator stamped on this ToolCall — null only when the

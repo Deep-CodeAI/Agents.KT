@@ -31,7 +31,7 @@ Each `agent.session(input)` call starts a fresh invocation. `events` is a cold `
 
 ## The AgentEvent hierarchy
 
-All subtypes carry an `agentId: String` field — the name of the agent that produced the event. (Composition operators don't yet flow events through; see the [composition note](#composition) below.) Only `Completed` is parameterized on the agent's `OUT`; everything else is `AgentEvent<Nothing>` so events flow through any `AgentSession<OUT>`.
+All subtypes carry `agentId`, `requestId`, `sessionId`, and `manifestHash`. `agentId` names the agent that produced the event; the runtime IDs let audit logs correlate every token/tool/terminal event with one invocation and, when manifests are enabled, the approved capability graph. Only `Completed` is parameterized on the agent's `OUT`; everything else is `AgentEvent<Nothing>` so events flow through any `AgentSession<OUT>`.
 
 | Event | Fires when | Carries |
 |---|---|---|

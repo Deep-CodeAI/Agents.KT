@@ -56,6 +56,8 @@ The OTel adapter maps to the **OpenTelemetry GenAI semantic conventions**:
 | Interceptor `Deny` (#1907) | Span event `interceptor.deny` with `reason` |
 | Interceptor `Substitute` (#1907) | Span event `interceptor.substitute` (attr `synthetic=true`) |
 
+Every event already carries `requestId`, `sessionId`, and `manifestHash`; bridge adapters propagate them as `agent.request.id`, `agent.session.id`, and `agent.manifest.hash` attributes when present.
+
 **Semconv version pinned** in the adapter's documentation. When the OTel spec moves, the adapter version bumps; old adapters stay on the older spec until updated.
 
 ## Worked example

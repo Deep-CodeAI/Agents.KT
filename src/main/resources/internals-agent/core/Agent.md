@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/core/Agent.kt — the Agent<IN, OUT> class, single-placement rule, invoke / invokeSuspend / session entry points, observability hooks, before-interceptor hooks (onBeforeSkill / onBeforeToolCall / onBeforeTurn), freeze-after-construction contract. Call when the IDE LLM needs to reason about how Agents are constructed, invoked, or observed.
+description: Source-file knowledge for agents_engine/core/Agent.kt — the Agent<IN, OUT> class, single-placement rule, invoke / invokeSuspend / session entry points, runtime AgentRuntimeContext creation, observability hooks, before-interceptor hooks (onBeforeSkill / onBeforeToolCall / onBeforeTurn), freeze-after-construction contract. Call when the IDE LLM needs to reason about how Agents are constructed, invoked, or observed.
 ---
 
 # `agents_engine/core/Agent.kt` — the typed-agent class
@@ -52,6 +52,8 @@ Set via the builder:
 - `observe { event: PipelineEvent -> ... }` — sealed-event view that bridges all four hooks into one stream
 
 These are separate from `AgentEvent` (the v0.5.0 streaming session surface) — observability hooks fire post-hoc per skill; AgentEvent fires inside the loop.
+
+Every `PipelineEvent` and `AgentEvent` carries runtime audit context: `requestId`, `sessionId`, and `manifestHash`. `invokeSuspend` creates a fresh request context; `agent.session(input)` additionally creates a session id.
 
 ## Before interceptors
 

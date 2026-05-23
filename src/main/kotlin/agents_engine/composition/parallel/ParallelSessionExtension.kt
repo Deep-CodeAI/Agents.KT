@@ -1,8 +1,11 @@
 package agents_engine.composition.parallel
 
+import agents_engine.core.AgentRuntimeContext
+import agents_engine.core.withAgentRuntimeContext
 import agents_engine.model.AgentEventEmitter
 import agents_engine.runtime.events.AgentEvent
 import agents_engine.runtime.events.AgentSession
+import agents_engine.runtime.events.withRuntimeContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -53,33 +56,38 @@ fun <IN, OUT> Parallel<IN, OUT>.session(input: IN): AgentSession<List<OUT>> {
     val channel = Channel<AgentEvent<List<OUT>>>(Channel.BUFFERED)
     val result = CompletableDeferred<List<OUT>>()
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+    val runtimeContext = AgentRuntimeContext(sessionId = java.util.UUID.randomUUID().toString())
 
     scope.launch {
-        @Suppress("UNCHECKED_CAST")
-        val emitter: AgentEventEmitter = { event -> channel.trySend(event as AgentEvent<List<OUT>>) }
-        try {
-            val outputs = coroutineScope {
-                val sessionExecs = parallel.sessionExecutions
-                if (sessionExecs != null) {
-                    // Streaming path: each branch async with shared emitter.
-                    sessionExecs.map { exec ->
-                        async(Dispatchers.Default) { exec(input, emitter) }
-                    }.awaitAll()
-                } else {
-                    // Fallback: no per-branch streaming. Just run executions.
-                    parallel.executions.map { exec ->
-                        async(Dispatchers.Default) { exec(input) }
-                    }.awaitAll()
-                }
+        withAgentRuntimeContext(runtimeContext) {
+            @Suppress("UNCHECKED_CAST")
+            val emitter: AgentEventEmitter = { event ->
+                channel.trySend(event.withRuntimeContext(runtimeContext) as AgentEvent<List<OUT>>)
             }
+            try {
+                val outputs = coroutineScope {
+                    val sessionExecs = parallel.sessionExecutions
+                    if (sessionExecs != null) {
+                        // Streaming path: each branch async with shared emitter.
+                        sessionExecs.map { exec ->
+                            async(Dispatchers.Default) { exec(input, emitter) }
+                        }.awaitAll()
+                    } else {
+                        // Fallback: no per-branch streaming. Just run executions.
+                        parallel.executions.map { exec ->
+                            async(Dispatchers.Default) { exec(input) }
+                        }.awaitAll()
+                    }
+                }
 
-            channel.trySend(AgentEvent.Completed("parallel", outputs, null))
-            channel.close()
-            result.complete(outputs)
-        } catch (t: Throwable) {
-            channel.trySend(AgentEvent.Failed("parallel", t))
-            channel.close()
-            result.completeExceptionally(t)
+                channel.trySend(AgentEvent.Completed("parallel", outputs, null))
+                channel.close()
+                result.complete(outputs)
+            } catch (t: Throwable) {
+                channel.trySend(AgentEvent.Failed("parallel", t))
+                channel.close()
+                result.completeExceptionally(t)
+            }
         }
     }
 
