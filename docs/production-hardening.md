@@ -81,6 +81,8 @@ The framework gives you the primitives. Wiring them to your runtime, infra, and 
 
 - [ ] **LangSmith run trees exported, if LangSmith is your trace backend.** Use `:agents-kt-langsmith` and `.observe(LangSmithBridge(apiKey, project))`; the bridge dispatches asynchronously with oldest-drop backpressure logging so trace outages do not break agent execution. *Enforced by:* `ObservabilityBridge` + `LangSmithBridge` (#1909); you own API key/project configuration.
 
+- [ ] **Langfuse traces exported, if Langfuse is your trace backend.** Use `:agents-kt-langfuse` and `.observe(LangfuseBridge(publicKey, secretKey))`; the bridge dispatches native ingestion batches asynchronously with oldest-drop backpressure logging so Langfuse outages do not break agent execution. *Enforced by:* `ObservabilityBridge` + `LangfuseBridge` (#1910); you own key/base URL configuration.
+
 ### Governance
 
 - [ ] **Permission manifest reviewed in CI.** Use `:agents-kt-manifest` to generate `agentManifest` JSON/YAML and run `verifyAgentManifest` against an approved baseline. Every PR that changes the agent / tool / MCP-exposed surface should print the capability-graph diff and require explicit reviewer sign-off. *Enforced by:* `permissionManifest()` and the Gradle plugin (#1912); you own the approval workflow.

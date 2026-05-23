@@ -102,7 +102,7 @@ All four mature frameworks support local LLMs (Ollama, llama.cpp, vLLM) via adap
 
 | Framework | Hooks |
 |---|---|
-| **Agents.KT** | `onSkillChosen`, `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`, plus the unified `Agent.observe { event -> }` sealed-event view. Streaming session events via `agent.session(input).events: Flow<AgentEvent<OUT>>`. OpenTelemetry adapter via `:agents-kt-otel` (#1908) and LangSmith run-tree adapter via `:agents-kt-langsmith` (#1909). |
+| **Agents.KT** | `onSkillChosen`, `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`, plus the unified `Agent.observe { event -> }` sealed-event view. Streaming session events via `agent.session(input).events: Flow<AgentEvent<OUT>>`. OpenTelemetry adapter via `:agents-kt-otel` (#1908), LangSmith run-tree adapter via `:agents-kt-langsmith` (#1909), and Langfuse trace/span/generation adapter via `:agents-kt-langfuse` (#1910). |
 | **LangChain** | `Callbacks` interface, LangSmith integration as the canonical observability story. |
 | **Semantic Kernel** | Built-in OpenTelemetry, custom kernel hooks. |
 | **AutoGen** | Conversation history is the observation surface. Custom callbacks via the agent API. |
@@ -139,7 +139,7 @@ A few shortcuts that point at one framework over the others:
 
 ## Status notes (2026-05)
 
-- **Agents.KT 0.6.0** — permission manifests, JSONL audit export, OTel / LangSmith bridges, constrained decoding, and DeepSeek shipped.
+- **Agents.KT 0.6.0** — permission manifests, JSONL audit export, OTel / LangSmith / Langfuse bridges, constrained decoding, and DeepSeek shipped.
 - **LangChain 0.3.x** — stable, ecosystem mature. LCEL is the recommended composition surface.
 - **Semantic Kernel 1.x** — stable, MCP integration in preview.
 - **AutoGen 0.4.x** — major architectural rewrite landed; the new core/agentchat split is recent.

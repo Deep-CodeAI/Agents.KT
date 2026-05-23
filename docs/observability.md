@@ -3,7 +3,7 @@
 This page covers two layers:
 
 - **Shipped:** `:agents-kt-observability` JSONL audit exporter (#1914), a zero-vendor-dependency on-disk log format for `PipelineEvent` and `AgentEvent` rows.
-- **Shipped:** `ObservabilityBridge` + `Agent.observe(bridge)` in `:agents-kt-observability`, plus concrete adapters for OpenTelemetry (`:agents-kt-otel`, #1908) and LangSmith (`:agents-kt-langsmith`, #1909).
+- **Shipped:** `ObservabilityBridge` + `Agent.observe(bridge)` in `:agents-kt-observability`, plus concrete adapters for OpenTelemetry (`:agents-kt-otel`, #1908), LangSmith (`:agents-kt-langsmith`, #1909), and Langfuse (`:agents-kt-langfuse`, #1910).
 
 ## JSONL audit exporter
 
@@ -99,17 +99,18 @@ fun <IN, OUT> Agent<IN, OUT>.observe(bridge: ObservabilityBridge): Agent<IN, OUT
 
 The `observe(bridge)` extension wires both event surfaces and the `onBefore*` interceptor decisions (#1907) into the bridge with one call. Existing `Agent.observe { event -> ... }` callers keep working — the bridge variant is additive.
 
-## Two-module structure
+## Adapter module structure
 
 | Module | Purpose | Dependencies |
 |---|---|---|
 | `:agents-kt-observability` | The `ObservabilityBridge` interface + `Agent.observe(bridge)` extension | Zero vendor deps |
 | `:agents-kt-otel` | OTel adapter (`OtelBridge(tracer)`) | `:agents-kt-observability` + `io.opentelemetry:opentelemetry-api:1.51.0` |
 | `:agents-kt-langsmith` | LangSmith adapter (`LangSmithBridge(apiKey, project)`) | `:agents-kt-observability` + JDK `HttpClient` |
+| `:agents-kt-langfuse` | Langfuse adapter (`LangfuseBridge(publicKey, secretKey, baseUrl)`) | `:agents-kt-observability` + JDK `HttpClient` |
 
-Future adapter modules (`:agents-kt-langfuse`, `:agents-kt-phoenix`) each pull only their own vendor dep and the shared contract.
+Future vendor-specific adapter modules, if any, each pull only their own vendor dep and the shared contract.
 
-**Hard constraint:** the root/core runtime classpath stays vendor-free; only adapter modules pull vendor APIs. `:agents-kt-langsmith` uses the JDK HTTP client instead of LangChain4j or a LangSmith SDK.
+**Hard constraint:** the root/core runtime classpath stays vendor-free; only adapter modules pull vendor APIs. `:agents-kt-langsmith` and `:agents-kt-langfuse` use the JDK HTTP client instead of vendor SDKs.
 
 ## OTel mapping
 
@@ -196,16 +197,43 @@ val agent = agent<UserReq, AssistantReply>("assistant") {
 
 Dispatch is asynchronous: the bridge buffers run-create/run-update operations, sends them in batches, drops the oldest queued operation under sustained backpressure, logs failures, and never throws into the agent path. Tests use an in-memory recording sink and JSON fixture assertions; CI never calls LangSmith live.
 
+## Langfuse mapping
+
+`LangfuseBridge(publicKey, secretKey, baseUrl = "https://cloud.langfuse.com")` maps the same bridge events to Langfuse traces, generations, spans, and events. It posts batches to Langfuse's native ingestion endpoint (`/api/public/ingestion`) with Basic auth (`publicKey` as the username, `secretKey` as the password) and does not depend on the Langfuse JavaScript/Python SDKs.
+
+| Source event | Langfuse artefact |
+|---|---|
+| `AgentEvent.SkillStarted` / `SkillCompleted` | `trace-create` for the trace start, then a same-id `trace-create` update with output and cumulative token usage metadata |
+| `AgentEvent.ModelTurnStarted` / `ModelTurnCompleted` | `generation-create` / `generation-update` with provider, model, temperature, response type, `usage`, and `usageDetails` |
+| `AgentEvent.Token` | `event-create` named `llm.token` with token length only |
+| `AgentEvent.ToolCallStarted` / `ToolCallFinished` | `span-create` / `span-update` named `tool.<toolName>` with call id, parsed arguments, result type, result, and error level when applicable |
+| `AgentEvent.ToolCallArgumentsDelta` | `event-create` named `tool.arguments.delta` with delta length only |
+| `AgentEvent.Failed` / `PipelineEvent.ErrorOccurred` | Active trace output `status=failed`, error metadata, and `ERROR` level on still-open observations |
+| `PipelineEvent.BudgetThreshold` / `ToolCalled` / `KnowledgeLoaded` / `SkillChosen` | `event-create` observations on the active trace |
+| Interceptor decisions | Tags such as `interceptor:deny` plus `event-create` named `interceptor.decision`; pending decisions attach to fallback failure traces |
+
+```kotlin
+import agents_engine.langfuse.LangfuseBridge
+
+val agent = agent<UserReq, AssistantReply>("assistant") {
+    model { openai("gpt-4o-mini") }
+    skills { /* ... */ }
+}.observe(
+    LangfuseBridge(
+        publicKey = System.getenv("LANGFUSE_PUBLIC_KEY"),
+        secretKey = System.getenv("LANGFUSE_SECRET_KEY"),
+        baseUrl = System.getenv("LANGFUSE_BASE_URL") ?: LangfuseBridge.DEFAULT_BASE_URL,
+    ),
+)
+```
+
+Dispatch is asynchronous: the bridge buffers ingestion events, sends them in batches, drops the oldest queued operation under sustained backpressure, logs failures, and never throws into the agent path. Tests use an in-memory recording sink and JSON fixture assertions; CI never calls Langfuse live.
+
 ## Sibling adapters
 
-After `:agents-kt-otel` and `:agents-kt-langsmith`, `:agents-kt-langfuse` (#1910) follows the same shape:
+OTel, LangSmith, and Langfuse all sit behind the same `ObservabilityBridge` contract:
 
-- New module, depends on `:agents-kt-observability` + the vendor SDK.
-- Single bridge implementation (`LangfuseBridge(client)`).
-- Vendor-specific mapping in the bridge body — Langfuse's session/trace/observation hierarchy.
-- Same test pattern with the vendor's in-memory test exporter where available.
-
-The shared contract means a switch from one vendor to another is one line: `.observe(OtelBridge(tracer))` → `.observe(LangSmithBridge(apiKey, project))`. No re-instrumentation.
+The shared contract means a switch from one vendor to another is one line: `.observe(OtelBridge(tracer))` → `.observe(LangSmithBridge(apiKey, project))` → `.observe(LangfuseBridge(publicKey, secretKey))`. No re-instrumentation.
 
 ## Phoenix and other open-source observability tools
 
@@ -224,8 +252,8 @@ Arize Phoenix, OpenLLMetry, and similar OSS observability stacks already consume
 | Shipped (#1914) | JSONL audit exporter in `:agents-kt-observability` |
 | **Shipped (#1908)** | Bridge contract in `:agents-kt-observability`, `:agents-kt-otel`, and tests with a recording span exporter |
 | **Shipped (#1909)** | `:agents-kt-langsmith`, async batch dispatch, backpressure logging, run-tree tests with a recording sink |
-| Follow-up adapters | `:agents-kt-langfuse` (#1910) |
-| Future | `:agents-kt-phoenix`, metrics emission, OpenLLMetry consumption guide |
+| **Shipped (#1910)** | `:agents-kt-langfuse`, native ingestion, async batch dispatch, backpressure logging, trace/span/generation tests with a recording sink |
+| Future | Metrics emission, OpenLLMetry / Phoenix consumption guide |
 
 The bridge consumes the shipped #1907 interceptor primitives, so adapters receive `onBeforeSkill`, `onBeforeToolCall`, and `onBeforeTurn` decisions without a second integration path.
 
@@ -238,3 +266,4 @@ The bridge consumes the shipped #1907 interceptor primitives, so adapters receiv
 - **[`docs/production-hardening.md`](production-hardening.md)** — "OTel traces exported" is a hardening-checklist item.
 - **OTel GenAI semconv** — [opentelemetry.io/docs/specs/semconv/gen-ai/](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
 - **LangSmith API v1/v2 overview** — [docs.langchain.com/langsmith/api-v1-v2-overview](https://docs.langchain.com/langsmith/api-v1-v2-overview)
+- **Langfuse ingestion API OpenAPI** — [cloud.langfuse.com/generated/api/openapi.yml](https://cloud.langfuse.com/generated/api/openapi.yml)

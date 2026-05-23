@@ -15,7 +15,8 @@ Additive telemetry release for downstream billing and budget dashboards. Existin
 - **`ObservabilityBridge` in `:agents-kt-observability`** — vendor-neutral bridge contract with `onPipelineEvent`, `onAgentEvent`, and `onInterceptorDecision`, plus `.observe(bridge)` for one-call wiring.
 - **`:agents-kt-otel` module** — OpenTelemetry adapter that maps agent sessions to `agent.invoke` spans, model turns to `gen_ai.chat` spans, tool calls to `gen_ai.tool` child spans, errors to span status, usage to GenAI attrs, and before-interceptor decisions to span events.
 - **`:agents-kt-langsmith` module** — LangSmith run-tree adapter that maps skill invocations to `chain` runs, model turns to child `llm` runs, tool calls to child `tool` runs, failures to run errors, budget threshold events to run extras, and interceptor decisions to run tags. Dispatch is asynchronous, batched, oldest-drop under backpressure, and never throws into the agent path.
-- **Core remains vendor-free** — OTel and LangSmith integration code is isolated to adapter modules.
+- **`:agents-kt-langfuse` module** — Langfuse trace adapter that maps skill invocations to traces, model turns to generations, tool calls to spans, runtime events to Langfuse events, and interceptor decisions to tags plus `interceptor.decision` observations. Dispatch is asynchronous, batched, oldest-drop under backpressure, and uses Langfuse's native ingestion endpoint without a vendor SDK.
+- **Core remains vendor-free** — OTel, LangSmith, and Langfuse integration code is isolated to adapter modules.
 
 #### Provider constrained decoding (#1949)
 
@@ -61,7 +62,7 @@ Additive telemetry release for downstream billing and budget dashboards. Existin
 - **`docs/regulated-deployment.md`** — capability inventory, action log, decision points, failure modes, data lineage, vendor risk; EU AI Act mapping (Art. 9 / 12 / 13 / 14 / 15 → Agents.KT artefact); evidence-pack template (#1919).
 - **`docs/comparison.md`** — side-by-side against LangChain / Semantic Kernel / AutoGen / raw MCP. Honest about losses; 8-shortcut "Choosing" subsection that sometimes points away from Agents.KT (#1906).
 - **`docs/interceptors.md`** — `onBefore*` interceptor family + `Decision` sealed type reference (#1907).
-- **`docs/observability.md`** — JSONL audit exporter reference plus the shipped `ObservabilityBridge` contract, `agents-kt-otel` adapter, and `agents-kt-langsmith` adapter (#1908, #1909, #1914).
+- **`docs/observability.md`** — JSONL audit exporter reference plus the shipped `ObservabilityBridge` contract, `agents-kt-otel`, `agents-kt-langsmith`, and `agents-kt-langfuse` adapters (#1908, #1909, #1910, #1914).
 
 ### Changed
 
@@ -72,7 +73,7 @@ Additive telemetry release for downstream billing and budget dashboards. Existin
 
 ### Tests
 
-- Added `ObservabilityBridgeTest`, `OtelBridgeTest`, and `LangSmithBridgeTest` coverage for bridge forwarding, observer stacking, session events, interceptor decisions, OTel parent context propagation, tool child spans, LangSmith run-tree shape, async backpressure logging, usage attrs, and error status mapping.
+- Added `ObservabilityBridgeTest`, `OtelBridgeTest`, `LangSmithBridgeTest`, and `LangfuseBridgeTest` coverage for bridge forwarding, observer stacking, session events, interceptor decisions, OTel parent context propagation, tool child spans, LangSmith run-tree shape, Langfuse trace/span/generation shape, async backpressure logging, usage attrs, and error status mapping.
 - Added `DeepSeekClientTest` coverage for provider identity, OpenAI-compatible tool payloads, disabled schema forwarding, error envelopes, headers, and the `model { deepseek(...) }` DSL.
 - **`McpServerLifecycleTest`** (#889) — 8 new assertions covering `url`/`isRunning`/`stop` lifecycle invariants. Kills ~6–8 PIT mutants in `McpServer.kt:82-95` that the response-code tests couldn't reach.
 - **`McpRunnerMissingFlagValueTest`** (#889) — 5 tests covering the `--port` / `--expose` missing-value error paths and multi-error accumulation.
