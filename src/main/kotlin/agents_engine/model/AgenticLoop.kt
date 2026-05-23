@@ -1,6 +1,8 @@
 package agents_engine.model
 
 import agents_engine.core.Agent
+import agents_engine.core.Decision
+import agents_engine.core.InterceptorDeniedException
 import agents_engine.core.Skill
 import agents_engine.core.SkillRoute
 import agents_engine.generation.constructFromMap
@@ -40,6 +42,10 @@ import kotlinx.coroutines.withTimeout
  * **Budget enforcement.** Honors `maxTurns`, `maxToolCalls`, `maxDuration`,
  * `perToolTimeout`, `maxTokens`, `maxConsecutiveSameTool`. Pre-cap warnings
  * fire via the agent's `budgetThresholdListener` before the hard throw.
+ *
+ * **Before-interceptors (#1907).** Runs `onBeforeTurn` before every outbound
+ * model call and `onBeforeToolCall` after the static allowlist check but before
+ * dispatch. The tool hook covers both regular and session-aware executors.
  *
  * **Argument repair.** Up to [MAX_ARGUMENT_REPAIR_STEPS] retries (8) when
  * the LLM produces a tool call whose JSON arguments fail to parse or
@@ -219,6 +225,21 @@ internal suspend fun <IN> executeAgentic(
             elapsedNanos.toDouble() / budget.maxDuration.inWholeNanoseconds,
         )
 
+        when (val decision = agent.decideBeforeTurn(messages.toList())) {
+            Decision.Proceed -> Unit
+            is Decision.ProceedWith -> {
+                messages.clear()
+                messages.addAll(decision.replacement)
+            }
+            is Decision.Deny -> throw InterceptorDeniedException(
+                "Turn denied by interceptor: ${decision.reason}"
+            )
+            is Decision.Substitute<*> -> return AgenticResult(
+                coerceSubstituteOutput(decision.result, agent.outType),
+                cumulativeUsage,
+            )
+        }
+
         val response = chatOrStream(
             client = client,
             messages = messages,
@@ -302,47 +323,62 @@ internal suspend fun <IN> executeAgentic(
                             "Tool '${call.name}' is not allowed for skill '${skill.name}'. " +
                                 "Allowed: ${allowedToolMap.keys}"
                         )
-                    val result = try {
-                        executeToolWithBudget(agent, tool, call, budget, emitter)
-                    } catch (t: Throwable) {
-                        // #1739: tool executor threw and onError didn't recover.
-                        // Surface a ToolCallFinished event with isError=true so
-                        // consumers see the failure, then rethrow — the loop's
-                        // outer error path takes over (session emits Failed).
-                        if (emitter != null && call.callId != null) {
+                    var effectiveCall = call
+                    var denied = false
+                    val result = when (val decision = agent.decideBeforeToolCall(call.name, call.arguments)) {
+                        Decision.Proceed -> executeToolWithBudgetHandlingEvents(
+                            agent, tool, effectiveCall, budget, emitter
+                        )
+                        is Decision.ProceedWith -> {
+                            effectiveCall = call.copy(
+                                arguments = decision.replacement,
+                                rawArguments = null,
+                                invalidArgumentsError = null,
+                            )
+                            executeToolWithBudgetHandlingEvents(agent, tool, effectiveCall, budget, emitter)
+                        }
+                        is Decision.Deny -> {
+                            denied = true
+                            formatDeniedToolError(call.name, decision.reason)
+                        }
+                        is Decision.Substitute<*> -> decision.result
+                    }
+
+                    if (denied) {
+                        if (emitter != null && effectiveCall.callId != null) {
                             emitter(
                                 agents_engine.runtime.events.AgentEvent.ToolCallFinished(
                                     agentId = agent.name,
-                                    callId = call.callId,
-                                    toolName = call.name,
-                                    arguments = call.arguments,
-                                    result = t.message,
+                                    callId = effectiveCall.callId,
+                                    toolName = effectiveCall.name,
+                                    arguments = effectiveCall.arguments,
+                                    result = result,
                                     isError = true,
                                 )
                             )
                         }
-                        throw t
-                    }
-                    if (isKnowledge) agent.knowledgeUsedListener?.invoke(call.name, result?.toString() ?: "")
-                    else agent.toolUseListener?.invoke(call.name, call.arguments, result)
-                    // #1739: emit ToolCallFinished on the success path with the
-                    // executor's return value. callId is the one the streaming
-                    // aggregator stamped on this ToolCall — null only when the
-                    // emitter is null (no event work needed) or the non-streaming
-                    // path produced a ToolCall without one.
-                    if (emitter != null && call.callId != null) {
-                        emitter(
-                            agents_engine.runtime.events.AgentEvent.ToolCallFinished(
-                                agentId = agent.name,
-                                callId = call.callId,
-                                toolName = call.name,
-                                arguments = call.arguments,
-                                result = result,
-                                isError = false,
+                    } else {
+                        if (isKnowledge) agent.knowledgeUsedListener?.invoke(call.name, result?.toString() ?: "")
+                        else agent.toolUseListener?.invoke(call.name, effectiveCall.arguments, result)
+                        // #1739: emit ToolCallFinished on the success path with the
+                        // executor's return value. callId is the one the streaming
+                        // aggregator stamped on this ToolCall — null only when the
+                        // emitter is null (no event work needed) or the non-streaming
+                        // path produced a ToolCall without one.
+                        if (emitter != null && effectiveCall.callId != null) {
+                            emitter(
+                                agents_engine.runtime.events.AgentEvent.ToolCallFinished(
+                                    agentId = agent.name,
+                                    callId = effectiveCall.callId,
+                                    toolName = effectiveCall.name,
+                                    arguments = effectiveCall.arguments,
+                                    result = result,
+                                    isError = false,
+                                )
                             )
-                        )
+                        }
                     }
-                    val toolMessage = if (tool.untrustedOutput) {
+                    val toolMessage = if (!denied && tool.untrustedOutput) {
                         wrapUntrustedToolResult(tool.name, result)
                     } else {
                         result?.toString() ?: "null"
@@ -352,6 +388,39 @@ internal suspend fun <IN> executeAgentic(
             }
         }
     }
+}
+
+private fun coerceSubstituteOutput(result: Any?, outType: KClass<*>): Any {
+    if (result != null && outType.java.isInstance(result)) return result
+    return parseOutput(result?.toString() ?: "null", outType)
+        ?: error("Could not parse interceptor substitute result as ${outType.simpleName}: '$result'")
+}
+
+private suspend fun <IN> executeToolWithBudgetHandlingEvents(
+    agent: Agent<IN, *>,
+    tool: ToolDef,
+    call: ToolCall,
+    budget: BudgetConfig,
+    emitter: AgentEventEmitter?,
+): Any? = try {
+    executeToolWithBudget(agent, tool, call, budget, emitter)
+} catch (t: Throwable) {
+    // #1739: tool executor threw and onError didn't recover.
+    // Surface a ToolCallFinished event with isError=true so consumers see
+    // the failure, then rethrow — the outer error path emits session Failed.
+    if (emitter != null && call.callId != null) {
+        emitter(
+            agents_engine.runtime.events.AgentEvent.ToolCallFinished(
+                agentId = agent.name,
+                callId = call.callId,
+                toolName = call.name,
+                arguments = call.arguments,
+                result = t.message,
+                isError = true,
+            )
+        )
+    }
+    throw t
 }
 
 /**
@@ -619,6 +688,9 @@ private fun <IN> executeToolWithExecutionRecovery(
 private fun formatEscalatedToolError(toolName: String, result: RepairResult.Escalated): String =
     "ERROR: Tool '$toolName' failed: ${result.reason} " +
         "(severity: ${result.severity}). Please retry with corrected arguments."
+
+private fun formatDeniedToolError(toolName: String, reason: String): String =
+    "ERROR: Tool '$toolName' denied by policy: $reason"
 
 /**
  * Wrap a tool result from an `untrustedOutput = true` tool in a JSON envelope so

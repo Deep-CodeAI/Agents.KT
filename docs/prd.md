@@ -3956,6 +3956,7 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [x] `onError { Throwable -> }` — infrastructure-error observability hook (LLM transport, response parse, budget); pure observability — original exception always rethrows; listener exceptions are attached as suppressed (#962)
 - [x] `Agent.observe { event -> }` — sealed `PipelineEvent` (`SkillChosen` / `ToolCalled` / `KnowledgeLoaded` / `ErrorOccurred`) bridges the four hooks into one typed stream; composes additively with prior listeners (#965)
 - [x] `onBudgetThreshold(threshold) { reason, usedPercent -> }` — pre-cap warning hook; fires once per `BudgetReason` (TURNS / TOOL_CALLS / DURATION / TOKENS) when cumulative usage crosses the configured fraction, before the corresponding cap throws (#966)
+- [x] `onBefore*` interceptors — `Decision` (`Proceed`, `ProceedWith`, `Deny`, `Substitute`) across `onBeforeSkill`, `onBeforeTurn`, and `onBeforeToolCall`; dynamic policy runs after static allowlist checks and before regular/session-aware tool dispatch (#1907)
 - [x] MCP client — `mcp { server() }` agent DSL with HTTP / stdio / TCP transports, Bearer auth, namespacing
 - [x] MCP server — `McpServer.from(agent) { expose() }` exposes agent skills as MCP tools; 2025-03-26 spec conformance (ping, capabilities, protocolVersion negotiation, cursor/nextCursor, Content-Type/415, 405 with Allow, Mcp-Session-Id)
 - [x] MCP runner — `McpRunner.serve(agent, args)` picocli-style one-line `main` for standalone agent JARs

@@ -1,6 +1,7 @@
 package agents_engine.mcp
 
 import agents_engine.core.Agent
+import agents_engine.core.Decision
 import agents_engine.core.Skill
 import agents_engine.generation.Generable
 import agents_engine.generation.LenientJsonParser
@@ -20,6 +21,8 @@ import agents_engine.generation.hasGenerableAnnotation
  * HTTP (JDK `HttpServer`); non-agentic skills only (declared via
  * `implementedBy { }`); skill `IN` must be `String` or a `@Generable`
  * class. Server-side prompts mirror MCP wire shape (RegisteredPrompt).
+ * Incoming `tools/call` requests pass through the source agent's
+ * `onBeforeToolCall` decision chain before skill execution (#1907).
  * The InternalsAgent itself runs on this. See
  * `src/main/resources/internals-agent/mcp/McpServer.md` (#1837 / #1884).
  */
@@ -280,20 +283,32 @@ class McpServer private constructor(
         @Suppress("UNCHECKED_CAST")
         val args = (params["arguments"] as? Map<String, Any?>) ?: emptyMap()
         return try {
-            val input = exposed.deserializeInput(args)
+            val effectiveArgs = when (val decision = agent.decideBeforeToolCall(name, args)) {
+                Decision.Proceed -> args
+                is Decision.ProceedWith -> decision.replacement
+                is Decision.Deny -> return jsonRpcResult(id, mcpToolResult(
+                    text = "ERROR: Tool '$name' denied by policy: ${decision.reason}",
+                    isError = true,
+                ))
+                is Decision.Substitute<*> -> return jsonRpcResult(id, mcpToolResult(
+                    text = decision.result?.toString() ?: "",
+                    isError = false,
+                ))
+            }
+            val input = exposed.deserializeInput(effectiveArgs)
             @Suppress("UNCHECKED_CAST")
             val output = (exposed.skill as Skill<Any?, Any?>).execute(input)
-            jsonRpcResult(id, mapOf(
-                "content" to listOf(mapOf("type" to "text", "text" to (output?.toString() ?: ""))),
-                "isError" to false,
-            ))
+            jsonRpcResult(id, mcpToolResult(output?.toString() ?: "", isError = false))
         } catch (e: Exception) {
-            jsonRpcResult(id, mapOf(
-                "content" to listOf(mapOf("type" to "text", "text" to (e.message ?: e.toString()))),
-                "isError" to true,
-            ))
+            jsonRpcResult(id, mcpToolResult(e.message ?: e.toString(), isError = true))
         }
     }
+
+    private fun mcpToolResult(text: String, isError: Boolean): Map<String, Any?> =
+        mapOf(
+            "content" to listOf(mapOf("type" to "text", "text" to text)),
+            "isError" to isError,
+        )
 
     private fun jsonRpcResult(id: Any?, result: Any?): String =
         """{"jsonrpc":"2.0","id":${McpJson.encode(id)},"result":${McpJson.encode(result)}}"""

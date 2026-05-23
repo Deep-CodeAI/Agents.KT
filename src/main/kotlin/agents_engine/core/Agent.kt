@@ -44,6 +44,9 @@ import java.util.logging.Logger
  * `AgentEvent` (the streaming session surface): `onSkillChosen`,
  * `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`,
  * `onTokenUsage`, and the unified `observe { event -> }` sealed-event view.
+ * Before-interceptor hooks (`onBeforeSkill`, `onBeforeTurn`,
+ * `onBeforeToolCall`) return [Decision] to deny, mutate, or substitute before
+ * the selected operation runs (#1907).
  *
  * **Internal session entry point.** [invokeSuspendForSession] is the
  * streaming-aware variant called only by `Agent.session(input)` and
@@ -157,6 +160,10 @@ class Agent<IN, OUT>(
     var skillSelectionConfidenceThreshold: Double = 0.6
         private set
     private var skillSelector: ((IN) -> String)? = null
+    private val beforeSkillInterceptors = mutableListOf<(String) -> Decision<String>>()
+    private val beforeToolCallInterceptors =
+        mutableListOf<(name: String, args: Map<String, Any?>) -> Decision<Map<String, Any?>>>()
+    private val beforeTurnInterceptors = mutableListOf<(List<ChatMessage>) -> Decision<List<ChatMessage>>>()
     private val toolErrorHandlers: MutableMap<String, ToolErrorHandler> = mutableMapOf()
     internal var defaultToolErrorHandler: ToolErrorHandler? = null
         private set
@@ -167,7 +174,9 @@ class Agent<IN, OUT>(
      * memory, model, budget, prompt, error handlers, routing config) check this
      * and refuse post-construction mutation. Listeners (onToolUse, onTokenUsage,
      * onKnowledgeUsed, onSkillChosen, routerRationale) intentionally remain settable for
-     * tracing / instrumentation use cases.
+     * tracing / instrumentation use cases. Before-interceptors follow the same
+     * listener-shaped post-freeze rule because they are runtime policy, not
+     * structural graph mutation (#1907).
      */
     @PublishedApi internal var frozen: Boolean = false
 
@@ -262,6 +271,47 @@ class Agent<IN, OUT>(
         budgetThreshold = threshold
         budgetThresholdListener = block
     }
+
+    fun onBeforeSkill(block: (skillName: String) -> Decision<String>) {
+        beforeSkillInterceptors += block
+    }
+
+    fun onBeforeToolCall(block: (name: String, args: Map<String, Any?>) -> Decision<Map<String, Any?>>) {
+        beforeToolCallInterceptors += block
+    }
+
+    fun onBeforeTurn(block: (messages: List<ChatMessage>) -> Decision<List<ChatMessage>>) {
+        beforeTurnInterceptors += block
+    }
+
+    internal fun decideBeforeSkill(skillName: String): Decision<String> =
+        runDecisionChain(skillName, beforeSkillInterceptors.toList())
+
+    internal fun decideBeforeToolCall(name: String, args: Map<String, Any?>): Decision<Map<String, Any?>> {
+        var current = args
+        var effective: Decision<Map<String, Any?>> = Decision.Proceed
+
+        beforeToolCallInterceptors.toList().forEach { interceptor ->
+            val decision = try {
+                interceptor(name, current)
+            } catch (t: Throwable) {
+                Decision.Deny(t.message ?: t.toString())
+            }
+
+            if (effective is Decision.Proceed) {
+                effective = decision
+                if (decision is Decision.ProceedWith<*>) {
+                    @Suppress("UNCHECKED_CAST")
+                    current = decision.replacement as Map<String, Any?>
+                }
+            }
+        }
+
+        return effective
+    }
+
+    internal fun decideBeforeTurn(messages: List<ChatMessage>): Decision<List<ChatMessage>> =
+        runDecisionChain(messages, beforeTurnInterceptors.toList())
 
     fun skillSelection(block: (IN) -> String) {
         checkNotFrozen()
@@ -362,7 +412,15 @@ class Agent<IN, OUT>(
         onSkillStarted: (String) -> Unit,
     ): OUT {
         try {
-            val skill = resolveSkill(input)
+            var skill = resolveSkill(input)
+            when (val decision = decideBeforeSkill(skill.name)) {
+                Decision.Proceed -> Unit
+                is Decision.ProceedWith -> skill = compatibleSkill(decision.replacement, input)
+                is Decision.Deny -> throw InterceptorDeniedException(
+                    "Skill '${skill.name}' denied by interceptor: ${decision.reason}"
+                )
+                is Decision.Substitute<*> -> return castOut(decision.result)
+            }
             skillChosenListener?.invoke(skill.name)
             onSkillStarted(skill.name)
             return if (skill.isAgentic) {
@@ -394,6 +452,19 @@ class Agent<IN, OUT>(
             }
             throw t
         }
+    }
+
+    private fun compatibleSkill(skillName: String, input: IN): Skill<*, *> {
+        val selected = skills[skillName] ?: error(
+            "before-skill interceptor returned unknown skill name \"$skillName\". " +
+                "Available: ${skills.keys}"
+        )
+        check(selected.inType.java.isInstance(input) && selected.outType == outType) {
+            "before-skill interceptor returned incompatible skill \"$skillName\". " +
+                "Compatible skills for agent \"$name\" must accept the invocation input " +
+                "and produce ${outType.simpleName}."
+        }
+        return selected
     }
 
     /**

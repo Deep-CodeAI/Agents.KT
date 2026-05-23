@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/mcp/McpServer.kt — exposes an Agent as an MCP server over HTTP (JDK HttpServer at POST /mcp) and owns the shared JSON-RPC dispatcher reused by McpStdioServer. McpServer.from(agent) { port, expose(...) }. Non-agentic skills only (implementedBy { }); IN must be String or @Generable; output rendered as text block via toString(). Prompts/resources mirror MCP wire shape. The InternalsAgent runs on this. Call when the IDE LLM needs to reason about hosting an MCP server.
+description: Source-file knowledge for agents_engine/mcp/McpServer.kt — exposes an Agent as an MCP server over HTTP (JDK HttpServer at POST /mcp) and owns the shared JSON-RPC dispatcher reused by McpStdioServer. McpServer.from(agent) { port, expose(...) }. Non-agentic skills only (implementedBy { }); IN must be String or @Generable; incoming tools/call passes through agent.onBeforeToolCall decisions; output rendered as text block via toString(). Prompts/resources mirror MCP wire shape. The InternalsAgent runs on this. Call when the IDE LLM needs to reason about hosting an MCP server.
 ---
 
 # `agents_engine/mcp/McpServer.kt` — expose an agent over MCP
@@ -25,6 +25,7 @@ The InternalsAgent runs on this same server class (see `runtime/internals/Main.k
 - **Non-agentic skills only** — skills declared via `implementedBy { }`. Agentic skills require server-side LLM access, which is out of scope here.
 - **Skill `IN` constraints** — must be `String` OR a `@Generable` class. Other types rejected at `start()` with a descriptive error.
 - **Skill output rendering** — single text content block (`toString()`).
+- **Before policy** — incoming `tools/call` requests run through the source agent's `onBeforeToolCall` chain before input deserialization / skill execution. `Deny` returns an MCP tool error, `ProceedWith` mutates arguments, and `Substitute` returns a synthetic result.
 
 ## Tool registration
 

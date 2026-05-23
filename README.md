@@ -107,6 +107,7 @@ These APIs work in `main`, are unit-tested, and are exercised by integration tes
 - **Provider constrained decoding for `@Generable` outputs** — agentic skills returning `@Generable` types pass their JSON Schema to supporting providers automatically: OpenAI `response_format.json_schema`, Ollama `format`, and Anthropic's forced structured-output tool pattern (#1949).
 - **Typed tool refs in skill allowlists** — `tool(...)` returns a `Tool<Args, Result>` handle; `skill { tools(writeFile, compile) }` accepts handles, the IDE catches typos (#1015–#1017). The legacy `tools("name")` string form remains for built-in tools and runtime-discovered MCP names but produces a deprecation warning.
 - **Per-skill tool authorization** — runtime allowlist; the prompt's "Available tools" listing is descriptive, the security boundary is the runtime check (#630). See [docs/model-and-tools.md#tool-authorization-model](docs/model-and-tools.md#tool-authorization-model).
+- **Before interceptors** — `onBeforeSkill`, `onBeforeTurn`, and `onBeforeToolCall` return `Decision` (`Proceed`, `ProceedWith`, `Deny`, `Substitute`) for dynamic policy, prompt filtering, argument mutation, and synthetic results (#1907). See [docs/interceptors.md](docs/interceptors.md).
 - **Inline tool-call fallback** — auto-recovery when an Ollama model rejects native `tools` (e.g. `gemma3:4b`) — strips the field, injects inline JSON format prompt, retries (#702, #706). See [docs/model-and-tools.md#inline-tool-call-fallback-ollama-models-without-native-tool-support](docs/model-and-tools.md#inline-tool-call-fallback-ollama-models-without-native-tool-support).
 - **Composition operators** — `then`, `/` (parallel), `*` and `forum { }` (multi-agent), `.loop {}`, `.branch {}` on sealed types. See [docs/composition.md](docs/composition.md).
 - **Single-placement rule** — each `Agent` instance participates in at most one structure; second placement throws at construction. See [docs/composition.md#single-placement-rule](docs/composition.md#single-placement-rule).
@@ -139,6 +140,7 @@ What the framework enforces today:
 | Boundary | Enforcement | Established by |
 |----------|-------------|----------------|
 | Tool authorization | Runtime per-skill allowlist; unknown calls rejected — prompt is descriptive only | #630 |
+| Dynamic policy | `onBefore*` interceptors can deny, mutate, or substitute before skills, turns, and allowed tool calls run | #1907 |
 | Tool name typos | Fail-fast at agent construction | #631 |
 | Reserved memory names | `memory_read` / `memory_write` / `memory_search` cannot be shadowed by user tools | #659 |
 | Agent contract | Skills, tools, memory, model, budget, prompt frozen after `agent { }` returns | #697, #708 |
@@ -150,7 +152,7 @@ What the framework enforces today:
 
 What the framework does **not** enforce — your responsibility:
 
-- **Prompt-injection content filtering** — assumes you trust your inputs and system prompts.
+- **Built-in prompt-injection classifier** — wire your chosen classifier through `onBeforeTurn`; the framework provides the hook, not the detector.
 - **Sandboxing of tool executors** — tool code runs in-process with full JVM permissions; sandbox at the OS / container layer if the tools execute untrusted plans.
 - **Resource limits beyond budgets** — no automatic memory, file-descriptor, or network quotas.
 - **Authentication on `McpServer`** — incoming MCP requests are not credential-checked yet (see Known Limitations).
@@ -192,7 +194,7 @@ Topical guides:
 - [**Production Hardening**](docs/production-hardening.md) — actionable checklist for "before going live."
 - [**Regulated Deployment**](docs/regulated-deployment.md) — capability inventory, action log, decision points; EU AI Act mapping.
 - [**Comparison**](docs/comparison.md) — Agents.KT vs LangChain / Semantic Kernel / AutoGen / raw MCP.
-- [**Interceptors (design draft)**](docs/interceptors.md) — `onBefore*` family + `Decision` sealed type; not yet implemented (#1907).
+- [**Interceptors**](docs/interceptors.md) — `onBefore*` family + `Decision` sealed type for deny/mutate/substitute policy (#1907).
 - [**Roadmap**](docs/roadmap.md) — full Phase 1–4 feature plan.
 
 ---
@@ -230,7 +232,7 @@ Testing details — task names, integration test setup, mutation testing, how to
 
 ## Roadmap (highlights)
 
-**Phase 1 — Core DSL** *(in progress)*: typed agents, skills, knowledge, composition operators (`then`, `/`, `*`, `forum`, `.loop`, `.branch`), MCP client + server, agent memory, `loadResource(path)` for prompts from classpath, agentic loop with full budget controls (`maxTurns` / `maxToolCalls` / `maxDuration` / `perToolTimeout` / `maxTokens` / `maxConsecutiveSameTool`), observability hooks (`onSkillChosen`, `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`, `Agent.observe { }`).
+**Phase 1 — Core DSL** *(in progress)*: typed agents, skills, knowledge, composition operators (`then`, `/`, `*`, `forum`, `.loop`, `.branch`), MCP client + server, agent memory, `loadResource(path)` for prompts from classpath, agentic loop with full budget controls (`maxTurns` / `maxToolCalls` / `maxDuration` / `perToolTimeout` / `maxTokens` / `maxConsecutiveSameTool`), observability hooks (`onSkillChosen`, `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`, `Agent.observe { }`), and before-interceptor policy hooks (`onBeforeSkill`, `onBeforeTurn`, `onBeforeToolCall`).
 
 **Phase 2 — Runtime + Distribution** *(Q2 2026)*: remaining provider (Google), native CLI / jlink, `grants {}` permissions, session model, Flow-based observability, **multimodal input** (image + audio content blocks; vision-capable adapters for Anthropic/OpenAI/Ollama/Gemini), `agent.json` serialization, Gradle plugin. *(Anthropic + OpenAI adapters landed in #1644 / #1656; KSP `@Generable` codegen shipped in v0.4.6; per-adapter native streaming overrides — Anthropic SSE, OpenAI SSE, Ollama NDJSON — shipped in v0.5.0; provider-level constrained decoding for `@Generable` outputs shipped in v0.6.0 via #1949; the provider-neutral `Tool<IN, OUT>` / `McpTool<IN, OUT>` hierarchy shipped in v0.6.0 via #1948.)*
 

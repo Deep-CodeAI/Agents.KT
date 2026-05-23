@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/model/AgenticLoop.kt — the multi-turn chat↔tool loop (executeAgentic) at the heart of every agentic-skill invocation. Builds per-skill tool allowlist (skill tools + agent capabilities + #856 memory + knowledge), runs turns until final answer or budget cap, threads @Generable output JsonSchema to supporting ModelClient providers (#1949), honors maxTurns/maxToolCalls/maxDuration/perToolTimeout/maxTokens/maxConsecutiveSameTool, argument repair up to 8 retries, streaming-aware emitter (#1739), wrap-friendly effectivePrompt (#1707), cumulative TokenUsage (#1740). Call when the IDE LLM needs to reason about how agentic skills actually execute.
+description: Source-file knowledge for agents_engine/model/AgenticLoop.kt — the multi-turn chat↔tool loop (executeAgentic) at the heart of every agentic-skill invocation. Builds per-skill tool allowlist (skill tools + agent capabilities + #856 memory + knowledge), runs turns until final answer or budget cap, applies onBeforeTurn/onBeforeToolCall interceptors (#1907), threads @Generable output JsonSchema to supporting ModelClient providers (#1949), honors maxTurns/maxToolCalls/maxDuration/perToolTimeout/maxTokens/maxConsecutiveSameTool, argument repair up to 8 retries, streaming-aware emitter (#1739), wrap-friendly effectivePrompt (#1707), cumulative TokenUsage (#1740). Call when the IDE LLM needs to reason about how agentic skills actually execute.
 ---
 
 # `agents_engine/model/AgenticLoop.kt` — the multi-turn `chat ↔ tool` loop
@@ -34,8 +34,10 @@ internal suspend fun <IN> executeAgentic(
    - `client.chat(messages, jsonSchema)` — non-streaming, when `emitter == null`.
    - `client.chatStream(messages, jsonSchema)` — streaming, when `emitter != null`. Emits `Token` / `ToolCallStarted` / `ToolCallArgumentsDelta` chunks as they arrive.
    - `jsonSchema` is non-null only when the output type is `@Generable`, the skill has no custom `transformOutput { }`, and the client reports `supportsConstrainedDecoding()`.
+   - `onBeforeTurn` interceptors run immediately before each outbound model call and may mutate messages, deny the turn, or substitute a final output.
 
 4. **Executes tool calls** by name lookup against the allowlist. Each tool invocation:
+   - Runs `onBeforeToolCall` after the allowlist check and before dispatch. `ProceedWith` mutates args, `Deny` feeds a synthetic tool-error message to the model without firing `onToolError`, and `Substitute` behaves like a tool result.
    - Honors `perToolTimeout` (regular tools via worker interrupt; session-aware suspend tools via `withTimeout`).
    - Fires `agent.toolUseListener` (post-hoc) with `(name, args, result)`.
    - Emits `ToolCallFinished` AgentEvent when streaming.
