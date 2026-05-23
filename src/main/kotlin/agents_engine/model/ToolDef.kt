@@ -1,7 +1,9 @@
 package agents_engine.model
 
 import agents_engine.generation.Generable
+import agents_engine.generation.LenientJsonParser
 import agents_engine.generation.constructFromMap
+import agents_engine.generation.toLlmInput
 import kotlin.reflect.KClass
 import agents_engine.generation.hasGenerableAnnotation
 
@@ -33,6 +35,8 @@ class ToolDef(
     val description: String = "",
     val argsType: KClass<*>? = null,
     val untrustedOutput: Boolean = false,
+    val risk: agents_engine.core.ToolRisk = agents_engine.core.ToolRisk.LOW,
+    val policy: agents_engine.core.ToolPolicy? = null,
     /**
      * #1752 — session-aware tool executor. When non-null AND the
      * agentic loop runs under a session (`emitter != null`), this is
@@ -73,11 +77,30 @@ class ToolDef(
  */
 class Tool<Args, Result> @PublishedApi internal constructor(
     @PublishedApi internal val def: ToolDef,
-) {
-    val name: String get() = def.name
-    val description: String get() = def.description
+    override val inputType: KClass<*>,
+    override val outputType: KClass<*>,
+    private val inputAdapter: (Args) -> Map<String, Any?>,
+) : agents_engine.core.Tool<Args, Result> {
+    override val name: String get() = def.name
+    override val description: String get() = def.description
+    override val risk: agents_engine.core.ToolRisk get() = def.risk
+    override val policy: agents_engine.core.ToolPolicy? get() = def.policy
+
+    @Suppress("UNCHECKED_CAST")
+    override suspend fun call(input: Args): Result =
+        def.executor(inputAdapter(input)) as Result
 
     override fun toString(): String = "Tool<${def.name}>"
+}
+
+@Suppress("UNCHECKED_CAST")
+private fun mapInput(input: Map<String, Any?>): Map<String, Any?> = input
+
+@PublishedApi
+internal fun <Args> generableInputToMap(input: Args): Map<String, Any?> {
+    val parsed = LenientJsonParser.parse(toLlmInput(input)) as? Map<*, *>
+        ?: error("Tool input ${input?.let { it::class.simpleName } ?: "null"} did not encode to a JSON object")
+    return parsed.entries.associate { (k, v) -> k.toString() to v }
 }
 
 class ToolDefaultsBuilder {
@@ -128,7 +151,7 @@ class ToolsBuilder {
         }
         val def = ToolDef(name = name, description = description, executor = executor)
         defs.add(def)
-        return Tool(def)
+        return Tool(def, Map::class, Any::class, ::mapInput)
     }
 
     fun tool(
@@ -145,7 +168,7 @@ class ToolsBuilder {
         val def = ToolDef(name = name, description = description, executor = executor)
         def.errorHandler = OnErrorBuilder().apply(onError).build()
         defs.add(def)
-        return Tool(def)
+        return Tool(def, Map::class, Any::class, ::mapInput)
     }
 
     fun tool(name: String, block: ToolDefBuilder.() -> Unit): Tool<Map<String, Any?>, Any?> {
@@ -158,7 +181,7 @@ class ToolsBuilder {
         builder.block()
         val def = builder.build()
         defs.add(def)
-        return Tool(def)
+        return Tool(def, Map::class, Any::class, ::mapInput)
     }
 
     operator fun ToolDef.unaryPlus() {
@@ -217,7 +240,7 @@ class ToolsBuilder {
         }
         val def = ToolDef(name = name, description = description, executor = wrapped, argsType = argsClass)
         defs.add(def)
-        return Tool(def)
+        return Tool(def, argsClass, Any::class, ::generableInputToMap)
     }
 }
 

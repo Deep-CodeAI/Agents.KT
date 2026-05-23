@@ -2,6 +2,7 @@ package agents_engine.model
 
 import agents_engine.core.agent
 import agents_engine.generation.Generable
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
@@ -48,6 +49,26 @@ class ToolHandleTest {
         val handle = checkNotNull(captured)
         assertEquals("fetch_typed", handle.name)
         assertEquals("Tool<fetch_typed>", handle.toString())
+    }
+
+    @Test
+    fun `typed tool handle implements provider-neutral core Tool`() = runBlocking {
+        var captured: Tool<FetchArgs, String>? = null
+        agent<String, String>("typed-core-tool-handle") {
+            tools {
+                captured = tool<FetchArgs, String>("fetch_core", "Fetch through core Tool") { args ->
+                    "GET ${args.url} (${args.timeoutMs}ms)"
+                }
+            }
+            skills { skill<String, String>("s") { implementedBy { it } } }
+        }
+
+        val handle: agents_engine.core.Tool<FetchArgs, String> = checkNotNull(captured)
+
+        assertEquals("fetch_core", handle.name)
+        assertEquals(FetchArgs::class, handle.inputType)
+        assertEquals(Any::class, handle.outputType)
+        assertEquals("GET https://example.test (250ms)", handle.call(FetchArgs("https://example.test", 250)))
     }
 
     @Test

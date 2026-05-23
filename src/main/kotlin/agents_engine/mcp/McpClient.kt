@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class McpClient internal constructor(private val transport: McpTransport) : AutoCloseable {
 
-    private var tools: List<McpToolDescriptor> = emptyList()
+    private var toolDescriptors: List<McpToolDescriptor> = emptyList()
     private val nextId = AtomicLong(2)
 
     /** Protocol version the server reported during `initialize`. Null until handshake completes. */
@@ -61,13 +61,28 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
      * namespaced. Use this to register tools from multiple MCP servers in the same
      * agent without name collisions.
      */
-    fun toolDefs(prefix: String? = null): List<ToolDef> = tools.map { t ->
+    fun toolDefs(prefix: String? = null): List<ToolDef> = toolDescriptors.map { t ->
         ToolDef(
             name = if (prefix != null) "$prefix.${t.name}" else t.name,
             description = describeForLlm(t),
             executor = { args -> call(t.name, args) },
         )
     }
+
+    /**
+     * #1948 — MCP-as-tools: expose every MCP-side tool as a first-class typed
+     * [McpTool] handle. This is additive alongside [toolSkills], which remains
+     * the prompt-style primary-skill adapter.
+     */
+    fun tools(prefix: String? = null): List<McpTool<Map<String, Any?>, String>> =
+        toolDescriptors.map { descriptor ->
+            McpTool.mapTool(
+                client = this,
+                descriptor = descriptor,
+                displayName = if (prefix != null) "$prefix.${descriptor.name}" else descriptor.name,
+                description = describeForLlm(descriptor),
+            )
+        }
 
     /**
      * #1795 — MCP-as-skills (1/3): expose every MCP-side tool as a [Skill]
@@ -88,7 +103,7 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
      * Both surfaces ship; consumers pick the shape that matches their
      * agent design.
      */
-    fun toolSkills(prefix: String? = null): List<agents_engine.core.Skill<Map<String, Any?>, String>> = tools.map { t ->
+    fun toolSkills(prefix: String? = null): List<agents_engine.core.Skill<Map<String, Any?>, String>> = toolDescriptors.map { t ->
         val displayName = if (prefix != null) "$prefix.${t.name}" else t.name
         agents_engine.core.Skill<Map<String, Any?>, String>(
             name = displayName,
@@ -282,7 +297,7 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
             ?: error("tools/list returned non-object: $result")
         val toolsList = resultMap["tools"] as? List<*>
             ?: error("tools/list result missing 'tools' array: $resultMap")
-        tools = toolsList.map { rawTool ->
+        toolDescriptors = toolsList.map { rawTool ->
             val m = rawTool as? Map<*, *>
                 ?: error("tool descriptor is not an object: $rawTool")
             McpToolDescriptor(
@@ -332,7 +347,7 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
             completions = rawServerCapabilities["completions"] != null,
             experimental = (rawServerCapabilities["experimental"] as? Map<String, Any?>) ?: emptyMap(),
         )
-        val toolInfos = tools.map { t ->
+        val toolInfos = toolDescriptors.map { t ->
             McpToolInfo(
                 name = t.name,
                 title = t.title,

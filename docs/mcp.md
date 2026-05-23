@@ -34,6 +34,19 @@ Each `server(name) { }` declares **exactly one** transport (`url=` xor `command=
 
 **`agent.mcpClients`** — connected clients for lifecycle control (`close()` in tests).
 
+For lower-level integrations, `McpClient` exposes discovered server tools in two direct forms:
+
+```kotlin
+val client = McpClient.connect(server.url)
+
+val skillShape = client.toolSkills().single() // Skill<Map<String, Any?>, String>
+val toolShape = client.tools().single()       // McpTool<Map<String, Any?>, String>
+
+val result = toolShape.call(mapOf("input" to "go"))
+```
+
+Use `toolSkills()` when the MCP capability is itself a primary agent skill. Use `tools()` when you need a provider-neutral `Tool<*, *>` boundary object for grants, manifests, policy, or audit code. Both call the same MCP `tools/call` endpoint.
+
 ### Exposing an agent as an MCP server — `McpServer.from(agent)`
 
 ```kotlin

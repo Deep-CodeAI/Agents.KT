@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/model/ToolDef.kt — ToolDef (wire shape: Map<String,Any?>→Any? executor + optional session-aware sessionExecutor #1752 + untrustedOutput sandbox flag + argsType KClass for typed coercion), Tool<Args,Result> compile-time-checked handle (#1015/#1016) returned by tool(...) builders. argsType drives constructFromMap deserialization with @Generable. errorHandler slot wired by onError { }. Call when the IDE LLM needs to reason about declaring tools or about typed-vs-stringly-typed tool refs.
+description: Source-file knowledge for agents_engine/model/ToolDef.kt — ToolDef (wire shape: Map<String,Any?>→Any? executor + optional session-aware sessionExecutor #1752 + untrustedOutput sandbox flag + argsType KClass for typed coercion, plus risk/policy metadata), Tool<Args,Result> compile-time-checked handle (#1015/#1016/#1948) returned by tool(...) builders and implementing core Tool. argsType drives constructFromMap deserialization with @Generable. errorHandler slot wired by onError { }. Call when the IDE LLM needs to reason about declaring tools or about typed-vs-stringly-typed tool refs.
 ---
 
 # `agents_engine/model/ToolDef.kt` — tool shape + typed handles
@@ -14,6 +14,8 @@ class ToolDef(
     val description: String = "",
     val argsType: KClass<*>? = null,
     val untrustedOutput: Boolean = false,
+    val risk: ToolRisk = ToolRisk.LOW,
+    val policy: ToolPolicy? = null,
     val sessionExecutor: (suspend (Map<String, Any?>, AgentEventEmitter) -> Any?)? = null,
     val executor: (Map<String, Any?>) -> Any?,
 ) {
@@ -26,6 +28,7 @@ class ToolDef(
 - `sessionExecutor` (#1752): an alternate executor used when the agentic loop is running under a session. Receives an `AgentEventEmitter` so the tool body can stream sub-events (e.g., a sibling agent's inner events) into the captain's session. Falls back to `executor` when null — preserves byte-for-byte behavior for plain tools.
 - `sessionExecutor` is declared BEFORE `executor` so the trailing-lambda construction `ToolDef(name, desc) { args -> ... }` still binds to `executor`. (Removing this ordering broke many call sites — see related test failures in the v0.5.0 release.)
 - `untrustedOutput`: marks tool outputs as untrusted (sandbox boundary signalling).
+- `risk` / `policy`: provider-neutral boundary metadata for the common `core.Tool` contract. `policy` is a marker hook until #1915 lands.
 - `errorHandler` is wired via the typed `tool { ... } onError { ... }` infix.
 
 ## Typed handle: `Tool<Args, Result>`
@@ -46,6 +49,8 @@ skill<X, Y>("solve") {
 
 The legacy `tools("addNumbers", "multiplyNumbers")` string form still works for built-ins (`escalate`, `throwException`, `memory_*`) but is soft-deprecated for user tools.
 
+As of #1948, the local handle implements `agents_engine.core.Tool<Args, Result>` so local tools and MCP tools can share later grants/manifests/audit/policy machinery. Its `call(input)` method adapts typed input back to the underlying `ToolDef.executor`.
+
 ## Argument deserialization
 
 Typed builders register `argsType: KClass<Args>` with `ToolDef`. When the LLM sends args, the loop calls `agents_engine.generation.constructFromMap(argsType, args)` to coerce the `Map<String, Any?>` into a typed `Args` instance — using `@Generable` annotations to drive reflection. Failures raise `ToolError.DeserializationError`, routed through `onError { deserializationError }` if set.
@@ -53,6 +58,7 @@ Typed builders register `argsType: KClass<Args>` with `ToolDef`. When the LLM se
 ## Related files
 
 - `Tool.kt` (separate file, if present) — extension functions on `Tool<*, *>` for composition.
+- `core/Tool.kt` — provider-neutral tool boundary contract implemented by local and MCP handles.
 - `OnErrorBuilder.kt` — the `onError { }` recovery DSL wired to `errorHandler`.
 - `ToolError.kt` — typed error union.
 - `generation/Generable.kt`, `generation/constructFromMap.kt` — annotation + reflective constructor.
