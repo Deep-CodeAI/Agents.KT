@@ -3958,7 +3958,7 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [x] `onBudgetThreshold(threshold) { reason, usedPercent -> }` — pre-cap warning hook; fires once per `BudgetReason` (TURNS / TOOL_CALLS / DURATION / TOKENS) when cumulative usage crosses the configured fraction, before the corresponding cap throws (#966)
 - [x] `onBefore*` interceptors — `Decision` (`Proceed`, `ProceedWith`, `Deny`, `Substitute`) across `onBeforeSkill`, `onBeforeTurn`, and `onBeforeToolCall`; dynamic policy runs after static allowlist checks and before regular/session-aware tool dispatch (#1907)
 - [x] MCP client — `mcp { server() }` agent DSL with HTTP / stdio / TCP transports, Bearer auth, namespacing
-- [x] MCP server — `McpServer.from(agent) { expose() }` exposes agent skills as MCP tools; 2025-03-26 spec conformance (ping, capabilities, protocolVersion negotiation, cursor/nextCursor, Content-Type/415, 405 with Allow, Mcp-Session-Id)
+- [x] MCP server — `McpServer.from(agent) { expose() }` exposes agent skills as MCP tools; 2025-03-26 spec conformance (ping, capabilities, protocolVersion negotiation, cursor/nextCursor, Content-Type/415, 405 with Allow, Mcp-Session-Id); inbound bearer auth, Host/Origin allowlists, per-principal tool policy, and filtered capability snapshots (#1902)
 - [x] MCP runner — `McpRunner.serve(agent, args)` picocli-style one-line `main` for standalone agent JARs
 - [x] Memory bank — `MemoryBank`, `memory_read` / `memory_write` / `memory_search` tools with per-skill `useMemory()` opt-in (#856)
 - [x] Supply-chain hygiene — pinned Gradle wrapper, dependency-locking via `gradle.lockfile`, `gradle/verification-metadata.xml` SHA-256 verification, `updateVerificationMetadata` cross-platform Gradle task (#858, #872, #883)

@@ -71,6 +71,28 @@ println(server.url)     // http://localhost:8080/mcp
 
 Exposed skills become MCP tools. The `inputSchema` is generated from the skill's `IN` type via `@Generable` reflection — the JSON schema includes `@Guide` descriptions so the calling LLM knows what each field means.
 
+HTTP servers default to trusted-local mode: loopback callers can connect without credentials, and non-loopback callers are rejected unless you configure explicit auth. For a network-reachable endpoint, set `auth`, `allowedHosts`, `originAllowlist`, and a per-principal `toolPolicy`:
+
+```kotlin
+val server = McpServer.from(greeter) {
+    port = 8080
+    expose("greet")
+    auth = McpServerAuth.RequireBearerTokens(
+        mapOf(
+            requireNotNull(System.getenv("MCP_READ_TOKEN")) to ClientPrincipal("ide-readonly"),
+            requireNotNull(System.getenv("MCP_ADMIN_TOKEN")) to ClientPrincipal("ide-admin"),
+        ),
+    )
+    allowedHosts = setOf("agents.internal.example")
+    originAllowlist = setOf("https://ide.internal.example")
+    toolPolicy { principal, toolName ->
+        principal.id == "ide-admin" || toolName == "greet"
+    }
+}
+```
+
+Denied tools are filtered out of `tools/list`; denied `tools/call` requests return a generic `-32601` JSON-RPC error so the server does not confirm that the tool exists. See [MCP Server Hardening](mcp-server.md) for gateway examples.
+
 ### How external clients consume your `McpServer`
 
 | Client | How |

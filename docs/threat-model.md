@@ -135,24 +135,27 @@ class AgentService(private val claudeKey: String) {
 val server = McpServer.from(agent) {
     port = 8765
     expose("safe-read-tools")          // narrow exposure surface
-    // expose("dangerous-write-tools")  // intentionally NOT exposed
+    expose("dangerous-write-tools")
+    auth = McpServerAuth.RequireBearerTokens(tokens)
+    allowedHosts = setOf("agents.internal.example")
+    originAllowlist = setOf("https://ide.internal.example")
+    toolPolicy { principal, toolName ->
+        principal.id == "admin" || toolName == "safe-read-tools"
+    }
 }.start()
 ```
 
-**Gateway responsibilities (NOT yet first-class in Agents.KT):**
+**Gateway responsibilities:**
 - Terminate TLS.
-- Authenticate the client (Bearer / mTLS / OIDC).
-- Pass client identity as a header to the McpServer (the framework doesn't yet consume it — see #1902).
-- Validate `Origin` header against allowlist (the framework doesn't yet — see #1902).
+- Authenticate the client at the edge when you use mTLS / OIDC, or forward a short-lived bearer token that `McpServerAuth` validates.
 - Rate limit per client.
 - Audit log per request with client identity.
 
-**Guardrails that apply:** `expose(...)` narrows the skill surface; `BudgetConfig` per invocation; `McpServer.from(agent)` registration prevents non-`implementedBy` skills from being exposed.
+**Guardrails that apply:** `expose(...)` narrows the skill surface; `McpServerAuth` authenticates inbound HTTP callers; `allowedHosts` / `originAllowlist` reject mismatched browser ingress; `toolPolicy` filters `tools/list` and denies `tools/call` without confirming sensitive tool names; `BudgetConfig` caps each invocation.
 
 **Gaps you close yourself (today):**
-- **All gateway responsibilities above.** McpServer trusts ingress entirely; bind it to loopback and front it with one.
-- **Per-client tool policy** — the framework exposes the same surface to every client today. Per-client gating (e.g. "client X may call `read_doc` but not `write_doc`") must live at the gateway via path/header rules, OR wait for #1902.
-- **Audit log** — emit your own gateway log; the framework's `onToolUse` listener is supplementary observability, not an authoritative audit trail.
+- **TLS termination and rate limiting.** Keep those at the gateway.
+- **Audit log retention.** Emit a gateway log; the framework's `onToolUse` listener is supplementary observability until the JSONL exporter lands.
 
 **Verdict:** Agents.KT-as-shipped is the WRONG shape if your gateway can't take on these responsibilities. With a gateway that can, it works; without one, see anti-patterns below.
 
@@ -186,7 +189,7 @@ Swarm.discover().forEach { sibling ->
 
 | Anti-pattern | Why it fails |
 |---|---|
-| Internet-facing `McpServer` bound to `0.0.0.0` with no gateway | No incoming auth, no origin validation, no rate limit. The framework explicitly disclaims these — bind to loopback and front with a gateway. |
+| Internet-facing `McpServer` bound to `0.0.0.0` with no gateway | Bearer auth and origin checks help, but you still lose TLS termination, rate limiting, request logging, and network isolation. Bind to loopback and front with a gateway. |
 | Agent with `executeShellCommand` / `runJavaCode` / `eval`-style tool, exposed to untrusted callers | The LLM will eventually find a prompt injection that gets it to run something the user shouldn't have access to. Sandboxing isn't shipped yet (Phase 3). Until then, don't ship exec-style tools to untrusted callers. |
 | One agent instance shared across tenants | The freeze contract prevents mutation, but `memory(MemoryBank())` on the agent gives every tenant access to every other tenant's scratchpad. One agent per tenant, OR scope memory bank per call. |
 | Tool that ingests user-provided URLs / files and feeds raw output into the next LLM turn | Classic prompt injection vector. Wrap tool output with `untrustedOutput = true` on the `ToolDef` (signal flag for sandbox wiring once it lands) AND prefix the model's view with `--- BEGIN UNTRUSTED CONTENT ---` markers in your tool body. |
@@ -206,8 +209,8 @@ Swarm.discover().forEach { sibling ->
 | Observability hooks (`onToolUse`, `onError`, `onBudgetThreshold`) | ✓ | |
 | `untrustedOutput` flag on `ToolDef` | ✓ (signal flag; no enforcement yet) | Enforcement via sandbox — Phase 3 |
 | Tool sandboxing (process / WASM / Docker) | | Phase 3 |
-| MCP server incoming auth | | #1902 |
-| MCP server origin validation | | #1902 |
+| MCP server incoming auth | x | #1902 |
+| MCP server origin validation | x | #1902 |
 | Per-client MCP tool policy | | #1902 |
 | Prompt-injection filtering | | None (this is your problem) |
 | PII redaction in tool I/O | | None (use `onToolUse` to roll your own) |

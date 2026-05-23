@@ -8,7 +8,8 @@ This is the **actionable companion** to [`docs/threat-model.md`](threat-model.md
 
 | You handle | Agents.KT handles |
 |---|---|
-| Ingress auth, TLS, rate limiting | Typed `Agent<IN, OUT>` boundaries |
+| TLS, gateway rate limiting | Typed `Agent<IN, OUT>` boundaries |
+| External ingress identity | `McpServerAuth` bearer-token principals |
 | Tool implementation safety (what your lambdas reach) | Tool allowlist per skill |
 | Sandboxing tool execution | Budget caps, freeze contract, observability hooks |
 | PII redaction in prompts/logs | The hooks to do that redaction (`onToolUse`, etc.) |
@@ -34,11 +35,11 @@ The framework gives you the primitives. Wiring them to your runtime, infra, and 
 
 ### MCP server (if you expose one)
 
-- [ ] **MCP server bound to loopback (`127.0.0.1`) + fronted by a gateway.** `McpServer` ships with no incoming auth or origin validation today (see #1902). Bind it to `127.0.0.1`, terminate TLS at Envoy/Nginx/Cloudflare Tunnel, authenticate at the gateway. *Deployer responsibility today; #1902 lands first-class.*
+- [ ] **MCP server bound to loopback (`127.0.0.1`) + fronted by a gateway.** `McpServer` defaults to trusted-local mode and rejects non-loopback callers. For externally reachable service paths, terminate TLS and rate-limit at Envoy/Nginx/Cloudflare Tunnel, then keep `McpServerAuth` enabled in-process. *Enforced by:* `McpServerAuth.TrustedLocal` / `RequireBearerToken`.
 
-- [ ] **Origin allowlist on the gateway.** Same as above — the framework doesn't validate `Origin` headers. The gateway does. *Deployer responsibility today; #1902.*
+- [ ] **Host and Origin allowlists configured.** Browser-reachable deployments should pin both the public host and the expected IDE/web origin. *Enforced by:* `allowedHosts` and `originAllowlist`.
 
-- [ ] **Per-client MCP tool policy.** Today the framework exposes the same surface to every client. If different clients should see different tools, gate at the gateway by path / header. *Deployer responsibility today; #1902.*
+- [ ] **Per-client MCP tool policy.** Use bearer-token principals to filter `tools/list` and deny `tools/call` without leaking whether the tool exists. *Enforced by:* `toolPolicy { principal, toolName -> ... }`.
 
 - [ ] **`expose()` only the skills that should be MCP-callable.** Default to opaque: `expose("safe-read-tool")` not "every skill." Audit the call list in code review. *Enforced by:* `McpServer.from(agent) { expose(...) }`.
 
@@ -80,7 +81,7 @@ The framework gives you the primitives. Wiring them to your runtime, infra, and 
 
 - [ ] **Permission manifest reviewed in CI.** *Not yet shipped — #1912 (0.6.0 hero feature).* When it lands, every PR that changes the agent / tool / MCP-exposed surface should print a diff of the capability graph and require explicit reviewer sign-off.
 
-- [ ] **Human oversight on high-risk decisions.** Until `onBefore*` interceptors ship (#1907), use a manual confirmation pattern: the agent returns a typed `PendingAction(plan, requiresApproval = true)`; your service prompts the user; on approval, a second agent invocation executes. *Deployer pattern; #1907 makes this first-class.*
+- [ ] **Human oversight on high-risk decisions.** Use `onBeforeToolCall` / `onBeforeTurn` to deny, mutate, or substitute high-risk actions before they reach tools or the model. For approvals, have the interceptor deny or substitute a pending-action result until your host app records user approval. *Enforced by:* `Decision` before interceptors.
 
 - [ ] **Shared-responsibility statement reviewed by legal / compliance.** Both you and your end users should know what the agent is and isn't allowed to do. The [README Limitations section](../README.md#known-limitations) is the framework's contribution; your product needs its own statement. *Deployer responsibility.*
 

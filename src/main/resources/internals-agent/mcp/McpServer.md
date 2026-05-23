@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/mcp/McpServer.kt — exposes an Agent as an MCP server over HTTP (JDK HttpServer at POST /mcp) and owns the shared JSON-RPC dispatcher reused by McpStdioServer. McpServer.from(agent) { port, expose(...) }. Non-agentic skills only (implementedBy { }); IN must be String or @Generable; incoming tools/call passes through agent.onBeforeToolCall decisions; output rendered as text block via toString(). Prompts/resources mirror MCP wire shape. The InternalsAgent runs on this. Call when the IDE LLM needs to reason about hosting an MCP server.
+description: Source-file knowledge for agents_engine/mcp/McpServer.kt — exposes an Agent as an MCP server over HTTP (JDK HttpServer at POST /mcp) and owns the shared JSON-RPC dispatcher reused by McpStdioServer. McpServer.from(agent) { port, expose(...), auth, allowedHosts, originAllowlist, toolPolicy(...) }. Non-agentic skills only (implementedBy { }); IN must be String or @Generable; incoming tools/call is authenticated, policy-filtered, and passed through agent.onBeforeToolCall decisions; output rendered as text block via toString(). Prompts/resources mirror MCP wire shape. The InternalsAgent runs on this. Call when the IDE LLM needs to reason about hosting an MCP server.
 ---
 
 # `agents_engine/mcp/McpServer.kt` — expose an agent over MCP
@@ -12,6 +12,9 @@ Turns an `Agent` into an MCP server. `from(agent) { ... }` registers selected sk
 val server = McpServer.from(coder) {
     port = 8080         // 0 = OS-assigned
     expose("write-code", "review-code")
+    auth = McpServerAuth.RequireBearerToken(requireNotNull(System.getenv("MCP_TOKEN")))
+    allowedHosts = setOf("agents.internal.example")
+    originAllowlist = setOf("https://ide.internal.example")
 }.start()
 println("MCP server at ${server.url}")
 ```
@@ -21,11 +24,29 @@ The InternalsAgent runs on this same server class (see `runtime/internals/Main.k
 ## Scope
 
 - **HTTP transport** — uses the JDK `com.sun.net.httpserver.HttpServer`.
+- **Inbound security** — authenticates HTTP callers via `McpServerAuth`, validates optional Host/Origin allowlists, and identifies callers as `ClientPrincipal`.
 - **Shared dispatch** — `dispatchJsonRpc(...)` returns one response envelope or `null` for notifications, letting `McpStdioServer` share the tool/prompt/resource behavior without duplicating handlers.
 - **Non-agentic skills only** — skills declared via `implementedBy { }`. Agentic skills require server-side LLM access, which is out of scope here.
 - **Skill `IN` constraints** — must be `String` OR a `@Generable` class. Other types rejected at `start()` with a descriptive error.
 - **Skill output rendering** — single text content block (`toString()`).
 - **Before policy** — incoming `tools/call` requests run through the source agent's `onBeforeToolCall` chain before input deserialization / skill execution. `Deny` returns an MCP tool error, `ProceedWith` mutates arguments, and `Substitute` returns a synthetic result.
+- **Per-client tool policy** — `toolPolicy { principal, toolName -> ... }` filters `tools/list`; denied `tools/call` returns a generic `-32601` JSON-RPC error without naming the denied tool.
+
+## Security knobs
+
+```kotlin
+McpServer.from(agent) {
+    expose("read_docs", "write_docs")
+    auth = McpServerAuth.RequireBearerTokens(tokenToPrincipal)
+    allowedHosts = setOf("agents.internal.example")
+    originAllowlist = setOf("https://ide.internal.example")
+    toolPolicy { principal, toolName ->
+        principal.id == "admin" || toolName == "read_docs"
+    }
+}
+```
+
+The default `McpServerAuth.TrustedLocal` accepts loopback callers and rejects non-loopback callers. `snapshotFor(principal)` returns the same filtered capability surface used during `initialize`.
 
 ## Tool registration
 
