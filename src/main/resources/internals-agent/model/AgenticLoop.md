@@ -36,7 +36,7 @@ internal suspend fun <IN> executeAgentic(
    - `jsonSchema` is non-null only when the output type is `@Generable`, the skill has no custom `transformOutput { }`, and the client reports `supportsConstrainedDecoding()`.
 
 4. **Executes tool calls** by name lookup against the allowlist. Each tool invocation:
-   - Honors `perToolTimeout` (per-call deadline) wrapped via `withTimeout`.
+   - Honors `perToolTimeout` (regular tools via worker interrupt; session-aware suspend tools via `withTimeout`).
    - Fires `agent.toolUseListener` (post-hoc) with `(name, args, result)`.
    - Emits `ToolCallFinished` AgentEvent when streaming.
    - Increments `toolCallCount`, checked against `maxToolCalls` after each call.
@@ -54,7 +54,7 @@ The loop honors every cap from `BudgetConfig`:
 | `maxTurns` | After each chat turn | Throws if exceeded. |
 | `maxToolCalls` | After each tool execution | Throws if exceeded. |
 | `maxDuration` | Before each turn | Throws if `Instant.now() - start > maxDuration`. |
-| `perToolTimeout` | Wrapped around each tool call | `TimeoutCancellationException` → `LlmProviderException` with reason. |
+| `perToolTimeout` | Wrapped around each tool call | Throws `BudgetExceededException(PER_TOOL_TIMEOUT)`. Regular tools run on an interruptible worker; session-aware tools use coroutine cancellation. |
 | `maxTokens` | Accumulated from `TokenUsage` per turn | Throws when crossed. |
 | `maxConsecutiveSameTool` | Per-tool counter reset on tool-name change | Catches LLM stuck in a loop calling the same tool. |
 

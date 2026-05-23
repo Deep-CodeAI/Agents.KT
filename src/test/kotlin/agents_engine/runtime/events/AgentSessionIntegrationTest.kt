@@ -4,9 +4,13 @@ import agents_engine.core.agent
 import agents_engine.model.LlmResponse
 import agents_engine.model.ModelClient
 import agents_engine.model.TokenUsage
+import agents_engine.model.BudgetExceededException
+import agents_engine.model.BudgetReason
+import agents_engine.model.ToolDef
 import agents_engine.model.ToolCall
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -15,6 +19,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
 
 // #1737 — integration coverage for the v0.5.0 session surface beyond the
 // happy implementedBy path. These pin contracts that step 3 will need to
@@ -200,6 +205,67 @@ class AgentSessionIntegrationTest {
         val tokenIdx = events.indexOf(tokens.single())
         assertTrue(startedIdx < finishedIdx, "ToolCallStarted must precede ToolCallFinished")
         assertTrue(finishedIdx < tokenIdx, "ToolCallFinished (from turn 1) must precede the final Token (from turn 2)")
+    }
+
+    @Test
+    fun `session-aware tool obeys perToolTimeout and emits failed ToolCallFinished`() = runTest {
+        val callId = "call-session-timeout"
+        val responses = ArrayDeque<LlmResponse>().apply {
+            add(
+                LlmResponse.ToolCalls(
+                    listOf(
+                        ToolCall(
+                            name = "hang_session",
+                            arguments = emptyMap(),
+                            rawArguments = "{}",
+                            callId = callId,
+                        )
+                    )
+                )
+            )
+            add(LlmResponse.Text("should not reach second turn"))
+        }
+        val stub = ModelClient { _ -> responses.removeFirst() }
+        val hangingTool = ToolDef(
+            name = "hang_session",
+            description = "Session-aware tool that never finishes before the per-tool timeout.",
+            executor = { _ -> "non-session fallback" },
+            sessionExecutor = { _, _ ->
+                delay(250.milliseconds)
+                "late"
+            },
+        )
+
+        val toolAgent = agent<String, String>("session-timeout-agent") {
+            model { ollama("llama3"); client = stub }
+            budget { perToolTimeout = 50.milliseconds }
+            tools { +hangingTool }
+            skills {
+                skill<String, String>("respond", "Calls the session-aware tool") {
+                    @Suppress("DEPRECATION")
+                    tools("hang_session")
+                }
+            }
+        }
+
+        val session = toolAgent.session("kick")
+        val events = session.events.toList()
+        val failed = events.filterIsInstance<AgentEvent.Failed>().single()
+        val timeout = assertIs<BudgetExceededException>(failed.cause)
+
+        assertEquals(BudgetReason.PER_TOOL_TIMEOUT, timeout.reason)
+
+        val finished = events.filterIsInstance<AgentEvent.ToolCallFinished>().single()
+        assertEquals(callId, finished.callId)
+        assertEquals("hang_session", finished.toolName)
+        assertEquals(true, finished.isError)
+        assertTrue(
+            finished.result.toString().contains("timeout", ignoreCase = true),
+            "timeout marker should be visible in ToolCallFinished.result: ${finished.result}",
+        )
+
+        val awaited = assertFailsWith<BudgetExceededException> { session.await() }
+        assertEquals(BudgetReason.PER_TOOL_TIMEOUT, awaited.reason)
     }
 
     @Test

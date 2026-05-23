@@ -9,7 +9,7 @@ Today the framework's hook surface is **observer-only**. `onSkillChosen`, `onToo
 Four distinct features each need a hook with veto/mutate semantics:
 
 1. **Per-client tool policy in `McpServer`** (#1902) — deny a tool call based on the calling principal.
-2. **Uniform `perToolTimeout` enforcement** (#1903) — wrap a tool call with a timeout that works on both the regular and session-aware paths.
+2. **Consistent pre-tool policy hooks** — the timeout asymmetry that originally fed this design was fixed directly in #1903; interceptors still provide the right place for custom approval, substitution, and denial policy.
 3. **Action confirmation for high-privilege tools** — deny or require approval before a write/exec tool runs.
 4. **Prompt-injection detection** — inspect untrusted inputs before they reach the model and deny the turn or substitute a sanitised version.
 
@@ -198,7 +198,7 @@ A buggy interceptor cannot crash the loop or skip the rest of the chain.
 
 - The per-`ToolDef` `errorHandler` slot stays — it's about executor errors, not policy. Different concern.
 - The proposed `toolPolicy` API for `McpServer` (#1902) — `McpServer` will consume `onBeforeToolCall` directly. One mechanism, two consumers.
-- Ad-hoc "wrap the tool body to add a timeout" patterns — `onBeforeToolCall` + `withTimeout` is the canonical shape, working uniformly on both session and non-session paths (closes #1903).
+- Ad-hoc "wrap the tool body to add approval/policy checks" patterns — `onBeforeToolCall` is the canonical shape for veto/mutate/substitute behavior. Built-in `perToolTimeout` already works uniformly on regular and session-aware paths (#1903).
 
 ## Open questions
 
@@ -210,7 +210,7 @@ A buggy interceptor cannot crash the loop or skip the rest of the chain.
 
 - **#1907** — this issue (the implementation).
 - **#1902** — McpServer hardening; consumes `onBeforeToolCall` for per-client policy.
-- **#1903** — `perToolTimeout` enforcement on session path; resolved by `onBeforeToolCall`-shaped wrap.
+- **#1903** — `perToolTimeout` enforcement on session path; now implemented directly in `AgenticLoop`.
 - **#1908** — ObservabilityBridge; `Decision` events feed the bridge's `onInterceptorDecision` surface.
 - **#1918** — three killer 0.6.0 demos; the typed approval demo depends on this.
 

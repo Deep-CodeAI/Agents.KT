@@ -113,7 +113,7 @@ These APIs work in `main`, are unit-tested, and are exercised by integration tes
 - **Memory bank** — `memory(MemoryBank())` auto-injects `memory_read` / `memory_write` / `memory_search` tools. See [docs/memory.md](docs/memory.md).
 - **LLM skill routing** — manual `skillSelection { }` or LLM router with `skillSelectionConfidenceThreshold`; `SkillRoute(name, confidence, rationale)` is structured (#641). See [docs/model-and-tools.md#skill-selection](docs/model-and-tools.md#skill-selection).
 - **Tool error recovery** — per-tool `onError`, per-skill default, agent default; built-in `escalate` and `throwException` agents. See [docs/error-recovery.md](docs/error-recovery.md).
-- **Budget controls** — `budget { maxTurns; maxToolCalls; maxDuration; perToolTimeout; maxTokens; maxConsecutiveSameTool }` (sacrificial-thread enforcement; token counts cumulative across turns when the provider reports usage; `maxConsecutiveSameTool` catches LLM retry loops on a broken tool) (#637, #963, #969).
+- **Budget controls** — `budget { maxTurns; maxToolCalls; maxDuration; perToolTimeout; maxTokens; maxConsecutiveSameTool }` (`perToolTimeout` covers regular and session-aware tools; token counts cumulative across turns when the provider reports usage; `maxConsecutiveSameTool` catches LLM retry loops on a broken tool) (#637, #963, #969, #1903).
 - **MCP client** — `mcp { server() }` over HTTP / stdio / TCP; Bearer auth; namespaced tools (`server.tool`). See [docs/mcp.md](docs/mcp.md).
 - **MCP server** — `McpServer.from(agent)` exposes an agent as an MCP-conformant HTTP server with explicit `tools/listChanged: false` capability (#619); `McpStdioServer.from(agent)` serves the same tools/prompts/resources over line-delimited stdio (#2045).
 - **`McpRunner` standalone** — picocli-style one-liner main for shipping agents as MCP services over HTTP or `--stdio`.
@@ -146,7 +146,7 @@ What the framework enforces today:
 | Repaired args | Re-validated through the typed schema before reaching the executor | #658 |
 | Tool output trust | Tool results wrapped in untrusted envelope so the model can't forge framework messages | #642 |
 | Provider errors | Surface as `LlmProviderException` — never confused with model output | #702 |
-| Budget caps | `maxTurns`, `maxToolCalls`, `maxDuration`, `perToolTimeout`, `maxTokens`, `maxConsecutiveSameTool` (sacrificial-thread enforced; token cap cumulative across turns when provider reports usage; `maxConsecutiveSameTool` catches retry loops on a broken tool) | #637, #963, #969 |
+| Budget caps | `maxTurns`, `maxToolCalls`, `maxDuration`, `perToolTimeout`, `maxTokens`, `maxConsecutiveSameTool` (`perToolTimeout` covers regular tools via worker interrupt and session-aware tools via coroutine cancellation; token cap cumulative across turns when provider reports usage; `maxConsecutiveSameTool` catches retry loops on a broken tool) | #637, #963, #969, #1903 |
 
 What the framework does **not** enforce — your responsibility:
 
@@ -162,7 +162,7 @@ What the framework does **not** enforce — your responsibility:
 - **No incoming auth on `McpServer`** — outgoing client supports Bearer; the server does not validate credentials. Suitable for trusted-network deployments only.
 - **No Origin header validation on MCP HTTP** — deferred until the MCP-server hardening pass.
 - **Streaming runtime** *(shipped — v0.5.0)*. `agent.session(input): AgentSession<OUT>` exposes `events: Flow<AgentEvent<OUT>>` — bracket events (`SkillStarted` / `SkillCompleted` / `Completed<OUT>` / `Failed`) plus mid-loop `Token` / `ToolCallStarted` / `ToolCallArgumentsDelta` / `ToolCallFinished` events as the agentic loop runs. All three adapters stream natively at the wire (Ollama NDJSON, Anthropic SSE, OpenAI SSE); live integration tests measure 19 / 2 / 19 chunks per response respectively. `SkillCompleted.tokensUsed` and `Completed.tokensUsed` carry cumulative `TokenUsage` across all turns. The underlying `LlmChunk` sealed type + `ModelClient.chatStream(messages): Flow<LlmChunk>` foundation (#1722) is what custom adapters plug into. See [docs/streaming.md](docs/streaming.md) for the full API + the [v0.5.0 streaming premortem](docs/premortem-0.5.0-streaming.md) for design rationale.
-  - *Partial cancellation today.* `Flow` collection cancels promptly; synchronous skill bodies and blocking HTTP reads aren't coroutine-cancellable mid-call. The `sendAsync` adapter migration that closes this gap is tracked under [#1903](../../issues/1903).
+  - *Partial cancellation today.* `Flow` collection cancels promptly, and `perToolTimeout` now applies to both regular and session-aware tool calls. Synchronous skill bodies and blocking HTTP reads still are not fully coroutine-cancellable mid-call; the remaining adapter migration is the `sendAsync`/suspend-refactor track.
   - *Leaf-agent sessions only.* Composition operators (`Pipeline` / `Branch` / `wrap` / `Swarm`) don't yet flow inner events through their own `session(...)` surfaces — known gap, see #1745 follow-ups.
 - **No native binary** — JVM-only (≥ JDK 21). GraalVM and `jlink` bundles are Phase 2 priorities.
 - **No A2A protocol yet** — agent-to-agent over network (Phase 2 / 3).

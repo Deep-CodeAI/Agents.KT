@@ -11,7 +11,9 @@ import agents_engine.generation.toLlmInput
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.reflect.KClass
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 /**
  * `agents_engine/model/AgenticLoop.kt` — the multi-turn LLM-tool dispatch
@@ -401,9 +403,11 @@ suspend fun <IN> selectSkillByLlm(
 }
 
 /**
- * Wrap [executeToolWithRecovery] in a per-tool wall-clock timeout when one is configured.
- * Uses a sacrificial worker thread + join(timeout) — pre-#638 (suspend refactor) we don't
- * have coroutine `withTimeout` available here.
+ * Wrap tool execution in a per-tool wall-clock timeout when one is configured.
+ *
+ * Regular tools still use the pre-suspend sacrificial worker thread so blocking
+ * lambdas can be interrupted. Session-aware tools are already suspend-shaped, so
+ * they use coroutine cancellation via `withTimeout` (#1903).
  */
 private suspend fun <IN> executeToolWithBudget(
     agent: Agent<IN, *>,
@@ -412,17 +416,22 @@ private suspend fun <IN> executeToolWithBudget(
     budget: BudgetConfig,
     emitter: AgentEventEmitter? = null,
 ): Any? {
-    // #1752: when running under a session AND the tool has a session-aware
-    // executor (Swarm absorb installs one for sibling agents), use the
-    // session path directly. The per-tool wall-clock timeout from the
-    // Thread.join() trick doesn't apply here — siblings are suspend agents
-    // bounded by their own budgets; the captain's overall maxDuration and
-    // maxToolCalls still gate them. Documented gap: session-tool execution
-    // doesn't enforce perToolTimeout. Step 5 (HTTP cancellation via
-    // sendAsync) is the right place to add coroutine-aware per-tool timeouts.
     if (emitter != null) {
         tool.sessionExecutor?.let { sessionExec ->
-            return sessionExec(call.arguments, emitter)
+            val timeout = budget.perToolTimeout
+                ?: return sessionExec(call.arguments, emitter)
+            return try {
+                withTimeout(timeout) {
+                    withContext(Dispatchers.IO) {
+                        sessionExec(call.arguments, emitter)
+                    }
+                }
+            } catch (_: TimeoutCancellationException) {
+                throw BudgetExceededException(
+                    "Tool '${tool.name}' exceeded per-tool timeout of $timeout",
+                    BudgetReason.PER_TOOL_TIMEOUT,
+                )
+            }
         }
     }
     val timeout = budget.perToolTimeout ?: return executeToolWithRecovery(agent, tool, call)
