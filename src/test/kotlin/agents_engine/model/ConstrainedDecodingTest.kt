@@ -51,6 +51,13 @@ class ConstrainedDecodingTest {
     }
 
     @Test
+    fun `DeepSeek reports constrained decoding unsupported`() {
+        val client = DeepSeekClient(apiKey = "test", model = "deepseek-v4-flash")
+
+        assertTrue(!client.supportsConstrainedDecoding())
+    }
+
+    @Test
     fun `Ollama request carries inline format schema when schema is supplied`() {
         val schema = StructuredAnswer::class.toJsonSchema()
         val json = OllamaClient(model = "llama3")

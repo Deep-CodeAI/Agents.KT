@@ -68,4 +68,4 @@ Depth is incremented before `parseObject` / `parseArray` and checked against `MA
 
 - `InlineToolCallParser.kt` — heavy caller.
 - `GenerableSupport.kt` — `fromLlmOutput(rawText)` parses with this first.
-- `OllamaClient.kt` / `ClaudeClient.kt` / `OpenAiClient.kt` — adapters use this for tool-call args.
+- `OllamaClient.kt` / `ClaudeClient.kt` / `OpenAiClient.kt` / `DeepSeekClient.kt` — adapters use this for tool-call args.

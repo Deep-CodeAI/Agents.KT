@@ -294,6 +294,7 @@ private fun ModelConfig.toManifestMap(options: PermissionManifestOptions): Map<S
             ModelProvider.OLLAMA -> baseUrl
             ModelProvider.ANTHROPIC -> anthropicBaseUrl
             ModelProvider.OPENAI -> openAiBaseUrl
+            ModelProvider.DEEPSEEK -> deepSeekBaseUrl
         },
         "host" to host,
         "port" to port,
@@ -307,6 +308,7 @@ private fun ModelProvider.manifestName(): String = when (this) {
     ModelProvider.OLLAMA -> "ollama"
     ModelProvider.ANTHROPIC -> "anthropic"
     ModelProvider.OPENAI -> "openai"
+    ModelProvider.DEEPSEEK -> "deepseek"
 }
 
 private fun BudgetConfig.toManifestMap(): Map<String, Any?> =

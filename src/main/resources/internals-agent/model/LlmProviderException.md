@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/model/LlmProviderException.kt — single-class file (#702). Boundary error for LLM-provider protocol failures (auth, capability, model-not-found, malformed request, 4xx/5xx). Distinguished from IllegalStateException (output parse) and BudgetExceededException. All three shipped clients throw this. Call when the IDE LLM needs to reason about retry policy for provider failures.
+description: Source-file knowledge for agents_engine/model/LlmProviderException.kt — single-class file (#702). Boundary error for LLM-provider protocol failures (auth, capability, model-not-found, malformed request, 4xx/5xx). Distinguished from IllegalStateException (output parse) and BudgetExceededException. Shipped clients throw this. Call when the IDE LLM needs to reason about retry policy for provider failures.
 ---
 
 # `agents_engine/model/LlmProviderException.kt` — provider boundary error
@@ -36,11 +36,12 @@ Each `ModelClient` implementation raises it at the HTTP/protocol layer:
 - `ClaudeClient` — top-level `{"type":"error", "error":{...}}` envelopes.
 - `OllamaClient` — Ollama's `{"error":"..."}` shape (#702 was the unifying issue).
 - `OpenAiClient` — OpenAI's `error.message` field.
+- `DeepSeekClient` — DeepSeek's OpenAI-compatible `error.message` field.
 
 The agentic loop does not catch it — it propagates to the caller's `invoke` / `invokeSuspend` / session boundary, fires `onError` along the way.
 
 ## Related files
 
 - `ModelClient.kt` — the interface whose implementations throw this.
-- `ClaudeClient.kt` / `OllamaClient.kt` / `OpenAiClient.kt` — concrete throwers.
+- `ClaudeClient.kt` / `OllamaClient.kt` / `OpenAiClient.kt` / `DeepSeekClient.kt` — concrete throwers.
 - `OnErrorBuilder.kt` — recovery hook that can swallow / convert this.

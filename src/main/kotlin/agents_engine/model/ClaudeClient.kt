@@ -19,8 +19,8 @@ import kotlinx.coroutines.flow.flowOn
 
 /**
  * `agents_engine/model/ClaudeClient.kt` — the Anthropic Messages API
- * adapter (#1644), one of the three shipped [ModelClient] implementations
- * (alongside [OllamaClient] and [OpenAiClient]). See
+ * adapter (#1644), one of the shipped [ModelClient] implementations
+ * (alongside [OllamaClient], [OpenAiClient], and [DeepSeekClient]). See
  * `src/main/resources/internals-agent/model/ClaudeClient.md` for the
  * adjunct surfaced to IDE-side LLM tools via `agents-kt-internals`
  * (#1837 / #1846).

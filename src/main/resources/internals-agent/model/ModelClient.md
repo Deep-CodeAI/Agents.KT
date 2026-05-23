@@ -1,10 +1,10 @@
 ---
-description: Source-file knowledge for agents_engine/model/ModelClient.kt — the LLM transport fun interface and shared types (LlmMessage, ToolCall with callId #1739, JsonSchema #1949, TokenUsage #963, LlmResponse.Text/ToolCalls). Default chatStream wraps non-streaming chat with LlmChunk emission. Schema-aware chat(messages, jsonSchema) preserves SAM compatibility. Three shipped impls: Ollama, Claude, OpenAI. Call when the IDE LLM needs to reason about adding a new LLM provider or testing with a fake client.
+description: Source-file knowledge for agents_engine/model/ModelClient.kt — the LLM transport fun interface and shared types (LlmMessage, ToolCall with callId #1739, JsonSchema #1949, TokenUsage #963, LlmResponse.Text/ToolCalls). Default chatStream wraps non-streaming chat with LlmChunk emission. Schema-aware chat(messages, jsonSchema) preserves SAM compatibility. Shipped impls: Ollama, Claude, OpenAI, DeepSeek. Call when the IDE LLM needs to reason about adding a new LLM provider or testing with a fake client.
 ---
 
 # `agents_engine/model/ModelClient.kt` — LLM transport interface
 
-The seam between the framework and the underlying LLM provider. Three implementations ship with the framework: `OllamaClient`, `ClaudeClient`, `OpenAiClient`. Users plug in their own by implementing the `ModelClient` `fun interface`.
+The seam between the framework and the underlying LLM provider. Four implementations ship with the framework: `OllamaClient`, `ClaudeClient`, `OpenAiClient`, and `DeepSeekClient`. Users plug in their own by implementing the `ModelClient` `fun interface`.
 
 ## The interface
 
@@ -73,7 +73,7 @@ override fun chat(messages: List<LlmMessage>, jsonSchema: JsonSchema?): LlmRespo
 
 ## Related files
 
-- `ClaudeClient.kt`, `OllamaClient.kt`, `OpenAiClient.kt` — shipped implementations.
+- `ClaudeClient.kt`, `OllamaClient.kt`, `OpenAiClient.kt`, `DeepSeekClient.kt` — shipped implementations.
 - `LlmChunk.kt` — the streaming chunk types.
 - `LlmProviderException.kt` — the boundary error.
 - `StreamingAggregator.kt` — collects a `Flow<LlmChunk>` back into an `LlmResponse`.

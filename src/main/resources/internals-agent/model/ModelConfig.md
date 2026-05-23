@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/model/ModelConfig.kt — the model { } DSL slot. ModelProvider enum (OLLAMA/ANTHROPIC/OPENAI), immutable ModelConfig with masked-apiKey toString (security), ModelBuilder with ollama/claude/openai factory methods, lazy client construction at AgenticLoop time, build() requires apiKey for Anthropic/OpenAI. Call when the IDE LLM needs to reason about configuring an agent's LLM provider.
+description: Source-file knowledge for agents_engine/model/ModelConfig.kt — the model { } DSL slot. ModelProvider enum (OLLAMA/ANTHROPIC/OPENAI/DEEPSEEK), immutable ModelConfig with masked-apiKey toString (security), ModelBuilder with ollama/claude/openai/deepseek factory methods, lazy client construction at AgenticLoop time, build() requires apiKey for Anthropic/OpenAI/DeepSeek. Call when the IDE LLM needs to reason about configuring an agent's LLM provider.
 ---
 
 # `agents_engine/model/ModelConfig.kt` — the `model { }` slot
@@ -9,7 +9,7 @@ The DSL slot every agent must fill (or supply a `client` directly) to talk to an
 ## Shape
 
 ```kotlin
-enum class ModelProvider { OLLAMA, ANTHROPIC, OPENAI }
+enum class ModelProvider { OLLAMA, ANTHROPIC, OPENAI, DEEPSEEK }
 
 data class ModelConfig(
     val name: String,
@@ -18,9 +18,10 @@ data class ModelConfig(
     val host: String = "localhost",         // Ollama only
     val port: Int = 11434,                   // Ollama only
     val client: ModelClient? = null,         // override the auto-built client
-    val apiKey: String? = null,              // required for Anthropic / OpenAI
+    val apiKey: String? = null,              // required for Anthropic / OpenAI / DeepSeek
     val anthropicBaseUrl: String = "https://api.anthropic.com",
     val openAiBaseUrl: String = "https://api.openai.com",
+    val deepSeekBaseUrl: String = "https://api.deepseek.com",
     val maxTokens: Int = 4096,
 )
 ```
@@ -33,13 +34,14 @@ agent<X, Y>("...") {
         ollama("gpt-oss:120b-cloud")
         // or: claude("claude-opus-4-7-20250514"); apiKey = System.getenv("ANTHROPIC_API_KEY")
         // or: openai("gpt-4o-mini"); apiKey = System.getenv("OPENAI_API_KEY")
+        // or: deepseek("deepseek-v4-flash"); apiKey = System.getenv("DEEPSEEK_API_KEY")
         temperature = 0.3
         maxTokens = 8192
     }
 }
 ```
 
-The builder's three factory calls (`ollama`, `claude`, `openai`) set both `name` and `provider`. The Anthropic / OpenAI paths require `apiKey` — `build()` fails with a precise error message naming the call shape (e.g. `model { claude("...") } requires apiKey to be set`).
+The builder's factory calls (`ollama`, `claude`, `openai`, `deepseek`) set both `name` and `provider`. The Anthropic / OpenAI / DeepSeek paths require `apiKey` — `build()` fails with a precise error message naming the call shape (e.g. `model { claude("...") } requires apiKey to be set`).
 
 ## Lazy client construction
 
@@ -57,5 +59,5 @@ The builder's three factory calls (`ollama`, `claude`, `openai`) set both `name`
 ## Related files
 
 - `ModelClient.kt` — the interface `client` implements when set.
-- `OllamaClient.kt`, `ClaudeClient.kt`, `OpenAiClient.kt` — the shipped adapters constructed lazily.
+- `OllamaClient.kt`, `ClaudeClient.kt`, `OpenAiClient.kt`, `DeepSeekClient.kt` — the shipped adapters constructed lazily.
 - `Agent.kt` — the `model { }` builder slot.

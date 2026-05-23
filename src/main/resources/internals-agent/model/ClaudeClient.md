@@ -4,7 +4,7 @@ description: Source-file knowledge for agents_engine/model/ClaudeClient.kt — A
 
 # `agents_engine/model/ClaudeClient.kt` — Anthropic Messages adapter (#1644)
 
-One of the three shipped `ModelClient` implementations. Wraps Anthropic's `POST /v1/messages` API.
+One of the shipped `ModelClient` implementations. Wraps Anthropic's `POST /v1/messages` API.
 
 ## Construction
 
@@ -78,7 +78,7 @@ Top-level `{"type": "error", "error": {...}}` envelopes surface as `LlmProviderE
 ## Related files
 
 - `ModelClient.kt` — the interface this implements.
-- `OllamaClient.kt`, `OpenAiClient.kt` — sibling implementations.
+- `OllamaClient.kt`, `OpenAiClient.kt`, `DeepSeekClient.kt` — sibling implementations.
 - `LlmChunk.kt` — the streaming chunk types.
 - `LlmProviderException.kt` — the boundary error type.
 - `generation/jsonSchema.kt` — generates `input_schema` for tools.

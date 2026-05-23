@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.flowOn
 
 /**
  * `agents_engine/model/OpenAiClient.kt` — OpenAI Chat Completions adapter
- * (#1656), one of the three shipped [ModelClient] implementations. See
+ * (#1656), one of the shipped [ModelClient] implementations. See
  * `src/main/resources/internals-agent/model/OpenAiClient.md` for the
  * adjunct surfaced to IDE-side LLM tools (#1837 / #1855).
  */
@@ -59,6 +59,8 @@ open class OpenAiClient(
     private val requestTimeout: Duration = DEFAULT_REQUEST_TIMEOUT,
     private val connectTimeout: Duration = DEFAULT_CONNECT_TIMEOUT,
     private val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
+    private val providerName: String = "openai",
+    private val providerLabel: String = "OpenAI",
 ) : ModelClient {
 
     private val http: HttpClient = HttpClient.newBuilder()
@@ -222,7 +224,7 @@ open class OpenAiClient(
         val bytes = response.body().use { it.readNBytes(cap + 1) }
         if (bytes.size > cap) {
             throw LlmProviderException(
-                "OpenAI response exceeded $maxResponseBytes bytes; aborting to prevent OOM",
+                "$providerLabel response exceeded $maxResponseBytes bytes; aborting to prevent OOM",
             )
         }
         return String(bytes, Charsets.UTF_8)
@@ -262,7 +264,7 @@ open class OpenAiClient(
                     """{"role":"tool","tool_call_id":${id.toJsonString()},"content":${msg.content.toJsonString()}}"""
                 }
 
-                else -> error("Unknown LlmMessage role for OpenAI: '${msg.role}'")
+                else -> error("Unknown LlmMessage role for $providerLabel: '${msg.role}'")
             }
         }
 
@@ -281,21 +283,27 @@ open class OpenAiClient(
         val responseFormatField = jsonSchema?.let { schema ->
             ""","response_format":{"type":"json_schema","json_schema":{"name":${schema.wireName().toJsonString()},"schema":${schema.schema},"strict":true}}"""
         } ?: ""
-        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$streamField,"messages":[${messageObjects.joinToString(",")}]$toolsField$responseFormatField}"""
+        val additionalFields = additionalRequestJsonFields(stream = stream, jsonSchema = jsonSchema)
+        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$additionalFields$streamField,"messages":[${messageObjects.joinToString(",")}]$toolsField$responseFormatField}"""
     }
+
+    protected open fun additionalRequestJsonFields(
+        stream: Boolean,
+        jsonSchema: JsonSchema?,
+    ): String = ""
 
     internal fun parseResponse(body: String): LlmResponse {
         val root = LenientJsonParser.parse(body) as? Map<*, *>
             ?: return LlmResponse.Text(body)
 
-        // Provider-error envelope: OpenAI returns
+        // Provider-error envelope: OpenAI-compatible APIs return
         //   {"error":{"type":"...","message":"...","code":"..."}}
         // on 4xx/5xx. Surface as LlmProviderException — same contract as
         // OllamaClient (#702) and ClaudeClient (#1644).
         (root["error"] as? Map<*, *>)?.let { err ->
             val type = err["type"] as? String
             val message = err["message"] as? String
-            throw LlmProviderException("OpenAI returned an error: ${type ?: "unknown"}: ${message ?: "no message"}")
+            throw LlmProviderException("$providerLabel returned an error: ${type ?: "unknown"}: ${message ?: "no message"}")
         }
 
         val tokenUsage = extractTokenUsage(root)
@@ -341,7 +349,7 @@ open class OpenAiClient(
                 promptTokens = prompt,
                 completionTokens = completion,
                 cachedInputTokens = cached,
-                provider = "openai",
+                provider = providerName,
                 model = model,
             )
         } else null

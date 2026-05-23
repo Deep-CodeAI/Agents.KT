@@ -43,6 +43,6 @@ sealed interface LlmChunk {
 ## Related files
 
 - `ModelClient.kt` — the `chatStream` entry point and default-impl wrapper.
-- `ClaudeClient.kt` / `OllamaClient.kt` / `OpenAiClient.kt` — adapters that override `chatStream` for native streaming.
+- `ClaudeClient.kt` / `OllamaClient.kt` / `OpenAiClient.kt` / `DeepSeekClient.kt` — adapters that override `chatStream` for native streaming.
 - `runtime/events/AgentEvent.kt` — the consumer-level streaming surface built atop these.
 - `model/StreamingAggregator.kt` — helper that collects chunks back into an `LlmResponse`.

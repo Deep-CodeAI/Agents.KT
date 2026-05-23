@@ -4,7 +4,7 @@ description: Source-file knowledge for agents_engine/model/OpenAiClient.kt — O
 
 # `agents_engine/model/OpenAiClient.kt` — OpenAI Chat Completions adapter (#1656)
 
-One of the three shipped `ModelClient` implementations. Wraps OpenAI's `POST /v1/chat/completions`.
+One of the shipped `ModelClient` implementations. Wraps OpenAI's `POST /v1/chat/completions`.
 
 ## Construction
 

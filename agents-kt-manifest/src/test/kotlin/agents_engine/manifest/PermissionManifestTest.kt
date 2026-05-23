@@ -96,6 +96,30 @@ class PermissionManifestTest {
     }
 
     @Test
+    fun `deepseek provider is recorded with masked credentials and base url`() {
+        val a = agent<String, String>("deepseek-agent") {
+            model {
+                deepseek("deepseek-v4-flash")
+                apiKey = "sk-deepseek-live-secret"
+                deepSeekBaseUrl = "https://deepseek-gateway.example"
+            }
+            skills {
+                skill<String, String>("echo", "Echo input") { implementedBy { it } }
+            }
+        }
+
+        val json = a.permissionManifest {
+            includeProviderConfig = true
+        }.toJson()
+
+        assertContains(json, "\"provider\":\"deepseek\"")
+        assertContains(json, "\"model\":\"deepseek-v4-flash\"")
+        assertContains(json, "\"baseUrl\":\"https://deepseek-gateway.example\"")
+        assertContains(json, "\"apiKey\":\"masked\"")
+        assertFalse(json.contains("sk-deepseek-live-secret"))
+    }
+
+    @Test
     fun `pipeline manifest records composition and writes byte-identical files across runs`() {
         val loader = agent<String, String>("loader") {
             skills {

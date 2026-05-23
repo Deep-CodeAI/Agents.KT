@@ -765,4 +765,13 @@ private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelCl
             tools = tools,
             baseUrl = config.openAiBaseUrl,
         )
+        ModelProvider.DEEPSEEK -> DeepSeekClient(
+            apiKey = config.apiKey
+                ?: error("Agent uses DeepSeek but ModelConfig.apiKey is null — set apiKey in the model { } block"),
+            model = config.name,
+            temperature = config.temperature,
+            maxTokens = config.maxTokens,
+            tools = tools,
+            baseUrl = config.deepSeekBaseUrl,
+        )
     }

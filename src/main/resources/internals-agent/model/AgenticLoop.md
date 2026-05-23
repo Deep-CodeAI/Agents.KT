@@ -91,7 +91,7 @@ This is a tiny API affordance with a big concurrency payoff: agents stay frozen 
 
 ## Where the LLM is called
 
-`agent.modelConfig.client` provides the `ModelClient` — see `model/ModelClient.kt` for the interface and `OllamaClient.kt` / `ClaudeClient.kt` / `OpenAiClient.kt` for the three shipped implementations. The loop is **provider-agnostic** — it never talks to a specific provider's API directly; only through `chat` / `chatStream`.
+`agent.modelConfig.client` provides the `ModelClient` — see `model/ModelClient.kt` for the interface and `OllamaClient.kt` / `ClaudeClient.kt` / `OpenAiClient.kt` / `DeepSeekClient.kt` for the shipped implementations. The loop is **provider-agnostic** — it never talks to a specific provider's API directly; only through `chat` / `chatStream`.
 
 ## Related files
 
