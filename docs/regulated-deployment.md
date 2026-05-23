@@ -45,27 +45,29 @@ MCP server exposed: yes (port 8443, behind Envoy mTLS).
 **The artifact:** an append-only log of every agent invocation, every tool call, every skill decision, every LLM round-trip. Retention period: per your industry (HIPAA: 6 years; financial: 7 years; GDPR: data-minimum subject to retention exceptions).
 
 **Framework support:**
-- **Today:** `Agent.observe { event -> ... }` (sealed `PipelineEvent` view) emits the events. You write them to your retained log. JSONL into a WORM bucket (S3 with Object Lock, GCS Bucket Lock, Azure Immutable Storage) is the typical shape.
-- **Runtime correlation:** every `PipelineEvent` and `AgentEvent` carries `requestId`, `sessionId`, and `manifestHash`. `manifestHash` is `null` until a permission manifest is generated.
-- **#1914:** ships a first-party JSONL exporter so the log format is canonical and you don't roll your own JSON shape.
+- **Today:** `:agents-kt-observability` ships a first-party JSONL exporter (#1914). JSONL into a WORM bucket (S3 with Object Lock, GCS Bucket Lock, Azure Immutable Storage) is the typical retained shape.
+- **Runtime correlation:** every exported `PipelineEvent` and `AgentEvent` row carries `requestId`, `sessionId`, and `manifestHash`. `manifestHash` is `null` until a permission manifest is generated, then binds the dynamic event back to the approved capability graph.
+- **PII posture:** the exporter emits identifiers, event names, type names, and provider/model metadata. It deliberately does not serialize raw tool arguments, tool results, streamed text, generated output, or exception messages.
 
-**Until #1914 lands**, the rollable pattern:
+Minimal JSONL setup:
 
 ```kotlin
-val auditAppender = JsonlAuditAppender("/var/log/agents-kt/audit.jsonl")
-agent.observe { event ->
-    auditAppender.append(
-        mapOf(
-            "timestamp" to event.timestamp.toString(),
-            "agentName" to event.agentName,
-            "requestId" to event.requestId,
-            "sessionId" to event.sessionId,
-            "manifestHash" to event.manifestHash,
-            "event" to event::class.simpleName,
-            // ... event-specific fields
-        )
+import agents_engine.observability.JsonlRotation
+import agents_engine.observability.events
+
+val exporters = agent.events.export {
+    jsonl(
+        file("/var/log/agents-kt/audit.jsonl"),
+        rotation = JsonlRotation.Daily(),
     )
 }
+```
+
+Operational checks:
+
+```bash
+jq -c 'select(.requestId == "req-123")' /var/log/agents-kt/audit.jsonl
+jq -s 'group_by(.eventType) | map({eventType: .[0].eventType, count: length})' /var/log/agents-kt/audit.jsonl
 ```
 
 **Evidence-pack contents** (what an auditor will request):

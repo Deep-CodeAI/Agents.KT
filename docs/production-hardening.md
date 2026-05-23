@@ -59,7 +59,7 @@ The framework gives you the primitives. Wiring them to your runtime, infra, and 
 
 - [ ] **Provider-side key scoping.** Anthropic supports workspace-scoped keys; OpenAI supports project keys. The key the agent uses should not have org-wide permissions. *Deployer responsibility.*
 
-- [ ] **Secrets redacted from logs.** Use `onToolUse { name, args, result -> redactPii(args) }` to scrub before logging. The framework's observability hooks fire with raw values; you redact in the handler. *Deployer responsibility; framework gives you the hook.*
+- [ ] **Secrets redacted from logs.** Use the first-party JSONL exporter for canonical audit rows; it omits raw tool arguments/results by default. If you add custom `onToolUse { name, args, result -> ... }` logging, scrub before writing. *Framework gives you the safe exporter and the raw hook; custom logging is your responsibility.*
 
 - [ ] **PII not in the prompt.** Sanitize user input before it becomes part of the system or user prompt. Anthropic / OpenAI retain prompts; don't ship them PII. *Deployer responsibility.*
 
@@ -73,7 +73,9 @@ The framework gives you the primitives. Wiring them to your runtime, infra, and 
 
 - [ ] **`Agent.observe { event -> }` for unified telemetry.** Sealed event view across `SkillChosen` / `ToolCalled` / `KnowledgeLoaded` / `ErrorOccurred`. Useful for one-listener-to-rule-them-all dashboards. *Enforced by:* `PipelineEvent` sealed interface (#965).
 
-- [ ] **JSONL audit log emitted.** *Not yet shipped — #1914.* Until it lands, roll your own via `Agent.observe { event -> appendToJsonl(event) }`.
+- [ ] **JSONL audit log emitted.** Use `:agents-kt-observability`:
+  `agent.events.export { jsonl(file("/var/log/agents-kt/audit.jsonl"), rotation = JsonlRotation.Daily()) }`.
+  Rows are append-only, `jq`-friendly, and carry `requestId`, `sessionId`, and `manifestHash`; raw arguments/results are not serialized. *Enforced by:* `JsonlAuditExporter` (#1914); you handle retention and chain-of-custody.
 
 - [ ] **OTel traces exported.** *Not yet shipped — #1908.* Roll your own via OpenTelemetry SDK in the same `onToolUse` listener.
 

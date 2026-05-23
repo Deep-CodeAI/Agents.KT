@@ -3971,6 +3971,7 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 
 **Priority (must-ship):**
 - [~] `model { }` — extend beyond Ollama: provider abstraction landed via `ModelProvider`. **Anthropic shipped (#1644)** with the `claude(name)` DSL and `ClaudeClient` mapping `LlmMessage` ↔ Anthropic structured content (`tool_use` / `tool_result`). **OpenAI shipped (#1656)** with the `openai(name)` DSL and `OpenAiClient` mapping to Chat Completions (`tool_calls` ↔ `tool_call_id`, `parameters` schema field). Google (Gemini) and `suspend fun` + Flow streaming still pending.
+- [x] JSONL audit log exporter — `:agents-kt-observability` writes append-only, one-line-per-event rows for `PipelineEvent` and `AgentEvent` with `requestId`, `sessionId`, `manifestHash`, agent/skill/tool ids, event type, timestamp, provider, and model. Size/day rotation is configurable; write failures buffer/drop oldest under backpressure and never throw into the agent path. Raw tool args/results and generated content are omitted by default (#1914).
 - [ ] `Tool<IN, OUT>` base + `McpTool<IN, OUT>` — MCP as native Tool inheritance, not a wrapper (§5.8)
 - [ ] MCP client integration — `McpTool` instances consumable alongside local tools
 - [ ] `grants { tools(...) }` — Layer 2 permissions use actual `Tool<*,*>` references

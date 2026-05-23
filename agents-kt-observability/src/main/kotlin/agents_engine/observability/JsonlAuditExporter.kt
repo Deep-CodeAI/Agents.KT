@@ -1,0 +1,386 @@
+package agents_engine.observability
+
+import agents_engine.core.Agent
+import agents_engine.core.AgentRuntimeContext
+import agents_engine.core.PipelineEvent
+import agents_engine.core.observe
+import agents_engine.model.TokenUsage
+import agents_engine.runtime.events.AgentEvent
+import java.io.File
+import java.nio.charset.StandardCharsets.UTF_8
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import java.nio.file.StandardOpenOption.APPEND
+import java.nio.file.StandardOpenOption.CREATE
+import java.time.Clock
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.util.logging.Level
+import java.util.logging.Logger
+import kotlin.io.path.exists
+import kotlin.io.path.isRegularFile
+import kotlin.io.path.name
+import kotlin.io.path.pathString
+
+/**
+ * Append-only JSONL audit exporter for agent lifecycle events.
+ *
+ * The exporter intentionally emits metadata, identifiers, and type names only:
+ * tool arguments, tool results, streamed text, generated output, and exception
+ * messages are omitted so common secret-bearing values do not enter the audit log.
+ */
+class JsonlAuditExporter(
+    private val path: Path,
+    private val rotation: JsonlRotation = JsonlRotation.None,
+    private val maxBufferedLines: Int = 1_024,
+    private val logger: (message: String, cause: Throwable?) -> Unit = DEFAULT_LOGGER,
+    private val clock: Clock = Clock.systemUTC(),
+) : AutoCloseable {
+
+    private val bufferedLines = ArrayDeque<String>()
+    private var activeDate: LocalDate = currentRotationDate()
+
+    constructor(
+        file: File,
+        rotation: JsonlRotation = JsonlRotation.None,
+        maxBufferedLines: Int = 1_024,
+        logger: (message: String, cause: Throwable?) -> Unit = DEFAULT_LOGGER,
+        clock: Clock = Clock.systemUTC(),
+    ) : this(file.toPath(), rotation, maxBufferedLines, logger, clock)
+
+    fun write(event: PipelineEvent) {
+        writeRow(rowFor(event))
+    }
+
+    fun write(event: AgentEvent<*>) {
+        writeRow(rowFor(event))
+        if (event is AgentEvent.SkillCompleted || event is AgentEvent.Failed) {
+            flushPending()
+        }
+    }
+
+    override fun close() {
+        flushPending()
+    }
+
+    private fun writeRow(row: Map<String, Any?>) {
+        val line = encodeJson(row)
+        if (bufferedLines.isNotEmpty()) {
+            buffer(line)
+            flushPending()
+            return
+        }
+        if (!tryAppend(line)) {
+            buffer(line)
+        }
+        flushPending()
+    }
+
+    private fun flushPending() {
+        while (bufferedLines.isNotEmpty()) {
+            val line = bufferedLines.first()
+            if (!tryAppend(line)) return
+            bufferedLines.removeFirst()
+        }
+    }
+
+    private fun buffer(line: String) {
+        if (maxBufferedLines <= 0) {
+            log("JSONL audit exporter dropped line because buffering is disabled", null)
+            return
+        }
+        if (bufferedLines.size >= maxBufferedLines) {
+            bufferedLines.removeFirst()
+            log("JSONL audit exporter dropped oldest buffered line under backpressure", null)
+        }
+        bufferedLines.addLast(line)
+    }
+
+    private fun tryAppend(line: String): Boolean =
+        try {
+            prepareParent()
+            rotateIfNeeded(line)
+            Files.writeString(path, line + "\n", UTF_8, CREATE, APPEND)
+            true
+        } catch (t: Throwable) {
+            log("JSONL audit exporter could not append ${path.pathString}", t)
+            false
+        }
+
+    private fun log(message: String, cause: Throwable?) {
+        try {
+            logger(message, cause)
+        } catch (_: Throwable) {
+            // Audit logging must never throw into the agent execution path.
+        }
+    }
+
+    private fun prepareParent() {
+        path.parent?.let { Files.createDirectories(it) }
+    }
+
+    private fun rotateIfNeeded(nextLine: String) {
+        when (val policy = rotation) {
+            JsonlRotation.None -> Unit
+            is JsonlRotation.Size -> rotateForSize(policy, nextLine)
+            is JsonlRotation.Daily -> rotateForDay(policy)
+        }
+    }
+
+    private fun rotateForSize(policy: JsonlRotation.Size, nextLine: String) {
+        if (policy.maxBytes <= 0) return
+        if (!path.exists() || !path.isRegularFile()) return
+        val currentSize = Files.size(path)
+        if (currentSize <= 0) return
+        val nextBytes = (nextLine + "\n").toByteArray(UTF_8).size
+        if (currentSize + nextBytes <= policy.maxBytes) return
+        rotateNumeric()
+    }
+
+    private fun rotateForDay(policy: JsonlRotation.Daily) {
+        val today = LocalDate.now(clock.withZone(policy.zoneId))
+        if (today == activeDate) return
+        if (path.exists() && path.isRegularFile() && Files.size(path) > 0) {
+            rotateWithSuffix(activeDate.toString())
+        }
+        activeDate = today
+    }
+
+    private fun rotateNumeric() {
+        if (!path.exists() || !path.isRegularFile()) return
+        val parent = path.parent ?: Path.of(".")
+        val prefix = path.name + "."
+        val stream = Files.list(parent)
+        val last = try {
+            stream.iterator().asSequence()
+                .map { it.fileName.toString() }
+                .filter { it.startsWith(prefix) }
+                .mapNotNull { it.removePrefix(prefix).toIntOrNull() }
+                .maxOrNull() ?: 0
+        } finally {
+            stream.close()
+        }
+        for (suffix in last downTo 1) {
+            val from = path.resolveSibling("${path.name}.$suffix")
+            val to = path.resolveSibling("${path.name}.${suffix + 1}")
+            if (Files.exists(from)) Files.move(from, to, REPLACE_EXISTING)
+        }
+        Files.move(path, path.resolveSibling("${path.name}.1"), REPLACE_EXISTING)
+    }
+
+    private fun rotateWithSuffix(suffix: String) {
+        if (!path.exists() || !path.isRegularFile()) return
+        var target = path.resolveSibling("${path.name}.$suffix")
+        var counter = 1
+        while (Files.exists(target)) {
+            target = path.resolveSibling("${path.name}.$suffix.$counter")
+            counter++
+        }
+        Files.move(path, target, REPLACE_EXISTING)
+    }
+
+    private fun currentRotationDate(): LocalDate =
+        when (val policy = rotation) {
+            is JsonlRotation.Daily -> LocalDate.now(clock.withZone(policy.zoneId))
+            else -> LocalDate.now(clock.withZone(ZoneOffset.UTC))
+        }
+
+    private fun rowFor(event: PipelineEvent): Map<String, Any?> =
+        row(
+            context = event.runtimeContext,
+            agentId = event.agentName,
+            skillId = when (event) {
+                is PipelineEvent.SkillChosen -> event.skillName
+                else -> null
+            },
+            toolId = when (event) {
+                is PipelineEvent.ToolCalled -> event.toolName
+                else -> null
+            },
+            eventType = event.javaClass.simpleName,
+            timestamp = now(),
+            inputType = null,
+            outputType = when (event) {
+                is PipelineEvent.ToolCalled -> typeName(event.result)
+                else -> null
+            },
+            usage = null,
+        )
+
+    private fun rowFor(event: AgentEvent<*>): Map<String, Any?> {
+        val usage = usageFor(event)
+        return row(
+            context = event.runtimeContext,
+            agentId = event.agentId,
+            skillId = when (event) {
+                is AgentEvent.Token -> event.skillName
+                is AgentEvent.ToolCallStarted -> event.skillName
+                is AgentEvent.SkillStarted -> event.skillName
+                is AgentEvent.SkillCompleted -> event.skillName
+                else -> null
+            },
+            toolId = when (event) {
+                is AgentEvent.ToolCallStarted -> event.toolName
+                is AgentEvent.ToolCallFinished -> event.toolName
+                else -> null
+            },
+            eventType = event.javaClass.simpleName,
+            timestamp = now(),
+            inputType = when (event) {
+                is AgentEvent.ToolCallFinished -> "Map"
+                else -> null
+            },
+            outputType = when (event) {
+                is AgentEvent.Completed<*> -> typeName(event.output)
+                is AgentEvent.ToolCallFinished -> typeName(event.result)
+                else -> null
+            },
+            usage = usage,
+        )
+    }
+
+    private fun usageFor(event: AgentEvent<*>): TokenUsage? =
+        when (event) {
+            is AgentEvent.SkillCompleted -> event.tokensUsed
+            is AgentEvent.Completed<*> -> event.tokensUsed
+            else -> null
+        }
+
+    private fun row(
+        context: AgentRuntimeContext,
+        agentId: String,
+        skillId: String?,
+        toolId: String?,
+        eventType: String,
+        timestamp: String,
+        inputType: String?,
+        outputType: String?,
+        usage: TokenUsage?,
+    ): Map<String, Any?> =
+        linkedMapOf(
+            "requestId" to context.requestId,
+            "sessionId" to context.sessionId,
+            "manifestHash" to context.manifestHash,
+            "agentId" to agentId,
+            "skillId" to skillId,
+            "toolId" to toolId,
+            "eventType" to eventType,
+            "timestamp" to timestamp,
+            "inputType" to inputType,
+            "outputType" to outputType,
+            "budgetState" to null,
+            "guardrailDecision" to null,
+            "mcpClientId" to null,
+            "provider" to usage?.provider,
+            "model" to usage?.model,
+        )
+
+    private fun now(): String = clock.instant().toString()
+
+    private fun typeName(value: Any?): String? =
+        value?.javaClass?.name
+
+    private fun encodeJson(value: Any?): String =
+        when (value) {
+            null -> "null"
+            is String -> "\"${escapeJson(value)}\""
+            is Number, is Boolean -> value.toString()
+            is Map<*, *> -> value.entries.joinToString(prefix = "{", postfix = "}") { (key, mapValue) ->
+                "\"${escapeJson(key.toString())}\":${encodeJson(mapValue)}"
+            }
+            is Iterable<*> -> value.joinToString(prefix = "[", postfix = "]") { encodeJson(it) }
+            else -> "\"${escapeJson(value.toString())}\""
+        }
+
+    private fun escapeJson(value: String): String =
+        buildString(value.length) {
+            value.forEach { ch ->
+                when (ch) {
+                    '"' -> append("\\\"")
+                    '\\' -> append("\\\\")
+                    '\b' -> append("\\b")
+                    '\u000C' -> append("\\f")
+                    '\n' -> append("\\n")
+                    '\r' -> append("\\r")
+                    '\t' -> append("\\t")
+                    else -> {
+                        if (ch < ' ') {
+                            append("\\u")
+                            append(ch.code.toString(16).padStart(4, '0'))
+                        } else {
+                            append(ch)
+                        }
+                    }
+                }
+            }
+        }
+
+    private companion object {
+        private val JUL_LOGGER = Logger.getLogger(JsonlAuditExporter::class.java.name)
+
+        val DEFAULT_LOGGER: (String, Throwable?) -> Unit = { message, cause ->
+            if (cause == null) {
+                JUL_LOGGER.warning(message)
+            } else {
+                JUL_LOGGER.log(Level.WARNING, message, cause)
+            }
+        }
+    }
+}
+
+sealed interface JsonlRotation {
+    data object None : JsonlRotation
+
+    data class Size(val maxBytes: Long) : JsonlRotation
+
+    data class Daily(val zoneId: ZoneId = ZoneOffset.UTC) : JsonlRotation
+}
+
+val <IN, OUT> Agent<IN, OUT>.events: AgentJsonlExports
+    get() = AgentJsonlExports(this)
+
+class AgentJsonlExports internal constructor(private val agent: Agent<*, *>) {
+    fun export(block: AgentJsonlExportBuilder.() -> Unit): List<JsonlAuditExporter> {
+        val builder = AgentJsonlExportBuilder(agent)
+        builder.block()
+        return builder.exporters.toList()
+    }
+}
+
+class AgentJsonlExportBuilder internal constructor(private val agent: Agent<*, *>) {
+    internal val exporters = mutableListOf<JsonlAuditExporter>()
+
+    fun file(path: String): File = File(path)
+
+    fun jsonl(
+        file: File,
+        rotation: JsonlRotation = JsonlRotation.None,
+        maxBufferedLines: Int = 1_024,
+        clock: Clock = Clock.systemUTC(),
+        logger: (message: String, cause: Throwable?) -> Unit = DEFAULT_EXPORT_LOGGER,
+    ): JsonlAuditExporter {
+        val exporter = JsonlAuditExporter(
+            file = file,
+            rotation = rotation,
+            maxBufferedLines = maxBufferedLines,
+            logger = logger,
+            clock = clock,
+        )
+        agent.observe { exporter.write(it) }
+        exporters += exporter
+        return exporter
+    }
+
+    private companion object {
+        private val DEFAULT_EXPORT_LOGGER: (String, Throwable?) -> Unit =
+            { message, cause ->
+                if (cause == null) {
+                    Logger.getLogger(JsonlAuditExporter::class.java.name).warning(message)
+                } else {
+                    Logger.getLogger(JsonlAuditExporter::class.java.name).log(Level.WARNING, message, cause)
+                }
+            }
+    }
+}

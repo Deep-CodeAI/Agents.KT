@@ -1,10 +1,78 @@
-# Observability — `ObservabilityBridge` + adapters
+# Observability — JSONL audit logs + `ObservabilityBridge`
 
-> **DESIGN DRAFT — NOT YET IMPLEMENTED.** This document captures the proposed `ObservabilityBridge` contract and the first concrete adapter (`agents-kt-otel`) ahead of implementation (#1908). The API surface here is the spec the implementation will follow. If you're reading this looking for runnable code, today the framework ships post-hoc observer hooks (`onSkillChosen`, `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`) plus the unified `Agent.observe { event -> }` sealed-event view — see [model-and-tools.md](model-and-tools.md). The structured-bridge layer that wires these into OpenTelemetry / LangSmith / Langfuse / Phoenix is the work this doc designs.
+This page covers two layers:
+
+- **Shipped:** `:agents-kt-observability` JSONL audit exporter (#1914), a zero-vendor-dependency on-disk log format for `PipelineEvent` and `AgentEvent` rows.
+- **Design draft:** the proposed `ObservabilityBridge` contract and the first concrete adapter (`agents-kt-otel`) ahead of implementation (#1908). The structured-bridge layer that wires events into OpenTelemetry / LangSmith / Langfuse / Phoenix is still planned.
+
+## JSONL audit exporter
+
+The JSONL exporter writes one deterministic JSON object per event, one line at a time. It is intended for retained audit records, local debugging, and WORM/object-lock pipelines where a plain text format is easier to inspect than a tracing backend.
+
+```kotlin
+import agents_engine.observability.JsonlAuditExporter
+import agents_engine.observability.JsonlRotation
+import agents_engine.observability.events
+import java.nio.file.Path
+
+val agent = agent<String, String>("assistant") {
+    skills {
+        skill<String, String>("echo", "Echo input") {
+            implementedBy { it }
+        }
+    }
+}
+
+val exporters = agent.events.export {
+    jsonl(
+        file("/var/log/agents-kt/audit.jsonl"),
+        rotation = JsonlRotation.Size(maxBytes = 50L * 1024 * 1024),
+    )
+}
+
+try {
+    agent("hello")
+} finally {
+    exporters.forEach { it.close() }
+}
+```
+
+Each row uses the same field set:
+
+```text
+requestId, sessionId, manifestHash, agentId, skillId, toolId, eventType,
+timestamp, inputType, outputType, budgetState, guardrailDecision,
+mcpClientId, provider, model
+```
+
+The exporter deliberately does **not** serialize raw tool arguments, tool results, streamed text, generated output, or exception messages. It emits identifiers, event names, type names, and provider/model metadata so secret-like values do not leak into audit logs by default. `manifestHash` is populated when the runtime event carries one.
+
+You can also write streaming/session events directly:
+
+```kotlin
+val audit = JsonlAuditExporter(
+    Path.of("/var/log/agents-kt/session.jsonl"),
+    rotation = JsonlRotation.Daily(),
+)
+
+agent.session(input).events.collect { event ->
+    audit.write(event)
+}
+```
+
+Line-buffered writes append synchronously. `SkillCompleted` and `Failed` events trigger a flush attempt of any buffered lines. If the filesystem rejects writes (for example disk full), the exporter catches the failure, buffers up to `maxBufferedLines`, drops the oldest line under sustained backpressure, logs the drop through the configured logger, and never throws into the agent path.
+
+Useful shell checks:
+
+```bash
+jq -c 'select(.eventType == "ToolCalled") | {requestId, agentId, toolId}' audit.jsonl
+jq -s 'group_by(.eventType) | map({eventType: .[0].eventType, count: length})' audit.jsonl
+tail -f audit.jsonl | jq -r '[.timestamp, .requestId, .agentId, .eventType] | @tsv'
+```
 
 ## Why a bridge contract
 
-The framework today has the **right shape** for observability — `PipelineEvent` (post-hoc sealed type via `Agent.observe`) plus `AgentEvent<OUT>` (cold `Flow` from `agent.session()`) — but no module wires either to a vendor. Every adopter who wants OpenTelemetry / LangSmith / Langfuse traces today writes the same listener-to-span translation by hand.
+The framework has the **right shape** for observability — `PipelineEvent` (post-hoc sealed type via `Agent.observe`) plus `AgentEvent<OUT>` (cold `Flow` from `agent.session()`) — and the JSONL exporter now gives those events a canonical on-disk record. The next layer is vendor tracing. Every adopter who wants OpenTelemetry / LangSmith / Langfuse traces today writes the same listener-to-span translation by hand.
 
 Two design choices that fall out of the constraints:
 
