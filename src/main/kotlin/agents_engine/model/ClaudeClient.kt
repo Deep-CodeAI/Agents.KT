@@ -339,7 +339,7 @@ open class ClaudeClient(
             tools.forEach { t ->
                 val schema = t.argsType?.jsonSchema()
                     ?: t.parametersSchemaJson
-                    ?: """{"type":"object","properties":{},"additionalProperties":false}"""
+                    ?: """{"type":"object","properties":{},"additionalProperties":true}"""
                 add("""{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"input_schema":$schema}""")
             }
             structuredSchema?.let { schema ->

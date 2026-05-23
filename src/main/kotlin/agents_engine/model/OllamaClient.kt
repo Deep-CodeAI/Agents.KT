@@ -309,7 +309,7 @@ open class OllamaClient(
             val defs = tools.joinToString(",") { t ->
                 val parametersJson = t.argsType?.jsonSchema()
                     ?: t.parametersSchemaJson
-                    ?: """{"type":"object","properties":{},"additionalProperties":false}"""
+                    ?: """{"type":"object","properties":{},"additionalProperties":true}"""
                 """{"type":"function","function":{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"parameters":$parametersJson}}"""
             }
             ""","tools":[$defs]"""

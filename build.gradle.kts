@@ -81,7 +81,12 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform {
-        excludeTags("live-llm", "live-mcp", "interactive")
+        // `live-llm` tests stay in the default run so provider regressions are
+        // caught alongside unit tests; each test guards on `assumeTrue(key != null)`
+        // so they skip cleanly when an API key (or local Ollama) is absent.
+        // `live-mcp` requires an out-of-process MCP server and `interactive`
+        // requires a human at the console — both stay opt-in.
+        excludeTags("live-mcp", "interactive")
     }
 }
 

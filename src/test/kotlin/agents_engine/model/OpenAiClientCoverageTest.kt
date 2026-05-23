@@ -185,6 +185,10 @@ class OpenAiClientCoverageTest {
     fun `buildRequestJson tool without argsType falls back to generic object schema`() {
         // Line 259: `t.argsType?.jsonSchema() ?: """{"type":"object","properties":{},"additionalProperties":true}"""`
         // The Elvis fallback. Test by constructing a ToolDef with argsType = null.
+        // Permissive `additionalProperties:true` is intentional — untyped tools
+        // typically convey args via description prose; closing the schema would
+        // tell the LLM "no args allowed" and break tool calling. See #2377 for
+        // the longer-term fix (convert built-ins / users to typed argsType).
         val toolWithoutArgs = ToolDef(
             name = "no-args-tool",
             description = "tool without args type",

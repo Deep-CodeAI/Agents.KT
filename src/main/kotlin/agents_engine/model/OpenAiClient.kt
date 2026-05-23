@@ -272,7 +272,7 @@ open class OpenAiClient(
             val defs = tools.joinToString(",") { t ->
                 val schema = t.argsType?.jsonSchema()
                     ?: t.parametersSchemaJson
-                    ?: """{"type":"object","properties":{},"additionalProperties":false}"""
+                    ?: """{"type":"object","properties":{},"additionalProperties":true}"""
                 """{"type":"function","function":{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"parameters":$schema}}"""
             }
             ""","tools":[$defs]"""

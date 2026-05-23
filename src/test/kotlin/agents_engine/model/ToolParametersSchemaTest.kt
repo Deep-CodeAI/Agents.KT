@@ -13,11 +13,13 @@ import kotlin.test.assertTrue
  * 1. `argsType.jsonSchema()` if the typed-Args constructor was used.
  * 2. `parametersSchemaJson` if the caller (e.g., `McpClient`) carried a
  *    raw schema through.
- * 3. Closed empty-object fallback (`additionalProperties:false`).
+ * 3. Permissive empty-object fallback (`additionalProperties:true`).
  *
- * The pre-fix behavior emitted `additionalProperties:true` in case 3,
- * actively encouraging the LLM to hallucinate extra fields when the
- * description was the only signal.
+ * The fallback stays permissive on purpose: untyped `ToolDef(name, desc)`
+ * tools convey their args via description prose, and closing the schema
+ * would tell the LLM "no args allowed" — breaking tool calling for every
+ * legacy untyped tool (memory_*, forum_return, swarm). The proper fix is
+ * to migrate the built-ins to typed `argsType`, which lands separately.
  */
 class ToolParametersSchemaTest {
 
@@ -40,7 +42,7 @@ class ToolParametersSchemaTest {
     // ── Ollama ────────────────────────────────────────────────────────────────
 
     @Test
-    fun `Ollama fallback emits additionalProperties false`() {
+    fun `Ollama fallback emits permissive additionalProperties`() {
         val body = stubbedOllama(listOf(emptyTool)).buildRequestJson(emptyList())
         assertHasFallback(body)
     }
@@ -54,7 +56,7 @@ class ToolParametersSchemaTest {
     // ── OpenAI ────────────────────────────────────────────────────────────────
 
     @Test
-    fun `OpenAI fallback emits additionalProperties false`() {
+    fun `OpenAI fallback emits permissive additionalProperties`() {
         val body = stubbedOpenAi(listOf(emptyTool)).buildRequestJson(emptyList())
         assertHasFallback(body)
     }
@@ -68,7 +70,7 @@ class ToolParametersSchemaTest {
     // ── Claude ────────────────────────────────────────────────────────────────
 
     @Test
-    fun `Claude fallback emits additionalProperties false`() {
+    fun `Claude fallback emits permissive additionalProperties`() {
         val body = stubbedClaude(listOf(emptyTool)).buildRequestJson(listOf(LlmMessage("user", "x")))
         assertHasFallback(body)
     }
@@ -92,12 +94,8 @@ class ToolParametersSchemaTest {
 
     private fun assertHasFallback(body: String) {
         assertTrue(
-            body.contains(""""additionalProperties":false"""),
-            "Expected closed-fallback schema, got: $body",
-        )
-        assertFalse(
             body.contains(""""additionalProperties":true"""),
-            "Permissive fallback regressed: $body",
+            "Expected permissive fallback schema, got: $body",
         )
     }
 
