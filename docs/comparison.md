@@ -30,7 +30,7 @@ A side-by-side for teams choosing a framework. Written with the constraint of be
 
 ## Where Agents.KT loses
 
-**Ecosystem.** LangChain has 700+ integrations (vector stores, retrievers, embedders, agents, callbacks). Agents.KT has 3 LLM providers (Ollama, Anthropic, OpenAI) and you write the rest. If your job is "wire up 12 SaaS APIs into a prompt pipeline by Friday," LangChain is the right tool, not this one.
+**Ecosystem.** LangChain has 700+ integrations (vector stores, retrievers, embedders, agents, callbacks). Agents.KT has 4 LLM providers (Ollama, Anthropic, OpenAI, DeepSeek) and you write the rest. If your job is "wire up 12 SaaS APIs into a prompt pipeline by Friday," LangChain is the right tool, not this one.
 
 **Python AI/ML interop.** If your team already has Python notebooks for embedding generation, fine-tuning, eval harnesses — running an Agents.KT layer next to them is a context switch. SK's Python flavor or LangChain stay in the same language.
 
@@ -102,7 +102,7 @@ All four mature frameworks support local LLMs (Ollama, llama.cpp, vLLM) via adap
 
 | Framework | Hooks |
 |---|---|
-| **Agents.KT** | `onSkillChosen`, `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`, plus the unified `Agent.observe { event -> }` sealed-event view. Streaming session events via `agent.session(input).events: Flow<AgentEvent<OUT>>`. OpenTelemetry adapter planned (#1908). |
+| **Agents.KT** | `onSkillChosen`, `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`, plus the unified `Agent.observe { event -> }` sealed-event view. Streaming session events via `agent.session(input).events: Flow<AgentEvent<OUT>>`. OpenTelemetry adapter via `:agents-kt-otel` (#1908) and LangSmith run-tree adapter via `:agents-kt-langsmith` (#1909). |
 | **LangChain** | `Callbacks` interface, LangSmith integration as the canonical observability story. |
 | **Semantic Kernel** | Built-in OpenTelemetry, custom kernel hooks. |
 | **AutoGen** | Conversation history is the observation surface. Custom callbacks via the agent API. |
@@ -139,7 +139,7 @@ A few shortcuts that point at one framework over the others:
 
 ## Status notes (2026-05)
 
-- **Agents.KT 0.5.0** — streaming runtime + MCP-as-skills shipped. 0.6.0 (per-file IDE-skills via InternalsAgent) in flight.
+- **Agents.KT 0.6.0** — permission manifests, JSONL audit export, OTel / LangSmith bridges, constrained decoding, and DeepSeek shipped.
 - **LangChain 0.3.x** — stable, ecosystem mature. LCEL is the recommended composition surface.
 - **Semantic Kernel 1.x** — stable, MCP integration in preview.
 - **AutoGen 0.4.x** — major architectural rewrite landed; the new core/agentchat split is recent.

@@ -25,9 +25,12 @@ configurations.all {
 }
 
 dependencies {
-    api(project(":"))
+    api(project(":agents-kt-observability"))
+    api("io.opentelemetry:opentelemetry-api:1.51.0")
+
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    testImplementation("io.opentelemetry:opentelemetry-sdk-trace:1.51.0")
 }
 
 kotlin {

@@ -2445,7 +2445,7 @@ pipeline.events(input).collect { event -> /* same when block */ }
 // Cancelling the Flow cancels the running stage and all spawned sub-agents.
 ```
 
-This event hierarchy is the telemetry backbone. OpenTelemetry traces (future) map events to spans with a nested hierarchy: `pipeline → stage → agent → skill → tool → llm_call`. Each span carries token usage and cost attributes for budget attribution across multi-agent pipelines.
+This event hierarchy is the telemetry backbone. The shipped `:agents-kt-otel` adapter maps runtime events to OTel spans with a nested hierarchy: `pipeline → stage → agent → skill → tool → llm_call`. Each span carries token usage and budget-attribution attributes across multi-agent pipelines.
 
 ### 10.3 Common Agent Patterns
 
@@ -4015,7 +4015,7 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [ ] Custom tool deserializers — per-tool or per-server lambdas mapping raw MCP `content[]` (and future A2A skill outputs) to typed Kotlin values. Composable: default deserializer per `McpClient`, overridable per tool via `mcp.tool("name").withDeserializer<T> { content -> ... }`
 - [ ] CLI — `serve`, `inspect`, `validate`, `prompts`
 - [ ] Distributed agents framework (§13) — `Agent.fromA2A<>()` typed proxies, locality-transparent pipelines, catalog discovery, placement manifest, schema drift detection
-- [ ] Production observability — OpenTelemetry traces
+- [x] Production observability foundation — OpenTelemetry traces via `:agents-kt-observability` + `:agents-kt-otel`
 
 ### Phase 4: Ecosystem *(Q4 2026)*
 

@@ -12,6 +12,7 @@ import agents_engine.generation.fromLlmOutput
 import agents_engine.generation.hasGenerableAnnotation
 import agents_engine.generation.jsonSchema
 import agents_engine.generation.toLlmInput
+import agents_engine.runtime.events.AgentEvent
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.reflect.KClass
 import kotlinx.coroutines.Dispatchers
@@ -243,6 +244,17 @@ internal suspend fun <IN> executeAgentic(
             )
         }
 
+        val turnIndex = turns + 1
+        emitter?.invoke(
+            AgentEvent.ModelTurnStarted(
+                agentId = agent.name,
+                skillName = skill.name,
+                turnIndex = turnIndex,
+                provider = semconvProviderName(config.provider),
+                model = config.name,
+                temperature = config.temperature,
+            )
+        )
         val response = chatOrStream(
             client = client,
             messages = messages,
@@ -252,13 +264,28 @@ internal suspend fun <IN> executeAgentic(
             jsonSchema = constrainedOutputSchema,
         )
         turns++
+        val responseUsage = response.tokenUsage
+        emitter?.invoke(
+            AgentEvent.ModelTurnCompleted(
+                agentId = agent.name,
+                skillName = skill.name,
+                turnIndex = turnIndex,
+                provider = responseUsage?.provider ?: semconvProviderName(config.provider),
+                model = responseUsage?.model ?: config.name,
+                responseType = when (response) {
+                    is LlmResponse.Text -> "text"
+                    is LlmResponse.ToolCalls -> "tool_calls"
+                },
+                tokensUsed = responseUsage,
+            )
+        )
         maybeFireThreshold(BudgetReason.TURNS, turns.toDouble() / budget.maxTurns)
 
         // #963: accumulate tokens only when the provider reported usage —
         // a missing `tokenUsage` does NOT count as zero toward the cap.
         // Check after the round-trip so the LAST turn's tokens are counted
         // even if it tips us over: the throw still surfaces the breach.
-        response.tokenUsage?.let { usage ->
+        responseUsage?.let { usage ->
             agent.fireTokenUsage(usage)
             totalTokens += usage.total
             // #1740: build cumulative TokenUsage for the event surface.
@@ -399,6 +426,14 @@ internal suspend fun <IN> executeAgentic(
         }
     }
 }
+
+private fun semconvProviderName(provider: ModelProvider): String =
+    when (provider) {
+        ModelProvider.ANTHROPIC -> "anthropic"
+        ModelProvider.DEEPSEEK -> "deepseek"
+        ModelProvider.OPENAI -> "openai"
+        ModelProvider.OLLAMA -> "ollama"
+    }
 
 private fun coerceSubstituteOutput(result: Any?, outType: KClass<*>): Any {
     if (result != null && outType.java.isInstance(result)) return result

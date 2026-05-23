@@ -25,7 +25,8 @@ configurations.all {
 }
 
 dependencies {
-    api(project(":"))
+    api(project(":agents-kt-observability"))
+
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 }

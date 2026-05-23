@@ -10,6 +10,23 @@ Additive telemetry release for downstream billing and budget dashboards. Existin
 
 ### Added
 
+#### Runtime observability bridge (#1908)
+
+- **`ObservabilityBridge` in `:agents-kt-observability`** — vendor-neutral bridge contract with `onPipelineEvent`, `onAgentEvent`, and `onInterceptorDecision`, plus `.observe(bridge)` for one-call wiring.
+- **`:agents-kt-otel` module** — OpenTelemetry adapter that maps agent sessions to `agent.invoke` spans, model turns to `gen_ai.chat` spans, tool calls to `gen_ai.tool` child spans, errors to span status, usage to GenAI attrs, and before-interceptor decisions to span events.
+- **`:agents-kt-langsmith` module** — LangSmith run-tree adapter that maps skill invocations to `chain` runs, model turns to child `llm` runs, tool calls to child `tool` runs, failures to run errors, budget threshold events to run extras, and interceptor decisions to run tags. Dispatch is asynchronous, batched, oldest-drop under backpressure, and never throws into the agent path.
+- **Core remains vendor-free** — OTel and LangSmith integration code is isolated to adapter modules.
+
+#### Provider constrained decoding (#1949)
+
+- **`@Generable` schemas are threaded into provider payloads** — OpenAI receives `response_format.json_schema`, Ollama receives `format`, and Anthropic receives a structured-output tool path for typed agentic outputs.
+- **Provider capability detection** — `ModelClient.supportsConstrainedDecoding` gates schema forwarding so unsupported adapters keep the existing repair-loop behavior.
+
+#### DeepSeek provider adapter
+
+- **`model { deepseek(name); apiKey = ... }`** — OpenAI-compatible Chat Completions adapter with DeepSeek provider identity, configurable `deepSeekBaseUrl`, usage normalization, streaming through the OpenAI-compatible SSE path, and manifest provider metadata.
+- **Constrained decoding stays disabled for DeepSeek** — the adapter does not send OpenAI `response_format.json_schema` because DeepSeek documents JSON-object mode rather than that schema payload.
+
 #### Token usage telemetry (#2354, #2355, #2356, #2357)
 
 - **Public `Agent.onTokenUsage { usage: TokenUsage -> }` listener** — fires once per successful LLM round-trip that reports usage, including streaming paths at end-of-stream. Tool-use cycles fire once per provider response, not once per agent invocation.
@@ -43,8 +60,8 @@ Additive telemetry release for downstream billing and budget dashboards. Existin
 - **`docs/production-hardening.md`** — actionable pre-launch checklist organized by tool surface / MCP / budgets / secrets / observability / governance / operational; pre-launch ritual (#1919).
 - **`docs/regulated-deployment.md`** — capability inventory, action log, decision points, failure modes, data lineage, vendor risk; EU AI Act mapping (Art. 9 / 12 / 13 / 14 / 15 → Agents.KT artefact); evidence-pack template (#1919).
 - **`docs/comparison.md`** — side-by-side against LangChain / Semantic Kernel / AutoGen / raw MCP. Honest about losses; 8-shortcut "Choosing" subsection that sometimes points away from Agents.KT (#1906).
-- **`docs/interceptors.md`** — design draft for `onBefore*` interceptor family + `Decision` sealed type. Marked "NOT YET IMPLEMENTED"; tracks #1907.
-- **`docs/observability.md`** — design draft for `ObservabilityBridge` contract + `agents-kt-otel` adapter. Marked "NOT YET IMPLEMENTED"; tracks #1908.
+- **`docs/interceptors.md`** — `onBefore*` interceptor family + `Decision` sealed type reference (#1907).
+- **`docs/observability.md`** — JSONL audit exporter reference plus the shipped `ObservabilityBridge` contract, `agents-kt-otel` adapter, and `agents-kt-langsmith` adapter (#1908, #1909, #1914).
 
 ### Changed
 
@@ -54,6 +71,8 @@ Additive telemetry release for downstream billing and budget dashboards. Existin
 
 ### Tests
 
+- Added `ObservabilityBridgeTest`, `OtelBridgeTest`, and `LangSmithBridgeTest` coverage for bridge forwarding, observer stacking, session events, interceptor decisions, OTel parent context propagation, tool child spans, LangSmith run-tree shape, async backpressure logging, usage attrs, and error status mapping.
+- Added `DeepSeekClientTest` coverage for provider identity, OpenAI-compatible tool payloads, disabled schema forwarding, error envelopes, headers, and the `model { deepseek(...) }` DSL.
 - **`McpServerLifecycleTest`** (#889) — 8 new assertions covering `url`/`isRunning`/`stop` lifecycle invariants. Kills ~6–8 PIT mutants in `McpServer.kt:82-95` that the response-code tests couldn't reach.
 - **`McpRunnerMissingFlagValueTest`** (#889) — 5 tests covering the `--port` / `--expose` missing-value error paths and multi-error accumulation.
 - **`LenientJsonParserUnterminatedTest`** (#889) — 9 tests pinning the parser's "lenient on shape, strict on safety" contract: unterminated string / object / array at EOF doesn't hang; backslash-at-EOF; unicode-escape-at-EOF boundary; empty / whitespace-only / non-JSON-garbage returns null cleanly.

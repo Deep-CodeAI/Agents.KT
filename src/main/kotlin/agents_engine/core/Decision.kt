@@ -16,6 +16,12 @@ sealed interface Decision<out T> {
     data class Substitute<out R>(val result: R) : Decision<Nothing>
 }
 
+enum class InterceptorPoint {
+    BeforeSkill,
+    BeforeToolCall,
+    BeforeTurn,
+}
+
 class InterceptorDeniedException(message: String) : RuntimeException(message)
 
 internal fun <T> runDecisionChain(

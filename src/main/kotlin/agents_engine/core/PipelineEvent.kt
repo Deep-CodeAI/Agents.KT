@@ -1,5 +1,6 @@
 package agents_engine.core
 
+import agents_engine.model.BudgetReason
 import java.time.Instant
 
 /**
@@ -17,11 +18,10 @@ import java.time.Instant
  * use one `when` block instead of four separate registrations. See #965.
  *
  * The event surface is intentionally a SUBSET of the full PRD §10.2 hierarchy
- * — `TextDelta`, `BudgetWarning`, `SubAgentSpawned`, `ContextCompacted`,
- * `Pipeline*`, `Inference*` events depend on infrastructure that isn't
- * shipped yet (streaming, threshold hooks, sub-agents, sessions, pipeline-
- * level event sources). Those land in follow-ups as the underlying
- * machinery arrives.
+ * — `TextDelta`, `SubAgentSpawned`, `ContextCompacted`, `Pipeline*`,
+ * `Inference*` events depend on infrastructure that isn't shipped yet
+ * (streaming, sub-agents, sessions, pipeline-level event sources). Those land
+ * in follow-ups as the underlying machinery arrives.
  *
  * `agentName` and `timestamp` are present on every variant so consumers can
  * sort, filter, and attribute events without inspecting the variant. Runtime
@@ -68,6 +68,14 @@ sealed interface PipelineEvent {
         val error: Throwable,
         override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : PipelineEvent
+
+    data class BudgetThreshold(
+        override val agentName: String,
+        override val timestamp: Instant,
+        val reason: BudgetReason,
+        val usedPercent: Double,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
+    ) : PipelineEvent
 }
 
 /**
@@ -85,6 +93,7 @@ sealed interface PipelineEvent {
  * - [PipelineEvent.ToolCalled] — when an action tool returns (see [Agent.onToolUse])
  * - [PipelineEvent.KnowledgeLoaded] — when a knowledge entry is fetched (see [Agent.onKnowledgeUsed])
  * - [PipelineEvent.ErrorOccurred] — when an exception is about to propagate out (see [Agent.onError])
+ * - [PipelineEvent.BudgetThreshold] — when a budget crosses [Agent.onBudgetThreshold]'s threshold
  */
 fun Agent<*, *>.observe(handler: (PipelineEvent) -> Unit) {
     val agentName = this.name
@@ -122,5 +131,11 @@ fun Agent<*, *>.observe(handler: (PipelineEvent) -> Unit) {
     onError { error ->
         priorError?.invoke(error)
         handler(PipelineEvent.ErrorOccurred(agentName, Instant.now(), error))
+    }
+
+    val priorBudget = this.budgetThresholdListener
+    onBudgetThreshold(budgetThreshold) { reason, usedPercent ->
+        priorBudget?.invoke(reason, usedPercent)
+        handler(PipelineEvent.BudgetThreshold(agentName, Instant.now(), reason, usedPercent))
     }
 }

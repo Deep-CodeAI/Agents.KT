@@ -6,12 +6,12 @@ import agents_engine.model.TokenUsage
 /**
  * `agents_engine/runtime/events/AgentEvent.kt` — the typed sealed event
  * union surfaced via `Agent.session(input).events` (#1736). Variants:
- * [SkillStarted] / [SkillCompleted] / [Completed] / [Failed]
- * (delivered today by step 2) plus [Token] / [ToolCallStarted] /
- * [ToolCallArgumentsDelta] / [ToolCallFinished] (delivered by step 3
- * — the agentic loop rewire). Every event carries [agentId] for
- * provenance through composition operators. Only [Completed] carries
- * the typed `OUT`; others are `AgentEvent<Nothing>`. See
+ * [SkillStarted] / [SkillCompleted] / [Completed] / [Failed] plus
+ * [ModelTurnStarted] / [ModelTurnCompleted] and [Token] /
+ * [ToolCallStarted] / [ToolCallArgumentsDelta] / [ToolCallFinished].
+ * Every event carries [agentId] for provenance through composition operators.
+ * Only [Completed] carries the typed `OUT`; others are
+ * `AgentEvent<Nothing>`. See
  * `src/main/resources/internals-agent/runtime/events/AgentEvent.md`
  * (#1837 / #1892).
  */
@@ -22,12 +22,10 @@ import agents_engine.model.TokenUsage
  * for the full design rationale.
  *
  * The sealed hierarchy is complete here so consumers can write exhaustive
- * `when` matches today. **Not every subtype is emitted yet.** v0.5.0 step 2
- * surfaces only [SkillStarted], [SkillCompleted], [Completed], and [Failed]
- * — enough for the consumer surface to be useful for `implementedBy`-style
- * agents. [Token], [ToolCallStarted], [ToolCallArgumentsDelta], and
- * [ToolCallFinished] land in step 3 when the agentic loop is rewired onto a
- * `FlowCollector<AgentEvent>`.
+ * `when` matches today. Implemented-by skills emit only [SkillStarted],
+ * [SkillCompleted], [Completed], and [Failed]. Agentic skills also emit
+ * [ModelTurnStarted], [Token], [ToolCallStarted], [ToolCallArgumentsDelta],
+ * [ModelTurnCompleted], and [ToolCallFinished] as the model/tool loop runs.
  *
  * Every event carries [agentId] — the name of the agent that produced it.
  * Composition operators (`then`, `Pipeline`, `Branch`, `wrap`, `Swarm`)
@@ -49,11 +47,40 @@ sealed interface AgentEvent<out OUT> {
     val manifestHash: String? get() = runtimeContext.manifestHash
 
     /**
+     * A model round-trip is about to begin for one skill turn. The event
+     * carries model metadata only, not prompt or message contents.
+     */
+    data class ModelTurnStarted(
+        override val agentId: String,
+        val skillName: String,
+        val turnIndex: Int,
+        val provider: String,
+        val model: String,
+        val temperature: Double,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
+    ) : AgentEvent<Nothing>
+
+    /**
+     * A model round-trip completed and returned either final text or tool calls.
+     * [tokensUsed] is per-turn usage, not cumulative skill usage.
+     */
+    data class ModelTurnCompleted(
+        override val agentId: String,
+        val skillName: String,
+        val turnIndex: Int,
+        val provider: String,
+        val model: String,
+        val responseType: String,
+        val tokensUsed: TokenUsage?,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
+    ) : AgentEvent<Nothing>
+
+    /**
      * A chunk of LLM-streamed text from a single skill turn. Providers chunk at
      * their own granularity — [text] may be a single token or a multi-token
      * chunk; the framework passes through as-is.
      *
-     * Not yet emitted (step 3 — agentic loop rewire).
+     * Emitted by agentic skills only.
      */
     data class Token(
         override val agentId: String,
@@ -67,7 +94,7 @@ sealed interface AgentEvent<out OUT> {
      * session; [ToolCallArgumentsDelta] and [ToolCallFinished] for the same call
      * share this id.
      *
-     * Not yet emitted (step 3).
+     * Emitted by agentic skills only.
      */
     data class ToolCallStarted(
         override val agentId: String,
@@ -82,7 +109,7 @@ sealed interface AgentEvent<out OUT> {
      * providers that stream argument JSON (Anthropic, OpenAI). Non-streaming
      * providers emit one delta with the full JSON.
      *
-     * Not yet emitted (step 3).
+     * Emitted by agentic skills only.
      */
     data class ToolCallArgumentsDelta(
         override val agentId: String,
@@ -97,7 +124,7 @@ sealed interface AgentEvent<out OUT> {
      * going); when [isError] is true and `onError` rethrew, the session emits
      * [Failed] instead.
      *
-     * Not yet emitted (step 3).
+     * Emitted by agentic skills only.
      */
     data class ToolCallFinished(
         override val agentId: String,
@@ -150,6 +177,8 @@ sealed interface AgentEvent<out OUT> {
 
 internal fun AgentEvent<*>.withRuntimeContext(context: AgentRuntimeContext): AgentEvent<*> =
     when (this) {
+        is AgentEvent.ModelTurnStarted -> copy(runtimeContext = context)
+        is AgentEvent.ModelTurnCompleted -> copy(runtimeContext = context)
         is AgentEvent.Token -> copy(runtimeContext = context)
         is AgentEvent.ToolCallStarted -> copy(runtimeContext = context)
         is AgentEvent.ToolCallArgumentsDelta -> copy(runtimeContext = context)

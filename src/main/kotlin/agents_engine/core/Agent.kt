@@ -13,6 +13,7 @@ import agents_engine.model.ToolsBuilder
 import agents_engine.model.buildBuiltInTools
 import agents_engine.model.executeAgentic
 import agents_engine.model.selectSkillByLlm
+import agents_engine.runtime.events.AgentEvent
 import java.util.logging.Level
 import java.util.logging.Logger
 
@@ -164,6 +165,8 @@ class Agent<IN, OUT>(
     private val beforeToolCallInterceptors =
         mutableListOf<(name: String, args: Map<String, Any?>) -> Decision<Map<String, Any?>>>()
     private val beforeTurnInterceptors = mutableListOf<(List<ChatMessage>) -> Decision<List<ChatMessage>>>()
+    private val interceptorDecisionListeners = mutableListOf<(InterceptorPoint, Decision<*>) -> Unit>()
+    private val agentEventListeners = mutableListOf<(AgentEvent<*>) -> Unit>()
     private val toolErrorHandlers: MutableMap<String, ToolErrorHandler> = mutableMapOf()
     internal var manifestHash: String? = null
         private set
@@ -302,14 +305,37 @@ class Agent<IN, OUT>(
         beforeTurnInterceptors += block
     }
 
-    internal fun decideBeforeSkill(skillName: String): Decision<String> =
-        runDecisionChain(skillName, beforeSkillInterceptors.toList())
+    fun onInterceptorDecision(block: (point: InterceptorPoint, decision: Decision<*>) -> Unit) {
+        interceptorDecisionListeners += block
+    }
+
+    fun onAgentEvent(block: (AgentEvent<*>) -> Unit) {
+        agentEventListeners += block
+    }
+
+    internal fun fireAgentEvent(event: AgentEvent<*>) {
+        agentEventListeners.toList().forEach { listener ->
+            try {
+                listener(event)
+            } catch (t: Throwable) {
+                LOGGER.log(Level.WARNING, "onAgentEvent listener failed; swallowing", t)
+            }
+        }
+    }
+
+    internal fun decideBeforeSkill(skillName: String): Decision<String> {
+        val interceptors = beforeSkillInterceptors.toList()
+        val decision = runDecisionChain(skillName, interceptors)
+        fireInterceptorDecision(InterceptorPoint.BeforeSkill, decision, interceptors.isNotEmpty())
+        return decision
+    }
 
     internal fun decideBeforeToolCall(name: String, args: Map<String, Any?>): Decision<Map<String, Any?>> {
+        val interceptors = beforeToolCallInterceptors.toList()
         var current = args
         var effective: Decision<Map<String, Any?>> = Decision.Proceed
 
-        beforeToolCallInterceptors.toList().forEach { interceptor ->
+        interceptors.forEach { interceptor ->
             val decision = try {
                 interceptor(name, current)
             } catch (t: Throwable) {
@@ -325,11 +351,31 @@ class Agent<IN, OUT>(
             }
         }
 
+        fireInterceptorDecision(InterceptorPoint.BeforeToolCall, effective, interceptors.isNotEmpty())
         return effective
     }
 
-    internal fun decideBeforeTurn(messages: List<ChatMessage>): Decision<List<ChatMessage>> =
-        runDecisionChain(messages, beforeTurnInterceptors.toList())
+    internal fun decideBeforeTurn(messages: List<ChatMessage>): Decision<List<ChatMessage>> {
+        val interceptors = beforeTurnInterceptors.toList()
+        val decision = runDecisionChain(messages, interceptors)
+        fireInterceptorDecision(InterceptorPoint.BeforeTurn, decision, interceptors.isNotEmpty())
+        return decision
+    }
+
+    private fun fireInterceptorDecision(
+        point: InterceptorPoint,
+        decision: Decision<*>,
+        hasInterceptors: Boolean,
+    ) {
+        if (!hasInterceptors) return
+        interceptorDecisionListeners.toList().forEach { listener ->
+            try {
+                listener(point, decision)
+            } catch (t: Throwable) {
+                LOGGER.log(Level.WARNING, "onInterceptorDecision listener failed; swallowing", t)
+            }
+        }
+    }
 
     fun skillSelection(block: (IN) -> String) {
         checkNotFrozen()

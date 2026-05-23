@@ -3,7 +3,7 @@
 This page covers two layers:
 
 - **Shipped:** `:agents-kt-observability` JSONL audit exporter (#1914), a zero-vendor-dependency on-disk log format for `PipelineEvent` and `AgentEvent` rows.
-- **Design draft:** the proposed `ObservabilityBridge` contract and the first concrete adapter (`agents-kt-otel`) ahead of implementation (#1908). The structured-bridge layer that wires events into OpenTelemetry / LangSmith / Langfuse / Phoenix is still planned.
+- **Shipped:** `ObservabilityBridge` + `Agent.observe(bridge)` in `:agents-kt-observability`, plus concrete adapters for OpenTelemetry (`:agents-kt-otel`, #1908) and LangSmith (`:agents-kt-langsmith`, #1909).
 
 ## JSONL audit exporter
 
@@ -73,7 +73,7 @@ tail -f audit.jsonl | jq -r '[.timestamp, .requestId, .agentId, .eventType] | @t
 
 ## Why a bridge contract
 
-The framework has the **right shape** for observability — `PipelineEvent` (post-hoc sealed type via `Agent.observe`) plus `AgentEvent<OUT>` (cold `Flow` from `agent.session()`) — and the JSONL exporter now gives those events a canonical on-disk record. The next layer is vendor tracing. Every adopter who wants OpenTelemetry / LangSmith / Langfuse traces today writes the same listener-to-span translation by hand.
+The framework has the **right shape** for observability — `PipelineEvent` (post-hoc sealed type via `Agent.observe`) plus `AgentEvent<OUT>` (cold `Flow` from `agent.session()`) — and the JSONL exporter now gives those events a canonical on-disk record. The bridge layer adds vendor tracing without forcing every adopter who wants OpenTelemetry / LangSmith / Langfuse traces to write the same listener-to-span translation by hand.
 
 Two design choices that fall out of the constraints:
 
@@ -92,23 +92,24 @@ interface ObservabilityBridge {
     fun onInterceptorDecision(point: InterceptorPoint, decision: Decision<*>)
 }
 
-enum class InterceptorPoint { BeforeSkill, BeforeToolCall, BeforeTurn }
+typealias InterceptorPoint = agents_engine.core.InterceptorPoint
 
 fun <IN, OUT> Agent<IN, OUT>.observe(bridge: ObservabilityBridge): Agent<IN, OUT>
 ```
 
-The `observe(bridge)` extension wires both event surfaces (and once #1907 lands, the interceptor decisions too) into the bridge with one call. Existing `Agent.observe { event -> ... }` callers keep working — the bridge variant is additive.
+The `observe(bridge)` extension wires both event surfaces and the `onBefore*` interceptor decisions (#1907) into the bridge with one call. Existing `Agent.observe { event -> ... }` callers keep working — the bridge variant is additive.
 
 ## Two-module structure
 
 | Module | Purpose | Dependencies |
 |---|---|---|
 | `:agents-kt-observability` | The `ObservabilityBridge` interface + `Agent.observe(bridge)` extension | Zero vendor deps |
-| `:agents-kt-otel` | OTel adapter (`OtelBridge(tracer)`) | `:agents-kt-observability` + `io.opentelemetry:opentelemetry-api` (compileOnly where possible) |
+| `:agents-kt-otel` | OTel adapter (`OtelBridge(tracer)`) | `:agents-kt-observability` + `io.opentelemetry:opentelemetry-api:1.51.0` |
+| `:agents-kt-langsmith` | LangSmith adapter (`LangSmithBridge(apiKey, project)`) | `:agents-kt-observability` + JDK `HttpClient` |
 
-Future adapter modules (`:agents-kt-langsmith`, `:agents-kt-langfuse`, `:agents-kt-phoenix`) each pull only their own vendor dep and the shared contract.
+Future adapter modules (`:agents-kt-langfuse`, `:agents-kt-phoenix`) each pull only their own vendor dep and the shared contract.
 
-**Hard constraint:** `./gradlew :agents-kt:dependencies | grep -i opentelemetry` returns nothing. The core module's runtime classpath stays vendor-free.
+**Hard constraint:** the root/core runtime classpath stays vendor-free; only adapter modules pull vendor APIs. `:agents-kt-langsmith` uses the JDK HTTP client instead of LangChain4j or a LangSmith SDK.
 
 ## OTel mapping
 
@@ -118,21 +119,25 @@ The OTel adapter maps to the **OpenTelemetry GenAI semantic conventions**:
 |---|---|
 | `AgentEvent.SkillStarted` | Root span `agent.invoke` (or child if parent context present via `Context.current()`) |
 | `AgentEvent.SkillCompleted` | Span end + attrs `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` from cumulative `TokenUsage` |
-| Each LLM turn (mid-loop) | Child span `gen_ai.operation.name=chat`, `gen_ai.system=anthropic\|openai\|ollama`, `gen_ai.request.model=...`, `gen_ai.request.temperature=...` |
-| `AgentEvent.ToolCallStarted` / `ToolCallFinished` | Child span `gen_ai.operation.name=tool`, attrs `tool.name`, `tool.duration_ms`, truncated `tool.args` (PII-safe limit) |
+| `AgentEvent.ModelTurnStarted` / `ModelTurnCompleted` | Child span `gen_ai.chat`, attrs `gen_ai.operation.name=chat`, `gen_ai.system`, `gen_ai.request.model`, `gen_ai.request.temperature`, response type, and per-turn usage |
+| `AgentEvent.Token` | `gen_ai.token` span event with token length only; token text is not recorded |
+| `AgentEvent.ToolCallStarted` / `ToolCallFinished` | Child span `gen_ai.operation.name=tool`, attrs `tool.name`, `tool.call.id`, `tool.result.type`, `tool.error` |
+| `AgentEvent.ToolCallArgumentsDelta` | `tool.arguments.delta` span event with delta length only; raw arguments are not recorded |
 | `PipelineEvent.ErrorOccurred` | Span status `ERROR` + exception event with original throwable |
-| Budget threshold crossing | Span event `agent.budget.threshold` with attrs `reason` (TURNS/TOOL_CALLS/DURATION/TOKENS/CONSECUTIVE_TOOL) and `used_percent` |
-| Interceptor `Deny` (#1907) | Span event `interceptor.deny` with `reason` |
-| Interceptor `Substitute` (#1907) | Span event `interceptor.substitute` (attr `synthetic=true`) |
+| `PipelineEvent.BudgetThreshold` | Span event `agent.budget.threshold` with reason and used-percent attrs |
+| `PipelineEvent.ToolCalled` / `KnowledgeLoaded` / `SkillChosen` | Span events on the active agent span |
+| Interceptor decisions | Span events `interceptor.proceed`, `interceptor.proceed_with`, `interceptor.deny`, `interceptor.substitute`; only the interceptor point is recorded |
 
 Every event already carries `requestId`, `sessionId`, and `manifestHash`; bridge adapters propagate them as `agent.request.id`, `agent.session.id`, and `agent.manifest.hash` attributes when present.
 
-**Semconv version pinned** in the adapter's documentation. When the OTel spec moves, the adapter version bumps; old adapters stay on the older spec until updated.
+The adapter intentionally records identifiers, type names, token lengths, and usage counts rather than raw prompts, streamed text, tool arguments, tool results, or interceptor denial reasons.
 
 ## Worked example
 
 ```kotlin
 // In a Spring/Ktor service that already has an OTel SDK + exporter wired
+import agents_engine.runtime.events.session
+
 val tracer: Tracer = openTelemetry.getTracer("agents-kt-app")
 
 val agent = agent<UserReq, AssistantReply>("assistant") {
@@ -140,38 +145,67 @@ val agent = agent<UserReq, AssistantReply>("assistant") {
     skills { /* ... */ }
 }.observe(OtelBridge(tracer))      // <-- the wire-up
 
-agent.invoke(req)
+val reply = agent.session(req).await()
 // → OTel exporter sees a tree of spans:
 //   agent.invoke[assistant]
-//     ├── gen_ai.operation.name=chat (turn 1)
-//     ├── gen_ai.operation.name=tool tool.name=searchKb
-//     ├── gen_ai.operation.name=chat (turn 2)
-//     └── gen_ai.operation.name=tool tool.name=fetchTicket
+//     ├── gen_ai.chat gen_ai.request.model=claude-opus-4-7-20250514
+//     ├── gen_ai.tool tool.name=searchKb
+//     ├── gen_ai.chat gen_ai.request.model=claude-opus-4-7-20250514
+//     └── gen_ai.tool tool.name=fetchTicket
 ```
 
 Parent-context propagation: if the caller starts a span before `invoke`, the agent's root span is a child of it (via `Context.current()` — standard OTel idiom). Trace IDs propagate cleanly through composed pipelines.
 
 ## Verifying the contract
 
-Tests use OTel's `InMemorySpanExporter` for deterministic assertions:
+Tests use a deterministic recording `SpanExporter`:
 
-1. **Single skill** — one root span; child spans for each turn and tool call.
-2. **Nested tool calls** — span tree depth matches the agentic-loop call tree.
-3. **Error path** — failing skill surfaces `span.status = ERROR` + an exception event with the original throwable identity preserved.
-4. **Budget threshold event** — crossing 75% on `maxTokens` produces a `agent.budget.threshold` event with `reason=TOKENS` and `used_percent ≈ 75`.
-5. **Parent context propagation** — `tracer.spanBuilder("outer").startSpan()` before `invoke` → the agent's root span has the outer span as parent.
-6. **Token usage attrs match `Completed.tokenUsage`** — no double-counting across turns; cumulative number matches the final emitted event's value.
+1. **Bridge forwarding** — `observe(bridge)` forwards `PipelineEvent`, `AgentEvent`, and interceptor decisions while preserving existing observers.
+2. **Single skill** — one `agent.invoke` span with request/session/manifest correlation and usage attrs.
+3. **Model turn and tool call** — model turns produce `gen_ai.chat` child spans; `ToolCallStarted` / `ToolCallFinished` produce `gen_ai.tool` child spans.
+4. **Error path** — failing skill surfaces `span.status = ERROR` + an exception event.
+5. **Parent context propagation** — `tracer.spanBuilder("outer").startSpan()` before `invoke` -> the agent span has the outer span as parent.
+6. **Interceptor denial** — `Decision.Deny` records `interceptor.deny` on the active span and marks it `ERROR`.
+
+## LangSmith mapping
+
+`LangSmithBridge(apiKey, project, baseUrl = "https://api.smith.langchain.com")` maps the same bridge events to LangSmith's run-tree model and dispatches them through the documented batch ingest endpoint.
+
+| Source event | LangSmith run-tree artefact |
+|---|---|
+| `AgentEvent.SkillStarted` / `SkillCompleted` | Root `chain` run per skill invocation |
+| `AgentEvent.ModelTurnStarted` / `ModelTurnCompleted` | Child `llm` run with provider/model/temperature inputs and token usage in `extra` |
+| `AgentEvent.ToolCallStarted` / `ToolCallFinished` | Child `tool` run with `inputs.args`, `outputs.result`, and `error` on failed tool results |
+| `AgentEvent.Failed` / `PipelineEvent.ErrorOccurred` | Active run `error` field plus `end_time` |
+| `PipelineEvent.BudgetThreshold` | Active chain run `extra.budget` update |
+| Interceptor decisions | Tags such as `interceptor:deny` / `interceptor:substitute` on the active run; pending decisions attach to fallback failure runs |
+
+```kotlin
+import agents_engine.langsmith.LangSmithBridge
+
+val agent = agent<UserReq, AssistantReply>("assistant") {
+    model { openai("gpt-4o-mini") }
+    skills { /* ... */ }
+}.observe(
+    LangSmithBridge(
+        apiKey = System.getenv("LANGSMITH_API_KEY"),
+        project = "agents-kt-prod",
+    ),
+)
+```
+
+Dispatch is asynchronous: the bridge buffers run-create/run-update operations, sends them in batches, drops the oldest queued operation under sustained backpressure, logs failures, and never throws into the agent path. Tests use an in-memory recording sink and JSON fixture assertions; CI never calls LangSmith live.
 
 ## Sibling adapters
 
-Once `:agents-kt-otel` ships, `:agents-kt-langsmith` (#1909) and `:agents-kt-langfuse` (#1910) follow the same shape:
+After `:agents-kt-otel` and `:agents-kt-langsmith`, `:agents-kt-langfuse` (#1910) follows the same shape:
 
 - New module, depends on `:agents-kt-observability` + the vendor SDK.
-- Single bridge implementation (`LangSmithBridge(client)`, `LangfuseBridge(client)`).
-- Vendor-specific mapping in the bridge body — LangSmith's run-tree shape, Langfuse's session/trace/observation hierarchy.
+- Single bridge implementation (`LangfuseBridge(client)`).
+- Vendor-specific mapping in the bridge body — Langfuse's session/trace/observation hierarchy.
 - Same test pattern with the vendor's in-memory test exporter where available.
 
-The shared contract means a switch from one vendor to another is one line: `.observe(OtelBridge(tracer))` → `.observe(LangSmithBridge(client))`. No re-instrumentation.
+The shared contract means a switch from one vendor to another is one line: `.observe(OtelBridge(tracer))` → `.observe(LangSmithBridge(apiKey, project))`. No re-instrumentation.
 
 ## Phoenix and other open-source observability tools
 
@@ -187,18 +221,20 @@ Arize Phoenix, OpenLLMetry, and similar OSS observability stacks already consume
 
 | Phase | What it ships |
 |---|---|
-| Design draft (this doc) | Contract surface frozen, ready for review |
-| **Implementation (#1908)** | Two new Gradle modules (`:agents-kt-observability` + `:agents-kt-otel`), bridge contract + OTel adapter + tests with `InMemorySpanExporter` |
-| Follow-up adapters | `:agents-kt-langsmith` (#1909), `:agents-kt-langfuse` (#1910) |
+| Shipped (#1914) | JSONL audit exporter in `:agents-kt-observability` |
+| **Shipped (#1908)** | Bridge contract in `:agents-kt-observability`, `:agents-kt-otel`, and tests with a recording span exporter |
+| **Shipped (#1909)** | `:agents-kt-langsmith`, async batch dispatch, backpressure logging, run-tree tests with a recording sink |
+| Follow-up adapters | `:agents-kt-langfuse` (#1910) |
 | Future | `:agents-kt-phoenix`, metrics emission, OpenLLMetry consumption guide |
 
-Blocking-on: **#1907** (interceptor primitive) so the `onInterceptorDecision` surface is part of the v1 bridge contract and adapters don't need a second integration round when interceptors land.
+The bridge consumes the shipped #1907 interceptor primitives, so adapters receive `onBeforeSkill`, `onBeforeToolCall`, and `onBeforeTurn` decisions without a second integration path.
 
 ## Related
 
-- **[`docs/interceptors.md`](interceptors.md)** — `onBefore*` design draft; feeds `onInterceptorDecision`.
+- **[`docs/interceptors.md`](interceptors.md)** — `onBefore*` decisions that feed `onInterceptorDecision`.
 - **[`docs/streaming.md`](streaming.md)** — `AgentSession` / `AgentEvent` surface the bridge consumes.
 - **[`docs/model-and-tools.md`](model-and-tools.md)** — existing observer hooks (`onToolUse`, etc.) that the bridge composes with.
 - **[`docs/threat-model.md`](threat-model.md)** — observability is a deployment requirement for several scenarios there.
 - **[`docs/production-hardening.md`](production-hardening.md)** — "OTel traces exported" is a hardening-checklist item.
 - **OTel GenAI semconv** — [opentelemetry.io/docs/specs/semconv/gen-ai/](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
+- **LangSmith API v1/v2 overview** — [docs.langchain.com/langsmith/api-v1-v2-overview](https://docs.langchain.com/langsmith/api-v1-v2-overview)

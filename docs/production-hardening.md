@@ -77,7 +77,9 @@ The framework gives you the primitives. Wiring them to your runtime, infra, and 
   `agent.events.export { jsonl(file("/var/log/agents-kt/audit.jsonl"), rotation = JsonlRotation.Daily()) }`.
   Rows are append-only, `jq`-friendly, and carry `requestId`, `sessionId`, and `manifestHash`; raw arguments/results are not serialized. *Enforced by:* `JsonlAuditExporter` (#1914); you handle retention and chain-of-custody.
 
-- [ ] **OTel traces exported.** *Not yet shipped — #1908.* Roll your own via OpenTelemetry SDK in the same `onToolUse` listener.
+- [ ] **OTel traces exported.** Use `:agents-kt-otel` and `.observe(OtelBridge(tracer))` to map agent sessions, model turns, tool calls, errors, budgets, and interceptor decisions to OTel spans/events. *Enforced by:* `ObservabilityBridge` + `OtelBridge` (#1908); you configure the SDK/exporter.
+
+- [ ] **LangSmith run trees exported, if LangSmith is your trace backend.** Use `:agents-kt-langsmith` and `.observe(LangSmithBridge(apiKey, project))`; the bridge dispatches asynchronously with oldest-drop backpressure logging so trace outages do not break agent execution. *Enforced by:* `ObservabilityBridge` + `LangSmithBridge` (#1909); you own API key/project configuration.
 
 ### Governance
 
@@ -89,7 +91,7 @@ The framework gives you the primitives. Wiring them to your runtime, infra, and 
 
 ### Operational
 
-- [ ] **Failover plan for LLM provider outages.** Anthropic / OpenAI / Ollama go down. Either gracefully degrade ("the assistant is unavailable") or switch providers (`ModelClient` override + retry). *Deployer responsibility.*
+- [ ] **Failover plan for LLM provider outages.** Anthropic / OpenAI / Ollama / DeepSeek go down. Either gracefully degrade ("the assistant is unavailable") or switch providers (`ModelClient` override + retry). *Deployer responsibility.*
 
 - [ ] **Cost monitoring.** `maxTokens` per invocation isn't enough — track aggregate via the `TokenUsage` returned in `AgentEvent.SkillCompleted` / `Completed`. Alert on cost anomalies. *Framework emits; you aggregate.*
 

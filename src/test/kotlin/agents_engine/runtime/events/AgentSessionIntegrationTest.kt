@@ -127,15 +127,26 @@ class AgentSessionIntegrationTest {
             "ToolCall* events must NOT appear when the stub has no tool turn; got: $events",
         )
 
-        // Step 3 contract: 4 events — SkillStarted, Token("done"), SkillCompleted, Completed.
-        assertEquals(4, events.size, "expected exactly [SkillStarted, Token, SkillCompleted, Completed]; got: $events")
+        // Observability contract: model turn events bracket streaming chunks.
+        assertEquals(
+            6,
+            events.size,
+            "expected [SkillStarted, ModelTurnStarted, Token, ModelTurnCompleted, SkillCompleted, Completed]; got: $events",
+        )
         val started = events[0]; assertIs<AgentEvent.SkillStarted>(started); assertEquals("respond", started.skillName)
-        val token = events[1]; assertIs<AgentEvent.Token>(token)
+        val turnStarted = events[1]; assertIs<AgentEvent.ModelTurnStarted>(turnStarted)
+        assertEquals("agentic", turnStarted.agentId)
+        assertEquals("respond", turnStarted.skillName)
+        assertEquals(1, turnStarted.turnIndex)
+        val token = events[2]; assertIs<AgentEvent.Token>(token)
         assertEquals("agentic", token.agentId)
         assertEquals("respond", token.skillName)
         assertEquals("done", token.text, "the entire stub Text response becomes one Token chunk under default chatStream")
-        val completed = events[2]; assertIs<AgentEvent.SkillCompleted>(completed); assertEquals("respond", completed.skillName)
-        val terminal = events[3]; assertIs<AgentEvent.Completed<String>>(terminal); assertEquals("done", terminal.output)
+        val turnCompleted = events[3]; assertIs<AgentEvent.ModelTurnCompleted>(turnCompleted)
+        assertEquals("text", turnCompleted.responseType)
+        assertEquals(usage, turnCompleted.tokensUsed)
+        val completed = events[4]; assertIs<AgentEvent.SkillCompleted>(completed); assertEquals("respond", completed.skillName)
+        val terminal = events[5]; assertIs<AgentEvent.Completed<String>>(terminal); assertEquals("done", terminal.output)
     }
 
     @Test
