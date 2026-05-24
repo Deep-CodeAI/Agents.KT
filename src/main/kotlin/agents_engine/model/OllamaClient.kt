@@ -104,32 +104,70 @@ open class OllamaClient(
 
     override fun chat(messages: List<LlmMessage>, jsonSchema: JsonSchema?): LlmResponse {
         if (tools.isNotEmpty() && nativeToolsKnownUnsupported) {
-            return parseResponse(sendChat(buildRequestJson(
-                messages = withInlineToolPrompt(messages),
-                includeTools = false,
-                jsonSchema = jsonSchema,
-            )))
+            return withTransientRetry {
+                parseResponse(sendChat(buildRequestJson(
+                    messages = withInlineToolPrompt(messages),
+                    includeTools = false,
+                    jsonSchema = jsonSchema,
+                )))
+            }
         }
         val body = buildRequestJson(messages, includeTools = true, jsonSchema = jsonSchema)
-        val responseBody = sendChat(body)
-        return try {
-            parseResponse(responseBody)
-        } catch (e: LlmProviderException) {
-            // #706: Some Ollama models (e.g. gemma3) reject native `tools` capability.
-            // Instead of failing, retry once with tools removed from the request and
-            // the tool catalog injected into a system message — the inline JSON tool
-            // call format that `InlineToolCallParser` already consumes. Other provider
-            // errors (auth, model-not-found, transport) propagate unchanged.
-            if (tools.isNotEmpty() && isNativeToolCapabilityError(e.message)) {
-                nativeToolsKnownUnsupported = true
-                val inlineMessages = withInlineToolPrompt(messages)
-                val inlineBody = buildRequestJson(inlineMessages, includeTools = false, jsonSchema = jsonSchema)
-                parseResponse(sendChat(inlineBody))
-            } else {
-                throw e
+        return withTransientRetry {
+            val responseBody = sendChat(body)
+            try {
+                parseResponse(responseBody)
+            } catch (e: LlmProviderException) {
+                // #706: Some Ollama models (e.g. gemma3) reject native `tools` capability.
+                // Instead of failing, retry once with tools removed from the request and
+                // the tool catalog injected into a system message — the inline JSON tool
+                // call format that `InlineToolCallParser` already consumes. Other provider
+                // errors (auth, model-not-found, transport) propagate unchanged.
+                if (tools.isNotEmpty() && isNativeToolCapabilityError(e.message)) {
+                    nativeToolsKnownUnsupported = true
+                    val inlineMessages = withInlineToolPrompt(messages)
+                    val inlineBody = buildRequestJson(inlineMessages, includeTools = false, jsonSchema = jsonSchema)
+                    parseResponse(sendChat(inlineBody))
+                } else {
+                    throw e
+                }
             }
         }
     }
+
+    /**
+     * #2381 — retry transient Ollama failures (transport-level errors that
+     * arrive wrapped in Ollama's `{"error":"..."}` envelope: edge-layer
+     * `unexpected EOF`, `Internal Server Error`, `Bad Gateway`, etc.).
+     *
+     * Non-transient errors — model-not-found, capability mismatch, auth,
+     * malformed-request — fail fast: the caller needs that signal now,
+     * and retrying makes the wrong call slower without fixing anything.
+     *
+     * Backoff is short (250ms, 500ms) — the goal is to ride out a single
+     * dropped connection or 5xx blip, not to absorb a sustained outage.
+     * Total worst-case latency added: ~750ms.
+     */
+    private fun <T> withTransientRetry(op: () -> T): T {
+        var lastException: LlmProviderException? = null
+        repeat(MAX_RETRY_ATTEMPTS) { attempt ->
+            try {
+                return op()
+            } catch (e: LlmProviderException) {
+                if (!isTransientProviderError(e.message)) throw e
+                lastException = e
+                if (attempt < MAX_RETRY_ATTEMPTS - 1) {
+                    val backoffMs = RETRY_INITIAL_BACKOFF_MS shl attempt
+                    Thread.sleep(backoffMs)
+                }
+            }
+        }
+        throw lastException ?: error("withTransientRetry exited without exception or result")
+    }
+
+    private fun isTransientProviderError(message: String?): Boolean = message?.let { msg ->
+        TRANSIENT_ERROR_PATTERNS.any { msg.contains(it, ignoreCase = true) }
+    } ?: false
 
     /**
      * #1741 — native streaming via Ollama's NDJSON protocol (`stream: true`).
@@ -239,6 +277,25 @@ open class OllamaClient(
         // 16 MiB — LLM responses can be large but not THAT large; cap keeps OOM
         // off the table when the upstream is malicious or buggy. See #853.
         const val DEFAULT_MAX_RESPONSE_BYTES: Long = 16L * 1024 * 1024
+
+        // #2381 — transient retry tuning. Three attempts total (initial + 2
+        // retries) with 250ms / 500ms backoffs; worst-case adds ~750ms.
+        private const val MAX_RETRY_ATTEMPTS: Int = 3
+        private const val RETRY_INITIAL_BACKOFF_MS: Long = 250
+
+        // Patterns that identify transport-level transient failures wrapped
+        // in Ollama's `{"error":"..."}` envelope. Case-insensitive substring
+        // match. Add patterns here as new transient classes appear in the
+        // wild — keep model-not-found / capability / auth messages OUT so
+        // those still fail fast.
+        private val TRANSIENT_ERROR_PATTERNS: List<String> = listOf(
+            "unexpected EOF",
+            "Internal Server Error",
+            "Service Unavailable",
+            "Bad Gateway",
+            "Gateway Timeout",
+            "connection reset",
+        )
     }
 
     private fun isNativeToolCapabilityError(msg: String?): Boolean =
