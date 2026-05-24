@@ -51,3 +51,8 @@ wiki/
 # (e.g. ClaudeClientIntegrationTest reads .secrets/anthropic-key). Never
 # commit this directory. See #1644.
 .secrets/
+
+# JSON Schema + example payloads for the agent-system DSL — work-in-
+# progress local artifacts that aren't on the 0.6.0 ship list. Re-evaluate
+# in 0.7.0 once the DSL stabilizes.
+docs/schema/
