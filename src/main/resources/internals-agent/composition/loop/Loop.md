@@ -13,6 +13,7 @@ class Loop<IN, OUT>(
     internal val execution: suspend (IN) -> OUT,
     internal val next: (OUT) -> IN?,
     internal val maxIterations: Int = 1_000,
+    val agents: List<Agent<*, *>> = emptyList(),
     internal val sessionExec: (suspend (IN, AgentEventEmitter) -> OUT)? = null,
     internal val loopAgentId: String? = null,
 )
@@ -21,6 +22,7 @@ class Loop<IN, OUT>(
 - `execution(input)` — one iteration. Suspend so it composes with other operators (#638).
 - `next(output): IN?` — derives the next input. Returns `null` to stop and surface the current output as the loop's `OUT`. Sync — feedback functions are pure logic.
 - `maxIterations` — hard cap. `require(maxIterations > 0)` at construction. Loop exits with `IllegalStateException` if hit.
+- `agents` — wrapped agent list for permission-manifest graph traversal. The `Agent.loop` factory records the single wrapped agent; `Pipeline.loop` records the pipeline stages.
 - `sessionExec` (#1749) — session-aware execution path. Each iteration's wrapped agent streams events with its own `agentId`.
 - `loopAgentId` — `agentId` for the terminal `Completed` event from `loop.session(input)`.
 

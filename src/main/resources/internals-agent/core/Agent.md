@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/core/Agent.kt — the Agent<IN, OUT> class, single-placement rule, invoke / invokeSuspend / session entry points, observability hooks (skillChosenListener, toolUseListener, knowledgeUsedListener, errorListener, budgetThresholdListener), freeze-after-construction contract. Call when the IDE LLM needs to reason about how Agents are constructed, invoked, or observed.
+description: Source-file knowledge for agents_engine/core/Agent.kt — the Agent<IN, OUT> class, single-placement rule, invoke / invokeSuspend / session entry points, runtime AgentRuntimeContext creation, observability hooks, before-interceptor hooks (onBeforeSkill / onBeforeToolCall / onBeforeTurn), freeze-after-construction contract. Call when the IDE LLM needs to reason about how Agents are constructed, invoked, or observed.
 ---
 
 # `agents_engine/core/Agent.kt` — the typed-agent class
@@ -53,13 +53,28 @@ Set via the builder:
 
 These are separate from `AgentEvent` (the v0.5.0 streaming session surface) — observability hooks fire post-hoc per skill; AgentEvent fires inside the loop.
 
+Every `PipelineEvent` and `AgentEvent` carries runtime audit context: `requestId`, `sessionId`, and `manifestHash`. `invokeSuspend` creates a fresh request context; `agent.session(input)` additionally creates a session id. `attachManifestHash(hash)` is the public hook used by `:agents-kt-manifest` after deterministic manifest generation so future invocations correlate with the reviewed capability graph.
+
+## Before interceptors
+
+`onBeforeSkill`, `onBeforeTurn`, and `onBeforeToolCall` return `Decision`: `Proceed`, `ProceedWith(replacement)`, `Deny(reason)`, or `Substitute(result)`.
+
+- `onBeforeSkill` runs after skill resolution and before `onSkillChosen`; it can deny execution, reroute to another compatible skill, or substitute an output.
+- `onBeforeTurn` runs before every outbound model call; it can sanitize messages, deny the turn, or substitute a final output.
+- `onBeforeToolCall` runs after the static per-skill allowlist check and before dispatch; it can mutate args, deny with a model-visible tool error, or substitute a tool result. It covers both regular `executor` and session-aware `sessionExecutor` paths.
+
+Interceptor registrations are listener-shaped and remain settable after freeze.
+
+Read-only counts (`beforeSkillInterceptorCount`, `beforeToolCallInterceptorCount`, `beforeTurnInterceptorCount`, `tokenUsageListenerCount`) exist for manifest generation and diagnostics. They expose the presence/shape of guardrail hooks without leaking callback implementations.
+
 ## Skill resolution
 
 When `invoke(input)` is called:
 1. `resolveSkill(input)` picks a skill whose `inType` matches `input` and whose `outType` matches the agent's `OUT`. Manual override via `skillSelection { input -> "skillName" }`; automatic LLM routing when multiple skills match and no manual selector is set.
-2. `skillChosenListener` fires.
-3. If the skill is agentic (declared via `tools(...)`), `executeAgentic(this, skill, input)` runs — multi-turn `chat ↔ tools` driven by the LLM.
-4. If the skill is non-agentic (declared via `implementedBy { }`), the executor lambda runs directly.
+2. `onBeforeSkill` interceptors run; denial/substitution/reroute decisions apply here.
+3. `skillChosenListener` fires for the effective skill.
+4. If the skill is agentic (declared via `tools(...)`), `executeAgentic(this, skill, input)` runs — multi-turn `chat ↔ tools` driven by the LLM.
+5. If the skill is non-agentic (declared via `implementedBy { }`), the executor lambda runs directly.
 
 ## Internal session entry point
 

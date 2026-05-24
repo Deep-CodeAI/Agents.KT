@@ -34,6 +34,19 @@ Each `server(name) { }` declares **exactly one** transport (`url=` xor `command=
 
 **`agent.mcpClients`** — connected clients for lifecycle control (`close()` in tests).
 
+For lower-level integrations, `McpClient` exposes discovered server tools in two direct forms:
+
+```kotlin
+val client = McpClient.connect(server.url)
+
+val skillShape = client.toolSkills().single() // Skill<Map<String, Any?>, String>
+val toolShape = client.tools().single()       // McpTool<Map<String, Any?>, String>
+
+val result = toolShape.call(mapOf("input" to "go"))
+```
+
+Use `toolSkills()` when the MCP capability is itself a primary agent skill. Use `tools()` when you need a provider-neutral `Tool<*, *>` boundary object for grants, manifests, policy, or audit code. Both call the same MCP `tools/call` endpoint.
+
 ### Exposing an agent as an MCP server — `McpServer.from(agent)`
 
 ```kotlin
@@ -58,6 +71,28 @@ println(server.url)     // http://localhost:8080/mcp
 
 Exposed skills become MCP tools. The `inputSchema` is generated from the skill's `IN` type via `@Generable` reflection — the JSON schema includes `@Guide` descriptions so the calling LLM knows what each field means.
 
+HTTP servers default to trusted-local mode: loopback callers can connect without credentials, and non-loopback callers are rejected unless you configure explicit auth. For a network-reachable endpoint, set `auth`, `allowedHosts`, `originAllowlist`, and a per-principal `toolPolicy`:
+
+```kotlin
+val server = McpServer.from(greeter) {
+    port = 8080
+    expose("greet")
+    auth = McpServerAuth.RequireBearerTokens(
+        mapOf(
+            requireNotNull(System.getenv("MCP_READ_TOKEN")) to ClientPrincipal("ide-readonly"),
+            requireNotNull(System.getenv("MCP_ADMIN_TOKEN")) to ClientPrincipal("ide-admin"),
+        ),
+    )
+    allowedHosts = setOf("agents.internal.example")
+    originAllowlist = setOf("https://ide.internal.example")
+    toolPolicy { principal, toolName ->
+        principal.id == "ide-admin" || toolName == "greet"
+    }
+}
+```
+
+Denied tools are filtered out of `tools/list`; denied `tools/call` requests return a generic `-32601` JSON-RPC error so the server does not confirm that the tool exists. See [MCP Server Hardening](mcp-server.md) for gateway examples.
+
 ### How external clients consume your `McpServer`
 
 | Client | How |
@@ -66,6 +101,31 @@ Exposed skills become MCP tools. The `inputSchema` is generated from the skill's
 | **Claude Code** | Add `{"mcpServers": {"my-agent": {"type": "http", "url": "http://localhost:8080/mcp"}}}` to `~/.claude.json` and restart |
 | Cursor / IDEs | Same URL, the IDE's MCP config block |
 | Anything that speaks MCP | Standard JSON-RPC 2.0 over Streamable HTTP, protocol version `2025-03-26` |
+
+### Stdio server transport — `McpStdioServer.from(agent)`
+
+Use stdio when the MCP client wants to spawn your agent process directly instead of connecting to an HTTP port. The registration DSL is the same as `McpServer`: exposed skills become tools, and registered prompts/resources use the same JSON-RPC handlers.
+
+```kotlin
+McpStdioServer.from(greeter) {
+    expose("greet")
+}.serve()
+```
+
+Stdio framing is one UTF-8 JSON-RPC envelope per line. Requests with no `id` and `notifications/*` methods produce no response. Malformed input is returned as a JSON-RPC error envelope with `id: null`. `stdout` is protocol-only; diagnostics belong on `stderr`.
+
+Example client config for a JAR:
+
+```json
+{
+  "mcpServers": {
+    "my-agent": {
+      "command": "java",
+      "args": ["-jar", "/path/to/my-agent.jar", "--stdio"]
+    }
+  }
+}
+```
 
 ### Standalone server with `McpRunner` — picocli-style one-liner main
 
@@ -78,9 +138,9 @@ fun main(args: Array<String>) = exitProcess(McpRunner.serve(greeter, args) {
 })
 ```
 
-The runner parses CLI args, builds the `McpServer`, prints the listening URL + session id, registers a JVM shutdown hook for graceful `stop()`, and blocks until SIGTERM/SIGINT. Returns the process exit code.
+The runner parses CLI args and serves HTTP by default: it builds the `McpServer`, prints the listening URL, registers a JVM shutdown hook for graceful `stop()`, and blocks until SIGTERM/SIGINT. With `--stdio`, it builds `McpStdioServer`, reads line-delimited JSON-RPC from stdin, writes only protocol responses to stdout, and returns when stdin closes.
 
-Flags: `--port N`, `--expose NAME` (repeatable), `-h/--help`, `-V/--version`. Hand-rolled CLI parser, zero new dependencies.
+Flags: `--port N`, `--stdio`, `--expose NAME` (repeatable), `-h/--help`, `-V/--version`. Hand-rolled CLI parser, zero new dependencies.
 
 ### Three ways to run an agent — library, hosted, autonomous
 

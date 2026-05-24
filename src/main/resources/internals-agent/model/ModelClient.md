@@ -1,22 +1,25 @@
 ---
-description: Source-file knowledge for agents_engine/model/ModelClient.kt — the LLM transport fun interface and shared types (LlmMessage, ToolCall with callId #1739, TokenUsage #963, LlmResponse.Text/ToolCalls). Default chatStream wraps non-streaming chat with LlmChunk emission. Three shipped impls: Ollama, Claude, OpenAI. Custom clients implement the SAM. Call when the IDE LLM needs to reason about adding a new LLM provider or testing with a fake client.
+description: Source-file knowledge for agents_engine/model/ModelClient.kt — the LLM transport fun interface and shared types (LlmMessage, ToolCall with callId #1739, JsonSchema #1949, TokenUsage #963, LlmResponse.Text/ToolCalls). Default chatStream wraps non-streaming chat with LlmChunk emission. Schema-aware chat(messages, jsonSchema) preserves SAM compatibility. Shipped impls: Ollama, Claude, OpenAI, DeepSeek. Call when the IDE LLM needs to reason about adding a new LLM provider or testing with a fake client.
 ---
 
 # `agents_engine/model/ModelClient.kt` — LLM transport interface
 
-The seam between the framework and the underlying LLM provider. Three implementations ship with the framework: `OllamaClient`, `ClaudeClient`, `OpenAiClient`. Users plug in their own by implementing the `ModelClient` `fun interface`.
+The seam between the framework and the underlying LLM provider. Four implementations ship with the framework: `OllamaClient`, `ClaudeClient`, `OpenAiClient`, and `DeepSeekClient`. Users plug in their own by implementing the `ModelClient` `fun interface`.
 
 ## The interface
 
 ```kotlin
 fun interface ModelClient {
     fun chat(messages: List<LlmMessage>): LlmResponse
+    fun chat(messages: List<LlmMessage>, jsonSchema: JsonSchema?): LlmResponse = chat(messages)
+    fun supportsConstrainedDecoding(): Boolean = false
 
     suspend fun chatStream(messages: List<LlmMessage>): Flow<LlmChunk> = /* default impl wraps chat */
+    suspend fun chatStream(messages: List<LlmMessage>, jsonSchema: JsonSchema?): Flow<LlmChunk> = /* wraps schema-aware chat */
 }
 ```
 
-`fun interface` — a single-method SAM. Custom clients can be written as a single-line lambda for tests.
+`fun interface` — a single-method SAM. The one-argument `chat` remains the sole abstract method, so custom clients can still be written as a single-line lambda for tests. Providers that support constrained decoding override the schema-aware overload and return `true` from `supportsConstrainedDecoding()`.
 
 ## Shared types
 
@@ -24,6 +27,7 @@ fun interface ModelClient {
 |---|---|
 | `LlmMessage(role, content, toolCalls?)` | A single turn: role is `"system"`, `"user"`, `"assistant"`, or `"tool"`. `toolCalls` set on assistant turns that called tools. |
 | `ToolCall(name, arguments, rawArguments?, invalidArgumentsError?, callId?)` | One tool invocation. `rawArguments` is the LLM's raw JSON. `invalidArgumentsError` carries parse errors back for argument repair. `callId` (#1739) lets streaming chunks correlate to one started/finished pair. |
+| `JsonSchema(name, schema)` | Provider-neutral structured-output request. `schema` is raw JSON Schema text; adapters translate it to OpenAI `response_format`, Ollama `format`, or Anthropic's structured-output tool. |
 | `TokenUsage(promptTokens, completionTokens)` | Per round-trip usage; `total = prompt + completion` counts toward `BudgetConfig.maxTokens` (#963). |
 | `LlmResponse.Text(content, tokenUsage?)` | Model produced text. |
 | `LlmResponse.ToolCalls(calls, tokenUsage?)` | Model produced tool calls (no text). |
@@ -53,6 +57,15 @@ val myClient = ModelClient { messages ->
 
 Add streaming by overriding `chatStream` to surface partial chunks. The framework only requires `chat` — streaming is optional.
 
+For constrained decoding, override:
+
+```kotlin
+override fun supportsConstrainedDecoding() = true
+override fun chat(messages: List<LlmMessage>, jsonSchema: JsonSchema?): LlmResponse {
+    // embed jsonSchema?.schema in the provider request when non-null
+}
+```
+
 ## Error contract
 
 - Provider-level failures → `LlmProviderException` (auth, capability, model-not-found, malformed request).
@@ -60,7 +73,7 @@ Add streaming by overriding `chatStream` to surface partial chunks. The framewor
 
 ## Related files
 
-- `ClaudeClient.kt`, `OllamaClient.kt`, `OpenAiClient.kt` — shipped implementations.
+- `ClaudeClient.kt`, `OllamaClient.kt`, `OpenAiClient.kt`, `DeepSeekClient.kt` — shipped implementations.
 - `LlmChunk.kt` — the streaming chunk types.
 - `LlmProviderException.kt` — the boundary error.
 - `StreamingAggregator.kt` — collects a `Flow<LlmChunk>` back into an `LlmResponse`.

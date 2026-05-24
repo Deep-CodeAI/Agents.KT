@@ -20,7 +20,7 @@ class ClaudeClientChatStreamLiveTest {
     private val apiKey: String? = loadKey()
     private val claudeModel: String = System.getenv("CLAUDE_TEST_MODEL") ?: "claude-haiku-4-5-20251001"
 
-    @Tag("live-llm")
+    @Tag("live-cloud-api")
     @Test
     fun `native chatStream against Anthropic emits multiple TextDelta chunks incrementally with token usage`() = runBlocking {
         assumeTrue(apiKey != null, "skipping: no Anthropic key at .secrets/anthropic-key or ANTHROPIC_API_KEY")
@@ -33,7 +33,13 @@ class ClaudeClientChatStreamLiveTest {
             listOf(
                 LlmMessage(
                     role = "user",
-                    content = "Count from 1 to 10 separated by spaces. Output ONLY the numbers, nothing else.",
+                    // #2380 — long enough response to force the SSE path to
+                    // emit many small text-delta blocks. The previous "1..10"
+                    // prompt was short enough that Haiku occasionally bundled
+                    // the whole reply into two same-millisecond chunks,
+                    // which is valid streaming behavior but defeats the
+                    // chunk-count + timing assertion below.
+                    content = "Count from 1 to 50 separated by spaces. Output ONLY the numbers, nothing else.",
                 ),
             ),
         ).collect { chunk ->
@@ -53,19 +59,25 @@ class ClaudeClientChatStreamLiveTest {
         val lastMs = textDeltas.last().first
         val gapMs = lastMs - firstMs
         // The load-bearing assertion is "more than one chunk arrived"
-        // (above) — that's the real proof of streaming. The timing gap
-        // is a secondary nudge. Threshold flexes: at least 10ms gap OR
-        // at least 5 chunks. Either alone disproves "bundled at end".
+        // (above) — that's the real proof of streaming. This secondary
+        // assertion catches the regression where the wire-level SSE
+        // implementation has accidentally re-bundled into ~1-2 mega
+        // chunks. The prompt above (1..50) reliably produces 10+ deltas
+        // on Haiku, so we keep the chunk-count side at >=5; the timing
+        // side is the more lenient backup for adapters that emit many
+        // chunks within a single millisecond. Either alone disproves
+        // "bundled at end".
         assertTrue(
             gapMs >= 10 || textDeltas.size >= 5,
             "expected either >=10ms gap OR >=5 chunks; first=${firstMs}ms last=${lastMs}ms gap=${gapMs}ms chunks=${textDeltas.size}",
         )
 
-        assertNotNull(endChunk.tokenUsage, "End chunk must carry TokenUsage")
-        assertTrue(endChunk.tokenUsage!!.completionTokens > 0)
+        val usage = endChunk.tokenUsage
+        assertNotNull(usage, "End chunk must carry TokenUsage")
+        assertTrue(usage.completionTokens > 0)
 
         val assembled = textDeltas.joinToString("") { (it.second as LlmChunk.TextDelta).text }
-        listOf("1", "2", "3").forEach { d ->
+        listOf("1", "25", "50").forEach { d ->
             assertTrue(d in assembled, "assembled output should contain '$d'; got: \"$assembled\"")
         }
 

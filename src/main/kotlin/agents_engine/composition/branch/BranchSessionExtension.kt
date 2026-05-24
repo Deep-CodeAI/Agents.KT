@@ -1,9 +1,12 @@
 package agents_engine.composition.branch
 
+import agents_engine.core.AgentRuntimeContext
+import agents_engine.core.withAgentRuntimeContext
 import agents_engine.model.AgentEventEmitter
 import agents_engine.runtime.events.AgentEvent
 import agents_engine.runtime.events.AgentSession
 import agents_engine.runtime.events.runAgentInSession
+import agents_engine.runtime.events.withRuntimeContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,43 +48,48 @@ fun <IN, OUT> Branch<IN, OUT>.session(input: IN): AgentSession<OUT> {
     val channel = Channel<AgentEvent<OUT>>(Channel.BUFFERED)
     val result = CompletableDeferred<OUT>()
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+    val runtimeContext = AgentRuntimeContext(sessionId = java.util.UUID.randomUUID().toString())
 
     scope.launch {
-        @Suppress("UNCHECKED_CAST")
-        val emitter: AgentEventEmitter = { event -> channel.trySend(event as AgentEvent<OUT>) }
-        var terminalAgentId = branch.source.name
-        try {
-            // Source agent streams first.
+        withAgentRuntimeContext(runtimeContext) {
             @Suppress("UNCHECKED_CAST")
-            val sourcePair = runAgentInSession(
-                branch.source as agents_engine.core.Agent<IN, Any?>,
-                input,
-                emitter,
-            )
-            val sourceOut = sourcePair.first
-
-            // Pick the matching route and run it.
-            val route = branch.matchRoute(sourceOut)
-                ?: error(
-                    "No branch route matched for ${sourceOut?.let { it::class.simpleName } ?: "null"} " +
-                        "and no onElse clause was declared."
+            val emitter: AgentEventEmitter = { event ->
+                channel.trySend(event.withRuntimeContext(runtimeContext) as AgentEvent<OUT>)
+            }
+            var terminalAgentId = branch.source.name
+            try {
+                // Source agent streams first.
+                @Suppress("UNCHECKED_CAST")
+                val sourcePair = runAgentInSession(
+                    branch.source as agents_engine.core.Agent<IN, Any?>,
+                    input,
+                    emitter,
                 )
-            // Terminal Completed gets the routed agent's name — that's the
-            // agent whose output became the Branch's typed output. Falls
-            // back to source.name when the route was built outside
-            // BranchBuilder (no recorded routedAgentName).
-            terminalAgentId = route.routedAgentName ?: branch.source.name
+                val sourceOut = sourcePair.first
 
-            val output: OUT = route.sessionExecutor?.invoke(sourceOut, emitter)
-                ?: route.executor(sourceOut)
+                // Pick the matching route and run it.
+                val route = branch.matchRoute(sourceOut)
+                    ?: error(
+                        "No branch route matched for ${sourceOut?.let { it::class.simpleName } ?: "null"} " +
+                            "and no onElse clause was declared."
+                    )
+                // Terminal Completed gets the routed agent's name — that's the
+                // agent whose output became the Branch's typed output. Falls
+                // back to source.name when the route was built outside
+                // BranchBuilder (no recorded routedAgentName).
+                terminalAgentId = route.routedAgentName ?: branch.source.name
 
-            channel.trySend(AgentEvent.Completed(terminalAgentId, output, null))
-            channel.close()
-            result.complete(output)
-        } catch (t: Throwable) {
-            channel.trySend(AgentEvent.Failed(terminalAgentId, t))
-            channel.close()
-            result.completeExceptionally(t)
+                val output: OUT = route.sessionExecutor?.invoke(sourceOut, emitter)
+                    ?: route.executor(sourceOut)
+
+                channel.trySend(AgentEvent.Completed(terminalAgentId, output, null))
+                channel.close()
+                result.complete(output)
+            } catch (t: Throwable) {
+                channel.trySend(AgentEvent.Failed(terminalAgentId, t))
+                channel.close()
+                result.completeExceptionally(t)
+            }
         }
     }
 

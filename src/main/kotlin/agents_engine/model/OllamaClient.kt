@@ -21,7 +21,8 @@ import kotlinx.coroutines.flow.flowOn
  * `agents_engine/model/OllamaClient.kt` — the local Ollama HTTP adapter,
  * the framework's default `ModelClient`. Targets `POST /api/chat` on
  * `localhost:11434` by default; tools surface as native Ollama tool calls.
- * Streaming via NDJSON. See
+ * `JsonSchema` constrained decoding uses Ollama's top-level `format`
+ * field (#1949). Streaming via NDJSON. See
  * `src/main/resources/internals-agent/model/OllamaClient.md` for the
  * adjunct surfaced to IDE-side LLM tools (#1837 / #1852).
  */
@@ -96,30 +97,77 @@ open class OllamaClient(
      */
     @Volatile private var nativeToolsKnownUnsupported: Boolean = false
 
-    override fun chat(messages: List<LlmMessage>): LlmResponse {
+    override fun supportsConstrainedDecoding(): Boolean = true
+
+    override fun chat(messages: List<LlmMessage>): LlmResponse =
+        chat(messages, jsonSchema = null)
+
+    override fun chat(messages: List<LlmMessage>, jsonSchema: JsonSchema?): LlmResponse {
         if (tools.isNotEmpty() && nativeToolsKnownUnsupported) {
-            return parseResponse(sendChat(buildRequestJson(withInlineToolPrompt(messages), includeTools = false)))
+            return withTransientRetry {
+                parseResponse(sendChat(buildRequestJson(
+                    messages = withInlineToolPrompt(messages),
+                    includeTools = false,
+                    jsonSchema = jsonSchema,
+                )))
+            }
         }
-        val body = buildRequestJson(messages, includeTools = true)
-        val responseBody = sendChat(body)
-        return try {
-            parseResponse(responseBody)
-        } catch (e: LlmProviderException) {
-            // #706: Some Ollama models (e.g. gemma3) reject native `tools` capability.
-            // Instead of failing, retry once with tools removed from the request and
-            // the tool catalog injected into a system message — the inline JSON tool
-            // call format that `InlineToolCallParser` already consumes. Other provider
-            // errors (auth, model-not-found, transport) propagate unchanged.
-            if (tools.isNotEmpty() && isNativeToolCapabilityError(e.message)) {
-                nativeToolsKnownUnsupported = true
-                val inlineMessages = withInlineToolPrompt(messages)
-                val inlineBody = buildRequestJson(inlineMessages, includeTools = false)
-                parseResponse(sendChat(inlineBody))
-            } else {
-                throw e
+        val body = buildRequestJson(messages, includeTools = true, jsonSchema = jsonSchema)
+        return withTransientRetry {
+            val responseBody = sendChat(body)
+            try {
+                parseResponse(responseBody)
+            } catch (e: LlmProviderException) {
+                // #706: Some Ollama models (e.g. gemma3) reject native `tools` capability.
+                // Instead of failing, retry once with tools removed from the request and
+                // the tool catalog injected into a system message — the inline JSON tool
+                // call format that `InlineToolCallParser` already consumes. Other provider
+                // errors (auth, model-not-found, transport) propagate unchanged.
+                if (tools.isNotEmpty() && isNativeToolCapabilityError(e.message)) {
+                    nativeToolsKnownUnsupported = true
+                    val inlineMessages = withInlineToolPrompt(messages)
+                    val inlineBody = buildRequestJson(inlineMessages, includeTools = false, jsonSchema = jsonSchema)
+                    parseResponse(sendChat(inlineBody))
+                } else {
+                    throw e
+                }
             }
         }
     }
+
+    /**
+     * #2381 — retry transient Ollama failures (transport-level errors that
+     * arrive wrapped in Ollama's `{"error":"..."}` envelope: edge-layer
+     * `unexpected EOF`, `Internal Server Error`, `Bad Gateway`, etc.).
+     *
+     * Non-transient errors — model-not-found, capability mismatch, auth,
+     * malformed-request — fail fast: the caller needs that signal now,
+     * and retrying makes the wrong call slower without fixing anything.
+     *
+     * Backoff is short (250ms, 500ms) — the goal is to ride out a single
+     * dropped connection or 5xx blip, not to absorb a sustained outage.
+     * Total worst-case latency added: ~750ms.
+     */
+    private fun <T> withTransientRetry(op: () -> T): T {
+        var lastException: LlmProviderException? = null
+        repeat(MAX_RETRY_ATTEMPTS) { attempt ->
+            try {
+                return op()
+            } catch (e: LlmProviderException) {
+                if (!isTransientProviderError(e.message)) throw e
+                lastException = e
+                if (attempt < MAX_RETRY_ATTEMPTS - 1) {
+                    val backoffMs = RETRY_INITIAL_BACKOFF_MS shl attempt
+                    Thread.sleep(backoffMs)
+                }
+            }
+        }
+        throw lastException ?: error("withTransientRetry exited without exception or result")
+    }
+
+    private fun isTransientProviderError(message: String?): Boolean = message?.let { msg ->
+        TRANSIENT_ERROR_PATTERNS.any { msg.contains(it, ignoreCase = true) }
+    } ?: false
 
     /**
      * #1741 — native streaming via Ollama's NDJSON protocol (`stream: true`).
@@ -139,14 +187,22 @@ open class OllamaClient(
      * interrupt the blocking read mid-line. Step 4 will migrate to
      * `sendAsync` for true cancellation propagation.
      */
-    override suspend fun chatStream(messages: List<LlmMessage>): Flow<LlmChunk> {
+    override suspend fun chatStream(messages: List<LlmMessage>): Flow<LlmChunk> =
+        chatStream(messages, jsonSchema = null)
+
+    override suspend fun chatStream(messages: List<LlmMessage>, jsonSchema: JsonSchema?): Flow<LlmChunk> {
         val nativeToolsActive = tools.isNotEmpty() && !nativeToolsKnownUnsupported
         val effectiveMessages = if (tools.isNotEmpty() && nativeToolsKnownUnsupported) {
             withInlineToolPrompt(messages)
         } else {
             messages
         }
-        val body = buildRequestJson(effectiveMessages, includeTools = nativeToolsActive, stream = true)
+        val body = buildRequestJson(
+            messages = effectiveMessages,
+            includeTools = nativeToolsActive,
+            stream = true,
+            jsonSchema = jsonSchema,
+        )
         return flow {
             sendChatStream(body).use { stream ->
                 BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).useLines { lines ->
@@ -221,6 +277,25 @@ open class OllamaClient(
         // 16 MiB — LLM responses can be large but not THAT large; cap keeps OOM
         // off the table when the upstream is malicious or buggy. See #853.
         const val DEFAULT_MAX_RESPONSE_BYTES: Long = 16L * 1024 * 1024
+
+        // #2381 — transient retry tuning. Three attempts total (initial + 2
+        // retries) with 250ms / 500ms backoffs; worst-case adds ~750ms.
+        private const val MAX_RETRY_ATTEMPTS: Int = 3
+        private const val RETRY_INITIAL_BACKOFF_MS: Long = 250
+
+        // Patterns that identify transport-level transient failures wrapped
+        // in Ollama's `{"error":"..."}` envelope. Case-insensitive substring
+        // match. Add patterns here as new transient classes appear in the
+        // wild — keep model-not-found / capability / auth messages OUT so
+        // those still fail fast.
+        private val TRANSIENT_ERROR_PATTERNS: List<String> = listOf(
+            "unexpected EOF",
+            "Internal Server Error",
+            "Service Unavailable",
+            "Bad Gateway",
+            "Gateway Timeout",
+            "connection reset",
+        )
     }
 
     private fun isNativeToolCapabilityError(msg: String?): Boolean =
@@ -257,6 +332,7 @@ open class OllamaClient(
         messages: List<LlmMessage>,
         includeTools: Boolean = true,
         stream: Boolean = false,
+        jsonSchema: JsonSchema? = null,
     ): String {
         val messagesJson = messages.joinToString(",") { msg ->
             buildString {
@@ -268,7 +344,8 @@ open class OllamaClient(
                 //   role == assistant AND tool_calls non-empty AND content blank.
                 // A genuine empty-string assistant turn with no tool_calls is
                 // preserved as "content":"" (different semantics).
-                val toolCallsPresent = !msg.toolCalls.isNullOrEmpty()
+                val toolCalls = msg.toolCalls
+                val toolCallsPresent = !toolCalls.isNullOrEmpty()
                 val contentJson = if (msg.role == "assistant" && toolCallsPresent && msg.content.isEmpty()) {
                     "null"
                 } else {
@@ -277,7 +354,7 @@ open class OllamaClient(
                 append("""{"role":${msg.role.toJsonString()},"content":$contentJson""")
                 if (toolCallsPresent) {
                     append(""","tool_calls":[""")
-                    append(msg.toolCalls!!.joinToString(",") { tc ->
+                    append(toolCalls.orEmpty().joinToString(",") { tc ->
                         """{"function":{"name":${tc.name.toJsonString()},"arguments":${InlineToolCallParser.argsToJson(tc.arguments)}}}"""
                     })
                     append("]")
@@ -288,12 +365,14 @@ open class OllamaClient(
         val toolsJson = if (includeTools && tools.isNotEmpty()) {
             val defs = tools.joinToString(",") { t ->
                 val parametersJson = t.argsType?.jsonSchema()
+                    ?: t.parametersSchemaJson
                     ?: """{"type":"object","properties":{},"additionalProperties":true}"""
                 """{"type":"function","function":{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"parameters":$parametersJson}}"""
             }
             ""","tools":[$defs]"""
         } else ""
-        return """{"model":${model.toJsonString()},"stream":$stream,"temperature":$temperature,"messages":[$messagesJson]$toolsJson}"""
+        val formatJson = jsonSchema?.let { ""","format":${it.schema}""" } ?: ""
+        return """{"model":${model.toJsonString()},"stream":$stream,"temperature":$temperature,"messages":[$messagesJson]$toolsJson$formatJson}"""
     }
 
     internal fun parseResponse(body: String): LlmResponse {
@@ -344,13 +423,15 @@ open class OllamaClient(
     private fun extractOllamaTokenUsage(root: Map<*, *>): TokenUsage? {
         val prompt = (root["prompt_eval_count"] as? Number)?.toInt()
         val completion = (root["eval_count"] as? Number)?.toInt()
-        return if (prompt != null && completion != null) TokenUsage(prompt, completion) else null
+        return if (prompt != null && completion != null) {
+            TokenUsage(
+                promptTokens = prompt,
+                completionTokens = completion,
+                cachedInputTokens = null,
+                provider = "ollama",
+                model = model,
+            )
+        } else null
     }
 }
 
-private fun String.toJsonString(): String =
-    '"' + replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t") + '"'

@@ -1,5 +1,9 @@
 package agents_engine.runtime.internals
 
+import agents_engine.generation.LenientJsonParser
+import agents_engine.mcp.MCP_PROTOCOL_VERSION
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.JarURLConnection
 import kotlin.test.Test
@@ -83,5 +87,29 @@ class InternalsAgentTest {
         val out = (skill as agents_engine.core.Skill<String, String>).invoke("")
         assertTrue(out.contains("Agent"), "Expected Agent.md body, got: ${out.take(120)}")
         assertTrue(out.contains("# `agents_engine/core/Agent.kt`"), "Expected H1 from Agent.md")
+    }
+
+    @Test
+    fun `main supports stdio without banner output`() {
+        val input = (
+            """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"$MCP_PROTOCOL_VERSION"}}""" + "\n"
+        ).toByteArray(Charsets.UTF_8)
+        val stdout = ByteArrayOutputStream()
+
+        val code = runInternalsAgent(
+            args = arrayOf("--stdio"),
+            stdin = ByteArrayInputStream(input),
+            stdout = stdout,
+        )
+
+        assertEquals(0, code)
+        val text = stdout.toString(Charsets.UTF_8).trim()
+        assertTrue(text.startsWith("{"), "stdio stdout must be protocol JSON only, got: $text")
+        assertTrue(!text.contains("InternalsAgent"), "stdio stdout must not include startup banners: $text")
+        val envelope = LenientJsonParser.parse(text) as? Map<*, *>
+            ?: error("not a JSON object: $text")
+        val result = envelope["result"] as? Map<*, *>
+            ?: error("missing initialize result: $envelope")
+        assertEquals(MCP_PROTOCOL_VERSION, result["protocolVersion"])
     }
 }

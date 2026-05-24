@@ -1,6 +1,7 @@
 package agents_engine.mcp
 
 import agents_engine.core.agent
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Tag
 import kotlin.test.Test
@@ -76,5 +77,36 @@ class McpToolsAsSkillsTest {
             output.startsWith("1.0750476"),
             "expected sqrt(π/e) digits round-tripped via MCP; got: \"$output\"",
         )
+    }
+
+    @Tag("live-mcp")
+    @Test
+    fun `mcp tools returns typed tool handles equivalent to toolSkills`() = runBlocking {
+        val algebra = agent<String, String>("algebra") {
+            skills {
+                skill<String, String>("compute_sqrt_pi_over_e", "Computes sqrt(pi/e) to 30 decimal digits") {
+                    implementedBy { _ -> "1.07504760349992023872275586024820" }
+                }
+            }
+        }
+        val server = McpServer.from(algebra) {
+            port = 0
+            expose("compute_sqrt_pi_over_e")
+        }.start().also { mcpServer = it }
+
+        val mcp = McpClient.connect(server.url).also { mcpClient = it }
+
+        val skillShape = mcp.toolSkills().single()
+        val toolShape = mcp.tools().single()
+
+        assertEquals(skillShape.name, toolShape.name)
+        assertEquals(skillShape.description, toolShape.description)
+        assertEquals(Map::class, toolShape.inputType)
+        assertEquals(String::class, toolShape.outputType)
+
+        val output = toolShape.call(mapOf("input" to "go"))
+
+        assertEquals(skillShape(mapOf("input" to "go")), output)
+        assertTrue(output.startsWith("1.0750476"))
     }
 }

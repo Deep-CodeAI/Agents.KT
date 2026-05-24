@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.flowOn
 
 /**
  * `agents_engine/model/OpenAiClient.kt` — OpenAI Chat Completions adapter
- * (#1656), one of the three shipped [ModelClient] implementations. See
+ * (#1656), one of the shipped [ModelClient] implementations. See
  * `src/main/resources/internals-agent/model/OpenAiClient.md` for the
  * adjunct surfaced to IDE-side LLM tools (#1837 / #1855).
  */
@@ -43,6 +43,8 @@ import kotlinx.coroutines.flow.flowOn
  *   provider id, and ids only need to be unique within one request.
  * - Tool defs → `[{type:"function", function:{name, description, parameters}}]`
  *   — OpenAI's `parameters`, not Anthropic's `input_schema`.
+ * - `JsonSchema` constrained decoding → top-level `response_format` with
+ *   `type:"json_schema"` and `strict:true` (#1949).
  *
  * Top-level `error` envelope on the response surfaces as [LlmProviderException]
  * — same boundary contract as [OllamaClient] (#702).
@@ -57,14 +59,21 @@ open class OpenAiClient(
     private val requestTimeout: Duration = DEFAULT_REQUEST_TIMEOUT,
     private val connectTimeout: Duration = DEFAULT_CONNECT_TIMEOUT,
     private val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
+    private val providerName: String = "openai",
+    private val providerLabel: String = "OpenAI",
 ) : ModelClient {
 
     private val http: HttpClient = HttpClient.newBuilder()
         .connectTimeout(connectTimeout.toJavaDuration())
         .build()
 
-    override fun chat(messages: List<LlmMessage>): LlmResponse {
-        val body = buildRequestJson(messages)
+    override fun supportsConstrainedDecoding(): Boolean = true
+
+    override fun chat(messages: List<LlmMessage>): LlmResponse =
+        chat(messages, jsonSchema = null)
+
+    override fun chat(messages: List<LlmMessage>, jsonSchema: JsonSchema?): LlmResponse {
+        val body = buildRequestJson(messages, jsonSchema = jsonSchema)
         val headers = mapOf(
             "Authorization" to "Bearer $apiKey",
             "content-type" to "application/json",
@@ -91,8 +100,11 @@ open class OpenAiClient(
      * usage-only delta with `choices: []` and `usage: {...}`. We capture
      * it and emit `LlmChunk.End(usage)` when `[DONE]` arrives.
      */
-    override suspend fun chatStream(messages: List<LlmMessage>): Flow<LlmChunk> {
-        val body = buildRequestJson(messages, stream = true)
+    override suspend fun chatStream(messages: List<LlmMessage>): Flow<LlmChunk> =
+        chatStream(messages, jsonSchema = null)
+
+    override suspend fun chatStream(messages: List<LlmMessage>, jsonSchema: JsonSchema?): Flow<LlmChunk> {
+        val body = buildRequestJson(messages, stream = true, jsonSchema = jsonSchema)
         val headers = mapOf(
             "Authorization" to "Bearer $apiKey",
             "content-type" to "application/json",
@@ -139,9 +151,7 @@ open class OpenAiClient(
                 val data = LenientJsonParser.parse(payload) as? Map<String, Any?> ?: continue
                 // Final usage-only delta: choices is empty, usage non-null.
                 (data["usage"] as? Map<*, *>)?.let { u ->
-                    val prompt = (u["prompt_tokens"] as? Number)?.toInt()
-                    val completion = (u["completion_tokens"] as? Number)?.toInt()
-                    if (prompt != null && completion != null) usage = TokenUsage(prompt, completion)
+                    usage = tokenUsageFromUsageMap(u)
                 }
                 val choices = data["choices"] as? List<*> ?: continue
                 val choice = choices.firstOrNull() as? Map<*, *> ?: continue
@@ -214,13 +224,17 @@ open class OpenAiClient(
         val bytes = response.body().use { it.readNBytes(cap + 1) }
         if (bytes.size > cap) {
             throw LlmProviderException(
-                "OpenAI response exceeded $maxResponseBytes bytes; aborting to prevent OOM",
+                "$providerLabel response exceeded $maxResponseBytes bytes; aborting to prevent OOM",
             )
         }
         return String(bytes, Charsets.UTF_8)
     }
 
-    internal fun buildRequestJson(messages: List<LlmMessage>, stream: Boolean = false): String {
+    internal fun buildRequestJson(
+        messages: List<LlmMessage>,
+        stream: Boolean = false,
+        jsonSchema: JsonSchema? = null,
+    ): String {
         val pendingToolCallIds: ArrayDeque<String> = ArrayDeque()
         var toolCallCounter = 0
 
@@ -250,13 +264,14 @@ open class OpenAiClient(
                     """{"role":"tool","tool_call_id":${id.toJsonString()},"content":${msg.content.toJsonString()}}"""
                 }
 
-                else -> error("Unknown LlmMessage role for OpenAI: '${msg.role}'")
+                else -> error("Unknown LlmMessage role for $providerLabel: '${msg.role}'")
             }
         }
 
         val toolsField = if (tools.isNotEmpty()) {
             val defs = tools.joinToString(",") { t ->
                 val schema = t.argsType?.jsonSchema()
+                    ?: t.parametersSchemaJson
                     ?: """{"type":"object","properties":{},"additionalProperties":true}"""
                 """{"type":"function","function":{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"parameters":$schema}}"""
             }
@@ -266,21 +281,30 @@ open class OpenAiClient(
         // #1743: stream_options.include_usage opts into a final usage-only
         // delta after finish_reason — required to get TokenUsage on stream.
         val streamField = if (stream) ""","stream":true,"stream_options":{"include_usage":true}""" else ""
-        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$streamField,"messages":[${messageObjects.joinToString(",")}]$toolsField}"""
+        val responseFormatField = jsonSchema?.let { schema ->
+            ""","response_format":{"type":"json_schema","json_schema":{"name":${schema.wireName().toJsonString()},"schema":${schema.schema},"strict":true}}"""
+        } ?: ""
+        val additionalFields = additionalRequestJsonFields(stream = stream, jsonSchema = jsonSchema)
+        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$additionalFields$streamField,"messages":[${messageObjects.joinToString(",")}]$toolsField$responseFormatField}"""
     }
+
+    protected open fun additionalRequestJsonFields(
+        stream: Boolean,
+        jsonSchema: JsonSchema?,
+    ): String = ""
 
     internal fun parseResponse(body: String): LlmResponse {
         val root = LenientJsonParser.parse(body) as? Map<*, *>
             ?: return LlmResponse.Text(body)
 
-        // Provider-error envelope: OpenAI returns
+        // Provider-error envelope: OpenAI-compatible APIs return
         //   {"error":{"type":"...","message":"...","code":"..."}}
         // on 4xx/5xx. Surface as LlmProviderException — same contract as
         // OllamaClient (#702) and ClaudeClient (#1644).
         (root["error"] as? Map<*, *>)?.let { err ->
             val type = err["type"] as? String
             val message = err["message"] as? String
-            throw LlmProviderException("OpenAI returned an error: ${type ?: "unknown"}: ${message ?: "no message"}")
+            throw LlmProviderException("$providerLabel returned an error: ${type ?: "unknown"}: ${message ?: "no message"}")
         }
 
         val tokenUsage = extractTokenUsage(root)
@@ -313,9 +337,23 @@ open class OpenAiClient(
 
     private fun extractTokenUsage(root: Map<*, *>): TokenUsage? {
         val usage = root["usage"] as? Map<*, *> ?: return null
+        return tokenUsageFromUsageMap(usage)
+    }
+
+    private fun tokenUsageFromUsageMap(usage: Map<*, *>): TokenUsage? {
         val prompt = (usage["prompt_tokens"] as? Number)?.toInt()
         val completion = (usage["completion_tokens"] as? Number)?.toInt()
-        return if (prompt != null && completion != null) TokenUsage(prompt, completion) else null
+        val details = usage["prompt_tokens_details"] as? Map<*, *>
+        val cached = (details?.get("cached_tokens") as? Number)?.toInt()
+        return if (prompt != null && completion != null) {
+            TokenUsage(
+                promptTokens = prompt,
+                completionTokens = completion,
+                cachedInputTokens = cached,
+                provider = providerName,
+                model = model,
+            )
+        } else null
     }
 
     companion object {
@@ -326,9 +364,3 @@ open class OpenAiClient(
     }
 }
 
-private fun String.toJsonString(): String =
-    '"' + replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t") + '"'

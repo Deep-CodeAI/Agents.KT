@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/runtime/events/AgentSessionExtension.kt — agent.session(input) entry. Builds Channel.BUFFERED + CompletableDeferred + dedicated SupervisorJob+Dispatchers.Default scope per session. Producer coroutine forwards AgentEvents via emitter to channel.trySend. Completed/Failed terminal events close the channel and complete/fail the deferred. Sibling session extensions for Pipeline/Branch/Loop/Forum/Parallel follow the same pattern. Call when the IDE LLM needs to reason about session plumbing internals.
+description: Source-file knowledge for agents_engine/runtime/events/AgentSessionExtension.kt — agent.session(input) entry. Builds AgentRuntimeContext (requestId + sessionId + manifestHash), Channel.BUFFERED + CompletableDeferred + dedicated SupervisorJob+Dispatchers.Default scope per session. Producer coroutine forwards AgentEvents via emitter to channel.trySend. Completed/Failed terminal events close the channel and complete/fail the deferred. Sibling session extensions for Pipeline/Branch/Loop/Forum/Parallel follow the same pattern. Call when the IDE LLM needs to reason about session plumbing internals.
 ---
 
 # `agents_engine/runtime/events/AgentSessionExtension.kt` — the `agent.session(input)` entry
@@ -20,11 +20,12 @@ Per call:
 
 1. Build `Channel<AgentEvent<OUT>>(Channel.BUFFERED)` — production decoupled from consumer pace; a fast skill can complete and queue all four events before the collector starts pulling.
 2. Build `CompletableDeferred<OUT>()` for the typed result.
-3. Build a dedicated `CoroutineScope(SupervisorJob() + Dispatchers.Default)` per session. SupervisorJob keeps the session independent of any larger scope.
-4. Launch the producer coroutine: invokes `agent.invokeSuspendForSession(input, emitter, onSkillCompleted, onSkillStarted)`. The emitter forwards `AgentEvent`s via `channel.trySend`.
-5. On normal completion → emit `Completed(agentId, output)`, complete the deferred, close the channel.
-6. On throw → emit `Failed(agentId, cause)`, fail the deferred with the same cause, close the channel.
-7. Return an `AgentSession(events = channel.consumeAsFlow(), resultDeferred = deferred)`.
+3. Build `AgentRuntimeContext` with a fresh `requestId`, a fresh `sessionId`, and the agent's `manifestHash` (null when no manifest exists yet).
+4. Build a dedicated `CoroutineScope(SupervisorJob() + Dispatchers.Default)` per session. SupervisorJob keeps the session independent of any larger scope.
+5. Launch the producer coroutine under `withAgentRuntimeContext(context)`: invokes `agent.invokeSuspendForSession(input, emitter, onSkillCompleted, onSkillStarted)`. The emitter forwards `AgentEvent`s via `channel.trySend`.
+6. On normal completion → emit `Completed(agentId, output)`, complete the deferred, close the channel.
+7. On throw → emit `Failed(agentId, cause)`, fail the deferred with the same cause, close the channel.
+8. Return an `AgentSession(events = channel.consumeAsFlow(), resultDeferred = deferred)`.
 
 ## Why `BUFFERED` channel
 

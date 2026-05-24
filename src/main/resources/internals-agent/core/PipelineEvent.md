@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/core/PipelineEvent.kt — the sealed PipelineEvent (SkillChosen, ToolCalled, KnowledgeLoaded, ErrorOccurred) and the Agent.observe { } extension that chains it over the four per-event listeners additively (#965). Call when the IDE LLM needs to reason about post-hoc observability vs the in-loop AgentEvent stream.
+description: Source-file knowledge for agents_engine/core/PipelineEvent.kt — the sealed PipelineEvent (SkillChosen, ToolCalled, KnowledgeLoaded, ErrorOccurred) and the Agent.observe { } extension that chains it over the four per-event listeners additively (#965). Every event carries AgentRuntimeContext fields requestId, sessionId, manifestHash (#1913). Call when the IDE LLM needs to reason about post-hoc observability vs the in-loop AgentEvent stream.
 ---
 
 # `agents_engine/core/PipelineEvent.kt` — unified observability event
@@ -12,15 +12,20 @@ A typed sealed-interface union over the four per-event listener hooks an `Agent`
 sealed interface PipelineEvent {
     val agentName: String
     val timestamp: Instant
+    val requestId: String
+    val sessionId: String?
+    val manifestHash: String?
 
     data class SkillChosen(...,    skillName: String)
-    data class ToolCalled(...,     toolName: String, arguments: Map<String, Any?>, result: Any?)
+    data class ToolCalled(...,     toolName: String, arguments: Map<String, Any?>, result: Any?, toolPolicyRisk, usedDeclaredCapability)
     data class KnowledgeLoaded(..., entryName: String, contentLength: Int)
     data class ErrorOccurred(...,  error: Throwable)
 }
 ```
 
-`agentName` and `timestamp` are present on every variant — sort, filter, attribute without inspecting the variant.
+`agentName`, `timestamp`, `requestId`, `sessionId`, and `manifestHash` are present on every variant — sort, filter, attribute, and audit-correlate without inspecting the variant.
+
+`ToolCalled` also carries `toolPolicyRisk` and `usedDeclaredCapability` from the executed `ToolDef` (#1915). The flag means "the tool declared at least one filesystem/network/environment capability"; it is audit metadata, not sandbox proof.
 
 ## Wiring
 
@@ -30,7 +35,7 @@ val tracer = agent<String, String>("tracer") { /* ... */ }
 tracer.observe { event ->
     when (event) {
         is PipelineEvent.SkillChosen     -> emit("skill", event.skillName)
-        is PipelineEvent.ToolCalled      -> emit("tool",  event.toolName)
+        is PipelineEvent.ToolCalled      -> emit("tool",  "${event.toolName}:${event.toolPolicyRisk}")
         is PipelineEvent.KnowledgeLoaded -> emit("know",  event.entryName)
         is PipelineEvent.ErrorOccurred   -> emit("error", event.error.message ?: "<no msg>")
     }

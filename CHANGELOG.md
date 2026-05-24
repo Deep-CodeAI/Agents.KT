@@ -4,6 +4,93 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-05-23
+
+**"Boundaries you can audit."** The 0.6.0 epic (#1911) turns Agents.KT's typed-boundary model into auditor-ready evidence: deterministic permission manifests with runtime hash correlation, append-only JSONL audit, before-interceptor guardrails, typed tool / MCP-tool hierarchies, vendor-neutral observability bridges (OTel / LangSmith / Langfuse), constrained decoding for `@Generable` outputs, DeepSeek as a fourth provider, and onTokenUsage telemetry. Existing consumers see no behavior change unless they opt into the new surfaces.
+
+### Added
+
+#### Permission manifest — the 0.6.0 hero feature (#1912)
+
+- **`:agents-kt-manifest` module** — `agentManifest(agent)` returns a deterministic capability graph: every agent, skill, tool, knowledge entry, MCP endpoint, provider, budget, and policy boundary in a system, in YAML or JSON, with stable ordering and masked provider secrets.
+- **`verifyAgentManifest` Gradle task** — diffs the current manifest against a checked-in baseline; fails the build on capability widening (new tools, new MCP endpoints, broader policies) so reviewers always see surface-area changes before they merge.
+- **Manifest SHA-256 propagates into the runtime** — every `PipelineEvent` / `AgentEvent` carries the `manifestHash` of the agent that emitted it, so static manifest and dynamic audit trace tie back to the same approved capability set.
+- **Provider secrets masked** — API keys, base URLs containing credentials, and any field marked `@SecretSafe` are redacted from the emitted manifest.
+
+#### Runtime event context (#1913)
+
+- **`manifestHash`, `requestId`, `sessionId` on every runtime event** — `PipelineEvent` and `AgentEvent` both carry them, so JSONL audit / OTel / LangSmith / Langfuse downstreams all bind events to the manifest hash that was authoritative at invocation time.
+- **`withAgentRuntimeContext { ... }` extension** — Kotlin-coroutines-context-aware threading so nested compositions (`then`, `branch`, `loop`, `forum`, `wrap`) inherit the outer request/session/manifest correlation without re-derivation.
+
+#### JSONL audit exporter (#1914)
+
+- **`:agents-kt-observability` `JsonlAuditExporter`** — append-only, one-line-per-event audit format with `requestId`, `sessionId`, `manifestHash`, agent/skill/tool ids, event type, provider, and model. Raw arguments and results are omitted by default; opt-in via `includeRawArgs = true` / `includeRawResults = true` when the audit consumer needs them.
+- **Stable canonical field ordering** — same audit row produces the same JSON line on every run, so the file is grep-friendly and diff-able.
+- **PII-safe defaults** — designed for the regulated-deployment workflow in `docs/regulated-deployment.md`.
+
+#### Before-interceptor guardrails (#1907)
+
+- **`onBeforeSkill` / `onBeforeToolCall` / `onBeforeTurn`** — Rails-style interceptors returning a sealed `Decision { Proceed | ProceedWith(...) | Deny(reason) | Substitute(result) }`. Sibling to the post-hoc `onToolUse` / `onSkillChosen` / `onError` observer hooks already in 0.4.x.
+- **Chain semantics** — interceptors run in registration order; every interceptor runs; the first non-`Proceed` wins; `Deny` short-circuits with an `onUnauthorizedToolCall`-shaped audit event; `Substitute` skips the model and returns the substituted value.
+- **Unified use cases** — per-client tool policy (McpServer per-principal allowlists), action confirmation (`Escalate(reason, reviewerRole)` resumed by the host app), prompt-injection filtering as a one-liner, uniform `perToolTimeout` wrapping. See `docs/interceptors.md`.
+
+#### Declarative tool policy (#1915)
+
+- **`ToolPolicy` DSL** on `tool { policy { … } }` — declares tool risk (`LOW` / `MEDIUM` / `HIGH` / `CRITICAL`) plus filesystem / network / environment declarations. Consumed by the permission manifest and by audit-row formatters.
+- **No runtime enforcement yet** — the sandbox-enforcement work is deferred to 0.7.0 (#1916). 0.6.0 ships the *declaration* surface so manifest reviewers can already see "this tool reads `~/.ssh`" or "this tool calls `*.openai.com`" at policy-review time.
+
+#### Typed tool + MCP-tool hierarchies (#1948)
+
+- **`Tool<IN, OUT>` typed handles** — `tool<Args, Result>("name", "desc") { args -> ... }` returns a `Tool<Args, Result>` with phantom types so `Skill.tools(addTool, divideTool, …)` is compile-time-checked instead of stringly-typed.
+- **`McpTool<IN, OUT>`** — every MCP-imported tool also gets a typed handle via `McpClient.tools(prefix)`. Composes with the same `Skill.tools(...)` builder. Additive alongside the existing `MCP-as-skill` adapter.
+
+#### MCP server hardening (#1902)
+
+- **Inbound bearer auth** — `McpServer.tokens(...)` configures principal → token mappings; unauthenticated requests get a structured 401. `McpStdioServer` shares the same authn surface for stdio deployments.
+- **Host / Origin allowlists** — DNS-rebinding and CSRF defenses against browser-side `localhost` exploits; explicit allowlist required for non-loopback hosts.
+- **Per-principal tool policy** — each principal can have its own subset of agent skills exposed as MCP tools. Policy decisions flow through the `onBefore*` chain and into audit events.
+- **Default-deny** — unconfigured server rejects everything except `initialize` / `tools/list`; opt-in for each authorization grant.
+
+#### Stdio MCP server transport (#2045)
+
+- **`McpStdioServer.from(agent)`** — exposes the same agent surface (tools, prompts, resources, `tools/listChanged: false`) over line-delimited stdio instead of HTTP. Same authentication + policy plumbing as the HTTP server.
+- **`McpRunner --stdio`** — picocli-style one-liner for shipping agents as stdio-MCP services without a Gradle dependency on `:server`-style infrastructure.
+
+#### LiveShow line editing (#985)
+
+- **`LineEditor`** — line-discipline-aware input handling for the LiveShow runner: cursor movement, history, kill-line, basic readline-style navigation, all while the agent streams events to the display.
+- **Cancellation-safe** — collector cancellation propagates through the editor; no orphaned threads.
+
+#### Runtime observability bridge (#1908)
+
+- **`ObservabilityBridge` in `:agents-kt-observability`** — vendor-neutral bridge contract with `onPipelineEvent`, `onAgentEvent`, and `onInterceptorDecision`, plus `.observe(bridge)` for one-call wiring.
+- **`:agents-kt-otel` module** — OpenTelemetry adapter that maps agent sessions to `agent.invoke` spans, model turns to `gen_ai.chat` spans, tool calls to `gen_ai.tool` child spans, errors to span status, usage to GenAI attrs, and before-interceptor decisions to span events.
+- **`:agents-kt-langsmith` module** — LangSmith run-tree adapter that maps skill invocations to `chain` runs, model turns to child `llm` runs, tool calls to child `tool` runs, failures to run errors, budget threshold events to run extras, and interceptor decisions to run tags. Dispatch is asynchronous, batched, oldest-drop under backpressure, and never throws into the agent path.
+- **`:agents-kt-langfuse` module** — Langfuse trace adapter that maps skill invocations to traces, model turns to generations, tool calls to spans, runtime events to Langfuse events, and interceptor decisions to tags plus `interceptor.decision` observations. Dispatch is asynchronous, batched, oldest-drop under backpressure, and uses Langfuse's native ingestion endpoint without a vendor SDK.
+- **Core remains vendor-free** — OTel, LangSmith, and Langfuse integration code is isolated to adapter modules.
+
+#### Provider constrained decoding (#1949)
+
+- **`@Generable` schemas are threaded into provider payloads** — OpenAI receives `response_format.json_schema`, Ollama receives `format`, and Anthropic receives a structured-output tool path for typed agentic outputs.
+- **Provider capability detection** — `ModelClient.supportsConstrainedDecoding` gates schema forwarding so unsupported adapters keep the existing repair-loop behavior.
+
+#### DeepSeek provider adapter
+
+- **`model { deepseek(name); apiKey = ... }`** — OpenAI-compatible Chat Completions adapter with DeepSeek provider identity, configurable `deepSeekBaseUrl`, usage normalization, streaming through the OpenAI-compatible SSE path, and manifest provider metadata.
+- **Constrained decoding stays disabled for DeepSeek** — the adapter does not send OpenAI `response_format.json_schema` because DeepSeek documents JSON-object mode rather than that schema payload.
+
+#### Token usage telemetry (#2354, #2355, #2356, #2357)
+
+- **Public `Agent.onTokenUsage { usage: TokenUsage -> }` listener** — fires once per successful LLM round-trip that reports usage, including streaming paths at end-of-stream. Tool-use cycles fire once per provider response, not once per agent invocation.
+- **Widened `TokenUsage`** — now carries `promptTokens`, `completionTokens`, `cachedInputTokens`, `provider`, and `model`. `total` remains prompt + completion; cached tokens are a provider-visible subset of prompt tokens, not an extra addend.
+- **Provider-normalized usage mapping** — Anthropic maps `input_tokens` / `output_tokens` / `cache_read_input_tokens` with `provider = "claude"`; OpenAI maps `prompt_tokens` / `completion_tokens` / `prompt_tokens_details.cached_tokens` with `provider = "openai"`; Ollama maps `prompt_eval_count` / `eval_count` with `cachedInputTokens = null` and `provider = "ollama"`.
+- **Listener safety semantics** — missing usage does not fire, LLM failures do not fire and remain covered by `onError`, multiple listeners run in registration order, and listener exceptions are logged and swallowed so telemetry cannot break the agent run.
+
+### Tests
+
+- Added `OnTokenUsageTest` coverage for widened fields, multi-listener ordering, listener-error swallowing, missing-usage skip, model-failure skip with `onError`, multi-turn tool-use ordering, and streaming single-fire behavior.
+- Updated Anthropic, OpenAI, and Ollama adapter tests to assert provider/model/cache mapping for normal and streaming responses.
+
 ### Added
 
 #### InternalsAgent — framework documents itself via MCP (#1837)
@@ -25,17 +112,35 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 - **`docs/production-hardening.md`** — actionable pre-launch checklist organized by tool surface / MCP / budgets / secrets / observability / governance / operational; pre-launch ritual (#1919).
 - **`docs/regulated-deployment.md`** — capability inventory, action log, decision points, failure modes, data lineage, vendor risk; EU AI Act mapping (Art. 9 / 12 / 13 / 14 / 15 → Agents.KT artefact); evidence-pack template (#1919).
 - **`docs/comparison.md`** — side-by-side against LangChain / Semantic Kernel / AutoGen / raw MCP. Honest about losses; 8-shortcut "Choosing" subsection that sometimes points away from Agents.KT (#1906).
-- **`docs/interceptors.md`** — design draft for `onBefore*` interceptor family + `Decision` sealed type. Marked "NOT YET IMPLEMENTED"; tracks #1907.
-- **`docs/observability.md`** — design draft for `ObservabilityBridge` contract + `agents-kt-otel` adapter. Marked "NOT YET IMPLEMENTED"; tracks #1908.
+- **`docs/interceptors.md`** — `onBefore*` interceptor family + `Decision` sealed type reference (#1907).
+- **`docs/observability.md`** — JSONL audit exporter reference plus the shipped `ObservabilityBridge` contract, `agents-kt-otel`, `agents-kt-langsmith`, and `agents-kt-langfuse` adapters (#1908, #1909, #1910, #1914).
 
 ### Changed
 
 - **`InternalsAgent.kt` refactored from 63 hand-written skill blocks to a single classpath scanner** (#1837). 493 → 152 lines. Adding a source-file adjunct is now a one-`.md`-file change. Frontmatter is the single source of truth for the LLM-facing tool description.
 - **README streaming-claims reconciliation** (#1901) — dropped the stale "no per-adapter native streaming yet" bullet that contradicted the next bullet's "all three adapters stream natively". Phase 2 roadmap entry updated to reflect v0.5.0-shipped per-adapter streaming.
+- **README release positioning** (#1922) — hero, section order, and non-goals now lead with the 0.6.0 "auditable Kotlin agent runtime" story: manifest evidence, runtime audit correlation, least-privilege tools, and explicit deployer responsibilities.
 - **PUBLISHING.md GPG setup** (#1905) — passphrase-protected key is now the recommended default. Empty-passphrase path preserved as a labelled fallback for isolated environments. "Why not `%no-protection`?" callout explains the threat model.
+- **Live-test classification split** — `live-cloud-api` tag (DeepSeek / Anthropic / OpenAI direct against hosted APIs) runs in default `:test` so cloud-provider regressions are caught alongside unit tests; the broader `live-llm` tag (Ollama / Ollama Cloud) stays excluded from default `:test` due to upstream infra flakiness and runs via `:integrationTest`. `testAll` aggregator covers all five 0.6.0 subprojects plus both live slices.
+
+### Fixed
+
+- **Session-aware tool calls respect `perToolTimeout` (#1903)** — the `sessionExecutor` path now honors `budget.perToolTimeout`, emits a failed `ToolCallFinished` event on timeout, and surfaces `BudgetExceededException(PER_TOOL_TIMEOUT)`. Pre-fix, only the blocking-tool path enforced the per-tool timeout; session-aware suspend tools could hang indefinitely on a wedged backend.
+- **Provider JSON string escaping (#2378)** — `OpenAiClient`, `OllamaClient`, and `ClaudeClient` each carried an identical hand-rolled escaper that only escaped `\ " \n \r \t`, producing invalid JSON whenever a tool result or prompt contained any other U+0000-U+001F codepoint (NUL bytes from binary tool output, U+000C form-feed from Tesseract OCR / PDF extraction, U+001B ESC from captured terminal output, etc.). Extracted the existing RFC 8259-conformant implementation from `InlineToolCallParser.kt` into `agents_engine.model.JsonEscape.kt` as a single internal `String.toJsonString()`; removed the three buggy private copies plus the duplicate inside `InlineToolCallParser`. Now escapes `\b` / `\f` / `\n` / `\r` / `\t` short forms and `\u00XX` for every remaining U+0000-U+001F; `\` and `"` unchanged; forward slash deliberately left literal.
+- **MCP tool `inputSchema` forwarding (#2377)** — `McpClient.toolDefs()` now passes each MCP server's `inputSchema` through to the provider's wire `parameters` field via the new `ToolDef.parametersSchemaJson: String?` slot. Before, MCP-imported schemas only surfaced in the description prose while the wire `parameters` fell back to a permissive empty-object — conflicting signal. Provider resolution order: `argsType.jsonSchema() ?? parametersSchemaJson ?? <permissive empty>`.
+- **Ollama transient-error retry (#2380)** — `OllamaClient.chat()` now retries transport-level failures wrapped in Ollama's `{"error":"..."}` envelope: `unexpected EOF`, `Internal Server Error`, `Service Unavailable`, `Bad Gateway`, `Gateway Timeout`, `connection reset`. Three attempts max with 250ms / 500ms backoff (~750ms worst-case latency added to a real outage). Non-transient errors — model-not-found, capability mismatch, auth, malformed-request — still fail fast on attempt 1. Capability-mismatch path still threads through the existing inline-tool fallback.
 
 ### Tests
 
+- Added `ObservabilityBridgeTest`, `OtelBridgeTest`, `LangSmithBridgeTest`, and `LangfuseBridgeTest` coverage for bridge forwarding, observer stacking, session events, interceptor decisions, OTel parent context propagation, tool child spans, LangSmith run-tree shape, Langfuse trace/span/generation shape, async backpressure logging, usage attrs, and error status mapping.
+- Added `DeepSeekClientTest` coverage for provider identity, OpenAI-compatible tool payloads, disabled schema forwarding, error envelopes, headers, and the `model { deepseek(...) }` DSL.
+- **`JsonEscapeTest`** (#2378) — 10 tests covering backslash/quote, five short-form controls, every other U+0000-U+001F as `\u00XX`, printable-ASCII passthrough, DEL literal, multibyte + surrogate-pair preservation, forward-slash literal, full-BMP round-trip through `LenientJsonParser`, and realistic carrier payloads (NUL, form-feed, ESC, mixed).
+- **`ToolParametersSchemaTest`** (#2377) — each of three provider clients verifies the closed fallback emits the permissive default and that `parametersSchemaJson` is forwarded verbatim when set.
+- **`McpClientInputSchemaForwardingTest`** (#2377) — `toolDefs()` carries inputSchema through (with and without prefix); null when the upstream tool has no schema. End-to-end via `MockStdioMcpServer`.
+- **`OllamaClientRetryTest`** (#2380) — five TDD-first tests: transient EOF retries to success, transient 500 retries, non-transient model-not-found fails fast (1 attempt), non-transient capability mismatch does not enter the retry loop, persistent transient exhausts retries at exactly maxAttempts=3.
+- **`ClaudeClientChatStreamLiveTest`** — extended prompt to "1..50" so Haiku reliably emits >= 3 SSE chunks across a measurable timing gap; previous "1..10" was short enough that Haiku occasionally bundled the full reply into two same-millisecond chunks.
+- **`ForumExecutionTest.antagonistic agents debate`** — Bull / Bear prompts reframed as formal-debate-exercise roles (construct strongest rhetorical case for YES / NO) so modern instruction-tuned models can play the part without being asked to assert known falsehoods.
+- **`AgenticLoopTest.agent pipeline returns Int result` and `FibonacciMemoryTest.pre-seeded memory resumes`** — replaced hard assertions on LLM-quality-dependent outputs with `assumeTrue`-then-`assertEquals` pairs; the framework signal is preserved (wrong-by-framework still fails red), Ollama-quality variance becomes a skip.
 - **`McpServerLifecycleTest`** (#889) — 8 new assertions covering `url`/`isRunning`/`stop` lifecycle invariants. Kills ~6–8 PIT mutants in `McpServer.kt:82-95` that the response-code tests couldn't reach.
 - **`McpRunnerMissingFlagValueTest`** (#889) — 5 tests covering the `--port` / `--expose` missing-value error paths and multi-error accumulation.
 - **`LenientJsonParserUnterminatedTest`** (#889) — 9 tests pinning the parser's "lenient on shape, strict on safety" contract: unterminated string / object / array at EOF doesn't hang; backslash-at-EOF; unicode-escape-at-EOF boundary; empty / whitespace-only / non-JSON-garbage returns null cleanly.

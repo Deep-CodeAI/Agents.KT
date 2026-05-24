@@ -50,7 +50,7 @@ All three adapters share the `ModelClient` interface — switching providers is 
 
 **`tools { tool(name, description) { args -> } }`** — registers callable tools. Each tool receives a `Map<String, Any?>` of arguments and returns any value.
 
-**`tools { tool<Args, Result>(name, description) { args -> } }`** — typed variant. `Args` must be `@Generable`; the framework deserializes the model's arguments into a typed instance via reflection (`KClass.constructFromMap`) before invoking the executor. The provider envelope advertises a real JSON Schema generated from `Args::class.jsonSchema()` (proper `properties`, `required`, `@Guide` descriptions per field) instead of the legacy `properties: {}, additionalProperties: true`. Deserialization failures (missing required field, wrong type) route through `onError { invalidArgs { ... } }` like JSON-parse failures, not `executionError`.
+**`tools { tool<Args, Result>(name, description) { args -> } }`** — typed variant. `Args` must be `@Generable`; the framework deserializes the model's arguments into a typed instance via reflection (`KClass.constructFromMap`) before invoking the executor. The provider envelope advertises a real JSON Schema generated from `Args::class.jsonSchema()` (proper `properties`, `required`, `@Guide` descriptions per field) instead of the legacy `properties: {}, additionalProperties: true`. Deserialization failures (missing required field, wrong type) route through `onError { invalidArgs { ... } }` like JSON-parse failures, not `executionError`. The returned handle implements provider-neutral `Tool<Args, Result>`, the same boundary shape used by MCP-discovered tools.
 
 ```kotlin
 @Generable("Write a file to disk")
@@ -70,6 +70,18 @@ tools {
 ```
 
 **`skill { tools(...) }`** — marks a skill as LLM-driven. The listed tool names are the ones the model may call. The model decides which tools to call and in what order.
+
+**Provider constrained decoding for `@Generable` outputs** — when an agentic skill returns an `@Generable` type and does not provide a custom `transformOutput { }`, the agentic loop passes that type's JSON Schema to clients that report `supportsConstrainedDecoding()`.
+
+Provider mappings:
+
+| Provider | Wire shape |
+|---|---|
+| OpenAI | `response_format: { type: "json_schema", json_schema: { name, schema, strict: true } }` |
+| Ollama | `format: <json schema>` |
+| Anthropic | A forced `structured_output` tool with `input_schema: <json schema>`; its tool input is converted back into final JSON text before output parsing. |
+
+This is a first-line defense: the provider is asked to produce the typed shape up front. The existing `@Generable` deserializer, tool-output wrapping, and repair/error paths remain defense-in-depth for unsupported clients, provider drift, and malformed responses.
 
 **`onToolUse { name, args, result -> }`** — fires after every action tool execution. Useful for logging, tracing, and test assertions.
 
@@ -146,6 +158,41 @@ The error names the offending skill and lists only the allowed tools — it does
 - Declare them only on the skill that needs them.
 - Don't rely on the system prompt's "Available tools" list as a fence; it isn't one.
 - Use a typo-safe `tools(...)` call — the framework fails fast at agent construction if a name doesn't exist.
+
+### Declarative tool policy DSL
+
+Tools can also declare what they are expected to touch. This is **declarative only in 0.6.0**: it feeds manifest/audit evidence, but it does not sandbox the executor. Process/container enforcement is the sibling #1916 track.
+
+```kotlin
+tools {
+    val readUploadedDocument = tool("readUploadedDocument") {
+        description("Read an uploaded KYC document")
+        policy {
+            risk = ToolRisk.Medium
+            filesystem {
+                read("/uploads/kyc/**")
+                writeNone()
+            }
+            network { denyAll() }
+            environment { allow("OCR_REGION") }
+        }
+        executor { args ->
+            Files.readString(Path.of(args["path"].toString()))
+        }
+    }
+}
+```
+
+Policy fields:
+
+| Field | DSL |
+|---|---|
+| Risk | `ToolRisk.Low`, `Medium`, `High`, `Critical` |
+| Filesystem | `read(glob)`, `write(glob)`, `readNone()`, `writeNone()` |
+| Network | `allow(host)`, `denyAll()`, `allowAll()` |
+| Environment | `allow(varName)`, `denyAll()` |
+
+`network { allowAll() }` logs a warning when the policy is built so broad egress is visible during review. `ToolPolicy` exposes `toManifestMap()`, `toManifestJson()`, and `toManifestYaml()` so the permission-manifest module can capture the policy verbatim. `PipelineEvent.ToolCalled` includes `toolPolicyRisk` and `usedDeclaredCapability`; the JSONL audit exporter writes those fields too.
 
 ### Skill Selection
 

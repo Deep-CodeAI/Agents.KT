@@ -6,12 +6,16 @@ import agents_engine.model.BudgetReason
 import agents_engine.model.ModelBuilder
 import agents_engine.model.ModelConfig
 import agents_engine.model.OnErrorBuilder
+import agents_engine.model.TokenUsage
 import agents_engine.model.ToolDef
 import agents_engine.model.ToolErrorHandler
 import agents_engine.model.ToolsBuilder
 import agents_engine.model.buildBuiltInTools
 import agents_engine.model.executeAgentic
 import agents_engine.model.selectSkillByLlm
+import agents_engine.runtime.events.AgentEvent
+import java.util.logging.Level
+import java.util.logging.Logger
 
 /**
  * `agents_engine/core/Agent.kt` — the typed-agent class. One input type,
@@ -39,8 +43,11 @@ import agents_engine.model.selectSkillByLlm
  *
  * **Observability hooks (post-hoc PipelineEvent).** Separate from
  * `AgentEvent` (the streaming session surface): `onSkillChosen`,
- * `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`, and
- * the unified `observe { event -> }` sealed-event view.
+ * `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`,
+ * `onTokenUsage`, and the unified `observe { event -> }` sealed-event view.
+ * Before-interceptor hooks (`onBeforeSkill`, `onBeforeTurn`,
+ * `onBeforeToolCall`) return [Decision] to deny, mutate, or substitute before
+ * the selected operation runs (#1907).
  *
  * **Internal session entry point.** [invokeSuspendForSession] is the
  * streaming-aware variant called only by `Agent.session(input)` and
@@ -117,6 +124,7 @@ class Agent<IN, OUT>(
     internal fun unregisterTool(name: String) { _toolMap.remove(name) }
     var toolUseListener: ((name: String, args: Map<String, Any?>, result: Any?) -> Unit)? = null
         private set
+    private val tokenUsageListeners = mutableListOf<(TokenUsage) -> Unit>()
     var knowledgeUsedListener: ((name: String, content: String) -> Unit)? = null
         private set
     var skillChosenListener: ((name: String) -> Unit)? = null
@@ -153,17 +161,39 @@ class Agent<IN, OUT>(
     var skillSelectionConfidenceThreshold: Double = 0.6
         private set
     private var skillSelector: ((IN) -> String)? = null
+    private val beforeSkillInterceptors = mutableListOf<(String) -> Decision<String>>()
+    private val beforeToolCallInterceptors =
+        mutableListOf<(name: String, args: Map<String, Any?>) -> Decision<Map<String, Any?>>>()
+    private val beforeTurnInterceptors = mutableListOf<(List<ChatMessage>) -> Decision<List<ChatMessage>>>()
+    private val interceptorDecisionListeners = mutableListOf<(InterceptorPoint, Decision<*>) -> Unit>()
+    private val agentEventListeners = mutableListOf<(AgentEvent<*>) -> Unit>()
     private val toolErrorHandlers: MutableMap<String, ToolErrorHandler> = mutableMapOf()
+    internal var manifestHash: String? = null
+        private set
     internal var defaultToolErrorHandler: ToolErrorHandler? = null
         private set
     internal val autoToolNames: MutableSet<String> = mutableSetOf()
 
+    val beforeSkillInterceptorCount: Int
+        get() = beforeSkillInterceptors.size
+
+    val beforeToolCallInterceptorCount: Int
+        get() = beforeToolCallInterceptors.size
+
+    val beforeTurnInterceptorCount: Int
+        get() = beforeTurnInterceptors.size
+
+    val tokenUsageListenerCount: Int
+        get() = tokenUsageListeners.size
+
     /**
      * Set true at end of [validate] (#697). Structural mutators (skills, tools,
      * memory, model, budget, prompt, error handlers, routing config) check this
-     * and refuse post-construction mutation. Listeners (onToolUse, onKnowledgeUsed,
-     * onSkillChosen, routerRationale) intentionally remain settable for
-     * tracing / instrumentation use cases.
+     * and refuse post-construction mutation. Listeners (onToolUse, onTokenUsage,
+     * onKnowledgeUsed, onSkillChosen, routerRationale) intentionally remain settable for
+     * tracing / instrumentation use cases. Before-interceptors follow the same
+     * listener-shaped post-freeze rule because they are runtime policy, not
+     * structural graph mutation (#1907).
      */
     @PublishedApi internal var frozen: Boolean = false
 
@@ -175,6 +205,10 @@ class Agent<IN, OUT>(
     }
 
     fun prompt(text: String) { checkNotFrozen(); prompt = text }
+
+    fun attachManifestHash(hash: String?) {
+        manifestHash = hash
+    }
 
     fun model(block: ModelBuilder.() -> Unit) {
         checkNotFrozen()
@@ -192,6 +226,46 @@ class Agent<IN, OUT>(
 
     fun onToolUse(block: (name: String, args: Map<String, Any?>, result: Any?) -> Unit) {
         toolUseListener = block
+    }
+
+    /**
+     * Observe provider-reported token usage for each successful LLM round-trip.
+     *
+     * Semantics:
+     * - Fires once per LLM response carrying usage, not once per agent invocation.
+     *   Tool-use cycles can therefore fire more than once.
+     * - Fires after the provider response is parsed and before tool callbacks for
+     *   that same turn.
+     * - Does not fire when the LLM call throws; pair with [onError] for failures.
+     * - Streaming providers fire once at end-of-stream with their final usage.
+     * - Listener failures are logged and swallowed so user telemetry cannot break
+     *   the agent run.
+     * - Multiple registrations are invoked in registration order.
+     *
+     * Provider adapters normalize usage into [TokenUsage]. Providers that do not
+     * report cache reads set `cachedInputTokens = null`; successful responses
+     * with no usage payload do not fire.
+     *
+     * Provider mapping:
+     * - Anthropic: `usage.input_tokens`, `usage.output_tokens`,
+     *   `usage.cache_read_input_tokens` → `provider = "claude"`.
+     * - OpenAI: `usage.prompt_tokens`, `usage.completion_tokens`,
+     *   `usage.prompt_tokens_details.cached_tokens` → `provider = "openai"`.
+     * - Ollama: `prompt_eval_count`, `eval_count`, no cache field
+     *   → `provider = "ollama"`.
+     */
+    fun onTokenUsage(block: (TokenUsage) -> Unit) {
+        tokenUsageListeners += block
+    }
+
+    internal fun fireTokenUsage(usage: TokenUsage) {
+        tokenUsageListeners.toList().forEach { listener ->
+            try {
+                listener(usage)
+            } catch (t: Throwable) {
+                LOGGER.log(Level.WARNING, "onTokenUsage listener failed; swallowing", t)
+            }
+        }
     }
 
     fun onKnowledgeUsed(block: (name: String, content: String) -> Unit) {
@@ -217,6 +291,90 @@ class Agent<IN, OUT>(
         }
         budgetThreshold = threshold
         budgetThresholdListener = block
+    }
+
+    fun onBeforeSkill(block: (skillName: String) -> Decision<String>) {
+        beforeSkillInterceptors += block
+    }
+
+    fun onBeforeToolCall(block: (name: String, args: Map<String, Any?>) -> Decision<Map<String, Any?>>) {
+        beforeToolCallInterceptors += block
+    }
+
+    fun onBeforeTurn(block: (messages: List<ChatMessage>) -> Decision<List<ChatMessage>>) {
+        beforeTurnInterceptors += block
+    }
+
+    fun onInterceptorDecision(block: (point: InterceptorPoint, decision: Decision<*>) -> Unit) {
+        interceptorDecisionListeners += block
+    }
+
+    fun onAgentEvent(block: (AgentEvent<*>) -> Unit) {
+        agentEventListeners += block
+    }
+
+    internal fun fireAgentEvent(event: AgentEvent<*>) {
+        agentEventListeners.toList().forEach { listener ->
+            try {
+                listener(event)
+            } catch (t: Throwable) {
+                LOGGER.log(Level.WARNING, "onAgentEvent listener failed; swallowing", t)
+            }
+        }
+    }
+
+    internal fun decideBeforeSkill(skillName: String): Decision<String> {
+        val interceptors = beforeSkillInterceptors.toList()
+        val decision = runDecisionChain(skillName, interceptors)
+        fireInterceptorDecision(InterceptorPoint.BeforeSkill, decision, interceptors.isNotEmpty())
+        return decision
+    }
+
+    internal fun decideBeforeToolCall(name: String, args: Map<String, Any?>): Decision<Map<String, Any?>> {
+        val interceptors = beforeToolCallInterceptors.toList()
+        var current = args
+        var effective: Decision<Map<String, Any?>> = Decision.Proceed
+
+        interceptors.forEach { interceptor ->
+            val decision = try {
+                interceptor(name, current)
+            } catch (t: Throwable) {
+                Decision.Deny(t.message ?: t.toString())
+            }
+
+            if (effective is Decision.Proceed) {
+                effective = decision
+                if (decision is Decision.ProceedWith<*>) {
+                    @Suppress("UNCHECKED_CAST")
+                    current = decision.replacement as Map<String, Any?>
+                }
+            }
+        }
+
+        fireInterceptorDecision(InterceptorPoint.BeforeToolCall, effective, interceptors.isNotEmpty())
+        return effective
+    }
+
+    internal fun decideBeforeTurn(messages: List<ChatMessage>): Decision<List<ChatMessage>> {
+        val interceptors = beforeTurnInterceptors.toList()
+        val decision = runDecisionChain(messages, interceptors)
+        fireInterceptorDecision(InterceptorPoint.BeforeTurn, decision, interceptors.isNotEmpty())
+        return decision
+    }
+
+    private fun fireInterceptorDecision(
+        point: InterceptorPoint,
+        decision: Decision<*>,
+        hasInterceptors: Boolean,
+    ) {
+        if (!hasInterceptors) return
+        interceptorDecisionListeners.toList().forEach { listener ->
+            try {
+                listener(point, decision)
+            } catch (t: Throwable) {
+                LOGGER.log(Level.WARNING, "onInterceptorDecision listener failed; swallowing", t)
+            }
+        }
     }
 
     fun skillSelection(block: (IN) -> String) {
@@ -290,7 +448,13 @@ class Agent<IN, OUT>(
      * which lets parent-scope cancellation and `withTimeout` propagate cleanly into
      * the agentic loop. The blocking [invoke] is a thin shim over this.
      */
-    suspend fun invokeSuspend(input: IN): OUT = invokeSuspendForSession(input, emitter = null) { /* no-op */ }
+    suspend fun invokeSuspend(input: IN): OUT =
+        withAgentRuntimeContext(newRuntimeContext()) {
+            invokeSuspendForSession(input, emitter = null) { /* no-op */ }
+        }
+
+    internal fun newRuntimeContext(sessionId: String? = null): AgentRuntimeContext =
+        AgentRuntimeContext(sessionId = sessionId, manifestHash = manifestHash)
 
     /**
      * #1736 — session-aware sibling of [invokeSuspend]. Same logic, plus an
@@ -317,15 +481,27 @@ class Agent<IN, OUT>(
         onSkillCompleted: (agents_engine.model.TokenUsage?) -> Unit = { /* no-op */ },
         onSkillStarted: (String) -> Unit,
     ): OUT {
+        val runtimeContext = AgentRuntimeContext.current() ?: newRuntimeContext()
         try {
-            val skill = resolveSkill(input)
-            skillChosenListener?.invoke(skill.name)
+            var skill = resolveSkill(input)
+            when (val decision = decideBeforeSkill(skill.name)) {
+                Decision.Proceed -> Unit
+                is Decision.ProceedWith -> skill = compatibleSkill(decision.replacement, input)
+                is Decision.Deny -> throw InterceptorDeniedException(
+                    "Skill '${skill.name}' denied by interceptor: ${decision.reason}"
+                )
+                is Decision.Substitute<*> -> return castOut(decision.result)
+            }
+            withAgentRuntimeContext(runtimeContext) {
+                skillChosenListener?.invoke(skill.name)
+            }
             onSkillStarted(skill.name)
             return if (skill.isAgentic) {
                 val result = executeAgentic(
                     this, skill, input,
                     effectivePrompt = promptOverride ?: this.prompt,
                     emitter = emitter,
+                    runtimeContext = runtimeContext,
                 )
                 // #1740: surface cumulative usage on the way out. Non-agentic
                 // skills don't go through executeAgentic, so onSkillCompleted
@@ -343,13 +519,28 @@ class Agent<IN, OUT>(
             // so they can never swallow the original error.
             errorListener?.let { listener ->
                 try {
-                    listener(t)
+                    withAgentRuntimeContext(runtimeContext) {
+                        listener(t)
+                    }
                 } catch (callbackError: Throwable) {
                     t.addSuppressed(callbackError)
                 }
             }
             throw t
         }
+    }
+
+    private fun compatibleSkill(skillName: String, input: IN): Skill<*, *> {
+        val selected = skills[skillName] ?: error(
+            "before-skill interceptor returned unknown skill name \"$skillName\". " +
+                "Available: ${skills.keys}"
+        )
+        check(selected.inType.java.isInstance(input) && selected.outType == outType) {
+            "before-skill interceptor returned incompatible skill \"$skillName\". " +
+                "Compatible skills for agent \"$name\" must accept the invocation input " +
+                "and produce ${outType.simpleName}."
+        }
+        return selected
     }
 
     /**
@@ -374,11 +565,13 @@ class Agent<IN, OUT>(
         // preserves the non-streaming behavior the wrap operator used pre-
         // step 4; the streaming variant goes through runAgentInSession with
         // the same promptOverride parameter.
-        return invokeSuspendForSession(
-            input = input,
-            emitter = null,
-            promptOverride = promptOverride,
-        ) { /* no-op onSkillStarted */ }
+        return withAgentRuntimeContext(newRuntimeContext()) {
+            invokeSuspendForSession(
+                input = input,
+                emitter = null,
+                promptOverride = promptOverride,
+            ) { /* no-op onSkillStarted */ }
+        }
     }
 
     private suspend fun resolveSkill(input: IN): Skill<*, *> {
@@ -523,6 +716,8 @@ class Agent<IN, OUT>(
         frozen = true
     }
 }
+
+private val LOGGER: Logger = Logger.getLogger(Agent::class.java.name)
 
 inline fun <IN, reified OUT : Any> agent(name: String, block: Agent<IN, OUT>.() -> Unit): Agent<IN, OUT> {
     val agent = Agent<IN, OUT>(name, OUT::class) { it as OUT }

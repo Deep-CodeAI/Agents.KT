@@ -23,7 +23,7 @@ class ClaudeClientChatStreamTest {
     fun `text-only SSE response emits TextDelta chunks plus End with combined token usage`() = runTest {
         val sse = """
             event: message_start
-            data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"claude-haiku","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":12,"output_tokens":1}}}
+            data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"claude-haiku","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":12,"output_tokens":1,"cache_read_input_tokens":5}}}
 
             event: content_block_start
             data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
@@ -50,7 +50,16 @@ class ClaudeClientChatStreamTest {
         val d0 = chunks[0]; assertIs<LlmChunk.TextDelta>(d0); assertEquals("Hello", d0.text)
         val d1 = chunks[1]; assertIs<LlmChunk.TextDelta>(d1); assertEquals(" world", d1.text)
         val end = chunks[2]; assertIs<LlmChunk.End>(end)
-        assertEquals(TokenUsage(promptTokens = 12, completionTokens = 7), end.tokenUsage)
+        assertEquals(
+            TokenUsage(
+                promptTokens = 12,
+                completionTokens = 7,
+                cachedInputTokens = 5,
+                provider = "claude",
+                model = "test-model",
+            ),
+            end.tokenUsage,
+        )
     }
 
     @Test
@@ -99,7 +108,16 @@ class ClaudeClientChatStreamTest {
         assertEquals(mapOf("location" to "SF"), finished.arguments)
 
         val end = chunks[4]; assertIs<LlmChunk.End>(end)
-        assertEquals(TokenUsage(promptTokens = 40, completionTokens = 18), end.tokenUsage)
+        assertEquals(
+            TokenUsage(
+                promptTokens = 40,
+                completionTokens = 18,
+                cachedInputTokens = null,
+                provider = "claude",
+                model = "test-model",
+            ),
+            end.tokenUsage,
+        )
     }
 
     @Test
@@ -154,7 +172,16 @@ class ClaudeClientChatStreamTest {
         assertEquals(mapOf("x" to 1), finished.arguments)
 
         val end = chunks.filterIsInstance<LlmChunk.End>().single()
-        assertEquals(TokenUsage(promptTokens = 50, completionTokens = 12), end.tokenUsage)
+        assertEquals(
+            TokenUsage(
+                promptTokens = 50,
+                completionTokens = 12,
+                cachedInputTokens = null,
+                provider = "claude",
+                model = "test-model",
+            ),
+            end.tokenUsage,
+        )
 
         // Strict ordering proof: text delta before tool_use delta in the wire,
         // so first TextDelta arrives at index < first ToolCallArgumentsDelta.

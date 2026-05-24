@@ -43,22 +43,3 @@ object InlineToolCallParser {
     }
 }
 
-private fun String.toJsonString(): String = buildString(length + 2) {
-    append('"')
-    for (ch in this@toJsonString) {
-        when (ch) {
-            '\\' -> append("\\\\")
-            '"' -> append("\\\"")
-            '\b' -> append("\\b")
-            '\u000C' -> append("\\f")
-            '\n' -> append("\\n")
-            '\r' -> append("\\r")
-            '\t' -> append("\\t")
-            else -> {
-                if (ch.code < 0x20) append("\\u%04x".format(ch.code))
-                else append(ch)
-            }
-        }
-    }
-    append('"')
-}

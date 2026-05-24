@@ -1,10 +1,10 @@
 ---
-description: Source-file knowledge for agents_engine/model/ClaudeClient.kt — Anthropic Messages API adapter (#1644). LlmMessage→Anthropic JSON wire mapping (system field, tool_use/tool_result blocks with synthetic toolu_<n> IDs, input_schema spelling), streaming via SSE (text_delta and input_json_delta chunks), boundary errors via LlmProviderException (#702), open sendChat seam for tests. Call when the IDE LLM needs to reason about wiring the framework to Anthropic.
+description: Source-file knowledge for agents_engine/model/ClaudeClient.kt — Anthropic Messages API adapter (#1644). LlmMessage→Anthropic JSON wire mapping (system field, tool_use/tool_result blocks with synthetic toolu_<n> IDs, input_schema spelling), JsonSchema constrained decoding via forced structured_output tool (#1949), streaming via SSE, boundary errors via LlmProviderException (#702), open sendChat seam. Call when the IDE LLM needs to reason about wiring the framework to Anthropic.
 ---
 
 # `agents_engine/model/ClaudeClient.kt` — Anthropic Messages adapter (#1644)
 
-One of the three shipped `ModelClient` implementations. Wraps Anthropic's `POST /v1/messages` API.
+One of the shipped `ModelClient` implementations. Wraps Anthropic's `POST /v1/messages` API.
 
 ## Construction
 
@@ -46,6 +46,19 @@ Synthetic tool-use IDs are generated per request — `ToolCall` doesn't carry a 
 
 Anthropic's `input_schema` (not OpenAI's `parameters`). Built from `agents_engine.generation.jsonSchema(toolDef.argType)`.
 
+## Constrained Decoding
+
+Anthropic's stable structured-output path is tool-shaped. When `chat(messages, jsonSchema)` receives a schema and no real tools are present, the adapter adds a forced `structured_output` tool:
+
+```json
+{
+  "tools": [{"name": "structured_output", "input_schema": {...}}],
+  "tool_choice": {"type": "tool", "name": "structured_output"}
+}
+```
+
+On the response side, a `tool_use` for `structured_output` is converted back into JSON text so the normal `@Generable` output parser remains the local boundary. If real tools are present, the adapter leaves the schema off rather than forcing the model away from those tools.
+
 ## Streaming
 
 `chatStream(messages)` returns `Flow<LlmChunk>`, parsing Anthropic's SSE format:
@@ -65,7 +78,7 @@ Top-level `{"type": "error", "error": {...}}` envelopes surface as `LlmProviderE
 ## Related files
 
 - `ModelClient.kt` — the interface this implements.
-- `OllamaClient.kt`, `OpenAiClient.kt` — sibling implementations.
+- `OllamaClient.kt`, `OpenAiClient.kt`, `DeepSeekClient.kt` — sibling implementations.
 - `LlmChunk.kt` — the streaming chunk types.
 - `LlmProviderException.kt` — the boundary error type.
 - `generation/jsonSchema.kt` — generates `input_schema` for tools.

@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/model/OllamaClient.kt — local Ollama HTTP adapter (default ModelClient). POST /api/chat at localhost:11434, OpenAI-style tool schema (Ollama emulates), parseToolArguments handling Map / JSON-string / null shapes, NDJSON streaming, LlmProviderException on errors (#702), open sendChat seam for tests. Call when the IDE LLM needs to reason about local LLM integration.
+description: Source-file knowledge for agents_engine/model/OllamaClient.kt — local Ollama HTTP adapter (default ModelClient). POST /api/chat at localhost:11434, OpenAI-style tool schema, JsonSchema constrained decoding via Ollama format field (#1949), parseToolArguments handling Map / JSON-string / null shapes, NDJSON streaming, LlmProviderException on errors (#702), open sendChat seam. Call when the IDE LLM needs to reason about local LLM integration.
 ---
 
 # `agents_engine/model/OllamaClient.kt` — local Ollama HTTP adapter
@@ -25,6 +25,16 @@ Override host/port via the agent's `model { }` builder. For testing, pass a cust
 - `LlmMessage("tool", text)` → `{role: "tool", content: text}` paired in-order to the prior assistant's `tool_calls`.
 
 Tool defs → `[{type: "function", function: {name, description, parameters}}]` — OpenAI-style schema (Ollama emulates OpenAI's tool shape).
+
+## Constrained Decoding
+
+When `chat(messages, jsonSchema)` receives a non-null schema, `buildRequestJson` includes:
+
+```json
+{"format": {"type": "object", "properties": {...}}}
+```
+
+Ollama treats `format` as an inline JSON Schema for the assistant response. The field is also carried on streaming requests.
 
 ## Argument parsing (`parseToolArguments`)
 

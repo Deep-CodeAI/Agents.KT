@@ -19,7 +19,7 @@ class OpenAiClientChatStreamLiveTest {
     private val apiKey: String? = loadKey()
     private val openAiModel: String = System.getenv("OPENAI_TEST_MODEL") ?: "gpt-4o-mini"
 
-    @Tag("live-llm")
+    @Tag("live-cloud-api")
     @Test
     fun `native chatStream against OpenAI emits multiple TextDelta chunks incrementally with token usage`() = runBlocking {
         assumeTrue(apiKey != null, "skipping: no OpenAI key at .secrets/openai-key or OPENAI_API_KEY")

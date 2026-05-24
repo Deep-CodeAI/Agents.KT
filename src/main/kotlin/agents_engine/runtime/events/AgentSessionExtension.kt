@@ -1,6 +1,8 @@
 package agents_engine.runtime.events
 
 import agents_engine.core.Agent
+import agents_engine.core.AgentRuntimeContext
+import agents_engine.core.withAgentRuntimeContext
 import agents_engine.model.AgentEventEmitter
 import agents_engine.model.TokenUsage
 import kotlinx.coroutines.CompletableDeferred
@@ -42,6 +44,7 @@ import kotlinx.coroutines.launch
  */
 fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
     val agent = this
+    val runtimeContext = agent.newRuntimeContext(sessionId = java.util.UUID.randomUUID().toString())
     // BUFFERED keeps event production decoupled from consumer pace; an
     // implementedBy skill can complete and queue all four events before
     // the collector starts pulling. Step 3 may tune this for the
@@ -54,23 +57,31 @@ fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
     // of any unrelated coroutine the consumer happens to be running in.
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
     scope.launch {
-        // #1739: emitter forwards AgentEvents from inside the agentic loop
-        // (Token, ToolCallStarted, ToolCallArgumentsDelta, ToolCallFinished)
-        // into the same channel as the bracket events. trySend is non-
-        // suspending — appropriate for a BUFFERED channel; if the buffer
-        // ever fills (it has high capacity), excess events would be
-        // dropped silently.
-        @Suppress("UNCHECKED_CAST")
-        val emitter: AgentEventEmitter = { event -> channel.trySend(event as AgentEvent<OUT>) }
-        try {
-            val (output, usage) = runAgentInSession(agent, input, emitter)
-            channel.trySend(AgentEvent.Completed(agent.name, output, usage))
-            channel.close()
-            result.complete(output)
-        } catch (t: Throwable) {
-            channel.trySend(AgentEvent.Failed(agent.name, t))
-            channel.close()
-            result.completeExceptionally(t)
+        withAgentRuntimeContext(runtimeContext) {
+            // #1739: emitter forwards AgentEvents from inside the agentic loop
+            // (Token, ToolCallStarted, ToolCallArgumentsDelta, ToolCallFinished)
+            // into the same channel as the bracket events. trySend is non-
+            // suspending — appropriate for a BUFFERED channel; if the buffer
+            // ever fills (it has high capacity), excess events would be
+            // dropped silently.
+            @Suppress("UNCHECKED_CAST")
+            val emitter: AgentEventEmitter = { event ->
+                channel.trySend(event as AgentEvent<OUT>)
+            }
+            try {
+                val (output, usage) = runAgentInSession(agent, input, emitter)
+                val completed = AgentEvent.Completed(agent.name, output, usage, runtimeContext)
+                agent.fireAgentEvent(completed)
+                channel.trySend(completed)
+                channel.close()
+                result.complete(output)
+            } catch (t: Throwable) {
+                val failed = AgentEvent.Failed(agent.name, t, runtimeContext)
+                agent.fireAgentEvent(failed)
+                channel.trySend(failed)
+                channel.close()
+                result.completeExceptionally(t)
+            }
         }
     }
 
@@ -104,9 +115,15 @@ internal suspend fun <IN, OUT> runAgentInSession(
 ): Pair<OUT, TokenUsage?> {
     var capturedSkillName: String? = null
     var capturedUsage: TokenUsage? = null
+    val runtimeContext = AgentRuntimeContext.current()
+    val notifyingEmitter: AgentEventEmitter = { event ->
+        val contextual = runtimeContext?.let { event.withRuntimeContext(it) } ?: event
+        agent.fireAgentEvent(contextual)
+        emitter(contextual)
+    }
     val output = agent.invokeSuspendForSession(
         input,
-        emitter = emitter,
+        emitter = notifyingEmitter,
         promptOverride = promptOverride,
         onSkillCompleted = { usage -> capturedUsage = usage },
     ) { skillName ->
@@ -115,8 +132,8 @@ internal suspend fun <IN, OUT> runAgentInSession(
         // non-suspend per #1745) means the event reaches the consumer
         // before any Token / ToolCall* events from this skill's loop.
         capturedSkillName = skillName
-        emitter(AgentEvent.SkillStarted(agent.name, skillName))
+        notifyingEmitter(AgentEvent.SkillStarted(agent.name, skillName))
     }
-    emitter(AgentEvent.SkillCompleted(agent.name, capturedSkillName ?: "?", capturedUsage))
+    notifyingEmitter(AgentEvent.SkillCompleted(agent.name, capturedSkillName ?: "?", capturedUsage))
     return output to capturedUsage
 }

@@ -19,8 +19,8 @@ import kotlinx.coroutines.flow.flowOn
 
 /**
  * `agents_engine/model/ClaudeClient.kt` — the Anthropic Messages API
- * adapter (#1644), one of the three shipped [ModelClient] implementations
- * (alongside [OllamaClient] and [OpenAiClient]). See
+ * adapter (#1644), one of the shipped [ModelClient] implementations
+ * (alongside [OllamaClient], [OpenAiClient], and [DeepSeekClient]). See
  * `src/main/resources/internals-agent/model/ClaudeClient.md` for the
  * adjunct surfaced to IDE-side LLM tools via `agents-kt-internals`
  * (#1837 / #1846).
@@ -43,6 +43,9 @@ import kotlinx.coroutines.flow.flowOn
  *   ids only need to be unique within one request.
  * - Tool defs → `{name, description, input_schema}` (Anthropic's spelling;
  *   not OpenAI's `parameters`).
+ * - `JsonSchema` constrained decoding → a forced `structured_output`
+ *   tool when no real tools are present; the response is converted back
+ *   into final JSON text for the normal `@Generable` parser (#1949).
  *
  * Top-level `error` envelope on the response surfaces as [LlmProviderException]
  * — same boundary contract as [OllamaClient] (#702).
@@ -64,15 +67,20 @@ open class ClaudeClient(
         .connectTimeout(connectTimeout.toJavaDuration())
         .build()
 
-    override fun chat(messages: List<LlmMessage>): LlmResponse {
-        val body = buildRequestJson(messages)
+    override fun supportsConstrainedDecoding(): Boolean = true
+
+    override fun chat(messages: List<LlmMessage>): LlmResponse =
+        chat(messages, jsonSchema = null)
+
+    override fun chat(messages: List<LlmMessage>, jsonSchema: JsonSchema?): LlmResponse {
+        val body = buildRequestJson(messages, jsonSchema = jsonSchema)
         val headers = mapOf(
             "x-api-key" to apiKey,
             "anthropic-version" to anthropicVersion,
             "content-type" to "application/json",
         )
         val responseBody = sendChat(body, headers)
-        return parseResponse(responseBody)
+        return parseResponse(responseBody, jsonSchema = jsonSchema)
     }
 
     /**
@@ -137,6 +145,7 @@ open class ClaudeClient(
         val blocks = mutableMapOf<Int, BlockState>()
         var inputTokens: Int? = null
         var outputTokens: Int? = null
+        var cachedInputTokens: Int? = null
 
         BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).useLines { lines ->
             // SSE: lines are `event: <name>`, `data: <json>`, or blank.
@@ -154,12 +163,21 @@ open class ClaudeClient(
                 if (evt != null && data != null) {
                     dispatchSseEvent(evt, data, blocks, collector,
                         onInputTokens = { inputTokens = it },
+                        onCachedInputTokens = { cachedInputTokens = it },
                         onOutputTokens = { outputTokens = it },
                         onMessageStop = {
+                            val prompt = inputTokens
+                            val completion = outputTokens
                             collector.emit(
                                 LlmChunk.End(
-                                    tokenUsage = if (inputTokens != null && outputTokens != null) {
-                                        TokenUsage(inputTokens!!, outputTokens!!)
+                                    tokenUsage = if (prompt != null && completion != null) {
+                                        TokenUsage(
+                                            promptTokens = prompt,
+                                            completionTokens = completion,
+                                            cachedInputTokens = cachedInputTokens,
+                                            provider = "claude",
+                                            model = model,
+                                        )
                                     } else null,
                                 )
                             )
@@ -187,6 +205,7 @@ open class ClaudeClient(
         blocks: MutableMap<Int, BlockState>,
         collector: kotlinx.coroutines.flow.FlowCollector<LlmChunk>,
         onInputTokens: (Int) -> Unit,
+        onCachedInputTokens: (Int) -> Unit,
         onOutputTokens: (Int) -> Unit,
         onMessageStop: suspend () -> Unit,
     ) {
@@ -196,6 +215,7 @@ open class ClaudeClient(
                 val message = data["message"] as? Map<String, Any?> ?: return
                 val usage = message["usage"] as? Map<String, Any?> ?: return
                 (usage["input_tokens"] as? Number)?.toInt()?.let(onInputTokens)
+                (usage["cache_read_input_tokens"] as? Number)?.toInt()?.let(onCachedInputTokens)
             }
             "content_block_start" -> {
                 val index = (data["index"] as? Number)?.toInt() ?: return
@@ -266,7 +286,11 @@ open class ClaudeClient(
         return String(bytes, Charsets.UTF_8)
     }
 
-    internal fun buildRequestJson(messages: List<LlmMessage>, stream: Boolean = false): String {
+    internal fun buildRequestJson(
+        messages: List<LlmMessage>,
+        stream: Boolean = false,
+        jsonSchema: JsonSchema? = null,
+    ): String {
         val systemText = messages.firstOrNull { it.role == "system" }?.content
         val nonSystem = messages.filter { it.role != "system" }
 
@@ -310,20 +334,30 @@ open class ClaudeClient(
         }
 
         val systemField = systemText?.let { ""","system":${it.toJsonString()}""" } ?: ""
-        val toolsField = if (tools.isNotEmpty()) {
-            val defs = tools.joinToString(",") { t ->
+        val structuredSchema = jsonSchema?.takeIf { tools.isEmpty() }
+        val toolDefs = buildList {
+            tools.forEach { t ->
                 val schema = t.argsType?.jsonSchema()
+                    ?: t.parametersSchemaJson
                     ?: """{"type":"object","properties":{},"additionalProperties":true}"""
-                """{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"input_schema":$schema}"""
+                add("""{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"input_schema":$schema}""")
             }
-            ""","tools":[$defs]"""
+            structuredSchema?.let { schema ->
+                add(
+                    """{"name":${STRUCTURED_OUTPUT_TOOL_NAME.toJsonString()},"description":"Return the final response using the requested JSON schema.","input_schema":${schema.schema}}"""
+                )
+            }
+        }
+        val toolsField = if (toolDefs.isNotEmpty()) ""","tools":[${toolDefs.joinToString(",")}]""" else ""
+        val toolChoiceField = if (structuredSchema != null) {
+            ""","tool_choice":{"type":"tool","name":${STRUCTURED_OUTPUT_TOOL_NAME.toJsonString()}}"""
         } else ""
 
         val streamField = if (stream) ""","stream":true""" else ""
-        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$streamField$systemField,"messages":[${messageObjects.joinToString(",")}]$toolsField}"""
+        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$streamField$systemField,"messages":[${messageObjects.joinToString(",")}]$toolsField$toolChoiceField}"""
     }
 
-    internal fun parseResponse(body: String): LlmResponse {
+    internal fun parseResponse(body: String, jsonSchema: JsonSchema? = null): LlmResponse {
         val root = LenientJsonParser.parse(body) as? Map<*, *>
             ?: return LlmResponse.Text(body)
 
@@ -341,6 +375,13 @@ open class ClaudeClient(
         val content = root["content"] as? List<*> ?: return LlmResponse.Text(body, tokenUsage)
 
         val toolUses = content.mapNotNull { it as? Map<*, *> }.filter { it["type"] == "tool_use" }
+        if (jsonSchema != null) {
+            val structured = toolUses.firstOrNull { it["name"] == STRUCTURED_OUTPUT_TOOL_NAME }
+            if (structured != null) {
+                val parsed = parseToolArguments(structured["input"])
+                return LlmResponse.Text(InlineToolCallParser.argsToJson(parsed.arguments), tokenUsage)
+            }
+        }
         if (toolUses.isNotEmpty()) {
             val calls = toolUses.mapNotNull { tu ->
                 val name = tu["name"] as? String ?: return@mapNotNull null
@@ -367,10 +408,21 @@ open class ClaudeClient(
         val usage = root["usage"] as? Map<*, *> ?: return null
         val input = (usage["input_tokens"] as? Number)?.toInt()
         val output = (usage["output_tokens"] as? Number)?.toInt()
-        return if (input != null && output != null) TokenUsage(input, output) else null
+        val cached = (usage["cache_read_input_tokens"] as? Number)?.toInt()
+        return if (input != null && output != null) {
+            TokenUsage(
+                promptTokens = input,
+                completionTokens = output,
+                cachedInputTokens = cached,
+                provider = "claude",
+                model = model,
+            )
+        } else null
     }
 
     companion object {
+        private const val STRUCTURED_OUTPUT_TOOL_NAME = "structured_output"
+
         val DEFAULT_REQUEST_TIMEOUT: Duration = 60.seconds
         val DEFAULT_CONNECT_TIMEOUT: Duration = 10.seconds
         const val DEFAULT_MAX_RESPONSE_BYTES: Long = 16L * 1024 * 1024
@@ -382,9 +434,3 @@ open class ClaudeClient(
     }
 }
 
-private fun String.toJsonString(): String =
-    '"' + replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t") + '"'

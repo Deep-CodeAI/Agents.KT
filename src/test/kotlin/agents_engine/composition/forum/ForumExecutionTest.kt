@@ -484,21 +484,33 @@ class ForumExecutionTest {
         val mentionCounter = java.util.concurrent.atomic.AtomicInteger(0)
         val mentions = java.util.concurrent.CopyOnWriteArrayList<Pair<String, String>>()
 
+        // Debate-exercise framing rather than "always argue X regardless of
+        // truth": modern instruction-tuned models (gpt-oss:120b-cloud
+        // included) refuse to assert falsehoods, so we ask each agent to
+        // construct the strongest *rhetorical case* for one side of a formal
+        // debate. The judge then renders the factual verdict. Same forum
+        // mechanics, no role-play-vs-truth conflict.
         val bull = agent<String, String>("bull") {
             prompt(
-                """You are a BULL debater. You ALWAYS argue the POSITIVE/YES side, no matter what.
-                  |Give a one-sentence argument. Start your response with "YES —".""".trimMargin()
+                """You are the AFFIRMATIVE debater in a formal debate exercise.
+                  |Your role is to construct the strongest available rhetorical case FOR a YES answer
+                  |to whatever question is posed, without claiming your case is the final truth — the
+                  |judge will decide that. Respond in exactly one sentence beginning with "YES —"
+                  |that gives the best argument someone *could* make for YES.""".trimMargin()
             )
             model { ollama(MODEL); host = HOST; port = PORT; temperature = 0.0 }
-            skills { skill<String, String>("argue", "Argue YES") { tools() } }
+            skills { skill<String, String>("argue", "Argue the YES position") { tools() } }
         }
         val bear = agent<String, String>("bear") {
             prompt(
-                """You are a BEAR debater. You ALWAYS argue the NEGATIVE/NO side, no matter what.
-                  |Give a one-sentence argument. Start your response with "NO —".""".trimMargin()
+                """You are the NEGATIVE debater in a formal debate exercise.
+                  |Your role is to construct the strongest available rhetorical case FOR a NO answer
+                  |to whatever question is posed, without claiming your case is the final truth — the
+                  |judge will decide that. Respond in exactly one sentence beginning with "NO —"
+                  |that gives the best argument someone *could* make for NO.""".trimMargin()
             )
             model { ollama(MODEL); host = HOST; port = PORT; temperature = 0.0 }
-            skills { skill<String, String>("argue", "Argue NO") { tools() } }
+            skills { skill<String, String>("argue", "Argue the NO position") { tools() } }
         }
         val judge = agent<String, String>("judge") {
             prompt(

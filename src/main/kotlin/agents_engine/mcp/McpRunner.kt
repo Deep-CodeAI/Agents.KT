@@ -6,7 +6,7 @@ import java.util.concurrent.CountDownLatch
 /**
  * `agents_engine/mcp/McpRunner.kt` — the one-line `main` for exposing
  * an agent over MCP. Returns a process exit code. Honors CLI flags
- * `--port N`, `--expose NAME` (repeatable), `-h / --help`, `-V /
+ * `--port N`, `--stdio`, `--expose NAME` (repeatable), `-h / --help`, `-V /
  * --version`. The configuration block sets defaults; CLI flags
  * override. See `src/main/resources/internals-agent/mcp/McpRunner.md`
  * (#1837 / #1883).
@@ -26,6 +26,7 @@ import java.util.concurrent.CountDownLatch
  *
  * Flags:
  * - `--port N` — bind port (default 0 = OS-assigned)
+ * - `--stdio` — serve line-delimited MCP over stdin/stdout instead of HTTP
  * - `--expose NAME` — skill name to expose (repeatable; replaces block exposes if any --expose is passed)
  * - `-h, --help` — print usage and return 0
  * - `-V, --version` — print Agents.KT version and return 0
@@ -50,6 +51,20 @@ object McpRunner {
             System.err.println()
             printHelp(System.err)
             return 2
+        }
+
+        if (cfg.stdioRequested) {
+            val server = try {
+                McpStdioServer.from(agent) {
+                    cfg.exposeNames.forEach { expose(it) }
+                }
+            } catch (e: Exception) {
+                System.err.println("error: ${e.message ?: e}")
+                return 2
+            }
+            cfg.onStdioStarted(server)
+            server.serve()
+            return 0
         }
 
         val server = try {
@@ -99,12 +114,14 @@ object McpRunner {
         val cliExposes = mutableListOf<String>()
         var help = false
         var version = false
+        var stdio = builder.stdio
 
         var i = 0
         while (i < args.size) {
             when (val a = args[i]) {
                 "-h", "--help" -> help = true
                 "-V", "--version" -> version = true
+                "--stdio" -> stdio = true
                 "--port" -> {
                     val raw = args.getOrNull(++i)
                     if (raw == null) {
@@ -133,8 +150,10 @@ object McpRunner {
             exposeNames = finalExposes,
             helpRequested = help,
             versionRequested = version,
+            stdioRequested = stdio,
             errors = errors,
             onStarted = builder.onStartedHandler,
+            onStdioStarted = builder.onStdioStartedHandler,
         )
     }
 
@@ -147,6 +166,7 @@ object McpRunner {
 
             Options:
               --port N         Bind port (default: 0 = OS-assigned)
+              --stdio          Serve over stdin/stdout instead of HTTP
               --expose NAME    Skill to expose (repeatable; replaces block defaults)
               -h, --help       Print this help and exit
               -V, --version    Print version and exit
@@ -156,8 +176,10 @@ object McpRunner {
 
 class McpRunnerBuilder internal constructor() {
     var port: Int = 0
+    var stdio: Boolean = false
     internal val blockExposes = mutableListOf<String>()
     internal var onStartedHandler: (McpServer) -> Unit = {}
+    internal var onStdioStartedHandler: (McpStdioServer) -> Unit = {}
 
     fun expose(vararg names: String) { blockExposes.addAll(names) }
 
@@ -165,6 +187,11 @@ class McpRunnerBuilder internal constructor() {
     var onStarted: (McpServer) -> Unit
         get() = onStartedHandler
         set(value) { onStartedHandler = value }
+
+    /** Test hook: invoked before stdio serving begins, with the [McpStdioServer]. */
+    var onStdioStarted: (McpStdioServer) -> Unit
+        get() = onStdioStartedHandler
+        set(value) { onStdioStartedHandler = value }
 }
 
 internal data class RunnerConfig(
@@ -172,6 +199,8 @@ internal data class RunnerConfig(
     val exposeNames: List<String>,
     val helpRequested: Boolean,
     val versionRequested: Boolean,
+    val stdioRequested: Boolean,
     val errors: List<String>,
     val onStarted: (McpServer) -> Unit,
+    val onStdioStarted: (McpStdioServer) -> Unit,
 )

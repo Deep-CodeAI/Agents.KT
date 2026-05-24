@@ -3,9 +3,10 @@ package agents_engine.model
 /**
  * `agents_engine/model/ModelClient.kt` — the LLM transport interface
  * ([ModelClient]) plus the shared types adapters speak in: [LlmMessage],
- * [ToolCall], [TokenUsage], [LlmResponse]. Defines the default
+ * [ToolCall], [JsonSchema], [TokenUsage], [LlmResponse]. Defines the default
  * `chatStream(...)` wrapping `chat(...)` so non-streaming providers work
- * unchanged (#1722). See
+ * unchanged (#1722). Optional [JsonSchema] requests let adapters wire
+ * provider-level constrained decoding for `@Generable` outputs (#1949). See
  * `src/main/resources/internals-agent/model/ModelClient.md` for the
  * adjunct surfaced to IDE-side LLM tools (#1837 / #1850).
  */
@@ -34,13 +35,34 @@ data class ToolCall(
 )
 
 /**
+ * Provider-neutral structured-output schema request. [schema] is a JSON Schema
+ * object encoded as JSON text; adapters embed it in their provider-specific
+ * field (`response_format`, `format`, tool-shaped schema, etc.).
+ */
+data class JsonSchema(
+    val name: String,
+    val schema: String,
+)
+
+internal fun JsonSchema.wireName(): String =
+    name
+        .replace(Regex("[^A-Za-z0-9_-]"), "_")
+        .trim('_')
+        .ifBlank { "structured_output" }
+        .take(64)
+
+/**
  * Token consumption for one LLM round-trip — null on the response when the
  * provider doesn't report it. Sum of prompt + completion is what counts toward
- * [BudgetConfig.maxTokens]. See #963.
+ * [BudgetConfig.maxTokens]. Cached input tokens are a provider-visible subset
+ * of prompt tokens, not extra billable tokens to add to [total]. See #963/#2355.
  */
 data class TokenUsage(
     val promptTokens: Int,
     val completionTokens: Int,
+    val cachedInputTokens: Int? = null,
+    val provider: String = "unknown",
+    val model: String = "unknown",
 ) {
     val total: Int get() = promptTokens + completionTokens
 }
@@ -62,6 +84,18 @@ sealed interface LlmResponse {
 
 fun interface ModelClient {
     fun chat(messages: List<LlmMessage>): LlmResponse
+
+    /**
+     * Optional schema-aware chat path (#1949). The one-argument [chat] remains
+     * the sole abstract method, preserving SAM lambdas for custom clients and
+     * tests. Implementations that support provider-level constrained decoding
+     * override this overload and [supportsConstrainedDecoding].
+     */
+    fun chat(messages: List<LlmMessage>, jsonSchema: JsonSchema?): LlmResponse =
+        chat(messages)
+
+    /** True when this provider can honor [JsonSchema] on at least non-streaming chat. */
+    fun supportsConstrainedDecoding(): Boolean = false
 
     /**
      * #1722 — streaming entry point. Default impl wraps [chat] so existing
@@ -89,6 +123,33 @@ fun interface ModelClient {
                         // without one. This keeps explicit ids stable end-to-end so
                         // AgentEvent.ToolCallStarted and ToolCallFinished can be
                         // matched by consumers.
+                        val callId = call.callId ?: java.util.UUID.randomUUID().toString()
+                        emit(LlmChunk.ToolCallStarted(callId, call.name))
+                        emit(LlmChunk.ToolCallArgumentsDelta(callId, call.rawArguments ?: ""))
+                        emit(LlmChunk.ToolCallFinished(callId, call.arguments))
+                    }
+                    emit(LlmChunk.End(response.tokenUsage))
+                }
+            }
+        }
+
+    /**
+     * Optional schema-aware streaming path. Defaults to the existing streaming
+     * behavior so providers can opt in independently from non-streaming chat.
+     */
+    suspend fun chatStream(
+        messages: List<LlmMessage>,
+        jsonSchema: JsonSchema?,
+    ): kotlinx.coroutines.flow.Flow<LlmChunk> =
+        kotlinx.coroutines.flow.flow {
+            val response = chat(messages, jsonSchema)
+            when (response) {
+                is LlmResponse.Text -> {
+                    emit(LlmChunk.TextDelta(response.content))
+                    emit(LlmChunk.End(response.tokenUsage))
+                }
+                is LlmResponse.ToolCalls -> {
+                    response.calls.forEach { call ->
                         val callId = call.callId ?: java.util.UUID.randomUUID().toString()
                         emit(LlmChunk.ToolCallStarted(callId, call.name))
                         emit(LlmChunk.ToolCallArgumentsDelta(callId, call.rawArguments ?: ""))

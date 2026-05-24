@@ -25,7 +25,7 @@ class OpenAiClientChatStreamTest {
             appendLine()
             appendLine("""data: {"id":"x","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}""")
             appendLine()
-            appendLine("""data: {"id":"x","choices":[],"usage":{"prompt_tokens":11,"completion_tokens":6,"total_tokens":17}}""")
+            appendLine("""data: {"id":"x","choices":[],"usage":{"prompt_tokens":11,"completion_tokens":6,"total_tokens":17,"prompt_tokens_details":{"cached_tokens":4}}}""")
             appendLine()
             appendLine("""data: [DONE]""")
             appendLine()
@@ -37,7 +37,16 @@ class OpenAiClientChatStreamTest {
         val d1 = chunks[0]; assertIs<LlmChunk.TextDelta>(d1); assertEquals("Hello", d1.text)
         val d2 = chunks[1]; assertIs<LlmChunk.TextDelta>(d2); assertEquals(" world", d2.text)
         val end = chunks[2]; assertIs<LlmChunk.End>(end)
-        assertEquals(TokenUsage(promptTokens = 11, completionTokens = 6), end.tokenUsage)
+        assertEquals(
+            TokenUsage(
+                promptTokens = 11,
+                completionTokens = 6,
+                cachedInputTokens = 4,
+                provider = "openai",
+                model = "test-model",
+            ),
+            end.tokenUsage,
+        )
     }
 
     @Test
@@ -80,7 +89,16 @@ class OpenAiClientChatStreamTest {
         assertEquals(mapOf("location" to "SF"), finished.arguments)
 
         val end = chunks.filterIsInstance<LlmChunk.End>().single()
-        assertEquals(TokenUsage(promptTokens = 42, completionTokens = 18), end.tokenUsage)
+        assertEquals(
+            TokenUsage(
+                promptTokens = 42,
+                completionTokens = 18,
+                cachedInputTokens = null,
+                provider = "openai",
+                model = "test-model",
+            ),
+            end.tokenUsage,
+        )
     }
 
     private fun stubbedOpenAi(sse: String): OpenAiClient =

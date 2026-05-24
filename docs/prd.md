@@ -2445,7 +2445,7 @@ pipeline.events(input).collect { event -> /* same when block */ }
 // Cancelling the Flow cancels the running stage and all spawned sub-agents.
 ```
 
-This event hierarchy is the telemetry backbone. OpenTelemetry traces (future) map events to spans with a nested hierarchy: `pipeline → stage → agent → skill → tool → llm_call`. Each span carries token usage and cost attributes for budget attribution across multi-agent pipelines.
+This event hierarchy is the telemetry backbone. The shipped `:agents-kt-otel` adapter maps runtime events to OTel spans with a nested hierarchy: `pipeline → stage → agent → skill → tool → llm_call`. Each span carries token usage and budget-attribution attributes across multi-agent pipelines.
 
 ### 10.3 Common Agent Patterns
 
@@ -3954,15 +3954,16 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [x] `onKnowledgeUsed { name, content -> }` — fires when the LLM fetches a knowledge entry (tools model)
 - [x] Tool error recovery — `onToolError { invalidArgs / deserializationError / executionError { ... } }` with `RepairResult.Fixed / Retry / Escalated / Unrecoverable`
 - [x] `onError { Throwable -> }` — infrastructure-error observability hook (LLM transport, response parse, budget); pure observability — original exception always rethrows; listener exceptions are attached as suppressed (#962)
-- [x] `Agent.observe { event -> }` — sealed `PipelineEvent` (`SkillChosen` / `ToolCalled` / `KnowledgeLoaded` / `ErrorOccurred`) bridges the four hooks into one typed stream; composes additively with prior listeners (#965)
+- [x] `Agent.observe { event -> }` — sealed `PipelineEvent` (`SkillChosen` / `ToolCalled` / `KnowledgeLoaded` / `ErrorOccurred`) bridges the four hooks into one typed stream; composes additively with prior listeners and carries runtime `requestId` / `sessionId` / `manifestHash` for audit correlation (#965, #1913)
 - [x] `onBudgetThreshold(threshold) { reason, usedPercent -> }` — pre-cap warning hook; fires once per `BudgetReason` (TURNS / TOOL_CALLS / DURATION / TOKENS) when cumulative usage crosses the configured fraction, before the corresponding cap throws (#966)
+- [x] `onBefore*` interceptors — `Decision` (`Proceed`, `ProceedWith`, `Deny`, `Substitute`) across `onBeforeSkill`, `onBeforeTurn`, and `onBeforeToolCall`; dynamic policy runs after static allowlist checks and before regular/session-aware tool dispatch (#1907)
 - [x] MCP client — `mcp { server() }` agent DSL with HTTP / stdio / TCP transports, Bearer auth, namespacing
-- [x] MCP server — `McpServer.from(agent) { expose() }` exposes agent skills as MCP tools; 2025-03-26 spec conformance (ping, capabilities, protocolVersion negotiation, cursor/nextCursor, Content-Type/415, 405 with Allow, Mcp-Session-Id)
+- [x] MCP server — `McpServer.from(agent) { expose() }` exposes agent skills as MCP tools; 2025-03-26 spec conformance (ping, capabilities, protocolVersion negotiation, cursor/nextCursor, Content-Type/415, 405 with Allow, Mcp-Session-Id); inbound bearer auth, Host/Origin allowlists, per-principal tool policy, and filtered capability snapshots (#1902)
 - [x] MCP runner — `McpRunner.serve(agent, args)` picocli-style one-line `main` for standalone agent JARs
 - [x] Memory bank — `MemoryBank`, `memory_read` / `memory_write` / `memory_search` tools with per-skill `useMemory()` opt-in (#856)
 - [x] Supply-chain hygiene — pinned Gradle wrapper, dependency-locking via `gradle.lockfile`, `gradle/verification-metadata.xml` SHA-256 verification, `updateVerificationMetadata` cross-platform Gradle task (#858, #872, #883)
 - [x] `loadResource(path)` / `loadResourceOrNull(path)` — read agent system prompts from classpath resources; fail-fast at agent construction when path is missing; UTF-8 decoded; leading-slash normalized (#980)
-- [x] `LiveShow` / `LiveRunner` — REPL deployment surface mirroring MCP's two-layer split (`LiveShow.from(x).start()` + `LiveRunner.serve(x, args)`). Six factory overloads cover `Agent` / `Pipeline` / `Forum` / `Parallel` / `Loop` / `Branch` (any String-input structure). String-concatenated conversation history with `--- user ---` / `--- assistant ---` delimiters and configurable cap. Built-in `/quit`, `/exit`, `/clear`, `/help` plus user-extensible `slash(name) { }`. `--once "<prompt>"` for non-interactive single-turn use. ANSI color theme, ASCII Agents.KT banner, in-place cat spinner, lifecycle hooks (`onTurnStart` / `onTurnEnd` / `onErrorReported`), `renderOutput` post-processor (#981, #983)
+- [x] `LiveShow` / `LiveRunner` — REPL deployment surface mirroring MCP's two-layer split (`LiveShow.from(x).start()` + `LiveRunner.serve(x, args)`). Six factory overloads cover `Agent` / `Pipeline` / `Forum` / `Parallel` / `Loop` / `Branch` (any String-input structure). String-concatenated conversation history with `--- user ---` / `--- assistant ---` delimiters and configurable cap. Built-in `/quit`, `/exit`, `/clear`, `/help` plus user-extensible `slash(name) { }`. `--once "<prompt>"` for non-interactive single-turn use. ANSI color theme, ASCII Agents.KT banner, in-place cat spinner, JLine-backed cursor movement and in-memory arrow-key history for interactive terminals, lifecycle hooks (`onTurnStart` / `onTurnEnd` / `onErrorReported`), `renderOutput` post-processor (#981, #983, #985)
 - [x] `Swarm` — ServiceLoader-based agent discovery: each sibling JAR ships a `META-INF/services/agents_engine.runtime.AgentProvider`; the captain calls `Swarm.discover()` and `me.absorb(sibling)` to expose each sibling's `Agent<*, *>` surface as a tool with full personality preserved (prompt, skills, knowledge, memory). In-JVM only (single-classloader); cross-language is MCP's job (#984)
 - [x] `wrap` — teacher-student prompt override operator. `teacher wrap student` runs the teacher to compute a system prompt, then invokes the student with that prompt in effect for one call only (baked-in `prompt` is restored after). Two framings: **education** (teacher specializes a generalist student for a task) and **security** (teacher locks down the student's task surface for the call). PRD notation is `>>`; Kotlin doesn't permit user types to overload literal `>>`, so the infix is named `wrap`. Headline test: agent A teaches agent B to compute fib(10) via a `fib` tool driven by a stub `ModelClient` that reads the teacher's instruction from the system prompt (#1698).
 
@@ -3970,6 +3971,9 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 
 **Priority (must-ship):**
 - [~] `model { }` — extend beyond Ollama: provider abstraction landed via `ModelProvider`. **Anthropic shipped (#1644)** with the `claude(name)` DSL and `ClaudeClient` mapping `LlmMessage` ↔ Anthropic structured content (`tool_use` / `tool_result`). **OpenAI shipped (#1656)** with the `openai(name)` DSL and `OpenAiClient` mapping to Chat Completions (`tool_calls` ↔ `tool_call_id`, `parameters` schema field). Google (Gemini) and `suspend fun` + Flow streaming still pending.
+- [x] Permission manifest / capability graph — `:agents-kt-manifest` adds `permissionManifest { }` on agents and compositions, deterministic JSON/YAML writers, SHA-256 runtime correlation, masked provider secrets, tool-policy capture, high-risk widening verification, and Gradle tasks `agentManifest` / `verifyAgentManifest` (#1912).
+- [x] JSONL audit log exporter — `:agents-kt-observability` writes append-only, one-line-per-event rows for `PipelineEvent` and `AgentEvent` with `requestId`, `sessionId`, `manifestHash`, agent/skill/tool ids, event type, timestamp, provider, and model. Size/day rotation is configurable; write failures buffer/drop oldest under backpressure and never throw into the agent path. Raw tool args/results and generated content are omitted by default (#1914).
+- [x] Declarative tool sandbox policy DSL — `ToolPolicy` with `risk`, filesystem, network, and environment sub-policies; `tool { policy { ... } }` captures the declaration, manifest map/JSON/YAML helpers round-trip it, and tool audit events surface `toolPolicyRisk` / `usedDeclaredCapability`. Declarative only in 0.6.0; enforcement belongs to the sibling sandbox issue (#1915 / #1916).
 - [ ] `Tool<IN, OUT>` base + `McpTool<IN, OUT>` — MCP as native Tool inheritance, not a wrapper (§5.8)
 - [ ] MCP client integration — `McpTool` instances consumable alongside local tools
 - [ ] `grants { tools(...) }` — Layer 2 permissions use actual `Tool<*,*>` references
@@ -4011,7 +4015,7 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [ ] Custom tool deserializers — per-tool or per-server lambdas mapping raw MCP `content[]` (and future A2A skill outputs) to typed Kotlin values. Composable: default deserializer per `McpClient`, overridable per tool via `mcp.tool("name").withDeserializer<T> { content -> ... }`
 - [ ] CLI — `serve`, `inspect`, `validate`, `prompts`
 - [ ] Distributed agents framework (§13) — `Agent.fromA2A<>()` typed proxies, locality-transparent pipelines, catalog discovery, placement manifest, schema drift detection
-- [ ] Production observability — OpenTelemetry traces
+- [x] Production observability foundation — OpenTelemetry traces via `:agents-kt-observability` + `:agents-kt-otel`
 
 ### Phase 4: Ecosystem *(Q4 2026)*
 

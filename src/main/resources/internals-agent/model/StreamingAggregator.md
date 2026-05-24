@@ -1,10 +1,10 @@
 ---
-description: Source-file knowledge for agents_engine/model/StreamingAggregator.kt — chatOrStream entry point (#1739) the agentic loop calls per turn. emitter==null → client.chat() unchanged; emitter!=null → collect client.chatStream() while emitting AgentEvent.Token / ToolCallStarted / ToolCallArgumentsDelta, rebuild LlmResponse with stable callIds. AgentEventEmitter typealias (non-suspend per #1745). ToolCallFinished fires later in the loop with executor result. Interleaving-safe via callId routing. Call when the IDE LLM needs to reason about streaming plumbing.
+description: Source-file knowledge for agents_engine/model/StreamingAggregator.kt — chatOrStream entry point (#1739) the agentic loop calls per turn. Carries optional JsonSchema (#1949). emitter==null → client.chat(messages, jsonSchema); emitter!=null → collect client.chatStream(...) while emitting AgentEvent.Token / ToolCallStarted / ToolCallArgumentsDelta, rebuild LlmResponse with stable callIds. AgentEventEmitter typealias. ToolCallFinished fires later in the loop. Call when the IDE LLM needs to reason about streaming plumbing.
 ---
 
 # `agents_engine/model/StreamingAggregator.kt` — chat-or-stream entry point
 
-A single internal `suspend fun chatOrStream(client, messages, agentId, skillName, emitter): LlmResponse` plus the `AgentEventEmitter` typealias. The agentic loop calls this once per turn.
+A single internal `suspend fun chatOrStream(client, messages, agentId, skillName, jsonSchema, emitter): LlmResponse` plus the `AgentEventEmitter` typealias. The agentic loop calls this once per turn.
 
 ## The typealias
 
@@ -24,12 +24,14 @@ internal suspend fun chatOrStream(
     messages: List<LlmMessage>,
     agentId: String,
     skillName: String,
+    jsonSchema: JsonSchema? = null,
     emitter: AgentEventEmitter?,
 ): LlmResponse
 ```
 
-- `emitter == null` → returns `client.chat(messages)` directly via `Dispatchers.IO`. Byte-for-byte the legacy non-streaming path.
-- `emitter != null` → collects `client.chatStream(messages)`, emits AgentEvents, rebuilds an `LlmResponse`.
+- `emitter == null` → returns `client.chat(messages, jsonSchema)` directly via `Dispatchers.IO`.
+- `emitter != null` and `jsonSchema == null` → collects the provider's native `client.chatStream(messages)`, emits AgentEvents, rebuilds an `LlmResponse`.
+- `emitter != null` and `jsonSchema != null` → calls `client.chatStream(messages, jsonSchema)`, so schema-aware providers can constrain streaming output and default clients can wrap schema-aware `chat`.
 
 ## Aggregation rules
 

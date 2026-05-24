@@ -1,10 +1,10 @@
 ---
-description: Source-file knowledge for agents_engine/mcp/McpServerInfo.kt — immutable pure-data snapshot of an MCP server's surface (#1734). identity + protocolVersion + capabilities + tools + resources + resourceTemplates + prompts. Populated by McpClient over time as RPCs land. Constructible directly in tests without a transport stub. Forward-looking — fields land here before the RPC support arrives. Call when the IDE LLM needs to reason about reading MCP server state.
+description: Source-file knowledge for agents_engine/mcp/McpServerInfo.kt — immutable pure-data snapshot of an MCP server's surface (#1734). identity + protocolVersion + capabilities + tools + resources + resourceTemplates + prompts. Populated by McpClient over time as RPCs land and by McpServer.snapshotFor(principal) for server-side filtered capability views. Constructible directly in tests without a transport stub. Forward-looking — fields land here before the RPC support arrives. Call when the IDE LLM needs to reason about reading MCP server state.
 ---
 
 # `agents_engine/mcp/McpServerInfo.kt` — pure-data MCP server snapshot
 
-An immutable, fully-populated view of an MCP server's surface (#1734). What `McpClient` produces after handshake + listings; what tests can build directly without a transport stub.
+An immutable view of an MCP server's surface (#1734). What `McpClient` produces after handshake + listings; what `McpServer.snapshotFor(principal)` returns for per-client filtered capabilities; what tests can build directly without a transport stub.
 
 ## Shape
 
@@ -16,16 +16,16 @@ data class McpServerInfo(
     val protocolVersion: String,
     val instructions: String? = null,
     val capabilities: McpCapabilities,
-    val tools: List<McpToolDescriptor> = emptyList(),
-    val resources: List<McpResource> = emptyList(),
-    val resourceTemplates: List<McpResourceTemplate> = emptyList(),
-    val prompts: List<McpPromptDescriptor> = emptyList(),
+    val tools: List<McpToolInfo>? = null,
+    val resources: List<McpResourceInfo>? = null,
+    val resourceTemplates: List<McpResourceTemplateInfo>? = null,
+    val prompts: List<McpPromptInfo>? = null,
 )
 ```
 
 Sibling types (also in this package):
 - `McpCapabilities` — capability matrix (which RPCs the server supports).
-- `McpToolDescriptor`, `McpResource`, `McpResourceTemplate`, `McpPromptDescriptor`, `McpPromptArgument` — per-shape wire descriptors.
+- `McpToolInfo`, `McpResourceInfo`, `McpResourceTemplateInfo`, `McpPromptInfo`, `McpPromptArgument` — per-shape wire descriptors.
 
 ## Why a pure-data snapshot
 

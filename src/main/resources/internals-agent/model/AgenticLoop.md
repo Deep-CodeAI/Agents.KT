@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/model/AgenticLoop.kt — the multi-turn chat↔tool loop (executeAgentic) at the heart of every agentic-skill invocation. Builds per-skill tool allowlist (skill tools + agent capabilities + #856 memory + knowledge), runs turns until final answer or budget cap, honors maxTurns/maxToolCalls/maxDuration/perToolTimeout/maxTokens/maxConsecutiveSameTool, argument repair up to 8 retries, streaming-aware emitter (#1739), wrap-friendly effectivePrompt (#1707), cumulative TokenUsage (#1740). Call when the IDE LLM needs to reason about how agentic skills actually execute.
+description: Source-file knowledge for agents_engine/model/AgenticLoop.kt — the multi-turn chat↔tool loop (executeAgentic) at the heart of every agentic-skill invocation. Builds per-skill tool allowlist (skill tools + agent capabilities + #856 memory + knowledge), runs turns until final answer or budget cap, applies onBeforeTurn/onBeforeToolCall interceptors (#1907), threads @Generable output JsonSchema to supporting ModelClient providers (#1949), honors maxTurns/maxToolCalls/maxDuration/perToolTimeout/maxTokens/maxConsecutiveSameTool, argument repair up to 8 retries, streaming-aware emitter (#1739), wrap-friendly effectivePrompt (#1707), cumulative TokenUsage (#1740). Call when the IDE LLM needs to reason about how agentic skills actually execute.
 ---
 
 # `agents_engine/model/AgenticLoop.kt` — the multi-turn `chat ↔ tool` loop
@@ -31,16 +31,19 @@ internal suspend fun <IN> executeAgentic(
 2. **Fail-fast on duplicate tool names** across the allowed sources. Helps catch name collisions between skill tools, agent capabilities, memory, and knowledge.
 
 3. **Runs `chat ↔ tool` turns** via either:
-   - `client.chat(messages, tools)` — non-streaming, when `emitter == null`.
-   - `client.chatStream(messages, tools)` — streaming, when `emitter != null`. Emits `Token` / `ToolCallStarted` / `ToolCallArgumentsDelta` chunks as they arrive.
+   - `client.chat(messages, jsonSchema)` — non-streaming, when `emitter == null`.
+   - `client.chatStream(messages, jsonSchema)` — streaming, when `emitter != null`. Emits `Token` / `ToolCallStarted` / `ToolCallArgumentsDelta` chunks as they arrive.
+   - `jsonSchema` is non-null only when the output type is `@Generable`, the skill has no custom `transformOutput { }`, and the client reports `supportsConstrainedDecoding()`.
+   - `onBeforeTurn` interceptors run immediately before each outbound model call and may mutate messages, deny the turn, or substitute a final output.
 
 4. **Executes tool calls** by name lookup against the allowlist. Each tool invocation:
-   - Honors `perToolTimeout` (per-call deadline) wrapped via `withTimeout`.
+   - Runs `onBeforeToolCall` after the allowlist check and before dispatch. `ProceedWith` mutates args, `Deny` feeds a synthetic tool-error message to the model without firing `onToolError`, and `Substitute` behaves like a tool result.
+   - Honors `perToolTimeout` (regular tools via worker interrupt; session-aware suspend tools via `withTimeout`).
    - Fires `agent.toolUseListener` (post-hoc) with `(name, args, result)`.
    - Emits `ToolCallFinished` AgentEvent when streaming.
    - Increments `toolCallCount`, checked against `maxToolCalls` after each call.
 
-5. **Coerces final text into `OUT`** via the skill's `transformOutput { }` OR — if no transformer is set and `OUT` is `@Generable` — via the structured-output decoder in `agents_engine.generation`.
+5. **Coerces final text into `OUT`** via the skill's `transformOutput { }` OR — if no transformer is set and `OUT` is `@Generable` — via the structured-output decoder in `agents_engine.generation`. Constrained decoding is a first-line provider request; the decoder is still the local trust boundary.
 
 6. **Returns** an `AgenticResult` with the typed output (still as `Any` — the caller casts via the agent's `castOut`) and the cumulative `TokenUsage`.
 
@@ -53,7 +56,7 @@ The loop honors every cap from `BudgetConfig`:
 | `maxTurns` | After each chat turn | Throws if exceeded. |
 | `maxToolCalls` | After each tool execution | Throws if exceeded. |
 | `maxDuration` | Before each turn | Throws if `Instant.now() - start > maxDuration`. |
-| `perToolTimeout` | Wrapped around each tool call | `TimeoutCancellationException` → `LlmProviderException` with reason. |
+| `perToolTimeout` | Wrapped around each tool call | Throws `BudgetExceededException(PER_TOOL_TIMEOUT)`. Regular tools run on an interruptible worker; session-aware tools use coroutine cancellation. |
 | `maxTokens` | Accumulated from `TokenUsage` per turn | Throws when crossed. |
 | `maxConsecutiveSameTool` | Per-tool counter reset on tool-name change | Catches LLM stuck in a loop calling the same tool. |
 
@@ -88,7 +91,7 @@ This is a tiny API affordance with a big concurrency payoff: agents stay frozen 
 
 ## Where the LLM is called
 
-`agent.modelConfig.client` provides the `ModelClient` — see `model/ModelClient.kt` for the interface and `OllamaClient.kt` / `ClaudeClient.kt` / `OpenAiClient.kt` for the three shipped implementations. The loop is **provider-agnostic** — it never talks to a specific provider's API directly; only through `chat` / `chatStream`.
+`agent.modelConfig.client` provides the `ModelClient` — see `model/ModelClient.kt` for the interface and `OllamaClient.kt` / `ClaudeClient.kt` / `OpenAiClient.kt` / `DeepSeekClient.kt` for the shipped implementations. The loop is **provider-agnostic** — it never talks to a specific provider's API directly; only through `chat` / `chatStream`.
 
 ## Related files
 

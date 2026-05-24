@@ -25,7 +25,13 @@ After handshake + listings, `snapshot` carries the pure-data view of the server'
 
 ## Tool invocation
 
-The client exposes each MCP tool as a `ToolDef` via the agent's tool map (prefixed by server name; see `AgentMcpDsl.md`). Each tool's executor JSON-RPCs `tools/call` to the server and returns the result. Argument deserialization uses the LenientJsonParser; result serialization uses `McpJson`.
+The client exposes each MCP tool in three additive shapes:
+
+- `toolDefs(prefix)` for registering remote MCP tools into an agent's auxiliary tool map (prefixed by server name; see `AgentMcpDsl.md`).
+- `toolSkills(prefix)` for using remote MCP tools as primary `Skill<Map<String, Any?>, String>` entries.
+- `tools(prefix)` (#1948) for first-class `McpTool<Map<String, Any?>, String>` handles implementing `core.Tool`, useful for future grants/manifests/audit/policy code.
+
+Each invocation JSON-RPCs `tools/call` to the server and returns rendered text. Argument deserialization uses the LenientJsonParser; result serialization uses `McpJson`.
 
 ## Synchronous
 
@@ -49,6 +55,7 @@ The client is single-threaded; transports are single-flight. Concurrent invocati
 ## Related files
 
 - `McpTransport.kt` — the wire interface.
+- `McpTool.kt` — typed MCP tool handle returned by `tools()`.
 - `McpServerInfo.kt` — the snapshot shape.
 - `AgentMcpDsl.kt` — the constructor consumers in the agent DSL.
 - `McpJson.kt`, `generation/LenientJsonParser.kt` — wire encoding / parsing.

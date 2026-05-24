@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/runtime/events/AgentEvent.kt — typed sealed event union for sessions (#1736). Variants: SkillStarted, SkillCompleted, Completed (carries OUT), Failed (step 2); Token, ToolCallStarted, ToolCallArgumentsDelta, ToolCallFinished (step 3). agentId on every variant preserves provenance through composition. AgentEvent<Nothing> for non-OUT variants flows through any AgentSession<OUT>. Call when the IDE LLM needs to reason about consuming streamed agent events.
+description: Source-file knowledge for agents_engine/runtime/events/AgentEvent.kt — typed sealed event union for sessions (#1736). Variants: SkillStarted, SkillCompleted, Completed (carries OUT), Failed; Token, ToolCallStarted, ToolCallArgumentsDelta, ToolCallFinished. agentId on every variant preserves provenance through composition; requestId, sessionId, manifestHash provide audit correlation (#1913). AgentEvent<Nothing> for non-OUT variants flows through any AgentSession<OUT>. Call when the IDE LLM needs to reason about consuming streamed agent events.
 ---
 
 # `agents_engine/runtime/events/AgentEvent.kt` — typed session event union
@@ -11,6 +11,9 @@ The events flowing through `Agent.session(input).events`. Sealed so consumers ca
 ```kotlin
 sealed interface AgentEvent<out OUT> {
     val agentId: String     // every event carries provenance
+    val requestId: String
+    val sessionId: String?
+    val manifestHash: String?
 
     data class Token(agentId, skillName, text)                          : AgentEvent<Nothing>   // step 3
     data class ToolCallStarted(agentId, skillName, callId, toolName)    : AgentEvent<Nothing>   // step 3
@@ -42,6 +45,10 @@ The sealed hierarchy is COMPLETE today so consumer code that handles all variant
 ## `agentId` provenance
 
 Every event carries `agentId` — the name of the agent that emitted it. Composition operators (`then`, `Pipeline`, `Branch`, `wrap`, `Swarm`) preserve provenance: events from an inner agent in a pipeline carry the inner agent's name, not the pipeline's. Consumers demultiplex by `agentId` to build per-agent timelines.
+
+## Runtime correlation
+
+Every event also carries `requestId`, `sessionId`, and `manifestHash` from `AgentRuntimeContext`. `requestId` is a fresh UUID per invocation, `sessionId` is set for `session(...)` calls, and `manifestHash` is null until a permission manifest is generated for the running agent.
 
 ## Typing trick: `AgentEvent<Nothing>` for non-OUT variants
 

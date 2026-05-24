@@ -1,15 +1,24 @@
 package agents_engine.model
 
 import agents_engine.core.Agent
+import agents_engine.core.AgentRuntimeContext
+import agents_engine.core.Decision
+import agents_engine.core.InterceptorDeniedException
 import agents_engine.core.Skill
 import agents_engine.core.SkillRoute
+import agents_engine.core.withAgentRuntimeContext
 import agents_engine.generation.constructFromMap
 import agents_engine.generation.fromLlmOutput
+import agents_engine.generation.hasGenerableAnnotation
+import agents_engine.generation.jsonSchema
 import agents_engine.generation.toLlmInput
+import agents_engine.runtime.events.AgentEvent
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.reflect.KClass
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 /**
  * `agents_engine/model/AgenticLoop.kt` — the multi-turn LLM-tool dispatch
@@ -22,6 +31,9 @@ import kotlinx.coroutines.withContext
  * `OUT` via the skill's transformer or [agents_engine.generation]
  * structured-output decoder, and returns an [AgenticResult] carrying both
  * the output and the cumulative [TokenUsage] (#1740).
+ * For `@Generable` outputs, the loop passes a provider-neutral [JsonSchema]
+ * to clients that support constrained decoding (#1949), then still validates
+ * the returned text locally.
  *
  * **Streaming-aware (#1739).** When [executeAgentic]'s `emitter` is
  * non-null, the loop switches to `client.chatStream(...)` and surfaces
@@ -33,6 +45,10 @@ import kotlinx.coroutines.withContext
  * **Budget enforcement.** Honors `maxTurns`, `maxToolCalls`, `maxDuration`,
  * `perToolTimeout`, `maxTokens`, `maxConsecutiveSameTool`. Pre-cap warnings
  * fire via the agent's `budgetThresholdListener` before the hard throw.
+ *
+ * **Before-interceptors (#1907).** Runs `onBeforeTurn` before every outbound
+ * model call and `onBeforeToolCall` after the static allowlist check but before
+ * dispatch. The tool hook covers both regular and session-aware executors.
  *
  * **Argument repair.** Up to [MAX_ARGUMENT_REPAIR_STEPS] retries (8) when
  * the LLM produces a tool call whose JSON arguments fail to parse or
@@ -84,6 +100,7 @@ internal suspend fun <IN> executeAgentic(
      * callers (`Agent.invoke`, `Agent.invokeSuspend`) pay no overhead.
      */
     emitter: AgentEventEmitter? = null,
+    runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
 ): AgenticResult {
     val config = requireNotNull(agent.modelConfig) {
         "Agent '${agent.name}' has no model configured. Add a model { } block."
@@ -132,6 +149,7 @@ internal suspend fun <IN> executeAgentic(
     val allowedToolMap = allToolDefs.associateBy { it.name }
 
     val client = config.client ?: defaultClientFor(config, allToolDefs)
+    val constrainedOutputSchema = constrainedOutputSchemaFor(agent.outType, skill, client)
 
     val hasUntrustedTools = allToolDefs.any { it.untrustedOutput }
     val systemContent = buildString {
@@ -211,21 +229,76 @@ internal suspend fun <IN> executeAgentic(
             elapsedNanos.toDouble() / budget.maxDuration.inWholeNanoseconds,
         )
 
-        val response = chatOrStream(client, messages, agent.name, skill.name, emitter)
+        when (val decision = agent.decideBeforeTurn(messages.toList())) {
+            Decision.Proceed -> Unit
+            is Decision.ProceedWith -> {
+                messages.clear()
+                messages.addAll(decision.replacement)
+            }
+            is Decision.Deny -> throw InterceptorDeniedException(
+                "Turn denied by interceptor: ${decision.reason}"
+            )
+            is Decision.Substitute<*> -> return AgenticResult(
+                coerceSubstituteOutput(decision.result, agent.outType),
+                cumulativeUsage,
+            )
+        }
+
+        val turnIndex = turns + 1
+        emitter?.invoke(
+            AgentEvent.ModelTurnStarted(
+                agentId = agent.name,
+                skillName = skill.name,
+                turnIndex = turnIndex,
+                provider = semconvProviderName(config.provider),
+                model = config.name,
+                temperature = config.temperature,
+            )
+        )
+        val response = chatOrStream(
+            client = client,
+            messages = messages,
+            agentId = agent.name,
+            skillName = skill.name,
+            emitter = emitter,
+            jsonSchema = constrainedOutputSchema,
+        )
         turns++
+        val responseUsage = response.tokenUsage
+        emitter?.invoke(
+            AgentEvent.ModelTurnCompleted(
+                agentId = agent.name,
+                skillName = skill.name,
+                turnIndex = turnIndex,
+                provider = responseUsage?.provider ?: semconvProviderName(config.provider),
+                model = responseUsage?.model ?: config.name,
+                responseType = when (response) {
+                    is LlmResponse.Text -> "text"
+                    is LlmResponse.ToolCalls -> "tool_calls"
+                },
+                tokensUsed = responseUsage,
+            )
+        )
         maybeFireThreshold(BudgetReason.TURNS, turns.toDouble() / budget.maxTurns)
 
         // #963: accumulate tokens only when the provider reported usage —
         // a missing `tokenUsage` does NOT count as zero toward the cap.
         // Check after the round-trip so the LAST turn's tokens are counted
         // even if it tips us over: the throw still surfaces the breach.
-        response.tokenUsage?.let { usage ->
+        responseUsage?.let { usage ->
+            agent.fireTokenUsage(usage)
             totalTokens += usage.total
             // #1740: build cumulative TokenUsage for the event surface.
             cumulativeUsage = cumulativeUsage?.let { prev ->
                 TokenUsage(
                     promptTokens = prev.promptTokens + usage.promptTokens,
                     completionTokens = prev.completionTokens + usage.completionTokens,
+                    cachedInputTokens = when {
+                        prev.cachedInputTokens == null && usage.cachedInputTokens == null -> null
+                        else -> (prev.cachedInputTokens ?: 0) + (usage.cachedInputTokens ?: 0)
+                    },
+                    provider = usage.provider,
+                    model = usage.model,
                 )
             } ?: usage
             val cap = budget.maxTokens
@@ -280,47 +353,69 @@ internal suspend fun <IN> executeAgentic(
                             "Tool '${call.name}' is not allowed for skill '${skill.name}'. " +
                                 "Allowed: ${allowedToolMap.keys}"
                         )
-                    val result = try {
-                        executeToolWithBudget(agent, tool, call, budget, emitter)
-                    } catch (t: Throwable) {
-                        // #1739: tool executor threw and onError didn't recover.
-                        // Surface a ToolCallFinished event with isError=true so
-                        // consumers see the failure, then rethrow — the loop's
-                        // outer error path takes over (session emits Failed).
-                        if (emitter != null && call.callId != null) {
+                    var effectiveCall = call
+                    var denied = false
+                    val result = when (val decision = agent.decideBeforeToolCall(call.name, call.arguments)) {
+                        Decision.Proceed -> executeToolWithBudgetHandlingEvents(
+                            agent, tool, effectiveCall, budget, emitter
+                        )
+                        is Decision.ProceedWith -> {
+                            effectiveCall = call.copy(
+                                arguments = decision.replacement,
+                                rawArguments = null,
+                                invalidArgumentsError = null,
+                            )
+                            executeToolWithBudgetHandlingEvents(agent, tool, effectiveCall, budget, emitter)
+                        }
+                        is Decision.Deny -> {
+                            denied = true
+                            formatDeniedToolError(call.name, decision.reason)
+                        }
+                        is Decision.Substitute<*> -> decision.result
+                    }
+
+                    if (denied) {
+                        if (emitter != null && effectiveCall.callId != null) {
                             emitter(
                                 agents_engine.runtime.events.AgentEvent.ToolCallFinished(
                                     agentId = agent.name,
-                                    callId = call.callId,
-                                    toolName = call.name,
-                                    arguments = call.arguments,
-                                    result = t.message,
+                                    callId = effectiveCall.callId,
+                                    toolName = effectiveCall.name,
+                                    arguments = effectiveCall.arguments,
+                                    result = result,
                                     isError = true,
                                 )
                             )
                         }
-                        throw t
-                    }
-                    if (isKnowledge) agent.knowledgeUsedListener?.invoke(call.name, result?.toString() ?: "")
-                    else agent.toolUseListener?.invoke(call.name, call.arguments, result)
-                    // #1739: emit ToolCallFinished on the success path with the
-                    // executor's return value. callId is the one the streaming
-                    // aggregator stamped on this ToolCall — null only when the
-                    // emitter is null (no event work needed) or the non-streaming
-                    // path produced a ToolCall without one.
-                    if (emitter != null && call.callId != null) {
-                        emitter(
-                            agents_engine.runtime.events.AgentEvent.ToolCallFinished(
-                                agentId = agent.name,
-                                callId = call.callId,
-                                toolName = call.name,
-                                arguments = call.arguments,
-                                result = result,
-                                isError = false,
+                    } else {
+                        if (isKnowledge) {
+                            withAgentRuntimeContext(runtimeContext) {
+                                agent.knowledgeUsedListener?.invoke(call.name, result?.toString() ?: "")
+                            }
+                        } else {
+                            withAgentRuntimeContext(runtimeContext) {
+                                agent.toolUseListener?.invoke(call.name, effectiveCall.arguments, result)
+                            }
+                        }
+                        // #1739: emit ToolCallFinished on the success path with the
+                        // executor's return value. callId is the one the streaming
+                        // aggregator stamped on this ToolCall — null only when the
+                        // emitter is null (no event work needed) or the non-streaming
+                        // path produced a ToolCall without one.
+                        if (emitter != null && effectiveCall.callId != null) {
+                            emitter(
+                                agents_engine.runtime.events.AgentEvent.ToolCallFinished(
+                                    agentId = agent.name,
+                                    callId = effectiveCall.callId,
+                                    toolName = effectiveCall.name,
+                                    arguments = effectiveCall.arguments,
+                                    result = result,
+                                    isError = false,
+                                )
                             )
-                        )
+                        }
                     }
-                    val toolMessage = if (tool.untrustedOutput) {
+                    val toolMessage = if (!denied && tool.untrustedOutput) {
                         wrapUntrustedToolResult(tool.name, result)
                     } else {
                         result?.toString() ?: "null"
@@ -330,6 +425,47 @@ internal suspend fun <IN> executeAgentic(
             }
         }
     }
+}
+
+private fun semconvProviderName(provider: ModelProvider): String =
+    when (provider) {
+        ModelProvider.ANTHROPIC -> "anthropic"
+        ModelProvider.DEEPSEEK -> "deepseek"
+        ModelProvider.OPENAI -> "openai"
+        ModelProvider.OLLAMA -> "ollama"
+    }
+
+private fun coerceSubstituteOutput(result: Any?, outType: KClass<*>): Any {
+    if (result != null && outType.java.isInstance(result)) return result
+    return parseOutput(result?.toString() ?: "null", outType)
+        ?: error("Could not parse interceptor substitute result as ${outType.simpleName}: '$result'")
+}
+
+private suspend fun <IN> executeToolWithBudgetHandlingEvents(
+    agent: Agent<IN, *>,
+    tool: ToolDef,
+    call: ToolCall,
+    budget: BudgetConfig,
+    emitter: AgentEventEmitter?,
+): Any? = try {
+    executeToolWithBudget(agent, tool, call, budget, emitter)
+} catch (t: Throwable) {
+    // #1739: tool executor threw and onError didn't recover.
+    // Surface a ToolCallFinished event with isError=true so consumers see
+    // the failure, then rethrow — the outer error path emits session Failed.
+    if (emitter != null && call.callId != null) {
+        emitter(
+            agents_engine.runtime.events.AgentEvent.ToolCallFinished(
+                agentId = agent.name,
+                callId = call.callId,
+                toolName = call.name,
+                arguments = call.arguments,
+                result = t.message,
+                isError = true,
+            )
+        )
+    }
+    throw t
 }
 
 /**
@@ -366,7 +502,10 @@ suspend fun <IN> selectSkillByLlm(
     )
 
     val client = config.client ?: defaultClientFor(config, emptyList())
-    val response = withContext(Dispatchers.IO) { client.chat(messages) }
+    val routeSchema = if (client.supportsConstrainedDecoding()) {
+        JsonSchema("SkillRoute", SkillRoute::class.jsonSchema())
+    } else null
+    val response = withContext(Dispatchers.IO) { client.chat(messages, routeSchema) }
 
     val raw = when (response) {
         is LlmResponse.Text -> response.content.trim()
@@ -378,9 +517,11 @@ suspend fun <IN> selectSkillByLlm(
 }
 
 /**
- * Wrap [executeToolWithRecovery] in a per-tool wall-clock timeout when one is configured.
- * Uses a sacrificial worker thread + join(timeout) — pre-#638 (suspend refactor) we don't
- * have coroutine `withTimeout` available here.
+ * Wrap tool execution in a per-tool wall-clock timeout when one is configured.
+ *
+ * Regular tools still use the pre-suspend sacrificial worker thread so blocking
+ * lambdas can be interrupted. Session-aware tools are already suspend-shaped, so
+ * they use coroutine cancellation via `withTimeout` (#1903).
  */
 private suspend fun <IN> executeToolWithBudget(
     agent: Agent<IN, *>,
@@ -389,17 +530,22 @@ private suspend fun <IN> executeToolWithBudget(
     budget: BudgetConfig,
     emitter: AgentEventEmitter? = null,
 ): Any? {
-    // #1752: when running under a session AND the tool has a session-aware
-    // executor (Swarm absorb installs one for sibling agents), use the
-    // session path directly. The per-tool wall-clock timeout from the
-    // Thread.join() trick doesn't apply here — siblings are suspend agents
-    // bounded by their own budgets; the captain's overall maxDuration and
-    // maxToolCalls still gate them. Documented gap: session-tool execution
-    // doesn't enforce perToolTimeout. Step 5 (HTTP cancellation via
-    // sendAsync) is the right place to add coroutine-aware per-tool timeouts.
     if (emitter != null) {
         tool.sessionExecutor?.let { sessionExec ->
-            return sessionExec(call.arguments, emitter)
+            val timeout = budget.perToolTimeout
+                ?: return sessionExec(call.arguments, emitter)
+            return try {
+                withTimeout(timeout) {
+                    withContext(Dispatchers.IO) {
+                        sessionExec(call.arguments, emitter)
+                    }
+                }
+            } catch (_: TimeoutCancellationException) {
+                throw BudgetExceededException(
+                    "Tool '${tool.name}' exceeded per-tool timeout of $timeout",
+                    BudgetReason.PER_TOOL_TIMEOUT,
+                )
+            }
         }
     }
     val timeout = budget.perToolTimeout ?: return executeToolWithRecovery(agent, tool, call)
@@ -588,6 +734,9 @@ private fun formatEscalatedToolError(toolName: String, result: RepairResult.Esca
     "ERROR: Tool '$toolName' failed: ${result.reason} " +
         "(severity: ${result.severity}). Please retry with corrected arguments."
 
+private fun formatDeniedToolError(toolName: String, reason: String): String =
+    "ERROR: Tool '$toolName' denied by policy: $reason"
+
 /**
  * Wrap a tool result from an `untrustedOutput = true` tool in a JSON envelope so
  * the LLM can distinguish data from instructions. See #642.
@@ -606,6 +755,20 @@ private fun wrapUntrustedToolResult(toolName: String, result: Any?): String {
 private fun parseOutput(text: String, outType: KClass<*>): Any? = when {
     outType == String::class -> text
     else -> @Suppress("UNCHECKED_CAST") (outType as KClass<Any>).fromLlmOutput(text)
+}
+
+private fun constrainedOutputSchemaFor(
+    outType: KClass<*>,
+    skill: Skill<*, *>,
+    client: ModelClient,
+): JsonSchema? {
+    if (!client.supportsConstrainedDecoding()) return null
+    if (skill.outputTransformer != null) return null
+    if (!outType.hasGenerableAnnotation()) return null
+    return JsonSchema(
+        name = outType.simpleName ?: "structured_output",
+        schema = outType.jsonSchema(),
+    )
 }
 
 // #1644 / #1656 — provider dispatch for the default client. Mirrors the prior
@@ -636,5 +799,14 @@ private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelCl
             maxTokens = config.maxTokens,
             tools = tools,
             baseUrl = config.openAiBaseUrl,
+        )
+        ModelProvider.DEEPSEEK -> DeepSeekClient(
+            apiKey = config.apiKey
+                ?: error("Agent uses DeepSeek but ModelConfig.apiKey is null — set apiKey in the model { } block"),
+            model = config.name,
+            temperature = config.temperature,
+            maxTokens = config.maxTokens,
+            tools = tools,
+            baseUrl = config.deepSeekBaseUrl,
         )
     }

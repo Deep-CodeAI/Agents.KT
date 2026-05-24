@@ -1,7 +1,11 @@
 package agents_engine.model
 
 import agents_engine.generation.Generable
+import agents_engine.generation.LenientJsonParser
 import agents_engine.generation.constructFromMap
+import agents_engine.generation.toLlmInput
+import agents_engine.core.ToolPolicy
+import agents_engine.core.toolPolicy
 import kotlin.reflect.KClass
 import agents_engine.generation.hasGenerableAnnotation
 
@@ -32,7 +36,19 @@ class ToolDef(
     val name: String,
     val description: String = "",
     val argsType: KClass<*>? = null,
+    /**
+     * #2377 — raw JSON Schema for the tool's parameters when [argsType] is
+     * null but the schema is known from elsewhere (notably MCP imports that
+     * carry an upstream `inputSchema`). Providers prefer [argsType]'s
+     * generated schema first, then [parametersSchemaJson], then a closed
+     * `additionalProperties:false` empty-object fallback. Must be a valid
+     * JSON object literal — providers paste it verbatim into the request
+     * body.
+     */
+    val parametersSchemaJson: String? = null,
     val untrustedOutput: Boolean = false,
+    val risk: agents_engine.core.ToolRisk = agents_engine.core.ToolRisk.LOW,
+    val policy: agents_engine.core.ToolPolicy? = null,
     /**
      * #1752 — session-aware tool executor. When non-null AND the
      * agentic loop runs under a session (`emitter != null`), this is
@@ -73,11 +89,30 @@ class ToolDef(
  */
 class Tool<Args, Result> @PublishedApi internal constructor(
     @PublishedApi internal val def: ToolDef,
-) {
-    val name: String get() = def.name
-    val description: String get() = def.description
+    override val inputType: KClass<*>,
+    override val outputType: KClass<*>,
+    private val inputAdapter: (Args) -> Map<String, Any?>,
+) : agents_engine.core.Tool<Args, Result> {
+    override val name: String get() = def.name
+    override val description: String get() = def.description
+    override val risk: agents_engine.core.ToolRisk get() = def.risk
+    override val policy: agents_engine.core.ToolPolicy? get() = def.policy
+
+    @Suppress("UNCHECKED_CAST")
+    override suspend fun call(input: Args): Result =
+        def.executor(inputAdapter(input)) as Result
 
     override fun toString(): String = "Tool<${def.name}>"
+}
+
+@Suppress("UNCHECKED_CAST")
+private fun mapInput(input: Map<String, Any?>): Map<String, Any?> = input
+
+@PublishedApi
+internal fun <Args> generableInputToMap(input: Args): Map<String, Any?> {
+    val parsed = LenientJsonParser.parse(toLlmInput(input)) as? Map<*, *>
+        ?: error("Tool input ${input?.let { it::class.simpleName } ?: "null"} did not encode to a JSON object")
+    return parsed.entries.associate { (k, v) -> k.toString() to v }
 }
 
 class ToolDefaultsBuilder {
@@ -128,7 +163,7 @@ class ToolsBuilder {
         }
         val def = ToolDef(name = name, description = description, executor = executor)
         defs.add(def)
-        return Tool(def)
+        return Tool(def, Map::class, Any::class, ::mapInput)
     }
 
     fun tool(
@@ -145,7 +180,7 @@ class ToolsBuilder {
         val def = ToolDef(name = name, description = description, executor = executor)
         def.errorHandler = OnErrorBuilder().apply(onError).build()
         defs.add(def)
-        return Tool(def)
+        return Tool(def, Map::class, Any::class, ::mapInput)
     }
 
     fun tool(name: String, block: ToolDefBuilder.() -> Unit): Tool<Map<String, Any?>, Any?> {
@@ -158,7 +193,7 @@ class ToolsBuilder {
         builder.block()
         val def = builder.build()
         defs.add(def)
-        return Tool(def)
+        return Tool(def, Map::class, Any::class, ::mapInput)
     }
 
     operator fun ToolDef.unaryPlus() {
@@ -186,6 +221,7 @@ class ToolsBuilder {
     inline fun <reified Args : Any, Result> tool(
         name: String,
         description: String,
+        policy: ToolPolicy? = null,
         crossinline executor: (Args) -> Result,
     ): Tool<Args, Result> {
         requireUserNotReservedToolName(name)
@@ -215,9 +251,16 @@ class ToolsBuilder {
                 )
             executor(typed)
         }
-        val def = ToolDef(name = name, description = description, executor = wrapped, argsType = argsClass)
+        val def = ToolDef(
+            name = name,
+            description = description,
+            executor = wrapped,
+            argsType = argsClass,
+            risk = policy?.risk ?: agents_engine.core.ToolRisk.LOW,
+            policy = policy,
+        )
         defs.add(def)
-        return Tool(def)
+        return Tool(def, argsClass, Any::class, ::generableInputToMap)
     }
 }
 
@@ -226,10 +269,15 @@ class ToolDefBuilder(private val name: String) {
     private var exec: ((Map<String, Any?>) -> Any?)? = null
     private var handler: ToolErrorHandler? = null
     private var untrusted: Boolean = false
+    private var policy: ToolPolicy? = null
 
     fun description(text: String) { desc = text }
 
     fun executor(block: (Map<String, Any?>) -> Any?) { exec = block }
+
+    fun policy(block: agents_engine.core.ToolPolicyBuilder.() -> Unit) {
+        policy = toolPolicy(block)
+    }
 
     fun onError(block: OnErrorBuilder.() -> Unit) {
         handler = OnErrorBuilder().apply(block).build()
@@ -249,6 +297,8 @@ class ToolDefBuilder(private val name: String) {
             name = name,
             description = desc,
             untrustedOutput = untrusted,
+            risk = policy?.risk ?: agents_engine.core.ToolRisk.LOW,
+            policy = policy,
             executor = requireNotNull(exec) { "Tool \"$name\" must have an executor { } block." },
         )
         handler?.let { def.errorHandler = it }

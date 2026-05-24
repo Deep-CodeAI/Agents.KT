@@ -1,8 +1,11 @@
 package agents_engine.composition.pipeline
 
+import agents_engine.core.AgentRuntimeContext
+import agents_engine.core.withAgentRuntimeContext
 import agents_engine.model.AgentEventEmitter
 import agents_engine.runtime.events.AgentEvent
 import agents_engine.runtime.events.AgentSession
+import agents_engine.runtime.events.withRuntimeContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,22 +52,27 @@ fun <IN, OUT> Pipeline<IN, OUT>.session(input: IN): AgentSession<OUT> {
     val channel = Channel<AgentEvent<OUT>>(Channel.BUFFERED)
     val result = CompletableDeferred<OUT>()
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+    val runtimeContext = AgentRuntimeContext(sessionId = java.util.UUID.randomUUID().toString())
     // agentId for the terminal Completed: last agent's name (its OUT
     // matches Pipeline's OUT). Pipeline has no name of its own.
     val terminalAgentId = pipeline.agents.lastOrNull()?.name ?: "pipeline"
 
     scope.launch {
-        @Suppress("UNCHECKED_CAST")
-        val emitter: AgentEventEmitter = { event -> channel.trySend(event as AgentEvent<OUT>) }
-        try {
-            val output = pipeline.effectiveSessionExec(input, emitter)
-            channel.trySend(AgentEvent.Completed(terminalAgentId, output, null))
-            channel.close()
-            result.complete(output)
-        } catch (t: Throwable) {
-            channel.trySend(AgentEvent.Failed(terminalAgentId, t))
-            channel.close()
-            result.completeExceptionally(t)
+        withAgentRuntimeContext(runtimeContext) {
+            @Suppress("UNCHECKED_CAST")
+            val emitter: AgentEventEmitter = { event ->
+                channel.trySend(event.withRuntimeContext(runtimeContext) as AgentEvent<OUT>)
+            }
+            try {
+                val output = pipeline.effectiveSessionExec(input, emitter)
+                channel.trySend(AgentEvent.Completed(terminalAgentId, output, null))
+                channel.close()
+                result.complete(output)
+            } catch (t: Throwable) {
+                channel.trySend(AgentEvent.Failed(terminalAgentId, t))
+                channel.close()
+                result.completeExceptionally(t)
+            }
         }
     }
 

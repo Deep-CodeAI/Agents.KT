@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "ai.deep-code"
-version = "0.5.0"
+version = "0.6.0"
 
 repositories {
     mavenCentral()
@@ -56,6 +56,7 @@ dependencies {
     testImplementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+    implementation("org.jline:jline:3.27.1")
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 
@@ -80,6 +81,19 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform {
+        // `live-cloud-api` tests (DeepSeek / Anthropic / OpenAI direct against
+        // hosted APIs) stay in default `:test` so provider regressions are
+        // caught alongside unit tests. They `assumeTrue(key != null)` to skip
+        // cleanly when an API key is absent.
+        //
+        // `live-llm` covers everything *also* talking to Ollama Cloud
+        // (`ollama.com`), which has been empirically flaky enough — EOF,
+        // 500s, budget-exceeded, intermittent wrong outputs — that running
+        // these on every `:test` produces too much noise. They stay opt-in
+        // via `:integrationTest` / `testAll`.
+        //
+        // `live-mcp` requires an out-of-process MCP server; `interactive`
+        // requires a human at the console.
         excludeTags("live-llm", "live-mcp", "interactive")
     }
 }
@@ -234,28 +248,37 @@ tasks.register("updateVerificationMetadata") {
 }
 
 // #1720 — single entry point for "run everything before pushing":
-//   - root :test (unit, excludes live-llm / live-mcp tags via useJUnitPlatform)
-//   - every subproject :test (KSP processor, no-reflect smoke)
-//   - :integrationTest (live-llm — needs a running Ollama)
+//   - root :test (unit + `live-cloud-api` — DeepSeek / Anthropic / OpenAI
+//     hosted APIs; assume-skip when key absent)
+//   - every subproject :test (KSP processor, no-reflect smoke, observability
+//     bridge, OTel / LangSmith / Langfuse adapters, permission manifest)
+//   - :integrationTest (live-llm — Ollama-Cloud-dependent slice; flaky
+//     enough that we keep it out of default `:test` but still gate releases
+//     on it via this aggregator)
 //   - :mcpIntegrationTest (live-mcp — needs MCP_REDMINE_URL)
 //
 // CI keeps using `check`, which is unit-only — the live tasks need infra CI
 // doesn't have. testAll is for the developer who wants one command for the
 // full gate before release-cut.
 tasks.register("testAll") {
-    description = "Runs every test task across every subproject — unit, KSP, no-reflect smoke, live-llm integration, live-mcp integration."
+    description = "Runs every test task across every subproject — unit + live-cloud-api in :test, KSP, no-reflect smoke, all 0.6.0 modules, live-llm (Ollama), live-mcp."
     group = "verification"
     dependsOn(
         ":test",
         ":agents-kt-ksp:test",
         ":agents-kt-no-reflect-test:test",
+        ":agents-kt-manifest:test",
+        ":agents-kt-observability:test",
+        ":agents-kt-otel:test",
+        ":agents-kt-langsmith:test",
+        ":agents-kt-langfuse:test",
         ":integrationTest",
         ":mcpIntegrationTest",
     )
 }
 
 tasks.register<Test>("integrationTest") {
-    description = "Runs integration tests that require a live LLM (Ollama)"
+    description = "Runs live-llm integration tests (Ollama / Ollama Cloud). Hosted-API live tests run in default :test under live-cloud-api."
     group = "verification"
     useJUnitPlatform {
         includeTags("live-llm")

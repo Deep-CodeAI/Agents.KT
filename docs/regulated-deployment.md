@@ -22,10 +22,10 @@ This guide maps each of those questions to Agents.KT primitives and your operati
 **The artifact:** a static document — checked into the repo and reviewed in CI — that lists every agent, every skill, every tool, every MCP server the agent talks to, and every LLM provider it can invoke.
 
 **Framework support:**
-- **Today:** the agent DSL IS the inventory. `agent { skills { skill { tools(...) } } mcp { server() } model { } }` is reviewable Kotlin code. Tag every PR that changes the surface for compliance review.
-- **0.6.0:** the permission manifest (#1912) ships this as a generated artifact — a serialized capability graph emitted at build time, hashable, reviewable as a diff in CI. Until it lands, generate by hand: per agent, write down `skills × tools × MCP capabilities` as a markdown table.
+- **Today:** the agent DSL is reviewable Kotlin code, and `:agents-kt-manifest` emits the serialized inventory from that DSL. `permissionManifest()` produces a deterministic capability graph with agents, skills, tools, memory, MCP clients/server exposure, providers, budgets, guardrails, composition structure, and masked provider secrets (#1912).
+- **CI:** run `agentManifest` to write JSON/YAML and `verifyAgentManifest` against an approved baseline. Treat high-risk widening as a compliance-review trigger.
 
-**Recommended template** (use until #1912 ships):
+**Recommended template** (use alongside the generated manifest for human-readable review notes):
 
 ```markdown
 # Capability Inventory — <agent-name>
@@ -45,26 +45,29 @@ MCP server exposed: yes (port 8443, behind Envoy mTLS).
 **The artifact:** an append-only log of every agent invocation, every tool call, every skill decision, every LLM round-trip. Retention period: per your industry (HIPAA: 6 years; financial: 7 years; GDPR: data-minimum subject to retention exceptions).
 
 **Framework support:**
-- **Today:** `Agent.observe { event -> ... }` (sealed `PipelineEvent` view) emits the events. You write them to your retained log. JSONL into a WORM bucket (S3 with Object Lock, GCS Bucket Lock, Azure Immutable Storage) is the typical shape.
-- **#1914:** ships a first-party JSONL exporter so the log format is canonical and you don't roll your own JSON shape.
-- **#1913:** adds a manifest hash + request/session IDs to every event so the log can prove "this invocation ran against THIS version of the capability inventory."
+- **Today:** `:agents-kt-observability` ships a first-party JSONL exporter (#1914). JSONL into a WORM bucket (S3 with Object Lock, GCS Bucket Lock, Azure Immutable Storage) is the typical retained shape.
+- **Runtime correlation:** every exported `PipelineEvent` and `AgentEvent` row carries `requestId`, `sessionId`, and `manifestHash`. `manifestHash` is `null` until a permission manifest is generated, then binds the dynamic event back to the approved capability graph.
+- **PII posture:** the exporter emits identifiers, event names, type names, and provider/model metadata. It deliberately does not serialize raw tool arguments, tool results, streamed text, generated output, or exception messages.
 
-**Until #1914 / #1913 land**, the rollable pattern:
+Minimal JSONL setup:
 
 ```kotlin
-val auditAppender = JsonlAuditAppender("/var/log/agents-kt/audit.jsonl")
-agent.observe { event ->
-    auditAppender.append(
-        mapOf(
-            "timestamp" to event.timestamp.toString(),
-            "agentName" to event.agentName,
-            "requestId" to MDC.get("requestId"),       // your gateway sets this
-            "manifestHash" to MANIFEST_SHA,            // baked at build time
-            "event" to event::class.simpleName,
-            // ... event-specific fields
-        )
+import agents_engine.observability.JsonlRotation
+import agents_engine.observability.events
+
+val exporters = agent.events.export {
+    jsonl(
+        file("/var/log/agents-kt/audit.jsonl"),
+        rotation = JsonlRotation.Daily(),
     )
 }
+```
+
+Operational checks:
+
+```bash
+jq -c 'select(.requestId == "req-123")' /var/log/agents-kt/audit.jsonl
+jq -s 'group_by(.eventType) | map({eventType: .[0].eventType, count: length})' /var/log/agents-kt/audit.jsonl
 ```
 
 **Evidence-pack contents** (what an auditor will request):
@@ -149,7 +152,7 @@ The AI Act treats different deployment shapes differently. Where your deployment
 
 When a regulator or buyer asks "show me what this AI system does," ship:
 
-1. **Capability inventory** for the agent (or the generated manifest once #1912 lands).
+1. **Capability inventory** for the agent, including the generated permission manifest.
 2. **Hardening checklist** marked with the items in effect for this deployment (from [production-hardening.md](production-hardening.md)).
 3. **Threat model + scenario classification** — which of the 5 scenarios in [threat-model.md](threat-model.md) this deployment matches.
 4. **Action log sample** for the requested time window.

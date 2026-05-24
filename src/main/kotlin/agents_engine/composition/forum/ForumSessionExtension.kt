@@ -1,10 +1,13 @@
 package agents_engine.composition.forum
 
 import agents_engine.core.Agent
+import agents_engine.core.AgentRuntimeContext
+import agents_engine.core.withAgentRuntimeContext
 import agents_engine.model.AgentEventEmitter
 import agents_engine.runtime.events.AgentEvent
 import agents_engine.runtime.events.AgentSession
 import agents_engine.runtime.events.runAgentInSession
+import agents_engine.runtime.events.withRuntimeContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,61 +54,66 @@ fun <IN, OUT> Forum<IN, OUT>.session(input: IN): AgentSession<OUT> {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
     val captain = forum.agents.last()
     val participants = forum.agents.dropLast(1)
+    val runtimeContext = AgentRuntimeContext(sessionId = java.util.UUID.randomUUID().toString())
 
     scope.launch {
-        @Suppress("UNCHECKED_CAST")
-        val emitter: AgentEventEmitter = { event -> channel.trySend(event as AgentEvent<OUT>) }
-        try {
-            val verdict: OUT = try {
-                val contributions = withContext(Dispatchers.Default) {
-                    coroutineScope {
-                        participants.map { participant ->
-                            async {
-                                @Suppress("UNCHECKED_CAST")
-                                val out = runAgentInSession(
-                                    participant as Agent<IN, Any?>,
-                                    input,
-                                    emitter,
-                                ).first
-                                forum.fireMentionListener(participant.name, out)
-                                ParticipantContribution(participant.name, out)
-                            }
-                        }.awaitAll()
-                    }
-                }
-                val captainVerdict: OUT = if (forum.captainTakesTranscript) {
-                    val transcript = ForumTranscript(originalInput = input, contributions = contributions)
-                    @Suppress("UNCHECKED_CAST")
-                    runAgentInSession(
-                        captain as Agent<ForumTranscript<IN>, OUT>,
-                        transcript,
-                        emitter,
-                    ).first
-                } else {
-                    @Suppress("UNCHECKED_CAST")
-                    runAgentInSession(
-                        captain as Agent<IN, OUT>,
-                        input,
-                        emitter,
-                    ).first
-                }
-                forum.fireMentionListener(captain.name, captainVerdict)
-                captainVerdict
-            } catch (e: ForumReturnException) {
-                forum.castForumReturnInternal(e.value)
+        withAgentRuntimeContext(runtimeContext) {
+            @Suppress("UNCHECKED_CAST")
+            val emitter: AgentEventEmitter = { event ->
+                channel.trySend(event.withRuntimeContext(runtimeContext) as AgentEvent<OUT>)
             }
+            try {
+                val verdict: OUT = try {
+                    val contributions = withContext(Dispatchers.Default) {
+                        coroutineScope {
+                            participants.map { participant ->
+                                async {
+                                    @Suppress("UNCHECKED_CAST")
+                                    val out = runAgentInSession(
+                                        participant as Agent<IN, Any?>,
+                                        input,
+                                        emitter,
+                                    ).first
+                                    forum.fireMentionListener(participant.name, out)
+                                    ParticipantContribution(participant.name, out)
+                                }
+                            }.awaitAll()
+                        }
+                    }
+                    val captainVerdict: OUT = if (forum.captainTakesTranscript) {
+                        val transcript = ForumTranscript(originalInput = input, contributions = contributions)
+                        @Suppress("UNCHECKED_CAST")
+                        runAgentInSession(
+                            captain as Agent<ForumTranscript<IN>, OUT>,
+                            transcript,
+                            emitter,
+                        ).first
+                    } else {
+                        @Suppress("UNCHECKED_CAST")
+                        runAgentInSession(
+                            captain as Agent<IN, OUT>,
+                            input,
+                            emitter,
+                        ).first
+                    }
+                    forum.fireMentionListener(captain.name, captainVerdict)
+                    captainVerdict
+                } catch (e: ForumReturnException) {
+                    forum.castForumReturnInternal(e.value)
+                }
 
-            channel.trySend(AgentEvent.Completed(captain.name, verdict, null))
-            channel.close()
-            result.complete(verdict)
-        } catch (t: Throwable) {
-            channel.trySend(AgentEvent.Failed(captain.name, t))
-            channel.close()
-            result.completeExceptionally(t)
+                channel.trySend(AgentEvent.Completed(captain.name, verdict, null))
+                channel.close()
+                result.complete(verdict)
+            } catch (t: Throwable) {
+                channel.trySend(AgentEvent.Failed(captain.name, t))
+                channel.close()
+                result.completeExceptionally(t)
+            }
         }
     }
 
-    return AgentSession(
+return AgentSession(
         events = channel.consumeAsFlow(),
         resultDeferred = result,
     )

@@ -1,5 +1,6 @@
 package agents_engine.core
 
+import agents_engine.model.BudgetReason
 import java.time.Instant
 
 /**
@@ -17,23 +18,29 @@ import java.time.Instant
  * use one `when` block instead of four separate registrations. See #965.
  *
  * The event surface is intentionally a SUBSET of the full PRD §10.2 hierarchy
- * — `TextDelta`, `BudgetWarning`, `SubAgentSpawned`, `ContextCompacted`,
- * `Pipeline*`, `Inference*` events depend on infrastructure that isn't
- * shipped yet (streaming, threshold hooks, sub-agents, sessions, pipeline-
- * level event sources). Those land in follow-ups as the underlying
- * machinery arrives.
+ * — `TextDelta`, `SubAgentSpawned`, `ContextCompacted`, `Pipeline*`,
+ * `Inference*` events depend on infrastructure that isn't shipped yet
+ * (streaming, sub-agents, sessions, pipeline-level event sources). Those land
+ * in follow-ups as the underlying machinery arrives.
  *
  * `agentName` and `timestamp` are present on every variant so consumers can
- * sort, filter, and attribute events without inspecting the variant.
+ * sort, filter, and attribute events without inspecting the variant. Runtime
+ * context fields correlate the event with a request/session and, when
+ * available, the static permission manifest that approved this agent shape.
  */
 sealed interface PipelineEvent {
     val agentName: String
     val timestamp: Instant
+    val runtimeContext: AgentRuntimeContext
+    val requestId: String get() = runtimeContext.requestId
+    val sessionId: String? get() = runtimeContext.sessionId
+    val manifestHash: String? get() = runtimeContext.manifestHash
 
     data class SkillChosen(
         override val agentName: String,
         override val timestamp: Instant,
         val skillName: String,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : PipelineEvent
 
     data class ToolCalled(
@@ -42,6 +49,9 @@ sealed interface PipelineEvent {
         val toolName: String,
         val arguments: Map<String, Any?>,
         val result: Any?,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
+        val toolPolicyRisk: ToolRisk = ToolRisk.UNKNOWN,
+        val usedDeclaredCapability: Boolean = false,
     ) : PipelineEvent
 
     data class KnowledgeLoaded(
@@ -49,12 +59,22 @@ sealed interface PipelineEvent {
         override val timestamp: Instant,
         val entryName: String,
         val contentLength: Int,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : PipelineEvent
 
     data class ErrorOccurred(
         override val agentName: String,
         override val timestamp: Instant,
         val error: Throwable,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
+    ) : PipelineEvent
+
+    data class BudgetThreshold(
+        override val agentName: String,
+        override val timestamp: Instant,
+        val reason: BudgetReason,
+        val usedPercent: Double,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : PipelineEvent
 }
 
@@ -73,6 +93,7 @@ sealed interface PipelineEvent {
  * - [PipelineEvent.ToolCalled] — when an action tool returns (see [Agent.onToolUse])
  * - [PipelineEvent.KnowledgeLoaded] — when a knowledge entry is fetched (see [Agent.onKnowledgeUsed])
  * - [PipelineEvent.ErrorOccurred] — when an exception is about to propagate out (see [Agent.onError])
+ * - [PipelineEvent.BudgetThreshold] — when a budget crosses [Agent.onBudgetThreshold]'s threshold
  */
 fun Agent<*, *>.observe(handler: (PipelineEvent) -> Unit) {
     val agentName = this.name
@@ -86,7 +107,18 @@ fun Agent<*, *>.observe(handler: (PipelineEvent) -> Unit) {
     val priorTool = this.toolUseListener
     onToolUse { name, args, result ->
         priorTool?.invoke(name, args, result)
-        handler(PipelineEvent.ToolCalled(agentName, Instant.now(), name, args, result))
+        val toolDef = toolMap[name]
+        handler(
+            PipelineEvent.ToolCalled(
+                agentName = agentName,
+                timestamp = Instant.now(),
+                toolName = name,
+                arguments = args,
+                result = result,
+                toolPolicyRisk = toolDef?.risk ?: ToolRisk.UNKNOWN,
+                usedDeclaredCapability = toolDef?.policy?.declaresAnyCapability == true,
+            ),
+        )
     }
 
     val priorKnowledge = this.knowledgeUsedListener
@@ -99,5 +131,11 @@ fun Agent<*, *>.observe(handler: (PipelineEvent) -> Unit) {
     onError { error ->
         priorError?.invoke(error)
         handler(PipelineEvent.ErrorOccurred(agentName, Instant.now(), error))
+    }
+
+    val priorBudget = this.budgetThresholdListener
+    onBudgetThreshold(budgetThreshold) { reason, usedPercent ->
+        priorBudget?.invoke(reason, usedPercent)
+        handler(PipelineEvent.BudgetThreshold(agentName, Instant.now(), reason, usedPercent))
     }
 }

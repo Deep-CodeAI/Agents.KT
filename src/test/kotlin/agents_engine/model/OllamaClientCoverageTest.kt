@@ -128,8 +128,17 @@ class OllamaClientCoverageTest {
         val body = """{"eval_count":5,"prompt_eval_count":10}"""
         val response = stubbedOllama(body).parseResponse(body) as LlmResponse.Text
         assertEquals(body, response.content)
-        assertEquals(TokenUsage(10, 5), response.tokenUsage,
-            "usage still extracted on the no-message fallback path")
+        assertEquals(
+            TokenUsage(
+                promptTokens = 10,
+                completionTokens = 5,
+                cachedInputTokens = null,
+                provider = "ollama",
+                model = "test-model",
+            ),
+            response.tokenUsage,
+            "usage still extracted on the no-message fallback path",
+        )
     }
 
     @Test
@@ -159,7 +168,16 @@ class OllamaClientCoverageTest {
         val body = """{"message":{"role":"assistant","content":"x"},
             "prompt_eval_count":15,"eval_count":7}""".trimIndent()
         val response = stubbedOllama(body).parseResponse(body)
-        assertEquals(TokenUsage(15, 7), response.tokenUsage)
+        assertEquals(
+            TokenUsage(
+                promptTokens = 15,
+                completionTokens = 7,
+                cachedInputTokens = null,
+                provider = "ollama",
+                model = "test-model",
+            ),
+            response.tokenUsage,
+        )
     }
 
     @Test
