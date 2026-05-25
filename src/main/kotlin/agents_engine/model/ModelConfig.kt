@@ -1,5 +1,7 @@
 package agents_engine.model
 
+import java.net.http.HttpClient
+
 /**
  * `agents_engine/model/ModelConfig.kt` — the `model { }` DSL slot:
  * provider enum, immutable config record, and the builder that maps
@@ -29,6 +31,15 @@ data class ModelConfig(
     val deepSeekBaseUrl: String = DeepSeekClient.DEFAULT_BASE_URL,
     /** max_tokens carried on every Anthropic / OpenAI-compatible request. */
     val maxTokens: Int = 4096,
+    /**
+     * #2385 — optional shared `HttpClient` for the provider client. When
+     * non-null, the framework forwards it verbatim to the constructed
+     * `OllamaClient` / `ClaudeClient` / `OpenAiClient` / `DeepSeekClient`
+     * so multiple agents in one JVM can share a connection pool / rate-
+     * limited executor / proxy. When null, each provider client builds
+     * its own (byte-for-byte unchanged behavior).
+     */
+    val httpClient: HttpClient? = null,
 ) {
     val baseUrl: String get() = "http://$host:$port"
 
@@ -65,6 +76,8 @@ class ModelBuilder {
     var openAiBaseUrl: String = "https://api.openai.com"
     var deepSeekBaseUrl: String = DeepSeekClient.DEFAULT_BASE_URL
     var maxTokens: Int = ClaudeClient.DEFAULT_MAX_TOKENS
+    /** #2385 — opt into a shared `HttpClient` across agents (rate limit / pool / proxy). */
+    var httpClient: HttpClient? = null
 
     fun ollama(modelName: String) {
         name = modelName
@@ -120,6 +133,7 @@ class ModelBuilder {
             openAiBaseUrl = openAiBaseUrl,
             deepSeekBaseUrl = deepSeekBaseUrl,
             maxTokens = maxTokens,
+            httpClient = httpClient,
         )
     }
 }

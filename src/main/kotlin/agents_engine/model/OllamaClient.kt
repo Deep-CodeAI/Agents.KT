@@ -81,12 +81,26 @@ open class OllamaClient(
     private val connectTimeout: Duration = DEFAULT_CONNECT_TIMEOUT,
     /** Hard cap on response body size — anything bigger throws. See #853. */
     private val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
+    /**
+     * #2385 — optional `HttpClient` injection. When non-null the client
+     * uses it verbatim; the caller-supplied instance can carry its own
+     * executor (rate-limiting / bulkhead), connection pool, proxy, or
+     * telemetry interceptors. When null, builds a per-client `HttpClient`
+     * with [connectTimeout] (legacy behavior, byte-for-byte unchanged).
+     */
+    httpClient: HttpClient? = null,
 ) : ModelClient {
     private val baseUrl = "http://$host:$port"
 
-    private val http: HttpClient = HttpClient.newBuilder()
+    /**
+     * #2385 — test/inspection seam. `internal` matches the existing
+     * `sendChat` / `buildRequestJson` test seams. Production callers
+     * should configure via the `httpClient` constructor parameter.
+     */
+    internal val httpClient: HttpClient = httpClient ?: HttpClient.newBuilder()
         .connectTimeout(connectTimeout.toJavaDuration())
         .build()
+    private val http: HttpClient get() = this.httpClient
 
     /**
      * #706: Once a model has been observed to reject native tools, skip the native

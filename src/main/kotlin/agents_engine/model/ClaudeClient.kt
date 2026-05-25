@@ -61,11 +61,15 @@ open class ClaudeClient(
     private val requestTimeout: Duration = DEFAULT_REQUEST_TIMEOUT,
     private val connectTimeout: Duration = DEFAULT_CONNECT_TIMEOUT,
     private val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
+    /** #2385 — optional `HttpClient` injection; see [OllamaClient]. */
+    httpClient: HttpClient? = null,
 ) : ModelClient {
 
-    private val http: HttpClient = HttpClient.newBuilder()
+    /** #2385 — test/inspection seam; production callers configure via the constructor. */
+    internal val httpClient: HttpClient = httpClient ?: HttpClient.newBuilder()
         .connectTimeout(connectTimeout.toJavaDuration())
         .build()
+    private val http: HttpClient get() = this.httpClient
 
     override fun supportsConstrainedDecoding(): Boolean = true
 

@@ -1,5 +1,6 @@
 package agents_engine.model
 
+import java.net.http.HttpClient
 import kotlin.time.Duration
 
 /**
@@ -18,6 +19,8 @@ open class DeepSeekClient(
     requestTimeout: Duration = OpenAiClient.DEFAULT_REQUEST_TIMEOUT,
     connectTimeout: Duration = OpenAiClient.DEFAULT_CONNECT_TIMEOUT,
     maxResponseBytes: Long = OpenAiClient.DEFAULT_MAX_RESPONSE_BYTES,
+    /** #2385 — forwarded to [OpenAiClient]'s injection slot. */
+    httpClient: HttpClient? = null,
 ) : OpenAiClient(
     apiKey = apiKey,
     model = model,
@@ -30,6 +33,7 @@ open class DeepSeekClient(
     maxResponseBytes = maxResponseBytes,
     providerName = "deepseek",
     providerLabel = "DeepSeek",
+    httpClient = httpClient,
 ) {
     override fun additionalRequestJsonFields(
         stream: Boolean,

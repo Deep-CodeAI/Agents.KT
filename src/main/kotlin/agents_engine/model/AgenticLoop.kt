@@ -773,6 +773,11 @@ private fun constrainedOutputSchemaFor(
 
 // #1644 / #1656 — provider dispatch for the default client. Mirrors the prior
 // eager `OllamaClient(...)` construction; user-supplied `config.client` still wins.
+// `internal` so the #2385 test can drive it directly (same seam style as the
+// rest of the model package).
+internal fun defaultClientForTesting(config: ModelConfig, tools: List<ToolDef>): ModelClient =
+    defaultClientFor(config, tools)
+
 private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelClient =
     when (config.provider) {
         ModelProvider.OLLAMA -> OllamaClient(
@@ -781,6 +786,7 @@ private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelCl
             model = config.name,
             temperature = config.temperature,
             tools = tools,
+            httpClient = config.httpClient,
         )
         ModelProvider.ANTHROPIC -> ClaudeClient(
             apiKey = config.apiKey
@@ -790,6 +796,7 @@ private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelCl
             maxTokens = config.maxTokens,
             tools = tools,
             baseUrl = config.anthropicBaseUrl,
+            httpClient = config.httpClient,
         )
         ModelProvider.OPENAI -> OpenAiClient(
             apiKey = config.apiKey
@@ -799,6 +806,7 @@ private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelCl
             maxTokens = config.maxTokens,
             tools = tools,
             baseUrl = config.openAiBaseUrl,
+            httpClient = config.httpClient,
         )
         ModelProvider.DEEPSEEK -> DeepSeekClient(
             apiKey = config.apiKey
@@ -808,5 +816,6 @@ private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelCl
             maxTokens = config.maxTokens,
             tools = tools,
             baseUrl = config.deepSeekBaseUrl,
+            httpClient = config.httpClient,
         )
     }

@@ -61,11 +61,15 @@ open class OpenAiClient(
     private val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
     private val providerName: String = "openai",
     private val providerLabel: String = "OpenAI",
+    /** #2385 — optional `HttpClient` injection; see [OllamaClient]. */
+    httpClient: HttpClient? = null,
 ) : ModelClient {
 
-    private val http: HttpClient = HttpClient.newBuilder()
+    /** #2385 — test/inspection seam; production callers configure via the constructor. */
+    internal val httpClient: HttpClient = httpClient ?: HttpClient.newBuilder()
         .connectTimeout(connectTimeout.toJavaDuration())
         .build()
+    private val http: HttpClient get() = this.httpClient
 
     override fun supportsConstrainedDecoding(): Boolean = true
 
