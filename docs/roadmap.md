@@ -6,8 +6,10 @@
 
 ```
 0.5.0   Agents with boundaries                       — shipped
-0.6.0   Boundaries you can audit                     — current focus (epic [#1911](../../issues/1911))
+0.6.0   Boundaries you can audit                     — shipped (epic [#1911](../../issues/1911))
 0.7.0   Boundaries you can enforce externally
+0.8.0   Durable agents — persistence, shared queues
+0.9.0   Provider breadth — Gemini + niche adapters
 ```
 
 **0.6.0 hero feature:** the **permission manifest / capability graph** ([#1912](../../issues/1912)) — a deterministic YAML/JSON artifact showing every agent / skill / tool / memory access / MCP endpoint / provider / budget / policy boundary in a system. Build-time evidence for security review; the manifest hash ([#1913](../../issues/1913)) propagates into every runtime audit event so dynamic behaviour ties back to the signed-off capability graph.
@@ -58,7 +60,7 @@ The 0.6.0 epic ([#1911](../../issues/1911)) tracks the full acceptance criteria.
 - [x] MCP client integration — `McpClient.toolSkills()` / `promptSkills()` / `resourceSkills()` expose every MCP capability as a `Skill` consumable in `skills { +... }`. The `McpTool` *type-hierarchy* refinement (above) is a future ergonomic upgrade; the user-facing feature shipped in 0.5.0 as the skills-shape (#1795 / #1796 / #1810). `McpServer` ships DSLs to register prompts and resources alongside agents-as-tools, plus `McpServerInfo` for the full capability snapshot
 - [x] **McpServer hardening baseline** — first-class incoming auth (`McpServerAuth`), origin/host allowlist on HTTP transport, `ClientPrincipal`, per-principal `toolPolicy`, capability negotiation filtered per client, and default-deny outside localhost. Rate limiting and structured request audit events remain gateway / observability follow-ups. ([#1902](../../issues/1902))
 - [x] **DeepSeek provider adapter** — fourth built-in `ModelClient`, implemented on the OpenAI-compatible Chat Completions shape with DeepSeek provider identity, token usage normalization, streaming through the OpenAI-compatible SSE path, and manifest metadata. Constrained decoding stays disabled until DeepSeek supports OpenAI-style `response_format.json_schema`.
-- [ ] **Google Gemini provider adapter** *(post-0.6 follow-up)* — fifth `ModelClient` alongside Anthropic / OpenAI / Ollama / DeepSeek; native SSE streaming override. Closes the "provider breadth" objection without shifting Agents.KT into a provider-breadth race against Koog. ([#1917](../../issues/1917))
+- [ ] **Google Gemini provider adapter** *(0.9.0 — provider-breadth wave)* — fifth `ModelClient` alongside Anthropic / OpenAI / Ollama / DeepSeek; native SSE streaming override using Gemini's `streamGenerateContent?alt=sse` protocol, Gemini-flavored `responseSchema` for structured output, distinct function-calling format. Scheduled for the 0.9.0 provider-breadth wave alongside other niche adapters rather than rolling into the 0.7.x / 0.8.x line, which stay focused on enforcement and persistence. ([#1917](../../issues/1917))
 - [ ] `grants { tools(...) }` — Layer 2 static permission DSL referencing `Tool<*,*>` instances. **Folded into the permission-manifest issue** ([#1912](../../issues/1912)) — the manifest *is* the serialised view of every agent's grants; the DSL block is the input, the YAML/JSON is the output. Depends on the typed `Tool<IN,OUT>` hierarchy ([#1948](../../issues/1948))
 - [ ] Permission model: 3 states — Granted / Confirmed / Absent. **Folded into the guardrails issue** ([#1907](../../issues/1907)): *Granted* = `Allow` or no interceptor registered; *Confirmed* = `Escalate(reason, reviewerRole)` resumed by host app; *Absent* = existing pre-guardrail `allowedToolMap` rejection now surfaced via `onUnauthorizedToolCall`
 - [x] KSP annotation processor — compile-time `@Generable` codegen: shape validation (#1700), schema emitter + field-type validation (#1701), sealed-root schema (#1702), `toLlmDescription()` + multi-constant cache (#1703), `constructFromMap` codegen (#1704), drop runtime `kotlin-reflect` + empty-variants gate (#1705). Ships as `agents-kt-ksp` module
