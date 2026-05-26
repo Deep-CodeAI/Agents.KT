@@ -1,9 +1,8 @@
 package agents_engine.core
 
-import agents_engine.model.OllamaClient
+import agents_engine.model.BuiltInToolWireSchema
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -49,24 +48,17 @@ class MemoryToolSchemaTest {
     }
 
     @Test
-    fun `every built-in memory tool emits a non-permissive wire schema on Ollama`() {
-        // End-to-end: build the tools, hand them to OllamaClient, render
-        // its tool-defs JSON, assert no tool falls through to the legacy
-        // `additionalProperties:true` fallback.
+    fun `every built-in memory tool emits a non-permissive wire schema on every provider client`() {
+        // AC (#2379): wire-format fixtures for each of the three provider
+        // clients (Ollama / OpenAI / Claude) confirm no memory_* tool falls
+        // through to the legacy `additionalProperties:true` fallback.
         val tools = buildMemoryTools(MemoryBank(), "agent")
-        val body = object : OllamaClient(model = "test", tools = tools) {}
-            .buildRequestJson(emptyList())
 
-        // Permissive fallback emits "additionalProperties":true. The
-        // built-ins must never trigger that path.
-        assertFalse(
-            """"additionalProperties":true""" in body,
-            "no memory_* tool may emit the permissive fallback: $body",
-        )
-        // Sanity: all three tools are present.
-        assertTrue(""""name":"memory_read"""" in body)
-        assertTrue(""""name":"memory_write"""" in body)
-        assertTrue(""""name":"memory_search"""" in body)
+        BuiltInToolWireSchema.assertNoPermissiveFallback(tools)
+        // Sanity: all three tools render in every provider body.
+        BuiltInToolWireSchema.assertAllContain(tools, """"name":"memory_read"""")
+        BuiltInToolWireSchema.assertAllContain(tools, """"name":"memory_write"""")
+        BuiltInToolWireSchema.assertAllContain(tools, """"name":"memory_search"""")
     }
 
     @Test

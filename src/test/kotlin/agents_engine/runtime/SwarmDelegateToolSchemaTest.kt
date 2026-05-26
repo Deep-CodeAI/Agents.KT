@@ -1,11 +1,9 @@
 package agents_engine.runtime
 
 import agents_engine.core.agent
-import agents_engine.model.OllamaClient
+import agents_engine.model.BuiltInToolWireSchema
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 
 /**
  * #2379 — the tool minted by [Agent.absorb] now carries a typed
@@ -42,15 +40,13 @@ class SwarmDelegateToolSchemaTest {
     }
 
     @Test
-    fun `swarm delegate emits a non-permissive wire schema with a query property on Ollama`() {
-        val body = object : OllamaClient(model = "test", tools = listOf(captainDelegateTool("helper"))) {}
-            .buildRequestJson(emptyList())
-        val compact = body.filterNot { it.isWhitespace() }
-        assertFalse(
-            "\"additionalProperties\":true" in compact,
-            "delegate must not emit the permissive fallback: $body",
-        )
-        assertTrue("\"query\"" in compact, "argsType schema should expose the query property: $body")
-        assertTrue("\"name\":\"helper\"" in compact)
+    fun `swarm delegate emits a non-permissive wire schema with a query property on every provider client`() {
+        // AC (#2379): wire-format fixtures for each of the three provider
+        // clients confirm the delegate never hits the permissive fallback and
+        // carries its typed `query` property.
+        val tools = listOf(captainDelegateTool("helper"))
+        BuiltInToolWireSchema.assertNoPermissiveFallback(tools)
+        BuiltInToolWireSchema.assertAllContain(tools, "\"query\"")
+        BuiltInToolWireSchema.assertAllContain(tools, "\"name\":\"helper\"")
     }
 }

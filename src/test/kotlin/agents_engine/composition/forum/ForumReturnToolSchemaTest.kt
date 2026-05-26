@@ -1,9 +1,8 @@
 package agents_engine.composition.forum
 
 import agents_engine.core.agent
-import agents_engine.model.OllamaClient
+import agents_engine.model.BuiltInToolWireSchema
 import kotlin.test.Test
-import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -49,16 +48,11 @@ class ForumReturnToolSchemaTest {
     }
 
     @Test
-    fun `forum_return emits a non-permissive wire schema on Ollama`() {
-        // End-to-end: hand the tool to OllamaClient, render its tool-defs JSON,
-        // assert it does not fall through to the legacy permissive fallback.
-        val body = object : OllamaClient(model = "test", tools = listOf(captainForumReturnTool())) {}
-            .buildRequestJson(emptyList())
-        val compact = body.filterNot { it.isWhitespace() }
-        assertFalse(
-            "\"additionalProperties\":true" in compact,
-            "forum_return must not emit the permissive fallback: $body",
-        )
-        assertTrue("\"name\":\"forum_return\"" in compact)
+    fun `forum_return emits a non-permissive wire schema on every provider client`() {
+        // AC (#2379): wire-format fixtures for each of the three provider
+        // clients confirm forum_return never hits the permissive fallback.
+        val tools = listOf(captainForumReturnTool())
+        BuiltInToolWireSchema.assertNoPermissiveFallback(tools)
+        BuiltInToolWireSchema.assertAllContain(tools, "\"name\":\"forum_return\"")
     }
 }
