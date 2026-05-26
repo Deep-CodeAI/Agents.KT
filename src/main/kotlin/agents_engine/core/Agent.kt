@@ -124,6 +124,15 @@ class Agent<IN, OUT>(
     internal fun unregisterTool(name: String) { _toolMap.remove(name) }
     var toolUseListener: ((name: String, args: Map<String, Any?>, result: Any?) -> Unit)? = null
         private set
+    /**
+     * Fires when an `onBeforeToolCall` interceptor returns [Decision.Deny] and
+     * the call is blocked before its executor runs (#2395). Parallel to
+     * [toolUseListener]: blocked attempts are first-class observable so an
+     * audit log catches them even on the non-streaming path. [toolUseListener]
+     * deliberately does NOT fire for a denied call (no executor ran).
+     */
+    var toolDeniedListener: ((name: String, args: Map<String, Any?>, reason: String) -> Unit)? = null
+        private set
     private val tokenUsageListeners = mutableListOf<(TokenUsage) -> Unit>()
     var knowledgeUsedListener: ((name: String, content: String) -> Unit)? = null
         private set
@@ -226,6 +235,16 @@ class Agent<IN, OUT>(
 
     fun onToolUse(block: (name: String, args: Map<String, Any?>, result: Any?) -> Unit) {
         toolUseListener = block
+    }
+
+    /**
+     * Observe tool calls blocked by an `onBeforeToolCall` [Decision.Deny] (#2395).
+     * `reason` is the denial reason returned to the model. Fires instead of
+     * [onToolUse] (the executor never ran). Like the other listener slots, it
+     * remains settable after construction for instrumentation.
+     */
+    fun onToolDenied(block: (name: String, args: Map<String, Any?>, reason: String) -> Unit) {
+        toolDeniedListener = block
     }
 
     /**

@@ -54,6 +54,24 @@ sealed interface PipelineEvent {
         val usedDeclaredCapability: Boolean = false,
     ) : PipelineEvent
 
+    /**
+     * A tool call blocked by an `onBeforeToolCall` [Decision.Deny] (#2395).
+     * Emitted via [Agent.onToolDenied] so audit/observability sees blocked
+     * attempts that never reach [ToolCalled] (which rides [Agent.onToolUse],
+     * and the executor never ran). `reason` is the denial reason surfaced to
+     * the model.
+     */
+    data class ToolDenied(
+        override val agentName: String,
+        override val timestamp: Instant,
+        val toolName: String,
+        val arguments: Map<String, Any?>,
+        val reason: String,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
+        val toolPolicyRisk: ToolRisk = ToolRisk.UNKNOWN,
+        val usedDeclaredCapability: Boolean = false,
+    ) : PipelineEvent
+
     data class KnowledgeLoaded(
         override val agentName: String,
         override val timestamp: Instant,
@@ -115,6 +133,23 @@ fun Agent<*, *>.observe(handler: (PipelineEvent) -> Unit) {
                 toolName = name,
                 arguments = args,
                 result = result,
+                toolPolicyRisk = toolDef?.risk ?: ToolRisk.UNKNOWN,
+                usedDeclaredCapability = toolDef?.policy?.declaresAnyCapability == true,
+            ),
+        )
+    }
+
+    val priorDenied = this.toolDeniedListener
+    onToolDenied { name, args, reason ->
+        priorDenied?.invoke(name, args, reason)
+        val toolDef = toolMap[name]
+        handler(
+            PipelineEvent.ToolDenied(
+                agentName = agentName,
+                timestamp = Instant.now(),
+                toolName = name,
+                arguments = args,
+                reason = reason,
                 toolPolicyRisk = toolDef?.risk ?: ToolRisk.UNKNOWN,
                 usedDeclaredCapability = toolDef?.policy?.declaresAnyCapability == true,
             ),
