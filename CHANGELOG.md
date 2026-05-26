@@ -4,6 +4,10 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed
+
+- **Built-in tools now declare typed parameter schemas (#2379)** — `memory_write` / `memory_search` carry `@Generable` arg types, `memory_read` an explicit closed no-args schema, `forum_return` a closed `value`-only schema, and swarm `absorb` delegates a typed `{query: String}` schema. Previously these relied on the providers' permissive empty-properties fallback (`additionalProperties: true`), forcing the model to infer argument shapes from the description prose. No public API change.
+
 ## [0.6.0] — 2026-05-23
 
 **"Boundaries you can audit."** The 0.6.0 epic (#1911) turns Agents.KT's typed-boundary model into auditor-ready evidence: deterministic permission manifests with runtime hash correlation, append-only JSONL audit, before-interceptor guardrails, typed tool / MCP-tool hierarchies, vendor-neutral observability bridges (OTel / LangSmith / Langfuse), constrained decoding for `@Generable` outputs, DeepSeek as a fourth provider, and onTokenUsage telemetry. Existing consumers see no behavior change unless they opt into the new surfaces.

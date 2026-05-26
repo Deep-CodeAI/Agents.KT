@@ -117,19 +117,39 @@ class Forum<IN, OUT>(
 
 internal class ForumReturnException(val value: Any?) : RuntimeException()
 
+/**
+ * #2379 — `forum_return` accepts a value of the captain agent's `OUT`
+ * type, which is heterogeneous and not statically known at the point
+ * `buildForumReturnTool()` runs. Rather than build a typed `argsType`
+ * we declare a `parametersSchemaJson` with a single `value` property
+ * whose own schema is open (`{}`, accepts any JSON), so the LLM gets
+ * a real `parameters` field (with property name + the implicit
+ * "value is optional, anything else is rejected" contract) instead of
+ * the empty-object permissive fallback.
+ */
+private const val FORUM_RETURN_SCHEMA = """{
+    "type": "object",
+    "properties": {
+        "value": {"description": "The final value to return from the forum. Type matches the captain's OUT."}
+    },
+    "additionalProperties": false
+}"""
+
 private fun buildForumReturnTool(): agents_engine.model.ToolDef =
     agents_engine.model.ToolDef(
-        "forum_return",
-        "Finalize the forum immediately. Args: value (optional) or a JSON object matching the forum result type."
-    ) { args ->
-        val value = when {
-            "value" in args -> args["value"]
-            args.isEmpty() -> ""
-            args.size == 1 -> args.values.first()
-            else -> args
-        }
-        throw ForumReturnException(value)
-    }
+        name = "forum_return",
+        description = "Finalize the forum immediately. Args: value (optional) or a JSON object matching the forum result type.",
+        parametersSchemaJson = FORUM_RETURN_SCHEMA,
+        executor = { args ->
+            val value = when {
+                "value" in args -> args["value"]
+                args.isEmpty() -> ""
+                args.size == 1 -> args.values.first()
+                else -> args
+            }
+            throw ForumReturnException(value)
+        },
+    )
 
 private fun Agent<*, *>.reserveForumReturnName() {
     require("forum_return" !in toolMap) {
