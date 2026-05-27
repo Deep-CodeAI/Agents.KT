@@ -197,6 +197,7 @@ class JsonlAuditExporter(
             },
             toolId = when (event) {
                 is PipelineEvent.ToolCalled -> event.toolName
+                is PipelineEvent.ToolDenied -> event.toolName
                 else -> null
             },
             eventType = event.javaClass.simpleName,
@@ -206,12 +207,24 @@ class JsonlAuditExporter(
                 is PipelineEvent.ToolCalled -> typeName(event.result)
                 else -> null
             },
+            // #2395 — record blocked tool calls in the audit log via the
+            // guardrailDecision column. Only the decision *type* is written:
+            // the free-text reason can embed offending arg values (e.g. a
+            // path), and this exporter is PII-safe by default. The
+            // human-readable reason stays on the live PipelineEvent.ToolDenied
+            // and on the tracing-bridge spans.
+            guardrailDecision = when (event) {
+                is PipelineEvent.ToolDenied -> "Deny"
+                else -> null
+            },
             toolPolicyRisk = when (event) {
                 is PipelineEvent.ToolCalled -> event.toolPolicyRisk.manifestName
+                is PipelineEvent.ToolDenied -> event.toolPolicyRisk.manifestName
                 else -> null
             },
             usedDeclaredCapability = when (event) {
                 is PipelineEvent.ToolCalled -> event.usedDeclaredCapability
+                is PipelineEvent.ToolDenied -> event.usedDeclaredCapability
                 else -> null
             },
             usage = null,
@@ -270,6 +283,7 @@ class JsonlAuditExporter(
         toolPolicyRisk: String?,
         usedDeclaredCapability: Boolean?,
         usage: TokenUsage?,
+        guardrailDecision: String? = null,
     ): Map<String, Any?> =
         linkedMapOf(
             "requestId" to context.requestId,
@@ -283,7 +297,7 @@ class JsonlAuditExporter(
             "inputType" to inputType,
             "outputType" to outputType,
             "budgetState" to null,
-            "guardrailDecision" to null,
+            "guardrailDecision" to guardrailDecision,
             "mcpClientId" to null,
             "toolPolicyRisk" to toolPolicyRisk,
             "usedDeclaredCapability" to usedDeclaredCapability,

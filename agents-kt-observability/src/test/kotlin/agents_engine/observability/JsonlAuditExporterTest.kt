@@ -116,6 +116,34 @@ class JsonlAuditExporterTest {
     }
 
     @Test
+    fun `denied tool calls are recorded as ToolDenied rows without leaking the reason text`() {
+        // #2395 — blocked calls must appear in the audit log. The PII-safe
+        // default means only the decision type is written; the reason (which
+        // here embeds the offending path) must NOT reach the on-disk row.
+        val dir = Files.createTempDirectory("agents-jsonl-audit")
+        val auditFile = dir.resolve("audit.jsonl")
+        val exporter = JsonlAuditExporter(auditFile, clock = fixedClock)
+        exporter.write(
+            PipelineEvent.ToolDenied(
+                agentName = "agent",
+                timestamp = Instant.EPOCH,
+                toolName = "writeFile",
+                arguments = mapOf("path" to "/etc/passwd"),
+                reason = "path '/etc/passwd' outside declared write policy",
+                runtimeContext = AgentRuntimeContext(requestId = "req-3"),
+            ),
+        )
+        exporter.close()
+
+        val line = Files.readAllLines(auditFile).single()
+        assertFalse(line.contains("/etc/passwd"), "denial reason text must not leak to the audit row: $line")
+        val row = parse(line)
+        assertEquals("ToolDenied", row["eventType"])
+        assertEquals("writeFile", row["toolId"])
+        assertEquals("Deny", row["guardrailDecision"])
+    }
+
+    @Test
     fun `size rotation keeps appending into a new active file`() {
         val dir = Files.createTempDirectory("agents-jsonl-audit")
         val auditFile = dir.resolve("audit.jsonl")

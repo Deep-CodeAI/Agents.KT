@@ -37,9 +37,10 @@ internal suspend fun <IN> executeAgentic(
    - `onBeforeTurn` interceptors run immediately before each outbound model call and may mutate messages, deny the turn, or substitute a final output.
 
 4. **Executes tool calls** by name lookup against the allowlist. Each tool invocation:
-   - Runs `onBeforeToolCall` after the allowlist check and before dispatch. `ProceedWith` mutates args, `Deny` feeds a synthetic tool-error message to the model without firing `onToolError`, and `Substitute` behaves like a tool result.
+   - Runs `onBeforeToolCall` after the allowlist check and before dispatch. `ProceedWith` mutates args, `Deny` feeds a synthetic tool-error message to the model without firing `onToolError` or `onToolUse`, and `Substitute` behaves like a tool result.
+   - On `Deny`, fires `agent.toolDeniedListener` with `(name, args, reason)` under the runtime context — surfaces as `PipelineEvent.ToolDenied` so blocked calls stay observable even off the streaming path (#2395). The executor does not run.
    - Honors `perToolTimeout` (regular tools via worker interrupt; session-aware suspend tools via `withTimeout`).
-   - Fires `agent.toolUseListener` (post-hoc) with `(name, args, result)`.
+   - Fires `agent.toolUseListener` (post-hoc) with `(name, args, result)` on the executed (non-denied) path.
    - Emits `ToolCallFinished` AgentEvent when streaming.
    - Increments `toolCallCount`, checked against `maxToolCalls` after each call.
 

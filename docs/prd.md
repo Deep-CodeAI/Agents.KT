@@ -603,12 +603,15 @@ val coder = agent<Specification, CodeBundle>("coder") {
 | `onSkillChosen` | Agent selects a skill to execute | `name: String` — the selected skill's name |
 | `onKnowledgeUsed` | LLM fetches a knowledge entry (tools model) | `name: String`, `content: String` — entry key and loaded content |
 | `onToolUse` | An action tool completes execution | `name: String`, `args: Map<String, Any?>`, `result: Any?` |
+| `onToolDenied` | An `onBeforeToolCall` `Decision.Deny` blocks a tool call | `name: String`, `args: Map<String, Any?>`, `reason: String` |
 
 **`onSkillChosen`** fires once per invocation when the agent picks a skill — either via `skillSelection {}` predicates or LLM decision. Useful for routing visibility in multi-skill agents.
 
 **`onKnowledgeUsed`** fires each time the LLM calls a knowledge tool (Model B — lazy loading). Does *not* fire for eager loading (`toLlmContext()`), since all entries are pre-loaded into the system prompt. Does *not* fire for action tools.
 
 **`onToolUse`** fires after every action tool execution. Useful for logging, tracing, cost tracking, and test assertions.
+
+**`onToolDenied`** fires when a tool call is blocked by an `onBeforeToolCall` `Decision.Deny`. The executor never runs, so `onToolUse` does *not* fire for that call; `onToolDenied` exists so audit/observability still records blocked attempts. `Agent.observe { }` surfaces the same event as `PipelineEvent.ToolDenied`. (#2395)
 
 All callbacks are synchronous — they execute inline before the agentic loop continues. For async telemetry, emit to a channel inside the callback.
 
