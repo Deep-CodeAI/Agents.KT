@@ -74,6 +74,22 @@ enum class BudgetReason {
     CONSECUTIVE_TOOL,
 }
 
+/**
+ * Returned by [agents_engine.core.Agent.onBudgetExceeded] when a budget cap is
+ * about to throw (#2412). The handler can let it stop, or raise the limit and
+ * continue — e.g. "ActorsAgent hit 32 tool calls but we need to keep going."
+ */
+sealed interface BudgetDecision {
+    /** Throw [BudgetExceededException] — the default when no handler is registered. */
+    object Stop : BudgetDecision
+
+    /**
+     * Raise the limit for the current [BudgetReason] to [newLimit] and continue.
+     * Ignored (falls back to [Stop]) unless [newLimit] exceeds the current limit.
+     */
+    data class Extend(val newLimit: Int) : BudgetDecision
+}
+
 class BudgetExceededException(
     message: String,
     val reason: BudgetReason,

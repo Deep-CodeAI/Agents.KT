@@ -6,6 +6,7 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ### Added
 
+- **`onBudgetExceeded` — raise a budget cap and continue (#2412)** — when a budget cap would throw `BudgetExceededException`, `onBudgetExceeded { reason, currentLimit -> }` is consulted: returning `BudgetDecision.Extend(newLimit)` raises the cap and continues, `BudgetDecision.Stop` (or no handler / a non-greater limit) throws as before. Currently wired for the tool-call cap, so a long-running agent can grant itself more tool calls mid-run ("hit 32 but need to continue") instead of failing. Off by default — no behavior change unless registered.
 - **`onToolDenied` hook + `PipelineEvent.ToolDenied` (#2395)** — tool calls blocked by an `onBeforeToolCall` `Decision.Deny` are now first-class observable. Previously a denied call never fired `onToolUse` (its executor never ran), so audit/observability built on `onToolUse` or `observe{}` silently dropped every blocked attempt. `onToolDenied { name, args, reason -> }` now fires in its place (under the runtime context, so `requestId`/`sessionId`/`manifestHash` correlate), and `observe{}` surfaces it as `PipelineEvent.ToolDenied`. `onToolUse` still does not fire on denial.
 
 ### Changed

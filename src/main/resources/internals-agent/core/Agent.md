@@ -50,6 +50,7 @@ Set via the builder:
 - `onKnowledgeUsed { name, content -> ... }` — fires when a knowledge entry is loaded
 - `onError { throwable -> ... }` — fires on any infrastructure error (LLM transport, parse, budget) — original exception always rethrows
 - `onBudgetThreshold(threshold) { reason, usedPercent -> ... }` — pre-cap warning hook
+- `onBudgetExceeded { reason, currentLimit -> BudgetDecision }` — hard-cap decision hook (#2412); `Extend(newLimit)` raises the cap and continues, `Stop` throws. Wired for the tool-call cap.
 - `observe { event: PipelineEvent -> ... }` — sealed-event view that bridges all four hooks into one stream
 
 These are separate from `AgentEvent` (the v0.5.0 streaming session surface) — observability hooks fire post-hoc per skill; AgentEvent fires inside the loop.
