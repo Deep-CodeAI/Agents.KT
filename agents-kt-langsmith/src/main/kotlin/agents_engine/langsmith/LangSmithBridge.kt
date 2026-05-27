@@ -246,6 +246,12 @@ class LangSmithBridge internal constructor(
                     enqueueEvent(state, "llm.token", mapOf("length" to event.text.length))
                 }
             }
+            is AgentEvent.Reasoning -> {
+                // #2406 — reasoning length only; text is high-volume / sensitive.
+                activeModelRun(event.agentId, event.skillName, event.runtimeContext)?.let { state ->
+                    enqueueEvent(state, "llm.reasoning", mapOf("length" to event.text.length))
+                }
+            }
             is AgentEvent.ToolCallStarted -> {
                 val parent = activeAgentRun(event.agentId, event.skillName, event.runtimeContext)
                 val state = startChildRun(

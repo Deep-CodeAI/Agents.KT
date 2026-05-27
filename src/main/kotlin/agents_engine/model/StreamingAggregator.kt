@@ -68,6 +68,7 @@ internal suspend fun chatOrStream(
         return withContext(Dispatchers.IO) { client.chat(messages, jsonSchema) }
     }
     val textBuilder = StringBuilder()
+    val reasoningBuilder = StringBuilder()
     val callOrder = mutableListOf<String>()
     val pendingNames = mutableMapOf<String, String>()
     val pendingArgs = mutableMapOf<String, Map<String, Any?>>()
@@ -83,6 +84,11 @@ internal suspend fun chatOrStream(
             is LlmChunk.TextDelta -> {
                 textBuilder.append(chunk.text)
                 emitter(AgentEvent.Token(agentId, skillName, chunk.text))
+            }
+            is LlmChunk.ReasoningDelta -> {
+                // #2406 — reasoning streams on its own channel, separate from the answer.
+                reasoningBuilder.append(chunk.text)
+                emitter(AgentEvent.Reasoning(agentId, skillName, chunk.text))
             }
             is LlmChunk.ToolCallStarted -> {
                 callOrder += chunk.callId
@@ -103,6 +109,7 @@ internal suspend fun chatOrStream(
         }
     }
 
+    val reasoning = reasoningBuilder.toString().ifEmpty { null }
     return if (callOrder.isNotEmpty()) {
         val calls = callOrder.map { callId ->
             ToolCall(
@@ -111,8 +118,8 @@ internal suspend fun chatOrStream(
                 callId = callId,
             )
         }
-        LlmResponse.ToolCalls(calls, tokenUsage)
+        LlmResponse.ToolCalls(calls, tokenUsage, reasoning)
     } else {
-        LlmResponse.Text(textBuilder.toString(), tokenUsage)
+        LlmResponse.Text(textBuilder.toString(), tokenUsage, reasoning)
     }
 }

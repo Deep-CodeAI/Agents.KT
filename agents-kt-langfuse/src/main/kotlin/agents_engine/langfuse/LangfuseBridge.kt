@@ -266,6 +266,18 @@ class LangfuseBridge internal constructor(
                     )
                 }
             }
+            is AgentEvent.Reasoning -> {
+                // #2406 — reasoning length only; text is high-volume / sensitive.
+                activeGeneration(event.agentId, event.skillName, event.runtimeContext)?.let { state ->
+                    enqueueEventObservation(
+                        traceId = state.traceId,
+                        name = "llm.reasoning",
+                        input = mapOf("length" to event.text.length),
+                        metadata = metadata(event.runtimeContext, "skill_name" to event.skillName),
+                        parentObservationId = state.observationId,
+                    )
+                }
+            }
             is AgentEvent.ToolCallStarted -> {
                 val trace = activeTrace(event.agentId, event.skillName, event.runtimeContext)
                 val observationId = event.callId.ifBlank { idGenerator() }

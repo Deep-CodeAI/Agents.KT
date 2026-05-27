@@ -809,6 +809,7 @@ private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelCl
             model = config.name,
             temperature = config.temperature,
             tools = tools,
+            reasoning = config.reasoning,
         )
         ModelProvider.ANTHROPIC -> ClaudeClient(
             apiKey = config.apiKey
@@ -818,6 +819,7 @@ private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelCl
             maxTokens = config.maxTokens,
             tools = tools,
             baseUrl = config.anthropicBaseUrl,
+            reasoning = config.reasoning,
         )
         ModelProvider.OPENAI -> OpenAiClient(
             apiKey = config.apiKey
@@ -827,6 +829,7 @@ private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelCl
             maxTokens = config.maxTokens,
             tools = tools,
             baseUrl = config.openAiBaseUrl,
+            reasoning = config.reasoning,
         )
         ModelProvider.DEEPSEEK -> DeepSeekClient(
             apiKey = config.apiKey
@@ -836,5 +839,6 @@ private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelCl
             maxTokens = config.maxTokens,
             tools = tools,
             baseUrl = config.deepSeekBaseUrl,
+            reasoning = config.reasoning,
         )
     }

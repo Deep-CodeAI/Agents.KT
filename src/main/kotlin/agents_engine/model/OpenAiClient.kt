@@ -61,6 +61,12 @@ open class OpenAiClient(
     private val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
     private val providerName: String = "openai",
     private val providerLabel: String = "OpenAI",
+    /**
+     * #2411 — opt-in reasoning. OpenAI Chat Completions takes `reasoning_effort`
+     * and reports `reasoning_tokens` (no reasoning TEXT on the wire). Subclasses
+     * (DeepSeek) read it to gate their own reasoning behavior. Off when null.
+     */
+    protected val reasoning: ReasoningConfig? = null,
 ) : ModelClient {
 
     private val http: HttpClient = HttpClient.newBuilder()
@@ -157,6 +163,12 @@ open class OpenAiClient(
                 val choice = choices.firstOrNull() as? Map<*, *> ?: continue
                 val delta = choice["delta"] as? Map<*, *>
                 val finishReason = choice["finish_reason"] as? String
+
+                // #2409 — reasoning delta (DeepSeek reasoner / OpenAI-compatible),
+                // streamed ahead of the answer. OpenAI proper omits it.
+                (delta?.get("reasoning_content") as? String)?.takeIf { it.isNotEmpty() }?.let {
+                    collector.emit(LlmChunk.ReasoningDelta(it))
+                }
 
                 // Text content delta.
                 (delta?.get("content") as? String)?.takeIf { it.isNotEmpty() }?.let {
@@ -291,7 +303,11 @@ open class OpenAiClient(
     protected open fun additionalRequestJsonFields(
         stream: Boolean,
         jsonSchema: JsonSchema?,
-    ): String = ""
+    ): String {
+        // #2411 — reasoning_effort for reasoning-capable models when opted in.
+        val effort = reasoning?.takeIf { it.enabled }?.effort
+        return if (effort != null) ""","reasoning_effort":${effort.name.lowercase().toJsonString()}""" else ""
+    }
 
     internal fun parseResponse(body: String): LlmResponse {
         val root = LenientJsonParser.parse(body) as? Map<*, *>
@@ -312,6 +328,11 @@ open class OpenAiClient(
         val choice = choices.firstOrNull() as? Map<*, *> ?: return LlmResponse.Text(body, tokenUsage)
         val message = choice["message"] as? Map<*, *> ?: return LlmResponse.Text(body, tokenUsage)
 
+        // #2409/#2411 — OpenAI-compatible reasoning text arrives in
+        // `reasoning_content` (DeepSeek reasoner; some OpenAI-compatible
+        // gateways). OpenAI proper omits it → null. No effect when absent.
+        val reasoningText = (message["reasoning_content"] as? String)?.ifEmpty { null }
+
         val rawToolCalls = message["tool_calls"] as? List<*>
         if (!rawToolCalls.isNullOrEmpty()) {
             val calls = rawToolCalls.mapNotNull { tc ->
@@ -328,11 +349,11 @@ open class OpenAiClient(
                     invalidArgumentsError = parsed.parseError,
                 )
             }
-            if (calls.isNotEmpty()) return LlmResponse.ToolCalls(calls, tokenUsage)
+            if (calls.isNotEmpty()) return LlmResponse.ToolCalls(calls, tokenUsage, reasoningText)
         }
 
         val content = message["content"] as? String ?: ""
-        return LlmResponse.Text(content, tokenUsage)
+        return LlmResponse.Text(content, tokenUsage, reasoningText)
     }
 
     private fun extractTokenUsage(root: Map<*, *>): TokenUsage? {
@@ -345,6 +366,9 @@ open class OpenAiClient(
         val completion = (usage["completion_tokens"] as? Number)?.toInt()
         val details = usage["prompt_tokens_details"] as? Map<*, *>
         val cached = (details?.get("cached_tokens") as? Number)?.toInt()
+        // #2411 — reasoning models report reasoning tokens (a subset of completion).
+        val completionDetails = usage["completion_tokens_details"] as? Map<*, *>
+        val reasoningTokens = (completionDetails?.get("reasoning_tokens") as? Number)?.toInt()
         return if (prompt != null && completion != null) {
             TokenUsage(
                 promptTokens = prompt,
@@ -352,6 +376,7 @@ open class OpenAiClient(
                 cachedInputTokens = cached,
                 provider = providerName,
                 model = model,
+                reasoningTokens = reasoningTokens,
             )
         } else null
     }

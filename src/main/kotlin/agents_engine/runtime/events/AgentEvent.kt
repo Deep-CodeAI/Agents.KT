@@ -90,6 +90,20 @@ sealed interface AgentEvent<out OUT> {
     ) : AgentEvent<Nothing>
 
     /**
+     * A chunk of the model's reasoning/thinking text for a skill turn (#2406),
+     * separate from the answer [Token] stream. Lets a UI render live reasoning
+     * instead of a spinner. Emitted by agentic skills only, when reasoning is
+     * enabled and the provider exposes it (Claude / DeepSeek / Ollama); never
+     * for OpenAI Chat Completions (no reasoning text on the wire).
+     */
+    data class Reasoning(
+        override val agentId: String,
+        val skillName: String,
+        val text: String,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
+    ) : AgentEvent<Nothing>
+
+    /**
      * A new tool call has begun streaming. [callId] is unique per call within a
      * session; [ToolCallArgumentsDelta] and [ToolCallFinished] for the same call
      * share this id.
@@ -180,6 +194,7 @@ internal fun AgentEvent<*>.withRuntimeContext(context: AgentRuntimeContext): Age
         is AgentEvent.ModelTurnStarted -> copy(runtimeContext = context)
         is AgentEvent.ModelTurnCompleted -> copy(runtimeContext = context)
         is AgentEvent.Token -> copy(runtimeContext = context)
+        is AgentEvent.Reasoning -> copy(runtimeContext = context)
         is AgentEvent.ToolCallStarted -> copy(runtimeContext = context)
         is AgentEvent.ToolCallArgumentsDelta -> copy(runtimeContext = context)
         is AgentEvent.ToolCallFinished -> copy(runtimeContext = context)

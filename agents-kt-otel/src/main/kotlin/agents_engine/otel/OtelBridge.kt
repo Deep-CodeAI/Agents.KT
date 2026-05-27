@@ -165,6 +165,18 @@ class OtelBridge(
                             .build(),
                     )
             }
+            is AgentEvent.Reasoning -> {
+                // #2406 — record reasoning length only (like tokens); the text is
+                // high-volume / potentially sensitive and is not put on the span.
+                activeTurnSpan(event.agentId, event.skillName, event.runtimeContext)
+                    ?.addEvent(
+                        "gen_ai.reasoning",
+                        Attributes.builder()
+                            .put("agent.skill.name", event.skillName)
+                            .put("gen_ai.reasoning.length", event.text.length.toLong())
+                            .build(),
+                    )
+            }
             is AgentEvent.ToolCallStarted -> {
                 val parent = activeAgentSpan(event.agentId, event.skillName, event.runtimeContext)
                 val span = tracer.spanBuilder("gen_ai.tool")

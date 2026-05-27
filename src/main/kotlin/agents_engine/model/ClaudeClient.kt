@@ -61,6 +61,12 @@ open class ClaudeClient(
     private val requestTimeout: Duration = DEFAULT_REQUEST_TIMEOUT,
     private val connectTimeout: Duration = DEFAULT_CONNECT_TIMEOUT,
     private val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
+    /**
+     * #2408 — opt-in extended thinking. When enabled, sends
+     * `thinking:{type:enabled, budget_tokens}` (Anthropic forces temperature=1)
+     * and surfaces thinking blocks as reasoning. Off when null.
+     */
+    private val reasoning: ReasoningConfig? = null,
 ) : ModelClient {
 
     private val http: HttpClient = HttpClient.newBuilder()
@@ -237,6 +243,12 @@ open class ClaudeClient(
                         val text = delta["text"] as? String ?: return
                         collector.emit(LlmChunk.TextDelta(text))
                     }
+                    "thinking_delta" -> {
+                        // #2408 — extended-thinking text streams here; signature_delta
+                        // (verification) arrives too and is intentionally ignored.
+                        val thinking = delta["thinking"] as? String ?: return
+                        collector.emit(LlmChunk.ReasoningDelta(thinking))
+                    }
                     "input_json_delta" -> {
                         val partial = delta["partial_json"] as? String ?: return
                         block.argsBuilder.append(partial)
@@ -354,7 +366,15 @@ open class ClaudeClient(
         } else ""
 
         val streamField = if (stream) ""","stream":true""" else ""
-        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$streamField$systemField,"messages":[${messageObjects.joinToString(",")}]$toolsField$toolChoiceField}"""
+        // #2408 — extended thinking. Anthropic requires temperature=1 when on;
+        // budget_tokens must be >=1024 and < max_tokens.
+        val thinkingOn = reasoning?.enabled == true
+        val effectiveTemperature = if (thinkingOn) 1.0 else temperature
+        val thinkingField = if (thinkingOn) {
+            val budget = (reasoning?.budgetTokens ?: 1024).coerceIn(1024, (maxTokens - 1).coerceAtLeast(1024))
+            ""","thinking":{"type":"enabled","budget_tokens":$budget}"""
+        } else ""
+        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$effectiveTemperature$thinkingField$streamField$systemField,"messages":[${messageObjects.joinToString(",")}]$toolsField$toolChoiceField}"""
     }
 
     internal fun parseResponse(body: String, jsonSchema: JsonSchema? = null): LlmResponse {
@@ -374,12 +394,19 @@ open class ClaudeClient(
         val tokenUsage = extractTokenUsage(root)
         val content = root["content"] as? List<*> ?: return LlmResponse.Text(body, tokenUsage)
 
+        // #2408 — extended-thinking blocks carry the model's reasoning.
+        val reasoningText = content
+            .mapNotNull { it as? Map<*, *> }
+            .filter { it["type"] == "thinking" }
+            .joinToString("") { (it["thinking"] as? String) ?: "" }
+            .ifEmpty { null }
+
         val toolUses = content.mapNotNull { it as? Map<*, *> }.filter { it["type"] == "tool_use" }
         if (jsonSchema != null) {
             val structured = toolUses.firstOrNull { it["name"] == STRUCTURED_OUTPUT_TOOL_NAME }
             if (structured != null) {
                 val parsed = parseToolArguments(structured["input"])
-                return LlmResponse.Text(InlineToolCallParser.argsToJson(parsed.arguments), tokenUsage)
+                return LlmResponse.Text(InlineToolCallParser.argsToJson(parsed.arguments), tokenUsage, reasoningText)
             }
         }
         if (toolUses.isNotEmpty()) {
@@ -394,14 +421,14 @@ open class ClaudeClient(
                     invalidArgumentsError = parsed.parseError,
                 )
             }
-            if (calls.isNotEmpty()) return LlmResponse.ToolCalls(calls, tokenUsage)
+            if (calls.isNotEmpty()) return LlmResponse.ToolCalls(calls, tokenUsage, reasoningText)
         }
 
         val text = content
             .mapNotNull { it as? Map<*, *> }
             .filter { it["type"] == "text" }
             .joinToString("") { (it["text"] as? String) ?: "" }
-        return LlmResponse.Text(text, tokenUsage)
+        return LlmResponse.Text(text, tokenUsage, reasoningText)
     }
 
     private fun extractTokenUsage(root: Map<*, *>): TokenUsage? {
