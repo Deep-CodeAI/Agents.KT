@@ -133,6 +133,8 @@ Every event already carries `requestId`, `sessionId`, and `manifestHash`; bridge
 
 The adapter intentionally records identifiers, type names, token lengths, and usage counts rather than raw prompts, streamed text, tool arguments, tool results, or interceptor denial reasons.
 
+**Reasoning (#2406).** When `model { reasoning(...) }` is enabled, `AgentEvent.Reasoning` carries the model's thinking text on the live session stream. The tracing bridges record reasoning *length* only (`gen_ai.reasoning` / `llm.reasoning`, mirroring tokens), and the JSONL audit exporter omits reasoning entirely — it's high-volume and potentially sensitive, so it stays a live-stream signal rather than a persisted/traced one.
+
 ## Worked example
 
 ```kotlin

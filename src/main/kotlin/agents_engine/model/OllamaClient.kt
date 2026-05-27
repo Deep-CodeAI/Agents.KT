@@ -81,6 +81,8 @@ open class OllamaClient(
     private val connectTimeout: Duration = DEFAULT_CONNECT_TIMEOUT,
     /** Hard cap on response body size — anything bigger throws. See #853. */
     private val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
+    /** #2410 — opt-in reasoning: sends `think:true` and surfaces `message.thinking`. Off when null. */
+    private val reasoning: ReasoningConfig? = null,
 ) : ModelClient {
     private val baseUrl = "http://$host:$port"
 
@@ -211,6 +213,9 @@ open class OllamaClient(
                         val parsed = LenientJsonParser.parse(line) as? Map<*, *> ?: continue
                         val done = parsed["done"] as? Boolean ?: false
                         val message = parsed["message"] as? Map<*, *>
+                        // #2410 — stream reasoning deltas (message.thinking) ahead of the answer.
+                        val thinking = (message?.get("thinking") as? String) ?: ""
+                        if (thinking.isNotEmpty()) emit(LlmChunk.ReasoningDelta(thinking))
                         val content = (message?.get("content") as? String) ?: ""
                         if (content.isNotEmpty()) emit(LlmChunk.TextDelta(content))
                         if (done) {
@@ -372,7 +377,9 @@ open class OllamaClient(
             ""","tools":[$defs]"""
         } else ""
         val formatJson = jsonSchema?.let { ""","format":${it.schema}""" } ?: ""
-        return """{"model":${model.toJsonString()},"stream":$stream,"temperature":$temperature,"messages":[$messagesJson]$toolsJson$formatJson}"""
+        // #2410 — request reasoning when enabled; Ollama returns it in message.thinking.
+        val thinkJson = if (reasoning?.enabled == true) ""","think":true""" else ""
+        return """{"model":${model.toJsonString()},"stream":$stream,"temperature":$temperature,"messages":[$messagesJson]$toolsJson$formatJson$thinkJson}"""
     }
 
     internal fun parseResponse(body: String): LlmResponse {
@@ -395,6 +402,8 @@ open class OllamaClient(
         val message = root["message"] as? Map<*, *>
             ?: return LlmResponse.Text(body, tokenUsage)
         val content = message["content"] as? String ?: ""
+        // #2410 — reasoning models return their thinking in message.thinking.
+        val reasoningText = (message["thinking"] as? String)?.ifEmpty { null }
 
         // Native Ollama tool_calls field (models with built-in tool support)
         val rawToolCalls = message["tool_calls"] as? List<*>
@@ -410,14 +419,14 @@ open class OllamaClient(
                     invalidArgumentsError = parsedArgs.parseError,
                 )
             }
-            if (calls.isNotEmpty()) return LlmResponse.ToolCalls(calls, tokenUsage)
+            if (calls.isNotEmpty()) return LlmResponse.ToolCalls(calls, tokenUsage, reasoningText)
         }
 
         // Inline JSON tool call in content (models without native tool support)
         val toolCall = InlineToolCallParser.parse(content)
-        if (toolCall != null) return LlmResponse.ToolCalls(listOf(toolCall), tokenUsage)
+        if (toolCall != null) return LlmResponse.ToolCalls(listOf(toolCall), tokenUsage, reasoningText)
 
-        return LlmResponse.Text(content, tokenUsage)
+        return LlmResponse.Text(content, tokenUsage, reasoningText)
     }
 
     private fun extractOllamaTokenUsage(root: Map<*, *>): TokenUsage? {

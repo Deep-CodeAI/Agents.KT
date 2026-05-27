@@ -22,6 +22,14 @@ sealed interface LlmChunk {
     /** A chunk of text from the model's response. Providers chunk at their own granularity; we pass through as-is. */
     data class TextDelta(val text: String) : LlmChunk
 
+    /**
+     * A chunk of the model's reasoning/thinking text, separate from the answer
+     * [TextDelta] (#2406). Emitted (typically before the answer) when reasoning
+     * is enabled and the provider exposes it (Claude thinking, DeepSeek
+     * reasoning_content, Ollama thinking). Off by default.
+     */
+    data class ReasoningDelta(val text: String) : LlmChunk
+
     /** A new tool call has begun streaming. Arguments arrive next as ArgumentsDelta events; finalised in ToolCallFinished. */
     data class ToolCallStarted(val callId: String, val toolName: String) : LlmChunk
 

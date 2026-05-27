@@ -48,6 +48,31 @@ calculator("Calculate ((15 + 35) / 2)^2")
 
 All three adapters share the `ModelClient` interface — switching providers is a one-line DSL change. The injectable `client = ...` escape hatch is still there for test stubs or custom adapters (e.g., Google/Gemini ahead of native support).
 
+#### Reasoning / thinking (opt-in, #2406)
+
+`model { reasoning(budgetTokens = 2048, effort = ReasoningEffort.HIGH) }` asks the provider to expose its reasoning. When enabled, a model's reasoning streams **separately from its answer** as `AgentEvent.Reasoning` (and `LlmChunk.ReasoningDelta`), and accumulates on `LlmResponse.reasoning`. It's **off by default** — no extra cost or behavior change unless you call `reasoning(...)`.
+
+```kotlin
+model { claude("claude-opus-4-7"); apiKey = ...; reasoning(budgetTokens = 4096) }
+
+agent.session(input).events.collect { event ->
+    when (event) {
+        is AgentEvent.Reasoning -> renderThinking(event.text)  // live reasoning, not a spinner
+        is AgentEvent.Token     -> renderAnswer(event.text)
+        else -> {}
+    }
+}
+```
+
+| Provider | Mechanism | Reasoning text? |
+|---|---|---|
+| Anthropic | `thinking` (extended thinking); `budgetTokens` sets the budget; temperature is forced to 1 (Anthropic constraint) | yes |
+| DeepSeek | `reasoning_content` — use a reasoner model (e.g. `deepseek-reasoner`) | yes |
+| Ollama | `think: true`; reasoning arrives in `message.thinking` | yes |
+| OpenAI | `reasoning_effort` from `effort`; reasoning **token count** via `TokenUsage.reasoningTokens` | **no** — Chat Completions returns no reasoning text on the wire; Responses-API summaries are out of scope |
+
+Reasoning rides the live session stream (`AgentEvent`), not the post-hoc audit `PipelineEvent`. The tracing bridges (OTel / LangSmith / Langfuse) record reasoning *length* only, and the JSONL audit exporter omits it entirely — reasoning is high-volume and potentially sensitive, so it stays a live-stream signal.
+
 **`tools { tool(name, description) { args -> } }`** — registers callable tools. Each tool receives a `Map<String, Any?>` of arguments and returns any value.
 
 **`tools { tool<Args, Result>(name, description) { args -> } }`** — typed variant. `Args` must be `@Generable`; the framework deserializes the model's arguments into a typed instance via reflection (`KClass.constructFromMap`) before invoking the executor. The provider envelope advertises a real JSON Schema generated from `Args::class.jsonSchema()` (proper `properties`, `required`, `@Guide` descriptions per field) instead of the legacy `properties: {}, additionalProperties: true`. Deserialization failures (missing required field, wrong type) route through `onError { invalidArgs { ... } }` like JSON-parse failures, not `executionError`. The returned handle implements provider-neutral `Tool<Args, Result>`, the same boundary shape used by MCP-discovered tools.
