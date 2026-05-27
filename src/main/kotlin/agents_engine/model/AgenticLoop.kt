@@ -795,6 +795,7 @@ private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelCl
             model = config.name,
             temperature = config.temperature,
             tools = tools,
+            reasoning = config.reasoning,
         )
         ModelProvider.ANTHROPIC -> ClaudeClient(
             apiKey = config.apiKey
