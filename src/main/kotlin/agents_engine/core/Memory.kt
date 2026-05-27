@@ -100,9 +100,14 @@ internal fun buildMemoryTools(bank: MemoryBank, agentName: String): List<ToolDef
         description = "Write to agent memory. Overwrites whatever was previously stored.",
         argsType = MemoryWriteArgs::class,
         executor = { args ->
-            val typed = MemoryWriteArgs::class.constructFromMap(args)
-                ?: error("memory_write received malformed args: $args")
-            bank.write(agentName, typed.content)
+            // #2379 — prefer the typed args, but fall back to lenient
+            // single-value extraction when the model passes an unexpected key,
+            // preserving the pre-typed behavior (AgentMemoryTest "any arg key").
+            val content = MemoryWriteArgs::class.constructFromMap(args)?.content
+                ?: args["content"]?.toString()
+                ?: args.values.firstOrNull()?.toString()
+                ?: ""
+            bank.write(agentName, content)
             "ok"
         },
     )
@@ -112,12 +117,16 @@ internal fun buildMemoryTools(bank: MemoryBank, agentName: String): List<ToolDef
         description = "Search agent memory for lines matching a query. Returns matching lines.",
         argsType = MemorySearchArgs::class,
         executor = { args ->
-            val typed = MemorySearchArgs::class.constructFromMap(args)
-                ?: error("memory_search received malformed args: $args")
+            // #2379 — typed args first, lenient single-value fallback second
+            // (see memory_write above).
+            val query = MemorySearchArgs::class.constructFromMap(args)?.query
+                ?: args["query"]?.toString()
+                ?: args.values.firstOrNull()?.toString()
+                ?: ""
             val content = bank.read(agentName)
-            if (content.isBlank() || typed.query.isBlank()) ""
+            if (content.isBlank() || query.isBlank()) ""
             else content.lines()
-                .filter { it.contains(typed.query, ignoreCase = true) }
+                .filter { it.contains(query, ignoreCase = true) }
                 .joinToString("\n")
         },
     )
