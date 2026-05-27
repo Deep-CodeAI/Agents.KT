@@ -63,6 +63,12 @@ data class TokenUsage(
     val cachedInputTokens: Int? = null,
     val provider: String = "unknown",
     val model: String = "unknown",
+    /**
+     * Reasoning tokens the provider billed inside [completionTokens] when a
+     * reasoning model was used (#2411). A subset of completion tokens, not extra
+     * — surfaced for cost/observability. Null when the provider doesn't report it.
+     */
+    val reasoningTokens: Int? = null,
 ) {
     val total: Int get() = promptTokens + completionTokens
 }

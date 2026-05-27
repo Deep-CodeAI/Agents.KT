@@ -18,6 +18,7 @@ open class DeepSeekClient(
     requestTimeout: Duration = OpenAiClient.DEFAULT_REQUEST_TIMEOUT,
     connectTimeout: Duration = OpenAiClient.DEFAULT_CONNECT_TIMEOUT,
     maxResponseBytes: Long = OpenAiClient.DEFAULT_MAX_RESPONSE_BYTES,
+    reasoning: ReasoningConfig? = null,
 ) : OpenAiClient(
     apiKey = apiKey,
     model = model,
@@ -30,12 +31,18 @@ open class DeepSeekClient(
     maxResponseBytes = maxResponseBytes,
     providerName = "deepseek",
     providerLabel = "DeepSeek",
+    reasoning = reasoning,
 ) {
+    /**
+     * #2409 — by default DeepSeek thinking is disabled (preserves prior
+     * behavior). When reasoning is opted in, stop disabling so the reasoner
+     * emits `reasoning_content` (parsed by the shared OpenAI-compatible path).
+     */
     override fun additionalRequestJsonFields(
         stream: Boolean,
         jsonSchema: JsonSchema?,
     ): String =
-        ""","thinking":{"type":"disabled"}"""
+        if (reasoning?.enabled == true) "" else ""","thinking":{"type":"disabled"}"""
 
     /**
      * DeepSeek supports JSON object mode, but its documented `response_format`
