@@ -101,6 +101,16 @@ internal suspend fun <IN> executeAgentic(
      */
     emitter: AgentEventEmitter? = null,
     runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
+    /**
+     * #2416 — resume seed. When non-null, the loop starts from this snapshot's
+     * messages + counters (and restores memory) instead of a fresh conversation.
+     */
+    resumeFrom: agents_engine.core.SessionSnapshot? = null,
+    /**
+     * #2416 — fired at each turn boundary (after a tool round completes, before
+     * the next model call) with the current resumable state, for persistence.
+     */
+    onTurnCheckpoint: ((agents_engine.core.SessionSnapshot) -> Unit)? = null,
 ): AgenticResult {
     val config = requireNotNull(agent.modelConfig) {
         "Agent '${agent.name}' has no model configured. Add a model { } block."
@@ -178,22 +188,29 @@ internal suspend fun <IN> executeAgentic(
             )
         }
     }
-    if (systemContent.isNotBlank()) messages.add(LlmMessage("system", systemContent))
+    // #2416 — resume seeds messages + memory from a prior snapshot; the saved
+    // history already contains the system + user messages, so we don't re-add
+    // them. A fresh run builds them as usual.
+    if (resumeFrom != null) {
+        messages.addAll(resumeFrom.messages)
+        agent.memoryBank?.restore(resumeFrom.memory)
+    } else {
+        if (systemContent.isNotBlank()) messages.add(LlmMessage("system", systemContent))
+        // User: serialized input. Typed @Generable inputs become JSON; primitives
+        // and Strings render literally; non-Generable types fall back to toString.
+        // See #937 / GenerableSupport.toLlmInput.
+        messages.add(LlmMessage("user", toLlmInput(input)))
+    }
 
-    // User: serialized input. Typed @Generable inputs become JSON; primitives
-    // and Strings render literally; non-Generable types fall back to toString.
-    // See #937 / GenerableSupport.toLlmInput.
-    messages.add(LlmMessage("user", toLlmInput(input)))
-
-    var turns = 0
-    var toolCalls = 0
+    var turns = resumeFrom?.turns ?: 0
+    var toolCalls = resumeFrom?.toolCalls ?: 0
     // #2412 — effective tool-call cap; starts at the configured budget and can be
     // raised mid-run by an onBudgetExceeded handler so the loop continues.
-    var toolCallLimit = budget.maxToolCalls
+    var toolCallLimit = resumeFrom?.toolCallLimit ?: budget.maxToolCalls
     var totalTokens = 0
     // #1740: cumulative usage across all turns. Provider reports per-turn;
     // we sum prompt and completion independently (TokenUsage.total is derived).
-    var cumulativeUsage: TokenUsage? = null
+    var cumulativeUsage: TokenUsage? = resumeFrom?.tokensUsed
     var lastToolName: String? = null
     var consecutiveSameTool = 0
     val invocationStartNanos = System.nanoTime()
@@ -452,6 +469,21 @@ internal suspend fun <IN> executeAgentic(
                 }
             }
         }
+        // #2416 — turn-boundary checkpoint. Text responses return above; only
+        // tool-turns reach here, with messages settled and no half-run tool.
+        onTurnCheckpoint?.invoke(
+            agents_engine.core.SessionSnapshot(
+                messages = messages.toList(),
+                turns = turns,
+                toolCalls = toolCalls,
+                toolCallLimit = toolCallLimit,
+                tokensUsed = cumulativeUsage,
+                memory = agent.memoryBank?.entries() ?: emptyMap(),
+                requestId = runtimeContext.requestId,
+                sessionId = runtimeContext.sessionId,
+                manifestHash = agent.manifestHash,
+            ),
+        )
     }
 }
 
