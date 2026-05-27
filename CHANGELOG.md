@@ -4,6 +4,8 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-05-28
+
 ### Added
 
 - **Snapshot/resume foundation (#2416, spike for #2386) — experimental** — an agent's resumable state is its message history + loop counters, so resume re-enters the loop seeded with a snapshot rather than suspending a coroutine. Ships `Snapshotable<S>`, `SessionSnapshot`, `SnapshotStore` (+ `InMemorySnapshotStore` and `FileSnapshotStore` with atomic temp-write/rename), `MemoryBank` snapshot/restore, and the `executeAgentic` turn-boundary checkpoint + `resumeFrom` seam. Round-trip proven by test (3 turns → crash → fresh agent → restore → finish). The ergonomic `persistence { }` DSL + `Agent.resumeOrStart(sessionId)`, the manifest-hash restore guard, and composition snapshots are the next phases on #2386.
