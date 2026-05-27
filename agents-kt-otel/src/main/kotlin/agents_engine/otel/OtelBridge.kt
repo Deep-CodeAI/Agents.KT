@@ -49,6 +49,18 @@ class OtelBridge(
                         .build(),
                 )
             }
+            is PipelineEvent.ToolDenied -> {
+                // #2395 — a tool call blocked by an onBeforeToolCall Decision.Deny.
+                mostRecentAgentSpan()?.addEvent(
+                    "agent.tool.denied",
+                    Attributes.builder()
+                        .put("tool.name", event.toolName)
+                        .put("tool.deny.reason", event.reason)
+                        .put("tool.policy.risk", event.toolPolicyRisk.manifestName)
+                        .put("tool.used_declared_capability", event.usedDeclaredCapability)
+                        .build(),
+                )
+            }
             is PipelineEvent.KnowledgeLoaded -> {
                 mostRecentAgentSpan()?.addEvent(
                     "agent.knowledge.loaded",

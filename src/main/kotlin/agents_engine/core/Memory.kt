@@ -1,5 +1,8 @@
 package agents_engine.core
 
+import agents_engine.generation.Generable
+import agents_engine.generation.Guide
+import agents_engine.generation.constructFromMap
 import agents_engine.model.ToolDef
 import java.util.concurrent.ConcurrentHashMap
 
@@ -51,29 +54,82 @@ class MemoryBank(val maxLines: Int = Int.MAX_VALUE) {
     }
 }
 
+/**
+ * #2379 — typed args for `memory_write`. Generates a proper JSON Schema
+ * via `argsType` instead of relying on the LLM to infer the shape from
+ * the description prose. Unblocks safely closing the wire-format
+ * tool-schema fallback in a future revisit of #2377.
+ */
+@Generable("Arguments for memory_write — overwrites the agent's memory slot.")
+data class MemoryWriteArgs(
+    @Guide("The full content to store. Overwrites whatever was there before.")
+    val content: String,
+)
+
+/**
+ * #2379 — typed args for `memory_search`. Same rationale as
+ * [MemoryWriteArgs] — the LLM gets a real schema instead of having to
+ * parse the description prose.
+ */
+@Generable("Arguments for memory_search — returns the lines that contain the query substring.")
+data class MemorySearchArgs(
+    @Guide("Case-insensitive substring to look for in stored memory lines.")
+    val query: String,
+)
+
+/**
+ * `parametersSchemaJson` for tools that genuinely take no arguments.
+ * Pre-#2379 these tools relied on the permissive empty-properties
+ * fallback in the provider clients; with this schema the wire format
+ * is explicit and matches the future closed-fallback behavior, so the
+ * fallback's policy can be tightened without regressing these tools.
+ */
+private const val NO_ARGS_SCHEMA =
+    """{"type":"object","properties":{},"additionalProperties":false}"""
+
 internal fun buildMemoryTools(bank: MemoryBank, agentName: String): List<ToolDef> {
-    val read = ToolDef("memory_read", "Read agent memory. Returns the stored memory content.") { _ ->
-        bank.read(agentName)
-    }
+    val read = ToolDef(
+        name = "memory_read",
+        description = "Read agent memory. Returns the stored memory content.",
+        parametersSchemaJson = NO_ARGS_SCHEMA,
+        executor = { _ -> bank.read(agentName) },
+    )
 
-    val write = ToolDef("memory_write", "Write to agent memory. Argument: content (string). Overwrites current memory.") { args ->
-        val content = args["content"]?.toString()
-            ?: args.values.firstOrNull()?.toString()
-            ?: ""
-        bank.write(agentName, content)
-        "ok"
-    }
+    val write = ToolDef(
+        name = "memory_write",
+        description = "Write to agent memory. Overwrites whatever was previously stored.",
+        argsType = MemoryWriteArgs::class,
+        executor = { args ->
+            // #2379 — prefer the typed args, but fall back to lenient
+            // single-value extraction when the model passes an unexpected key,
+            // preserving the pre-typed behavior (AgentMemoryTest "any arg key").
+            val content = MemoryWriteArgs::class.constructFromMap(args)?.content
+                ?: args["content"]?.toString()
+                ?: args.values.firstOrNull()?.toString()
+                ?: ""
+            bank.write(agentName, content)
+            "ok"
+        },
+    )
 
-    val search = ToolDef("memory_search", "Search agent memory for lines matching a query. Argument: query (string). Returns matching lines.") { args ->
-        val query = args["query"]?.toString()
-            ?: args.values.firstOrNull()?.toString()
-            ?: ""
-        val content = bank.read(agentName)
-        if (content.isBlank() || query.isBlank()) ""
-        else content.lines()
-            .filter { it.contains(query, ignoreCase = true) }
-            .joinToString("\n")
-    }
+    val search = ToolDef(
+        name = "memory_search",
+        description = "Search agent memory for lines matching a query. Returns matching lines.",
+        argsType = MemorySearchArgs::class,
+        executor = { args ->
+            // #2379 — typed args first, lenient single-value fallback second
+            // (see memory_write above).
+            val query = MemorySearchArgs::class.constructFromMap(args)?.query
+                ?: args["query"]?.toString()
+                ?: args.values.firstOrNull()?.toString()
+                ?: ""
+            val content = bank.read(agentName)
+            if (content.isBlank() || query.isBlank()) ""
+            else content.lines()
+                .filter { it.contains(query, ignoreCase = true) }
+                .joinToString("\n")
+        },
+    )
 
     return listOf(read, write, search)
 }

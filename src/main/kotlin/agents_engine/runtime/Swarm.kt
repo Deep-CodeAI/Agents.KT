@@ -1,8 +1,24 @@
 package agents_engine.runtime
 
 import agents_engine.core.Agent
+import agents_engine.generation.Generable
+import agents_engine.generation.Guide
+import agents_engine.generation.constructFromMap
 import agents_engine.model.ToolDef
 import java.util.ServiceLoader
+
+/**
+ * #2379 — typed args for tools minted by [Agent.absorb]. v1 of absorb
+ * only supports `Agent<String, *>`, so the delegate tool's input shape
+ * is always a single `query: String`. Having a real `argsType` here lets
+ * the wire-format provider clients emit a proper JSON Schema instead of
+ * falling back to the permissive empty-properties form.
+ */
+@Generable("Arguments for a swarm-delegate tool — forward a single-string query to the sibling agent.")
+data class SwarmDelegateArgs(
+    @Guide("Free-text query for the sibling agent. The sibling's first skill must accept String input.")
+    val query: String,
+)
 
 /**
  * `agents_engine/runtime/Swarm.kt` — multi-JAR agent assembly via
@@ -110,20 +126,21 @@ fun Agent<*, *>.absorb(sibling: Agent<*, *>) {
     val tool = ToolDef(
         name = sibling.name,
         description = toolDescription,
+        // #2379 — typed args for swarm delegates. The v1 absorb only
+        // supports `Agent<String, *>`, so input is always {query: String}.
+        argsType = SwarmDelegateArgs::class,
         executor = { args ->
-            val query = args["query"]?.toString()
-                ?: args.values.firstOrNull()?.toString()
-                ?: ""
-            asString.invoke(query)?.toString() ?: "null"
+            val typed = SwarmDelegateArgs::class.constructFromMap(args)
+                ?: error("${sibling.name} delegate received malformed args: $args")
+            asString.invoke(typed.query)?.toString() ?: "null"
         },
         // #1752 — under captain.session(input), route the sibling through
         // runAgentInSession so its inner events stream into the captain's
         // session events Flow with the sibling's own agentId.
         sessionExecutor = { args, emitter ->
-            val query = args["query"]?.toString()
-                ?: args.values.firstOrNull()?.toString()
-                ?: ""
-            agents_engine.runtime.events.runAgentInSession(asString, query, emitter).first?.toString() ?: "null"
+            val typed = SwarmDelegateArgs::class.constructFromMap(args)
+                ?: error("${sibling.name} delegate received malformed args: $args")
+            agents_engine.runtime.events.runAgentInSession(asString, typed.query, emitter).first?.toString() ?: "null"
         },
     )
     registerBuiltInTool(tool)

@@ -140,6 +140,22 @@ class LangfuseBridge internal constructor(
                     )
                 }
             }
+            is PipelineEvent.ToolDenied -> {
+                // #2395 — a tool call blocked by an onBeforeToolCall Decision.Deny.
+                mostRecentTrace()?.let { state ->
+                    enqueueEventObservation(
+                        trace = state,
+                        name = "agent.tool.denied",
+                        input = mapOf(
+                            "tool_name" to event.toolName,
+                            "deny_reason" to event.reason,
+                            "tool_policy_risk" to event.toolPolicyRisk.manifestName,
+                            "used_declared_capability" to event.usedDeclaredCapability,
+                        ),
+                        metadata = metadata(event.runtimeContext),
+                    )
+                }
+            }
         }
     }
 

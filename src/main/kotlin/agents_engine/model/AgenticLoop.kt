@@ -355,6 +355,7 @@ internal suspend fun <IN> executeAgentic(
                         )
                     var effectiveCall = call
                     var denied = false
+                    var deniedReason: String? = null
                     val result = when (val decision = agent.decideBeforeToolCall(call.name, call.arguments)) {
                         Decision.Proceed -> executeToolWithBudgetHandlingEvents(
                             agent, tool, effectiveCall, budget, emitter
@@ -369,12 +370,25 @@ internal suspend fun <IN> executeAgentic(
                         }
                         is Decision.Deny -> {
                             denied = true
+                            deniedReason = decision.reason
                             formatDeniedToolError(call.name, decision.reason)
                         }
                         is Decision.Substitute<*> -> decision.result
                     }
 
                     if (denied) {
+                        // #2395 — a blocked call never reaches onToolUse, so fire the
+                        // first-class onToolDenied hook here (under the runtime context
+                        // so requestId/sessionId/manifestHash correlate). This is what
+                        // observe{} turns into PipelineEvent.ToolDenied; without it,
+                        // audit logs built on observe{}/onToolUse silently drop denials.
+                        withAgentRuntimeContext(runtimeContext) {
+                            agent.toolDeniedListener?.invoke(
+                                effectiveCall.name,
+                                effectiveCall.arguments,
+                                deniedReason ?: "",
+                            )
+                        }
                         if (emitter != null && effectiveCall.callId != null) {
                             emitter(
                                 agents_engine.runtime.events.AgentEvent.ToolCallFinished(

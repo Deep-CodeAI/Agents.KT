@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/core/PipelineEvent.kt — the sealed PipelineEvent (SkillChosen, ToolCalled, KnowledgeLoaded, ErrorOccurred) and the Agent.observe { } extension that chains it over the four per-event listeners additively (#965). Every event carries AgentRuntimeContext fields requestId, sessionId, manifestHash (#1913). Call when the IDE LLM needs to reason about post-hoc observability vs the in-loop AgentEvent stream.
+description: Source-file knowledge for agents_engine/core/PipelineEvent.kt — the sealed PipelineEvent (SkillChosen, ToolCalled, ToolDenied, KnowledgeLoaded, ErrorOccurred, BudgetThreshold) and the Agent.observe { } extension that chains it over the per-event listeners additively (#965, #2395). Every event carries AgentRuntimeContext fields requestId, sessionId, manifestHash (#1913). Call when the IDE LLM needs to reason about post-hoc observability vs the in-loop AgentEvent stream.
 ---
 
 # `agents_engine/core/PipelineEvent.kt` — unified observability event
@@ -18,6 +18,7 @@ sealed interface PipelineEvent {
 
     data class SkillChosen(...,    skillName: String)
     data class ToolCalled(...,     toolName: String, arguments: Map<String, Any?>, result: Any?, toolPolicyRisk, usedDeclaredCapability)
+    data class ToolDenied(...,     toolName: String, arguments: Map<String, Any?>, reason: String, toolPolicyRisk, usedDeclaredCapability)
     data class KnowledgeLoaded(..., entryName: String, contentLength: Int)
     data class ErrorOccurred(...,  error: Throwable)
 }
@@ -26,6 +27,8 @@ sealed interface PipelineEvent {
 `agentName`, `timestamp`, `requestId`, `sessionId`, and `manifestHash` are present on every variant — sort, filter, attribute, and audit-correlate without inspecting the variant.
 
 `ToolCalled` also carries `toolPolicyRisk` and `usedDeclaredCapability` from the executed `ToolDef` (#1915). The flag means "the tool declared at least one filesystem/network/environment capability"; it is audit metadata, not sandbox proof.
+
+`ToolDenied` (#2395) is emitted when an `onBeforeToolCall` `Decision.Deny` blocks a call — the executor never runs, so it rides `onToolDenied` (not `onToolUse`/`ToolCalled`). It carries the denial `reason` plus the same `toolPolicyRisk`/`usedDeclaredCapability` audit fields, so a security log built on `observe { }` captures blocked attempts that would otherwise be invisible.
 
 ## Wiring
 
@@ -36,6 +39,7 @@ tracer.observe { event ->
     when (event) {
         is PipelineEvent.SkillChosen     -> emit("skill", event.skillName)
         is PipelineEvent.ToolCalled      -> emit("tool",  "${event.toolName}:${event.toolPolicyRisk}")
+        is PipelineEvent.ToolDenied      -> emit("deny",  "${event.toolName}: ${event.reason}")
         is PipelineEvent.KnowledgeLoaded -> emit("know",  event.entryName)
         is PipelineEvent.ErrorOccurred   -> emit("error", event.error.message ?: "<no msg>")
     }
@@ -65,6 +69,6 @@ The split is "post-hoc per-skill events" (here) vs "in-loop streaming events" (`
 
 ## Related files
 
-- `Agent.kt` — the four per-event listener slots (`skillChosenListener`, `toolUseListener`, `knowledgeUsedListener`, `errorListener`) that `observe { }` chains over.
+- `Agent.kt` — the per-event listener slots (`skillChosenListener`, `toolUseListener`, `toolDeniedListener`, `knowledgeUsedListener`, `errorListener`, `budgetThresholdListener`) that `observe { }` chains over.
 - `runtime/events/AgentEvent.kt` — the in-loop streaming event surface (different concern).
 - `runtime/events/AgentSession.kt` — `Flow<AgentEvent<OUT>>` consumer surface.

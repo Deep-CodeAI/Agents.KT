@@ -131,6 +131,21 @@ class LangSmithBridge internal constructor(
                     )
                 }
             }
+            is PipelineEvent.ToolDenied -> {
+                // #2395 — a tool call blocked by an onBeforeToolCall Decision.Deny.
+                mostRecentAgentRun()?.let { state ->
+                    enqueueEvent(
+                        state,
+                        "agent.tool.denied",
+                        mapOf(
+                            "tool_name" to event.toolName,
+                            "deny_reason" to event.reason,
+                            "tool_policy_risk" to event.toolPolicyRisk.manifestName,
+                            "used_declared_capability" to event.usedDeclaredCapability,
+                        ),
+                    )
+                }
+            }
         }
     }
 

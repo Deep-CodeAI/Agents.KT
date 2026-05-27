@@ -46,7 +46,7 @@ mcpClientId, toolPolicyRisk, usedDeclaredCapability, provider, model
 ```
 
 The exporter deliberately does **not** serialize raw tool arguments, tool results, streamed text, generated output, or exception messages. It emits identifiers, event names, type names, and provider/model metadata so secret-like values do not leak into audit logs by default. `manifestHash` is populated when the runtime event carries one.
-For `ToolCalled` rows, `toolPolicyRisk` mirrors the tool's declarative `ToolPolicy.risk`, and `usedDeclaredCapability` is true when the executed tool declares at least one filesystem/network/environment capability.
+For `ToolCalled` rows, `toolPolicyRisk` mirrors the tool's declarative `ToolPolicy.risk`, and `usedDeclaredCapability` is true when the executed tool declares at least one filesystem/network/environment capability. Tool calls **blocked** by an `onBeforeToolCall` `Decision.Deny` surface as `ToolDenied` rows — `eventType` `ToolDenied`, the tool id, `guardrailDecision` `"Deny"`, and the same policy fields — so a security audit captures blocked attempts, not just executed ones (#2395). Consistent with the PII-safe default, the on-disk row records only the decision *type*; the human-readable denial reason stays off disk (it can embed arg values) and is available on the live `PipelineEvent.ToolDenied` and on the OTel/LangSmith/Langfuse spans. Denials reach the exporter via `Agent.observe { }`; `onToolUse` does not fire for a denied call.
 
 You can also write streaming/session events directly:
 
@@ -126,7 +126,7 @@ The OTel adapter maps to the **OpenTelemetry GenAI semantic conventions**:
 | `AgentEvent.ToolCallArgumentsDelta` | `tool.arguments.delta` span event with delta length only; raw arguments are not recorded |
 | `PipelineEvent.ErrorOccurred` | Span status `ERROR` + exception event with original throwable |
 | `PipelineEvent.BudgetThreshold` | Span event `agent.budget.threshold` with reason and used-percent attrs |
-| `PipelineEvent.ToolCalled` / `KnowledgeLoaded` / `SkillChosen` | Span events on the active agent span |
+| `PipelineEvent.ToolCalled` / `ToolDenied` / `KnowledgeLoaded` / `SkillChosen` | Span events on the active agent span (`ToolDenied` carries the denial reason — a blocked tool call, #2395) |
 | Interceptor decisions | Span events `interceptor.proceed`, `interceptor.proceed_with`, `interceptor.deny`, `interceptor.substitute`; only the interceptor point is recorded |
 
 Every event already carries `requestId`, `sessionId`, and `manifestHash`; bridge adapters propagate them as `agent.request.id`, `agent.session.id`, and `agent.manifest.hash` attributes when present.
@@ -209,7 +209,7 @@ Dispatch is asynchronous: the bridge buffers run-create/run-update operations, s
 | `AgentEvent.ToolCallStarted` / `ToolCallFinished` | `span-create` / `span-update` named `tool.<toolName>` with call id, parsed arguments, result type, result, and error level when applicable |
 | `AgentEvent.ToolCallArgumentsDelta` | `event-create` named `tool.arguments.delta` with delta length only |
 | `AgentEvent.Failed` / `PipelineEvent.ErrorOccurred` | Active trace output `status=failed`, error metadata, and `ERROR` level on still-open observations |
-| `PipelineEvent.BudgetThreshold` / `ToolCalled` / `KnowledgeLoaded` / `SkillChosen` | `event-create` observations on the active trace |
+| `PipelineEvent.BudgetThreshold` / `ToolCalled` / `ToolDenied` / `KnowledgeLoaded` / `SkillChosen` | `event-create` observations on the active trace (`ToolDenied` = a blocked tool call with its reason, #2395) |
 | Interceptor decisions | Tags such as `interceptor:deny` plus `event-create` named `interceptor.decision`; pending decisions attach to fallback failure traces |
 
 ```kotlin

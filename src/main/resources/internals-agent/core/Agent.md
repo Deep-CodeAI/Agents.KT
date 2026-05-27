@@ -45,7 +45,8 @@ A given `Agent` instance may be wired into **at most one** structure — `then`,
 Set via the builder:
 
 - `onSkillChosen { name -> ... }` — fires when skill resolution picks a skill
-- `onToolUse { name, args, result -> ... }` — fires per tool invocation inside `executeAgentic`
+- `onToolUse { name, args, result -> ... }` — fires per executed tool invocation inside `executeAgentic`
+- `onToolDenied { name, args, reason -> ... }` — fires when an `onBeforeToolCall` `Decision.Deny` blocks a call (executor never runs, so `onToolUse` does not fire); surfaces as `PipelineEvent.ToolDenied` (#2395)
 - `onKnowledgeUsed { name, content -> ... }` — fires when a knowledge entry is loaded
 - `onError { throwable -> ... }` — fires on any infrastructure error (LLM transport, parse, budget) — original exception always rethrows
 - `onBudgetThreshold(threshold) { reason, usedPercent -> ... }` — pre-cap warning hook
@@ -61,7 +62,7 @@ Every `PipelineEvent` and `AgentEvent` carries runtime audit context: `requestId
 
 - `onBeforeSkill` runs after skill resolution and before `onSkillChosen`; it can deny execution, reroute to another compatible skill, or substitute an output.
 - `onBeforeTurn` runs before every outbound model call; it can sanitize messages, deny the turn, or substitute a final output.
-- `onBeforeToolCall` runs after the static per-skill allowlist check and before dispatch; it can mutate args, deny with a model-visible tool error, or substitute a tool result. It covers both regular `executor` and session-aware `sessionExecutor` paths.
+- `onBeforeToolCall` runs after the static per-skill allowlist check and before dispatch; it can mutate args, deny with a model-visible tool error, or substitute a tool result. It covers both regular `executor` and session-aware `sessionExecutor` paths. A `Deny` fires `onToolDenied` / `PipelineEvent.ToolDenied` (not `onToolUse`), so blocked calls stay observable (#2395).
 
 Interceptor registrations are listener-shaped and remain settable after freeze.
 

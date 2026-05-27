@@ -61,7 +61,7 @@ Runs after the static per-skill allowlist check and before dispatch. It covers r
 |---|---|
 | `Proceed` | Tool runs with original args. |
 | `ProceedWith(args)` | Tool runs with replacement args; `onToolUse` and session events see those args. |
-| `Deny(reason)` | Tool does not run. The model receives `ERROR: Tool '<name>' denied by policy: <reason>`. `onToolError` does not fire. |
+| `Deny(reason)` | Tool does not run. The model receives `ERROR: Tool '<name>' denied by policy: <reason>`. `onToolError` and `onToolUse` do **not** fire (the executor never ran); instead `onToolDenied(name, args, reason)` fires and `Agent.observe { }` emits `PipelineEvent.ToolDenied`, so blocked attempts are still audited (#2395). |
 | `Substitute(result)` | Tool does not run. `result` is treated as the tool result and is visible to `onToolUse`, tool messages, and session events. |
 
 ## Examples
@@ -78,7 +78,7 @@ agent.onBeforeToolCall { name, args ->
 }
 ```
 
-The executor is not invoked, and the model can recover from the synthetic tool-error message.
+The executor is not invoked, and the model can recover from the synthetic tool-error message. The denial is still observable: `onToolDenied { name, args, reason -> ... }` fires (and `observe { }` emits `PipelineEvent.ToolDenied`), so an audit log built on observers does not silently drop blocked attempts (#2395). Note `onToolUse` does **not** fire here — use `onToolDenied` for the blocked path.
 
 ### Args Mutation
 
