@@ -167,6 +167,15 @@ class Agent<IN, OUT>(
         private set
     var budgetThresholdListener: ((reason: BudgetReason, usedPercent: Double) -> Unit)? = null
         private set
+    /**
+     * Hard-cap decision hook (#2412). When a budget cap would throw, this is
+     * consulted with the reason and the current limit; returning
+     * [agents_engine.model.BudgetDecision.Extend] raises the limit and continues,
+     * [agents_engine.model.BudgetDecision.Stop] (or no listener) throws. Currently
+     * wired for the tool-call cap. Settable post-construction like other listeners.
+     */
+    var budgetExceededListener: ((reason: BudgetReason, currentLimit: Int) -> agents_engine.model.BudgetDecision)? = null
+        private set
     var skillSelectionConfidenceThreshold: Double = 0.6
         private set
     private var skillSelector: ((IN) -> String)? = null
@@ -310,6 +319,18 @@ class Agent<IN, OUT>(
         }
         budgetThreshold = threshold
         budgetThresholdListener = block
+    }
+
+    /**
+     * Register a hard-cap decision hook (#2412). When a budget cap would throw
+     * [agents_engine.model.BudgetExceededException], [block] is called with the
+     * [BudgetReason] and the current limit; return
+     * [agents_engine.model.BudgetDecision.Extend] (with a larger limit) to raise
+     * the cap and continue, or [agents_engine.model.BudgetDecision.Stop] to throw.
+     * Currently consulted for the tool-call cap.
+     */
+    fun onBudgetExceeded(block: (reason: BudgetReason, currentLimit: Int) -> agents_engine.model.BudgetDecision) {
+        budgetExceededListener = block
     }
 
     fun onBeforeSkill(block: (skillName: String) -> Decision<String>) {

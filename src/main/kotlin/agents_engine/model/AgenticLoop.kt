@@ -187,6 +187,9 @@ internal suspend fun <IN> executeAgentic(
 
     var turns = 0
     var toolCalls = 0
+    // #2412 — effective tool-call cap; starts at the configured budget and can be
+    // raised mid-run by an onBudgetExceeded handler so the loop continues.
+    var toolCallLimit = budget.maxToolCalls
     var totalTokens = 0
     // #1740: cumulative usage across all turns. Provider reports per-turn;
     // we sum prompt and completion independently (TokenUsage.total is derived).
@@ -323,16 +326,27 @@ internal suspend fun <IN> executeAgentic(
             is LlmResponse.ToolCalls -> {
                 messages.add(LlmMessage("assistant", "", response.calls))
                 for (call in response.calls) {
-                    if (toolCalls >= budget.maxToolCalls) {
-                        throw BudgetExceededException(
-                            "Agent '${agent.name}' exceeded tool-call budget of ${budget.maxToolCalls}",
-                            BudgetReason.TOOL_CALLS,
-                        )
+                    if (toolCalls >= toolCallLimit) {
+                        // #2412 — give an onBudgetExceeded handler the chance to raise
+                        // the cap and continue instead of throwing.
+                        val decision = agent.budgetExceededListener
+                            ?.invoke(BudgetReason.TOOL_CALLS, toolCallLimit)
+                        val newLimit = (decision as? agents_engine.model.BudgetDecision.Extend)?.newLimit
+                        if (newLimit != null && newLimit > toolCallLimit) {
+                            toolCallLimit = newLimit
+                            // Re-arm the pre-cap warning so it fires again toward the new cap.
+                            firedThresholds.remove(BudgetReason.TOOL_CALLS)
+                        } else {
+                            throw BudgetExceededException(
+                                "Agent '${agent.name}' exceeded tool-call budget of $toolCallLimit",
+                                BudgetReason.TOOL_CALLS,
+                            )
+                        }
                     }
                     toolCalls++
                     maybeFireThreshold(
                         BudgetReason.TOOL_CALLS,
-                        toolCalls.toDouble() / budget.maxToolCalls,
+                        toolCalls.toDouble() / toolCallLimit,
                     )
                     // #969: trip on repeated invocation of the same tool. Counter
                     // tracks consecutive calls regardless of turn boundary — what
