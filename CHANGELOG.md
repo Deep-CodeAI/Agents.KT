@@ -6,6 +6,7 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ### Added
 
+- **Reasoning/thinking surface across providers (#2406)** — opt-in `model { reasoning(budgetTokens = …, effort = …) }` streams a model's reasoning separately from its answer as `AgentEvent.Reasoning` (with `LlmChunk.ReasoningDelta` and accumulated `LlmResponse.reasoning`). Off by default — no behavior change or added cost until enabled. Claude (extended thinking — forces temperature 1), DeepSeek (`reasoning_content`), and Ollama (`think:true` → `message.thinking`) emit reasoning text; OpenAI Chat Completions surfaces `reasoning_effort` + `TokenUsage.reasoningTokens` only (no reasoning text on the wire — Responses-API summaries are out of scope). Tracing bridges record reasoning *length* only (PII-safe); the JSONL audit exporter omits it. See [docs/streaming.md](docs/streaming.md) and [docs/model-and-tools.md](docs/model-and-tools.md).
 - **`onToolDenied` hook + `PipelineEvent.ToolDenied` (#2395)** — tool calls blocked by an `onBeforeToolCall` `Decision.Deny` are now first-class observable. Previously a denied call never fired `onToolUse` (its executor never ran), so audit/observability built on `onToolUse` or `observe{}` silently dropped every blocked attempt. `onToolDenied { name, args, reason -> }` now fires in its place (under the runtime context, so `requestId`/`sessionId`/`manifestHash` correlate), and `observe{}` surfaces it as `PipelineEvent.ToolDenied`. `onToolUse` still does not fire on denial.
 
 ### Changed

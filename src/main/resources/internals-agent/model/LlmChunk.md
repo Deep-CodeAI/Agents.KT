@@ -11,6 +11,7 @@ A narrow sealed-interface union over the deltas a streaming LLM provider emits d
 ```kotlin
 sealed interface LlmChunk {
     data class TextDelta(val text: String)                                          // model content
+    data class ReasoningDelta(val text: String)                                     // #2406 — reasoning/thinking, separate from content
     data class ToolCallStarted(val callId: String, val toolName: String)            // tool call beginning
     data class ToolCallArgumentsDelta(val callId: String, val deltaJson: String)    // partial args JSON
     data class ToolCallFinished(val callId: String, val arguments: Map<String, Any?>) // fully parsed args

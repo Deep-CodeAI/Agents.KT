@@ -14,6 +14,7 @@ session.events.collect { event ->
     when (event) {
         is AgentEvent.SkillStarted             -> log("→ ${event.skillName}")
         is AgentEvent.Token                    -> render(event.text)            // mid-loop
+        is AgentEvent.Reasoning                -> renderThinking(event.text)    // mid-loop, separate channel
         is AgentEvent.ToolCallStarted          -> log("tool: ${event.toolName} (${event.callId})")
         is AgentEvent.ToolCallArgumentsDelta   -> previewArgs(event.callId, event.deltaJson)
         is AgentEvent.ToolCallFinished         -> if (event.isError) err(event) else showResult(event)
@@ -37,6 +38,7 @@ All subtypes carry `agentId`, `requestId`, `sessionId`, and `manifestHash`. `age
 |---|---|---|
 | `SkillStarted` | Before the resolved skill executes | `skillName` |
 | `Token` | LLM streams a content chunk | `skillName`, `text` |
+| `Reasoning` | LLM streams a reasoning/thinking chunk (opt-in via `model { reasoning(...) }`, #2406) | `skillName`, `text` |
 | `ToolCallStarted` | Streaming adapter sees a new tool call | `skillName`, `callId`, `toolName` |
 | `ToolCallArgumentsDelta` | Each fragment of streamed tool-call args | `callId`, `deltaJson` |
 | `ToolCallFinished` | After the agentic loop runs the executor | `callId`, `toolName`, `arguments`, `result`, `isError` |

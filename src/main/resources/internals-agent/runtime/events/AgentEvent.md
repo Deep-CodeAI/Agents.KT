@@ -16,6 +16,7 @@ sealed interface AgentEvent<out OUT> {
     val manifestHash: String?
 
     data class Token(agentId, skillName, text)                          : AgentEvent<Nothing>   // step 3
+    data class Reasoning(agentId, skillName, text)                      : AgentEvent<Nothing>   // #2406 — opt-in reasoning, separate from Token
     data class ToolCallStarted(agentId, skillName, callId, toolName)    : AgentEvent<Nothing>   // step 3
     data class ToolCallArgumentsDelta(agentId, callId, deltaJson)       : AgentEvent<Nothing>   // step 3
     data class ToolCallFinished(agentId, callId, result)                : AgentEvent<Nothing>   // step 3
