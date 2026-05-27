@@ -34,7 +34,7 @@ import java.util.concurrent.ConcurrentHashMap
  * See `src/main/resources/internals-agent/core/Memory.md` for the adjunct
  * surfaced to IDE-side LLM tools via `agents-kt-internals` (#1837 / #1840).
  */
-class MemoryBank(val maxLines: Int = Int.MAX_VALUE) {
+class MemoryBank(val maxLines: Int = Int.MAX_VALUE) : Snapshotable<Map<String, String>> {
 
     private val store = ConcurrentHashMap<String, String>()
 
@@ -45,6 +45,15 @@ class MemoryBank(val maxLines: Int = Int.MAX_VALUE) {
     }
 
     fun entries(): Map<String, String> = store.toMap()
+
+    // #2416 — snapshot/restore for persistence. Values were already truncated
+    // on write, so restore replays them verbatim.
+    override fun snapshot(): Map<String, String> = entries()
+
+    override fun restore(state: Map<String, String>) {
+        store.clear()
+        store.putAll(state)
+    }
 
     private fun truncate(content: String): String {
         if (maxLines == Int.MAX_VALUE) return content
