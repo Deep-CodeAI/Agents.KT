@@ -55,6 +55,10 @@ class JsonlAuditExporter(
     }
 
     fun write(event: AgentEvent<*>) {
+        // #2406 — reasoning is high-volume and potentially sensitive; it is a
+        // live-stream-only signal and is deliberately NOT persisted to the
+        // PII-safe on-disk audit (one row per reasoning chunk would be noise).
+        if (event is AgentEvent.Reasoning) return
         writeRow(rowFor(event))
         if (event is AgentEvent.SkillCompleted || event is AgentEvent.Failed) {
             flushPending()

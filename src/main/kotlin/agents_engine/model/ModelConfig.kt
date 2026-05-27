@@ -12,6 +12,25 @@ package agents_engine.model
 
 enum class ModelProvider { OLLAMA, ANTHROPIC, OPENAI, DEEPSEEK }
 
+/** Reasoning-effort hint for providers that take one (OpenAI `reasoning_effort`, Ollama). */
+enum class ReasoningEffort { LOW, MEDIUM, HIGH }
+
+/**
+ * Opt-in reasoning/thinking configuration (#2406). Off unless set. When
+ * enabled, providers that expose reasoning surface it via
+ * `AgentEvent.Reasoning` / `LlmResponse.reasoning`:
+ * - Claude: `thinking` with [budgetTokens] as the token budget.
+ * - Ollama: `think: true`.
+ * - DeepSeek: `reasoning_content` (stops force-disabling thinking).
+ * - OpenAI: `reasoning_effort` from [effort]; surfaces reasoning *token counts*
+ *   only — Chat Completions returns no reasoning text.
+ */
+data class ReasoningConfig(
+    val enabled: Boolean = true,
+    val budgetTokens: Int? = null,
+    val effort: ReasoningEffort? = null,
+)
+
 data class ModelConfig(
     val name: String,
     val provider: ModelProvider,
@@ -29,6 +48,8 @@ data class ModelConfig(
     val deepSeekBaseUrl: String = DeepSeekClient.DEFAULT_BASE_URL,
     /** max_tokens carried on every Anthropic / OpenAI-compatible request. */
     val maxTokens: Int = 4096,
+    /** Opt-in reasoning/thinking config (#2406); null = off (default, no behavior change). */
+    val reasoning: ReasoningConfig? = null,
 ) {
     val baseUrl: String get() = "http://$host:$port"
 
@@ -42,7 +63,7 @@ data class ModelConfig(
             "host=$host, port=$port, client=$client, apiKey=${maskApiKey(apiKey)}, " +
             "anthropicBaseUrl=$anthropicBaseUrl, openAiBaseUrl=$openAiBaseUrl, " +
             "deepSeekBaseUrl=$deepSeekBaseUrl, " +
-            "maxTokens=$maxTokens)"
+            "maxTokens=$maxTokens, reasoning=$reasoning)"
 
     private fun maskApiKey(key: String?): String = when {
         key == null -> "null"
@@ -99,6 +120,22 @@ class ModelBuilder {
         provider = ModelProvider.DEEPSEEK
     }
 
+    /** Backing field for the [reasoning] DSL (#2406). Off by default. */
+    private var reasoningConfig: ReasoningConfig? = null
+
+    /**
+     * Enable reasoning/thinking for this model (#2406). Off unless called.
+     * `budgetTokens` feeds Claude's thinking budget; `effort` feeds OpenAI's
+     * `reasoning_effort`. Providers that don't expose reasoning ignore it.
+     */
+    fun reasoning(
+        enabled: Boolean = true,
+        budgetTokens: Int? = null,
+        effort: ReasoningEffort? = null,
+    ) {
+        reasoningConfig = ReasoningConfig(enabled, budgetTokens, effort)
+    }
+
     internal fun build(): ModelConfig {
         if (client == null && apiKey == null) {
             when (provider) {
@@ -120,6 +157,7 @@ class ModelBuilder {
             openAiBaseUrl = openAiBaseUrl,
             deepSeekBaseUrl = deepSeekBaseUrl,
             maxTokens = maxTokens,
+            reasoning = reasoningConfig,
         )
     }
 }
