@@ -53,6 +53,58 @@ interface SnapshotStore {
     fun delete(key: String)
 }
 
+/**
+ * #2418 — when [PersistenceConfig] fires automatic snapshots. The default
+ * mirrors the v1 spike's turn-boundary checkpoint. [Disabled] is the seam
+ * for future explicit `Agent.snapshot(...)` calls — it leaves the store
+ * wired (so a [PersistenceBuilder.store] is still required) but does NOT
+ * checkpoint on its own; callers drive the save themselves.
+ */
+enum class AutoSnapshotPolicy {
+    OnTurnComplete,
+    Disabled,
+}
+
+/**
+ * #2418 — resolved persistence configuration for an agent. Off by default;
+ * opt in via the `persistence { }` DSL block on the agent builder.
+ */
+data class PersistenceConfig(
+    val store: SnapshotStore,
+    val autoSnapshot: AutoSnapshotPolicy = AutoSnapshotPolicy.OnTurnComplete,
+)
+
+/**
+ * #2418 — builder for the `agent { persistence { … } }` block.
+ *
+ * ```kotlin
+ * agent<String, String>("Researcher") {
+ *     model { ollama("llama3") }
+ *     persistence {
+ *         store = FileSnapshotStore(Path("/var/snapshots"))
+ *         autoSnapshot = AutoSnapshotPolicy.OnTurnComplete   // default
+ *     }
+ *     skills { … }
+ * }
+ * ```
+ *
+ * `store` is required; `build()` fails fast if it's left null so the user sees
+ * the configuration error at agent-construction time, not at invoke time.
+ */
+class PersistenceBuilder {
+    var store: SnapshotStore? = null
+    var autoSnapshot: AutoSnapshotPolicy = AutoSnapshotPolicy.OnTurnComplete
+
+    internal fun build(): PersistenceConfig {
+        val s = store
+            ?: error(
+                "persistence { } block requires a store = … assignment " +
+                    "(e.g. FileSnapshotStore(Path(…)) or InMemorySnapshotStore())."
+            )
+        return PersistenceConfig(s, autoSnapshot)
+    }
+}
+
 /** In-process store — tests and single-JVM resume. */
 class InMemorySnapshotStore : SnapshotStore {
     private val map = ConcurrentHashMap<String, SessionSnapshot>()

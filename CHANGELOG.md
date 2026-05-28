@@ -4,6 +4,10 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added
+
+- **`persistence { }` DSL + `Agent.resumeOrStart(sessionId)` (#2418, Phase 2 of #2386)** — the ergonomic seam promised in the 0.6.1 snapshot/resume spike. `agent { persistence { store = FileSnapshotStore(Path(…)); autoSnapshot = AutoSnapshotPolicy.OnTurnComplete } }` wires the turn-boundary checkpoint automatically; `agent.resumeOrStart(sessionId, input)` is the single-call load-or-fresh entry — no snapshot ⇒ fresh run, prior snapshot ⇒ continues from the saved turn. Off by default: plain `invokeSuspend(input)` (no sessionId) is byte-for-byte unchanged, so existing callers pay nothing. Manifest-hash restore guard and composition snapshots are the next phases on #2386. See [docs/persistence.md](docs/persistence.md).
+
 ## [0.6.1] — 2026-05-28
 
 ### Added

@@ -176,6 +176,21 @@ class Agent<IN, OUT>(
      */
     var budgetExceededListener: ((reason: BudgetReason, currentLimit: Int) -> agents_engine.model.BudgetDecision)? = null
         private set
+    /**
+     * #2418 — persistence configuration for snapshot/resume. Set via the
+     * `persistence { }` DSL block on the agent builder; null means
+     * snapshot/resume is opt-out (the default — no behavior change).
+     *
+     * When non-null, the agentic loop auto-checkpoints at every turn
+     * boundary into [PersistenceConfig.store] keyed by the runtime
+     * context's `sessionId`. The checkpoint fires only when both the store
+     * is configured AND the invocation carries a non-null session id —
+     * which today means it was started via [resumeOrStart]. Plain
+     * [invokeSuspend] (no session id) stays byte-for-byte unchanged so
+     * existing call sites pay no cost.
+     */
+    var persistenceConfig: PersistenceConfig? = null
+        private set
     var skillSelectionConfidenceThreshold: Double = 0.6
         private set
     private var skillSelector: ((IN) -> String)? = null
@@ -240,6 +255,21 @@ class Agent<IN, OUT>(
         val builder = BudgetBuilder()
         builder.block()
         budgetConfig = builder.build()
+    }
+
+    /**
+     * #2418 — configure snapshot/resume persistence. The block must set
+     * `store`; `autoSnapshot` defaults to [AutoSnapshotPolicy.OnTurnComplete].
+     *
+     * Combine with [resumeOrStart] to load a prior session or start a fresh
+     * one keyed by `sessionId`. Without this block, snapshot/resume is off and
+     * agent behavior is unchanged.
+     */
+    fun persistence(block: PersistenceBuilder.() -> Unit) {
+        checkNotFrozen()
+        val builder = PersistenceBuilder()
+        builder.block()
+        persistenceConfig = builder.build()
     }
 
     fun onToolUse(block: (name: String, args: Map<String, Any?>, result: Any?) -> Unit) {
@@ -493,6 +523,35 @@ class Agent<IN, OUT>(
             invokeSuspendForSession(input, emitter = null) { /* no-op */ }
         }
 
+    /**
+     * #2418 — load-or-fresh entry for a persistent agent. Looks up
+     * [sessionId] in the configured [PersistenceConfig.store]: if a snapshot
+     * exists, the agentic loop is seeded from it (messages, counters,
+     * memory) and continues; if not, a fresh run starts.
+     *
+     * Either way, [sessionId] is bound to the runtime context, so the
+     * auto-checkpoint (when [AutoSnapshotPolicy.OnTurnComplete] is set)
+     * writes future turn boundaries back to the same store key.
+     *
+     * Requires a `persistence { store = … }` block on the agent builder;
+     * otherwise the call fails fast with a configuration error.
+     */
+    suspend fun resumeOrStart(sessionId: String, input: IN): OUT {
+        val cfg = persistenceConfig
+            ?: error(
+                "Agent \"$name\" called resumeOrStart but has no persistence configured. " +
+                    "Add a persistence { store = … } block on the agent."
+            )
+        val seed = cfg.store.load(sessionId)
+        return withAgentRuntimeContext(newRuntimeContext(sessionId)) {
+            invokeSuspendForSession(
+                input = input,
+                emitter = null,
+                resumeFrom = seed,
+            ) { /* no-op onSkillStarted */ }
+        }
+    }
+
     internal fun newRuntimeContext(sessionId: String? = null): AgentRuntimeContext =
         AgentRuntimeContext(sessionId = sessionId, manifestHash = manifestHash)
 
@@ -518,6 +577,12 @@ class Agent<IN, OUT>(
          * delegates here with `emitter = null`.
          */
         promptOverride: String? = null,
+        /**
+         * #2418 — seed the agentic loop from a prior [SessionSnapshot]
+         * instead of starting fresh. Set by [resumeOrStart] after looking up
+         * a snapshot in the configured store. Default null = fresh run.
+         */
+        resumeFrom: SessionSnapshot? = null,
         onSkillCompleted: (agents_engine.model.TokenUsage?) -> Unit = { /* no-op */ },
         onSkillStarted: (String) -> Unit,
     ): OUT {
@@ -537,11 +602,25 @@ class Agent<IN, OUT>(
             }
             onSkillStarted(skill.name)
             return if (skill.isAgentic) {
+                // #2418 — auto-install the turn-boundary checkpoint when the
+                // agent has persistence configured AND this invocation carries
+                // a sessionId (set by resumeOrStart). Without a sessionId we
+                // have no key, so we silently skip — that's the default path
+                // for plain invokeSuspend / composition operators, keeping
+                // them byte-for-byte unchanged.
+                val pcfg = persistenceConfig
+                val sid = runtimeContext.sessionId
+                val checkpoint: ((SessionSnapshot) -> Unit)? =
+                    if (pcfg != null && sid != null && pcfg.autoSnapshot == AutoSnapshotPolicy.OnTurnComplete) {
+                        { snap -> pcfg.store.save(sid, snap) }
+                    } else null
                 val result = executeAgentic(
                     this, skill, input,
                     effectivePrompt = promptOverride ?: this.prompt,
                     emitter = emitter,
                     runtimeContext = runtimeContext,
+                    resumeFrom = resumeFrom,
+                    onTurnCheckpoint = checkpoint,
                 )
                 // #1740: surface cumulative usage on the way out. Non-agentic
                 // skills don't go through executeAgentic, so onSkillCompleted
