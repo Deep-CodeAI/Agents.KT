@@ -4,10 +4,16 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-05-28
+
+**"Persist and prove."** 0.6.2 turns the 0.6.1 snapshot/resume spike into a real product surface: a one-block `persistence { }` DSL, a load-or-fresh `Agent.resumeOrStart(sessionId, input)` entry, and a manifest-hash restore guard that refuses to silently resume a session into a re-shaped agent — tying the runtime persistence path back to the 0.6.0 permission-manifest audit story.
+
 ### Added
 
 - **`persistence { }` DSL + `Agent.resumeOrStart(sessionId)` (#2418, Phase 2 of #2386)** — the ergonomic seam promised in the 0.6.1 snapshot/resume spike. `agent { persistence { store = FileSnapshotStore(Path(…)); autoSnapshot = AutoSnapshotPolicy.OnTurnComplete } }` wires the turn-boundary checkpoint automatically; `agent.resumeOrStart(sessionId, input)` is the single-call load-or-fresh entry — no snapshot ⇒ fresh run, prior snapshot ⇒ continues from the saved turn. Off by default: plain `invokeSuspend(input)` (no sessionId) is byte-for-byte unchanged, so existing callers pay nothing. See [docs/persistence.md](docs/persistence.md).
 - **Manifest-hash restore guard (#2419, Phase 2b of #2386)** — `persistence { restoreGuard = RestoreGuardPolicy.Strict }` (default) refuses to resume a snapshot whose `manifestHash` disagrees with the current agent's, throwing `SnapshotManifestMismatchException(sessionId, expected, actual)` so a re-shaped agent (new tools, widened policy, swapped provider) cannot silently continue a session it never agreed to. `WarnAndProceed` logs both hashes at `WARNING` and continues; `Allow` is the silent escape hatch for known-safe migrations. The guard only fires when both hashes are present — a null on either side is treated as "no enforcement signal" and the resume continues. Closes the loop between the runtime persistence path and the permission-manifest audit story (#1912).
+
+Composition snapshots (Pipeline / Forum / Loop / Branch) and mid-tool coroutine suspension remain the next phases on #2386.
 
 ## [0.6.1] — 2026-05-28
 
