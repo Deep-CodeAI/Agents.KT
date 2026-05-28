@@ -57,6 +57,60 @@ class Pipeline<IN, OUT>(
     suspend fun invokeSuspend(input: IN): OUT = execution(input)
 }
 
+/**
+ * #2420 — composition snapshot for Pipeline. Walks the [Pipeline.agents]
+ * list stage by stage, checkpointing into [store] after each stage
+ * completes (so a crash mid-stage never loses the previous stage's
+ * output). On resume, [store.load] tells us which stages to skip and
+ * what intermediate value to seed the next stage with.
+ *
+ * v1 contract:
+ * - Only `String → … → String` pipelines are supported. The
+ *   [CompositionSnapshot.intermediate] field is a `String`; non-string
+ *   intermediates will throw on the first stage transition.
+ * - Each agent in [Pipeline.agents] is invoked through its plain
+ *   `invokeSuspend(input)` path — composition snapshots are
+ *   independent of any per-leaf-agent `persistence { }` config (the
+ *   two persistence layers compose without coordination in v1).
+ * - Only flat `Agent.then(Agent)` chains are exercised by tests so
+ *   far. Nested `Pipeline.then(Pipeline)` constructions inherit the
+ *   flattened [Pipeline.agents] list, so the same walk works — but
+ *   that's not yet pinned by a test.
+ */
+suspend fun <IN, OUT> Pipeline<IN, OUT>.resumeOrStart(
+    sessionId: String,
+    input: IN,
+    store: agents_engine.core.CompositionSnapshotStore,
+): OUT {
+    val seed = store.load(sessionId)
+    val startIndex = seed?.stageIndex ?: 0
+
+    // The intermediate at the boundary BEFORE stage `startIndex`. For a
+    // fresh run that's just `input`; on resume it's the saved value.
+    @Suppress("UNCHECKED_CAST")
+    var current: Any? = seed?.intermediate ?: input
+
+    for ((i, rawAgent) in this.agents.withIndex()) {
+        if (i < startIndex) continue
+        @Suppress("UNCHECKED_CAST")
+        val agent = rawAgent as agents_engine.core.Agent<Any?, Any?>
+        current = agent.invokeSuspend(current)
+        // Checkpoint AFTER the stage completes — never mid-stage. The
+        // save key advances past the stage we just finished so a resume
+        // begins at the next one.
+        store.save(
+            sessionId,
+            agents_engine.core.CompositionSnapshot(
+                sessionId = sessionId,
+                stageIndex = i + 1,
+                intermediate = current?.toString() ?: "",
+            ),
+        )
+    }
+    @Suppress("UNCHECKED_CAST")
+    return current as OUT
+}
+
 infix fun <A, B, C> Agent<A, B>.then(other: Agent<B, C>): Pipeline<A, C> {
     this.markPlaced("pipeline")
     other.markPlaced("pipeline")

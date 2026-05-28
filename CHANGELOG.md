@@ -4,6 +4,10 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added
+
+- **Composition snapshots — Pipeline / Loop / Branch (#2420, Phase 2c of #2386)** — composition operators get their own `resumeOrStart(sessionId, input, store: CompositionSnapshotStore)` entry that checkpoints between stages, between iterations, and between source-and-route respectively. A crash mid-composition no longer re-runs already-completed work. `Pipeline` skips stages whose index is already covered; `Loop` re-enters at the iteration that crashed without losing the accumulator; `Branch` reuses the persisted source output and only re-runs the route. The new `CompositionSnapshot { sessionId, stageIndex, intermediate }` + `CompositionSnapshotStore` / `InMemoryCompositionSnapshotStore` types are independent of per-agent `SessionSnapshot` — the two layers compose, so a Pipeline stage that is itself a persistent Agent has both kinds of snapshot in their own stores. v1 limits the intermediate value to a `String` (typed-intermediate encoding is a follow-up); Forum and a composition-layer restore guard remain on #2386. TDD-driven: one failing test per operator, then the smallest implementation that turns it green. See [docs/persistence.md#composition-snapshots--pipeline-loop-branch](docs/persistence.md#composition-snapshots--pipeline-loop-branch).
+
 ## [0.6.2] — 2026-05-28
 
 **"Persist and prove."** 0.6.2 turns the 0.6.1 snapshot/resume spike into a real product surface: a one-block `persistence { }` DSL, a load-or-fresh `Agent.resumeOrStart(sessionId, input)` entry, and a manifest-hash restore guard that refuses to silently resume a session into a re-shaped agent — tying the runtime persistence path back to the 0.6.0 permission-manifest audit story.

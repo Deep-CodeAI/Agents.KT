@@ -95,3 +95,64 @@ fun <A, B> Pipeline<A, B>.loop(
         loopAgentId = inner.agents.lastOrNull()?.name,
     )
 }
+
+/**
+ * #2420 — composition snapshot for Loop. Checkpoints after each completed
+ * iteration so a crash mid-body never loses earlier iterations' progress.
+ * The [CompositionSnapshot.stageIndex] doubles as "iterations completed"
+ * here, and [CompositionSnapshot.intermediate] carries the value that
+ * fed the iteration that crashed (so we can re-enter it on resume).
+ *
+ * v1 contract:
+ * - Only `String → String` loops are supported (same as the Pipeline
+ *   v1 — typed-intermediate encodings are deferred).
+ * - The terminator [Loop.next] still owns the loop's exit condition.
+ *   Resume seeds the loop with the saved intermediate and re-enters at
+ *   the boundary BEFORE the next body call — meaning the iteration that
+ *   crashed is re-executed exactly once. That's the "lose at most the
+ *   last unit of work" invariant from the #2386 spec.
+ */
+suspend fun <IN, OUT> Loop<IN, OUT>.resumeOrStart(
+    sessionId: String,
+    input: IN,
+    store: agents_engine.core.CompositionSnapshotStore,
+): OUT {
+    val seed = store.load(sessionId)
+    val completedIterations = seed?.stageIndex ?: 0
+    @Suppress("UNCHECKED_CAST")
+    var nextInput: IN = (seed?.intermediate as? IN) ?: input
+
+    var iterations = completedIterations
+    while (true) {
+        check(iterations < this.maxIterations) {
+            "Loop exceeded maxIterations=${this.maxIterations} without termination."
+        }
+        val current = this.execution(nextInput)
+        iterations++
+        // Snapshot AFTER the iteration completes. We persist the value
+        // that WILL feed the next iteration so the resume reads it back
+        // as `nextInput`. If `next` decides to stop, this snapshot is the
+        // terminal one (callers can inspect it; we never delete here).
+        val feedback = this.next(current)
+        if (feedback == null) {
+            store.save(
+                sessionId,
+                agents_engine.core.CompositionSnapshot(
+                    sessionId = sessionId,
+                    stageIndex = iterations,
+                    intermediate = current?.toString() ?: "",
+                ),
+            )
+            return current
+        }
+        store.save(
+            sessionId,
+            agents_engine.core.CompositionSnapshot(
+                sessionId = sessionId,
+                stageIndex = iterations,
+                intermediate = feedback.toString(),
+            ),
+        )
+        nextInput = feedback
+    }
+}

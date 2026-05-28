@@ -97,6 +97,66 @@ class Branch<IN, OUT> internal constructor(
     }
 
     /**
+     * #2420 — single-checkpoint resume for Branch. The source agent runs
+     * deterministically and produces a routing key; the matched route's
+     * executor runs once on that key. If the route crashes mid-run, we
+     * don't want to re-execute the source — its output is the only thing
+     * that needs to survive the boundary.
+     *
+     * v1 contract:
+     * - Only `String`-typed sources are persisted (the route's executor
+     *   stays typed as before; only the source output crosses the
+     *   snapshot boundary as a `String`).
+     * - The route is picked anew on resume by re-running [matchRoute] on
+     *   the persisted output. Routes are deterministic in input, so the
+     *   same input always picks the same route — there's no need to
+     *   persist the route identity itself.
+     * - The route's own output is not snapshotted; if the route returns
+     *   successfully there's nothing left to resume.
+     */
+    suspend fun resumeOrStart(
+        sessionId: String,
+        input: IN,
+        store: agents_engine.core.CompositionSnapshotStore,
+    ): OUT {
+        val seed = store.load(sessionId)
+        val sourceOutput: Any? = if (seed != null && seed.stageIndex >= 1) {
+            // Source already completed in an earlier attempt; reuse its output.
+            seed.intermediate
+        } else {
+            val produced = source.invokeSuspend(input)
+            store.save(
+                sessionId,
+                agents_engine.core.CompositionSnapshot(
+                    sessionId = sessionId,
+                    stageIndex = 1,
+                    intermediate = produced?.toString() ?: "",
+                ),
+            )
+            produced
+        }
+
+        // Same route-matching logic as invokeSuspend, but driven off the
+        // (possibly restored) source output.
+        if (sourceOutput == null) {
+            val nullRoute = routes.firstOrNull { it is BranchRoute.NullRoute }
+                ?: routes.firstOrNull { it is BranchRoute.ElseRoute }
+                ?: error(
+                    "Branch source produced null and no onNull or onElse clause was declared."
+                )
+            return nullRoute.executor(null)
+        }
+        for (route in routes) {
+            when (route) {
+                is BranchRoute.TypeRoute -> if (route.klass.isInstance(sourceOutput)) return route.executor(sourceOutput)
+                is BranchRoute.NullRoute -> { /* skipped for non-null */ }
+                is BranchRoute.ElseRoute -> return route.executor(sourceOutput)
+            }
+        }
+        error("No branch defined for ${sourceOutput::class.simpleName} (and no onElse clause).")
+    }
+
+    /**
      * #1748 — picks the matching route for [result] using the same order/precedence
      * as [invokeSuspend]. Returns null if no route matches (caller can `error()`).
      */

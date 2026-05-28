@@ -100,9 +100,51 @@ A mismatch is the framework's way of asking you to make a deliberate decision: e
 - The model client and the agent graph itself — those are re-created from your code on the next process start. The `manifestHash` captured in the snapshot is the safety anchor consulted by the [restore guard](#manifest-hash-restore-guard).
 - Coroutine continuations. Mid-tool suspension is a separate, later concern that depends on the suspend-loop refactor ([#638](../../issues/638)).
 
+### Composition snapshots — Pipeline, Loop, Branch
+
+Composition operators get their own snapshot story so a crash mid-composition never re-runs already-completed work. The composition layer tracks the *scaffolding* (which stage / iteration / route); leaf agents' per-conversation state is still captured separately by [`SessionSnapshot`](#whats-in-a-snapshot) when those agents have their own `persistence { }` configured. Both layers compose without coordination.
+
+```kotlin
+import agents_engine.core.*
+import agents_engine.composition.pipeline.resumeOrStart
+
+val pipeline: Pipeline<String, String> = agentA then agentB then agentC
+val store = InMemoryCompositionSnapshotStore()      // or your own SnapshotStore impl
+
+// First call: if it crashes mid-B, only A's output is persisted.
+// Second call with the same sessionId: A is skipped, B re-runs from A's output.
+val out = pipeline.resumeOrStart(sessionId = "user-42", input = "go", store = store)
+```
+
+The same shape works for `Loop` and `Branch`:
+
+| Operator | What gets persisted | What gets skipped on resume |
+|---|---|---|
+| `Pipeline` | completed stage index + last stage's output | every stage with `index < stageIndex` |
+| `Loop` | iterations completed + the value feeding the next iteration | iterations 1..N already done; resume re-enters at the (N+1)-th iteration |
+| `Branch` | source agent's output (after stage 1) | the source agent (route still runs — its crash is the reason we're resuming) |
+
+The snapshot type is shared across all three:
+
+```kotlin
+data class CompositionSnapshot(
+    val sessionId: String,
+    val stageIndex: Int,        // Pipeline: completed stages. Loop: iterations done. Branch: 1 = source done.
+    val intermediate: String,   // Pipeline: last stage's output. Loop: next iteration's input. Branch: source output.
+)
+```
+
+#### v1 constraints
+
+- **String-only intermediates.** v1 only supports compositions where the value crossing the snapshot boundary is a `String` — the easy case where the persisted representation needs no encoding. Typed intermediates (`@Generable` round-trip) land in a follow-up on [#2386](../../issues/2386).
+- **No restore guard yet at the composition layer.** A leaf agent's `restoreGuard` still fires inside that agent's resume — but the composition itself does not yet check a `manifestHash`. If a Pipeline's stage list changes between runs (e.g., you added a fourth agent), the resume will load a snapshot pointing into the old shape and the behavior is undefined. Treat composition snapshots as deployment-pinned for now.
+- **Forum is not yet covered.** Forum's captain rotation + per-participant transcripts need their own design pass; that work stays on the [#2420](../../issues/2420) follow-up.
+
 ### What's next
 
-- **Composition snapshots** — extend `Snapshotable` to Pipeline / Forum / Loop / Branch so multi-agent topologies snapshot the whole tree, not just a leaf agent.
+- **Forum composition snapshots** — multi-agent captain rotation + transcript state, separate design pass.
+- **Typed-intermediate composition snapshots** — `@Generable` encoding so non-`String → String` pipelines / loops / branches can resume.
+- **Composition-layer restore guard** — manifest-hash check for compositions themselves, parallel to the per-agent guard.
 - **Mid-tool suspension** — true coroutine-continuation persistence (Phase 3 on #2386).
 
 Track the umbrella at [#2386](../../issues/2386).
