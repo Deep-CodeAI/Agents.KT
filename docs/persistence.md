@@ -69,19 +69,39 @@ data class SessionSnapshot(
 
 1. Calls `store.load(sessionId)`.
 2. No snapshot ⇒ fresh run keyed by `sessionId` (so the first turn boundary writes back to the same key).
-3. Snapshot present ⇒ the agentic loop is seeded with the saved messages, counters, and memory; the original `input` you pass is **ignored** for the loop's user message (the saved one is restored), but is still required by the signature so the type system stays clean.
+3. Snapshot present ⇒ the [restore guard](#manifest-hash-restore-guard) is consulted first; if it allows, the agentic loop is seeded with the saved messages, counters, and memory. The original `input` you pass is **ignored** for the loop's user message (the saved one is restored), but is still required by the signature so the type system stays clean.
 
 When persistence is **not** configured, plain `Agent.invokeSuspend(input)` is byte-for-byte unchanged — no checkpointing, no behavior change, no cost.
+
+### Manifest-hash restore guard
+
+Every snapshot carries the `manifestHash` of the agent that wrote it. On resume, the guard compares it to the current agent's hash — refusing by default to silently restore state into a re-shaped agent. Without this check, a snapshot written by agent v1 could continue into agent v2 with different tools, policies, or providers, defeating the audit story carried by the [permission manifest](permission-manifest.md).
+
+```kotlin
+persistence {
+    store = FileSnapshotStore(Path.of("/var/lib/agents/snapshots"))
+    restoreGuard = RestoreGuardPolicy.Strict     // default
+}
+```
+
+| Policy | Behavior on mismatch |
+|---|---|
+| `RestoreGuardPolicy.Strict` *(default)* | throws `SnapshotManifestMismatchException(sessionId, expected, actual)` |
+| `RestoreGuardPolicy.WarnAndProceed` | logs at `WARNING` with both hashes, continues |
+| `RestoreGuardPolicy.Allow` | continues silently — opt-in escape hatch for known-safe migrations |
+
+The guard **only fires when both hashes are present**. A null on either side (snapshot pre-dates manifest attachment, or the current agent has no manifest computed) is treated as "no enforcement signal" rather than a mismatch — the resume continues silently.
+
+A mismatch is the framework's way of asking you to make a deliberate decision: either bump the snapshot store generation, write a migration that opens the old conversation in a new agent, or — if you're sure the change is benign (a tool description tweak, a comment) — flip the guard to `WarnAndProceed` or `Allow` for that deployment.
 
 ### What's *not* snapshotted
 
 - In-flight HTTP. Worst case on a crash mid-tool-call = lose the last turn (the next checkpoint is one model round away).
-- The model client and the agent graph itself — those are re-created from your code on the next process start. The `manifestHash` captured in the snapshot is the safety anchor for the next phase: a manifest-hash restore guard that refuses to resume into a re-shaped agent (next on [#2386](../../issues/2386)).
+- The model client and the agent graph itself — those are re-created from your code on the next process start. The `manifestHash` captured in the snapshot is the safety anchor consulted by the [restore guard](#manifest-hash-restore-guard).
 - Coroutine continuations. Mid-tool suspension is a separate, later concern that depends on the suspend-loop refactor ([#638](../../issues/638)).
 
 ### What's next
 
-- **Manifest-hash restore guard** — compare snapshot vs. current agent's `manifestHash` on resume; default reject, opt-in warn-and-proceed.
 - **Composition snapshots** — extend `Snapshotable` to Pipeline / Forum / Loop / Branch so multi-agent topologies snapshot the whole tree, not just a leaf agent.
 - **Mid-tool suspension** — true coroutine-continuation persistence (Phase 3 on #2386).
 

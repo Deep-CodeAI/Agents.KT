@@ -543,6 +543,28 @@ class Agent<IN, OUT>(
                     "Add a persistence { store = … } block on the agent."
             )
         val seed = cfg.store.load(sessionId)
+        // #2419 — manifest-hash restore guard. Only fires when BOTH hashes are
+        // present: a null on either side means "no enforcement signal" (the
+        // snapshot pre-dates manifest attachment, or the current agent has no
+        // manifest computed). Null vs null, or null vs anything, is not a
+        // mismatch — it's a missing-data case, and we resume silently.
+        if (seed != null) {
+            val expected = seed.manifestHash
+            val actual = manifestHash
+            if (expected != null && actual != null && expected != actual) {
+                when (cfg.restoreGuard) {
+                    RestoreGuardPolicy.Strict ->
+                        throw SnapshotManifestMismatchException(sessionId, expected, actual)
+                    RestoreGuardPolicy.WarnAndProceed ->
+                        LOGGER.warning(
+                            "Agent \"$name\" resuming session \"$sessionId\" with mismatched " +
+                                "manifestHash (snapshot=$expected, current=$actual). Continuing " +
+                                "because restoreGuard = WarnAndProceed."
+                        )
+                    RestoreGuardPolicy.Allow -> Unit
+                }
+            }
+        }
         return withAgentRuntimeContext(newRuntimeContext(sessionId)) {
             invokeSuspendForSession(
                 input = input,

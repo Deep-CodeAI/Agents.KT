@@ -66,12 +66,55 @@ enum class AutoSnapshotPolicy {
 }
 
 /**
+ * #2419 — what `resumeOrStart` does when a loaded snapshot's `manifestHash`
+ * disagrees with the current agent's. Carries the audit story (#1912) into
+ * the resume path: by default we refuse to silently resume into a re-shaped
+ * agent, since tools / policies / providers may have changed in ways the
+ * model never agreed to.
+ *
+ * - [Strict] (default) — throw [SnapshotManifestMismatchException].
+ * - [WarnAndProceed] — log at WARNING with both hashes, continue.
+ * - [Allow] — silently continue (opt-in escape hatch for known-safe migrations).
+ *
+ * If either side is null (snapshot pre-dates manifest attachment, or the
+ * current agent has no manifest computed), the guard does NOT fire — there
+ * is no enforcement signal to compare against.
+ */
+enum class RestoreGuardPolicy {
+    Strict,
+    WarnAndProceed,
+    Allow,
+}
+
+/**
+ * #2419 — thrown by `Agent.resumeOrStart` under [RestoreGuardPolicy.Strict]
+ * when the loaded snapshot's manifest hash diverges from the current
+ * agent's. Both hashes are included so the caller can decide whether the
+ * change is benign (e.g., a comment update on a tool description) or
+ * material (e.g., a new MCP endpoint, a widened policy).
+ */
+class SnapshotManifestMismatchException(
+    val sessionId: String,
+    val expected: String,
+    val actual: String,
+) : RuntimeException(
+    "Snapshot for session \"$sessionId\" was written by an agent with manifestHash=$expected, " +
+        "but the current agent is $actual. Refusing to resume into a re-shaped agent (Strict guard). " +
+        "Set restoreGuard = RestoreGuardPolicy.WarnAndProceed or .Allow on the persistence { } block to override."
+)
+
+/**
  * #2418 — resolved persistence configuration for an agent. Off by default;
  * opt in via the `persistence { }` DSL block on the agent builder.
+ *
+ * #2419 — [restoreGuard] decides how `resumeOrStart` reacts to a manifest
+ * hash mismatch between the snapshot and the current agent. Defaults to
+ * [RestoreGuardPolicy.Strict] — the safe choice for regulated deployments.
  */
 data class PersistenceConfig(
     val store: SnapshotStore,
     val autoSnapshot: AutoSnapshotPolicy = AutoSnapshotPolicy.OnTurnComplete,
+    val restoreGuard: RestoreGuardPolicy = RestoreGuardPolicy.Strict,
 )
 
 /**
@@ -94,6 +137,8 @@ data class PersistenceConfig(
 class PersistenceBuilder {
     var store: SnapshotStore? = null
     var autoSnapshot: AutoSnapshotPolicy = AutoSnapshotPolicy.OnTurnComplete
+    /** #2419 — see [RestoreGuardPolicy]. Defaults to [RestoreGuardPolicy.Strict]. */
+    var restoreGuard: RestoreGuardPolicy = RestoreGuardPolicy.Strict
 
     internal fun build(): PersistenceConfig {
         val s = store
@@ -101,7 +146,7 @@ class PersistenceBuilder {
                 "persistence { } block requires a store = … assignment " +
                     "(e.g. FileSnapshotStore(Path(…)) or InMemorySnapshotStore())."
             )
-        return PersistenceConfig(s, autoSnapshot)
+        return PersistenceConfig(s, autoSnapshot, restoreGuard)
     }
 }
 
