@@ -15,6 +15,11 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 ### Changed
 
 - **Built-in tools now declare typed parameter schemas (#2379)** — `memory_write` / `memory_search` carry `@Generable` arg types, `memory_read` an explicit closed no-args schema, `forum_return` a closed `value`-only schema, and swarm `absorb` delegates a typed `{query: String}` schema. Previously these relied on the providers' permissive empty-properties fallback (`additionalProperties: true`), forcing the model to infer argument shapes from the description prose. No public API change.
+- **Unknown / unlisted tool name mid-loop is now recoverable, not fatal (#2476, regression for Koog signal under #2474)** — when the model emits a tool name absent from the active skill's allowlist (whether outright unknown or belonging to a different skill on the same agent), the agentic loop previously threw `IllegalStateException` and the run died. It now appends a tool-result message naming the bad call and listing the skill's allowed tools, then continues — so the model gets a turn to self-correct. The disallowed executor still never runs (authorization boundary unchanged), the skill's allowlist is the only set named (no leak of the wider `agent.toolMap`), and streaming consumers see a `ToolCallFinished(isError = true)` for the rejected call. Pinned by `KoogRegressionUnknownToolTest`; `ToolAuthorizationTest` rewritten to assert the recovery contract (two of its prior assertions were accidentally passing via `fail()` message contents — replaced with honest tool-message inspection).
+
+### Tests
+
+- **Koog issue-set regression suite — first slice (#2474)** — pin Agents.KT contracts where Koog broke. #2475 ships `KoogRegressionWrongTypedArgsTest` (3 cases): (1) scalar `Number → String` is intentional coercion per `coerceValue` (not a malformed arg — executor runs with the stringified value); (2) a truly-unparseable value for a typed field (e.g. `"abc"` for `count: Int`) routes through `onError.invalidArgs` with end-to-end recovery via `RepairResult.Fixed`, executor runs exactly once for the repaired call; (3) without a handler the failure is the framework's `ToolExecutionException` with typed-arg context — never a raw `kotlinx.serialization` / `NumberFormatException`.
 
 ## [0.6.0] — 2026-05-23
 
