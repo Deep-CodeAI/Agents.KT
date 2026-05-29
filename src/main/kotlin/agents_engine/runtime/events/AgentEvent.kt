@@ -45,6 +45,14 @@ sealed interface AgentEvent<out OUT> {
     val requestId: String get() = runtimeContext.requestId
     val sessionId: String? get() = runtimeContext.sessionId
     val manifestHash: String? get() = runtimeContext.manifestHash
+    /** #2720 — convenience accessor for the deployer-defined attribution map. */
+    val attribution: Map<String, String> get() = runtimeContext.attribution
+    /** #2720 — invoking user / keyOwner, when set on the runtime context. */
+    val userId: String? get() = runtimeContext.userId
+    /** #2720 — project the run belongs to, when set on the runtime context. */
+    val projectId: String? get() = runtimeContext.projectId
+    /** #2720 — deployer-defined dialog id (distinct from [sessionId]), when set. */
+    val dialogId: String? get() = runtimeContext.dialogId
 
     /**
      * A model round-trip is about to begin for one skill turn. The event

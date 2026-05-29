@@ -493,8 +493,19 @@ class Agent<IN, OUT>(
             invokeSuspendForSession(input, emitter = null) { /* no-op */ }
         }
 
-    internal fun newRuntimeContext(sessionId: String? = null): AgentRuntimeContext =
-        AgentRuntimeContext(sessionId = sessionId, manifestHash = manifestHash)
+    internal fun newRuntimeContext(sessionId: String? = null): AgentRuntimeContext {
+        // #2720 — inherit attribution from the outer ThreadLocal scope if one
+        // is in place (e.g. a bridge wrapping `agent.session(...)` in
+        // `withAgentRuntimeContext(currentOrNew().copy(attribution = ...))`).
+        // requestId stays fresh per invocation; sessionId/manifestHash come
+        // from this invocation's parameters; attribution propagates outward-in.
+        val inheritedAttribution = AgentRuntimeContext.current()?.attribution ?: emptyMap()
+        return AgentRuntimeContext(
+            sessionId = sessionId,
+            manifestHash = manifestHash,
+            attribution = inheritedAttribution,
+        )
+    }
 
     /**
      * #1736 — session-aware sibling of [invokeSuspend]. Same logic, plus an

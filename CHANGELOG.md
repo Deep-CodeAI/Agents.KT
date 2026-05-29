@@ -4,6 +4,16 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-05-29
+
+**"Attribution you can filter by."** Closes the bridge-observability gap that every downstream Langfuse / LangSmith / OTel consumer was working around via per-bridge `ConcurrentHashMap` side-channels. `AgentRuntimeContext` now carries free-form business attribution alongside the technical correlation fields, so observability bridges can drop their `onBeforeTurn`-based capture and read user / project / dialog identifiers directly off the runtime context.
+
+### Added
+
+- **Native attribution on `AgentRuntimeContext` (#2720)** — adds `attribution: Map<String, String> = emptyMap()` to `AgentRuntimeContext` with typed accessors for the three canonical keys (`userId` / `projectId` / `dialogId` via `AttributionKeys.USER_ID` / `PROJECT_ID` / `DIALOG_ID`). Free-form keys are supported — `tenantId`, `keyOwner`, `customerId`, anything the deployer needs. Attribution propagates outward-in: a bridge wraps `agent.session(input)` in `withAgentRuntimeContext(AgentRuntimeContext.currentOrNew().copy(attribution = mapOf(...)))`, and every downstream `AgentEvent` / `PipelineEvent` surfaces the same attribution on its `runtimeContext` (plus the convenience getters: `event.userId`, `event.projectId`, `event.dialogId`, `event.attribution`). `Agent.newRuntimeContext` inherits attribution from the outer ThreadLocal scope so the bridge pattern works without per-event plumbing — `requestId` stays fresh per invocation, `sessionId` / `manifestHash` come from this invocation, attribution flows through. Replaces the bridge `ConcurrentHashMap<requestId, userId>` + `onBeforeTurn` capture pattern; downstream cleanup tracked in project #21 #2719. Non-breaking — `attribution` defaults to empty, existing constructor calls compile unchanged, bridges that don't read attribution behave byte-for-byte as before.
+
+## [0.6.1] — 2026-05-28
+
 ### Added
 
 - **Snapshot/resume foundation (#2416, spike for #2386) — experimental** — an agent's resumable state is its message history + loop counters, so resume re-enters the loop seeded with a snapshot rather than suspending a coroutine. Ships `Snapshotable<S>`, `SessionSnapshot`, `SnapshotStore` (+ `InMemorySnapshotStore` and `FileSnapshotStore` with atomic temp-write/rename), `MemoryBank` snapshot/restore, and the `executeAgentic` turn-boundary checkpoint + `resumeFrom` seam. Round-trip proven by test (3 turns → crash → fresh agent → restore → finish). The ergonomic `persistence { }` DSL + `Agent.resumeOrStart(sessionId)`, the manifest-hash restore guard, and composition snapshots are the next phases on #2386.
