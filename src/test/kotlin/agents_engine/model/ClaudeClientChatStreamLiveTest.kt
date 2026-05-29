@@ -12,8 +12,11 @@ import kotlin.test.assertTrue
 /**
  * #1742 — live integration test for ClaudeClient.chatStream against the
  * real Anthropic API. Requires an API key at `.secrets/anthropic-key`
- * or in `ANTHROPIC_API_KEY`. Tagged `live-llm` — runs via
- * `./gradlew integrationTest`. Skips cleanly when no key is available.
+ * or in `ANTHROPIC_API_KEY`. Tagged `live-cloud-api` — runs as part of
+ * the default `./gradlew test` task (hosted-API live tests are kept in
+ * `:test`; the `live-llm` tag is reserved for Ollama-Cloud-dependent
+ * tests that run via `./gradlew integrationTest`). Skips cleanly when
+ * no key is available.
  */
 class ClaudeClientChatStreamLiveTest {
 
@@ -35,11 +38,13 @@ class ClaudeClientChatStreamLiveTest {
                     role = "user",
                     // #2380 — long enough response to force the SSE path to
                     // emit many small text-delta blocks. The previous "1..10"
-                    // prompt was short enough that Haiku occasionally bundled
-                    // the whole reply into two same-millisecond chunks,
-                    // which is valid streaming behavior but defeats the
-                    // chunk-count + timing assertion below.
-                    content = "Count from 1 to 50 separated by spaces. Output ONLY the numbers, nothing else.",
+                    // and "1..50" prompts were both still small enough that
+                    // Haiku occasionally bundled the whole reply into ~3
+                    // same-millisecond chunks (valid streaming behaviour, but
+                    // defeats the chunk-count + timing assertion below). "1..200"
+                    // forces ~800 output chars; the server cannot batch that
+                    // into 3 chunks even on its fastest response path.
+                    content = "Count from 1 to 200 separated by spaces. Output ONLY the numbers, nothing else.",
                 ),
             ),
         ).collect { chunk ->
@@ -62,7 +67,7 @@ class ClaudeClientChatStreamLiveTest {
         // (above) — that's the real proof of streaming. This secondary
         // assertion catches the regression where the wire-level SSE
         // implementation has accidentally re-bundled into ~1-2 mega
-        // chunks. The prompt above (1..50) reliably produces 10+ deltas
+        // chunks. The prompt above (1..200) reliably produces 20+ deltas
         // on Haiku, so we keep the chunk-count side at >=5; the timing
         // side is the more lenient backup for adapters that emit many
         // chunks within a single millisecond. Either alone disproves
@@ -77,7 +82,7 @@ class ClaudeClientChatStreamLiveTest {
         assertTrue(usage.completionTokens > 0)
 
         val assembled = textDeltas.joinToString("") { (it.second as LlmChunk.TextDelta).text }
-        listOf("1", "25", "50").forEach { d ->
+        listOf("1", "100", "200").forEach { d ->
             assertTrue(d in assembled, "assembled output should contain '$d'; got: \"$assembled\"")
         }
 
