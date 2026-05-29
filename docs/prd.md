@@ -452,11 +452,13 @@ Budget is **per-invocation** — each `agent(input)` call starts fresh. Structur
 
 ### Tool Whitelist
 
-Tools declared in `skill { tools(...) }` are the **only** tools the LLM can call. Unknown tool calls — whether from a typo, hallucination, jailbreak, or model from a different family — are rejected with `IllegalStateException` at the runtime boundary, not silently executed:
+Tools declared in `skill { tools(...) }` are the **only** tools the LLM can call. Unknown tool calls — whether from a typo, hallucination, jailbreak, or model from a different family — are rejected at the runtime boundary, not silently executed. Pre-0.6.3 this threw `IllegalStateException` and tore down the run; since #2476 the rejection is **recoverable** — the runtime appends a tool-result error to context and continues so the model gets a turn to self-correct:
 
 ```
-Tool 'delete_file' is not allowed for skill 'write-code'. Allowed: [write_file, compile, run_tests]
+ERROR: Tool 'delete_file' is unknown for skill 'write-code'. Allowed tools: write_file, compile, run_tests. Pick one of the allowed tools or return a final text answer.
 ```
+
+The disallowed executor still never runs. For auditors, 0.6.4 surfaces hallucinations as a typed `PipelineEvent.ToolHallucinated` event (#2757) — distinct from policy denial — so the audit trail can be filtered by event class instead of by error message body.
 
 **This is enforced runtime-side, not by the prompt.** The system prompt's "Available tools" listing is descriptive (the LLM is told what it can call), but the security boundary is the runtime allowlist:
 

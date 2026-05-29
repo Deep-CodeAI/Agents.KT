@@ -142,6 +142,21 @@ class Agent<IN, OUT>(
      */
     var toolDeniedListener: ((name: String, args: Map<String, Any?>, reason: String) -> Unit)? = null
         private set
+    /**
+     * #2757 — fires when the model emits a tool name that is NOT in the
+     * current skill's allowlist (hallucinated, or a tool that belongs to a
+     * different skill on the same agent). The runtime appends a tool-result
+     * error to context and continues (per #2476), but this listener is the
+     * first-class audit signal: hallucinated tools are distinct evidence
+     * from policy-denied tools or execution errors, and auditors want to
+     * grep by reason rather than parsing error message bodies.
+     *
+     * `allowedTools` is the skill's allowlist for this turn — same set the
+     * recovery message exposes to the model. Does NOT leak the wider
+     * `agent.toolMap`.
+     */
+    var toolHallucinatedListener: ((name: String, args: Map<String, Any?>, allowedTools: List<String>) -> Unit)? = null
+        private set
     private val tokenUsageListeners = mutableListOf<(TokenUsage) -> Unit>()
     var knowledgeUsedListener: ((name: String, content: String) -> Unit)? = null
         private set
@@ -276,6 +291,18 @@ class Agent<IN, OUT>(
      */
     fun onToolDenied(block: (name: String, args: Map<String, Any?>, reason: String) -> Unit) {
         toolDeniedListener = block
+    }
+
+    /**
+     * #2757 — Observe tool-name hallucinations: the LLM emitted a tool name
+     * not in the active skill's allowlist. Fires once per rejected call,
+     * before the recovery message is appended. The runtime still recovers
+     * (per #2476) — this listener is pure observability for auditors who
+     * need to distinguish hallucinations from policy denials. Settable
+     * after construction like the other listener slots.
+     */
+    fun onToolHallucinated(block: (name: String, args: Map<String, Any?>, allowedTools: List<String>) -> Unit) {
+        toolHallucinatedListener = block
     }
 
     /**

@@ -111,6 +111,16 @@ internal suspend fun <IN> executeAgentic(
      * the next model call) with the current resumable state, for persistence.
      */
     onTurnCheckpoint: ((agents_engine.core.SessionSnapshot) -> Unit)? = null,
+    /**
+     * #2754 — when [resumeFrom] is non-null and carries a `manifestHash` that
+     * differs from the current agent's `manifestHash`, resume fails closed by
+     * throwing [agents_engine.core.SnapshotManifestMismatchException]. Set to
+     * `true` to override (callers take responsibility for any migration
+     * semantics). `null` snapshot.manifestHash is treated as "no manifest at
+     * the time of snapshot" — allowed regardless, for back-compat with pre-
+     * 0.6.4 snapshots.
+     */
+    allowManifestMismatch: Boolean = false,
 ): AgenticResult {
     val config = requireNotNull(agent.modelConfig) {
         "Agent '${agent.name}' has no model configured. Add a model { } block."
@@ -200,8 +210,26 @@ internal suspend fun <IN> executeAgentic(
     // history already contains the system + user messages, so we don't re-add
     // them. A fresh run builds them as usual.
     if (resumeFrom != null) {
+        // #2754 — fail closed on manifestHash mismatch unless the caller
+        // explicitly opts out. Null snapshot.manifestHash means the snapshot
+        // predates the guard (or the originating agent had no manifest); allow.
+        val snapHash = resumeFrom.manifestHash
+        if (!allowManifestMismatch && snapHash != null && snapHash != agent.manifestHash) {
+            throw agents_engine.core.SnapshotManifestMismatchException(
+                expected = snapHash,
+                actual = agent.manifestHash,
+            )
+        }
         messages.addAll(resumeFrom.messages)
-        agent.memoryBank?.restore(resumeFrom.memory)
+        // #2755 — only restore THIS agent's namespaced slot, not the whole bank.
+        // The wipe-all `restore(Map)` was destructive in the documented
+        // shared-workspace topology (one bank, many agents): resuming session
+        // A would erase session B's slot. Snapshot.memory carries `{agentName:
+        // value}` for the resuming agent only (see capture site below).
+        agent.memoryBank?.let { bank ->
+            val mine = resumeFrom.memory[agent.name]
+            bank.restoreForAgent(agent.name, mine)
+        }
     } else {
         // #2656 — vendor-neutral cache hints derived from agent.cacheConfig.
         // The hint marks an LlmMessage as the end of a cacheable group;
@@ -245,12 +273,21 @@ internal suspend fun <IN> executeAgentic(
 
     var turns = resumeFrom?.turns ?: 0
     var toolCalls = resumeFrom?.toolCalls ?: 0
-    // #2412 — effective tool-call cap; starts at the configured budget and can be
-    // raised mid-run by an onBudgetExceeded handler so the loop continues.
-    // #2749 — when resuming, honor whichever limit is HIGHER between the
-    // snapshot's saved limit and the current agent's budget. That lets the
-    // "raise the cap and resume" UX work — the agent author rebuilds with
-    // a higher maxToolCalls, calls invokeSuspendResuming(resumeFrom = …),
+    // #2412 / #2750 — effective caps; start at the configured budget and can
+    // be raised mid-run by an onBudgetExceeded handler so the loop continues.
+    // #2412 wired TOOL_CALLS only; #2750 broadens to TURNS / DURATION /
+    // TOKENS / CONSECUTIVE_TOOL using the same Stop/Extend pattern. Units
+    // when handlers return Extend(newLimit):
+    //   - TOOL_CALLS / TURNS / TOKENS / CONSECUTIVE_TOOL → integer count
+    //   - DURATION → milliseconds (clock budget, not turn count)
+    // PER_TOOL_TIMEOUT is per-call, not cumulative, so it stays unconditionally
+    // throwing — extending it mid-tool would require interrupting an in-flight
+    // executor, which is a different ticket.
+    //
+    // #2749 — when resuming, honor whichever TOOL_CALLS limit is HIGHER
+    // between the snapshot's saved limit and the current agent's budget. That
+    // lets the "raise the cap and resume" UX work — the agent author rebuilds
+    // with a higher maxToolCalls, calls invokeSuspendResuming(resumeFrom = …),
     // and the loop honors the new ceiling. Falls back to the saved snapshot
     // value when the agent's budget hasn't been raised (preserves the #2416
     // contract that the snapshot is authoritative for the loop counters
@@ -260,6 +297,10 @@ internal suspend fun <IN> executeAgentic(
     } else {
         budget.maxToolCalls
     }
+    var turnLimit = budget.maxTurns
+    var durationLimitNanos = budget.maxDuration.inWholeNanoseconds
+    var tokenLimit: Int? = budget.maxTokens
+    var consecutiveSameToolLimit: Int? = budget.maxConsecutiveSameTool
     var totalTokens = 0
     // #1740: cumulative usage across all turns. Provider reports per-turn;
     // we sum prompt and completion independently (TokenUsage.total is derived).
@@ -281,17 +322,38 @@ internal suspend fun <IN> executeAgentic(
 
     while (true) {
         val elapsedNanos = System.nanoTime() - invocationStartNanos
-        if (elapsedNanos >= budget.maxDuration.inWholeNanoseconds) {
-            throw BudgetExceededException(
-                "Agent '${agent.name}' exceeded duration budget of ${budget.maxDuration}",
-                BudgetReason.DURATION,
-            )
+        if (elapsedNanos >= durationLimitNanos) {
+            // #2750 — DURATION is now extendable via onBudgetExceeded(). The
+            // handler returns Extend(newLimit) in MILLISECONDS; we convert
+            // back to nanos for the loop counter. Stop / no handler / Extend
+            // with a value ≤ current still throws (back-compat with #2412).
+            val currentMillis = (durationLimitNanos / 1_000_000L).toInt().coerceAtLeast(1)
+            val decision = agent.budgetExceededListener?.invoke(BudgetReason.DURATION, currentMillis)
+            val newMillis = (decision as? BudgetDecision.Extend)?.newLimit
+            if (newMillis != null && newMillis > currentMillis) {
+                durationLimitNanos = newMillis.toLong() * 1_000_000L
+                firedThresholds.remove(BudgetReason.DURATION)
+            } else {
+                throw BudgetExceededException(
+                    "Agent '${agent.name}' exceeded duration budget of ${budget.maxDuration}",
+                    BudgetReason.DURATION,
+                )
+            }
         }
-        if (turns >= budget.maxTurns)
-            throw BudgetExceededException(
-                "Agent '${agent.name}' exceeded budget of ${budget.maxTurns} turns",
-                BudgetReason.TURNS,
-            )
+        if (turns >= turnLimit) {
+            // #2750 — TURNS is now extendable. Same Stop/Extend semantics.
+            val decision = agent.budgetExceededListener?.invoke(BudgetReason.TURNS, turnLimit)
+            val newLimit = (decision as? BudgetDecision.Extend)?.newLimit
+            if (newLimit != null && newLimit > turnLimit) {
+                turnLimit = newLimit
+                firedThresholds.remove(BudgetReason.TURNS)
+            } else {
+                throw BudgetExceededException(
+                    "Agent '${agent.name}' exceeded budget of $turnLimit turns",
+                    BudgetReason.TURNS,
+                )
+            }
+        }
 
         // Threshold check before the next chat — DURATION is wall-clock, so
         // it can cross the threshold purely by waiting (e.g., on a slow tool).
@@ -299,7 +361,7 @@ internal suspend fun <IN> executeAgentic(
         // accumulator updates below.
         maybeFireThreshold(
             BudgetReason.DURATION,
-            elapsedNanos.toDouble() / budget.maxDuration.inWholeNanoseconds,
+            elapsedNanos.toDouble() / durationLimitNanos,
         )
 
         when (val decision = agent.decideBeforeTurn(messages.toList())) {
@@ -352,7 +414,7 @@ internal suspend fun <IN> executeAgentic(
                 tokensUsed = responseUsage,
             )
         )
-        maybeFireThreshold(BudgetReason.TURNS, turns.toDouble() / budget.maxTurns)
+        maybeFireThreshold(BudgetReason.TURNS, turns.toDouble() / turnLimit)
 
         // #963: accumulate tokens only when the provider reported usage —
         // a missing `tokenUsage` does NOT count as zero toward the cap.
@@ -378,14 +440,22 @@ internal suspend fun <IN> executeAgentic(
                     },
                 )
             } ?: usage
-            val cap = budget.maxTokens
+            val cap = tokenLimit
             if (cap != null) {
                 maybeFireThreshold(BudgetReason.TOKENS, totalTokens.toDouble() / cap)
                 if (totalTokens > cap) {
-                    throw BudgetExceededException(
-                        "Agent '${agent.name}' exceeded token budget of $cap (used $totalTokens)",
-                        BudgetReason.TOKENS,
-                    )
+                    // #2750 — TOKENS is now extendable. Same Stop/Extend semantics.
+                    val decision = agent.budgetExceededListener?.invoke(BudgetReason.TOKENS, cap)
+                    val newLimit = (decision as? BudgetDecision.Extend)?.newLimit
+                    if (newLimit != null && newLimit > cap) {
+                        tokenLimit = newLimit
+                        firedThresholds.remove(BudgetReason.TOKENS)
+                    } else {
+                        throw BudgetExceededException(
+                            "Agent '${agent.name}' exceeded token budget of $cap (used $totalTokens)",
+                            BudgetReason.TOKENS,
+                        )
+                    }
                 }
             }
         }
@@ -471,12 +541,19 @@ internal suspend fun <IN> executeAgentic(
                     // matters is "no other tool came between," not "in the same turn."
                     if (call.name == lastToolName) consecutiveSameTool++
                     else { lastToolName = call.name; consecutiveSameTool = 1 }
-                    budget.maxConsecutiveSameTool?.let { cap ->
+                    consecutiveSameToolLimit?.let { cap ->
                         if (consecutiveSameTool > cap) {
-                            throw BudgetExceededException(
-                                "Agent '${agent.name}' invoked tool '${call.name}' $consecutiveSameTool times in a row (cap: $cap)",
-                                BudgetReason.CONSECUTIVE_TOOL,
-                            )
+                            // #2750 — CONSECUTIVE_TOOL is now extendable.
+                            val decision = agent.budgetExceededListener?.invoke(BudgetReason.CONSECUTIVE_TOOL, cap)
+                            val newLimit = (decision as? BudgetDecision.Extend)?.newLimit
+                            if (newLimit != null && newLimit > cap) {
+                                consecutiveSameToolLimit = newLimit
+                            } else {
+                                throw BudgetExceededException(
+                                    "Agent '${agent.name}' invoked tool '${call.name}' $consecutiveSameTool times in a row (cap: $cap)",
+                                    BudgetReason.CONSECUTIVE_TOOL,
+                                )
+                            }
                         }
                     }
                     val isKnowledge = call.name in knowledgeToolMap
@@ -490,10 +567,19 @@ internal suspend fun <IN> executeAgentic(
                         // unknown call and listing the allowed tools, and let
                         // the loop continue. The model can now self-correct on
                         // the next turn.
+                        val allowedList = allowedToolMap.keys.toList()
                         val unknownToolMessage =
                             "ERROR: Tool '${call.name}' is unknown for skill '${skill.name}'. " +
-                                "Allowed tools: ${allowedToolMap.keys.joinToString(", ")}. " +
+                                "Allowed tools: ${allowedList.joinToString(", ")}. " +
                                 "Pick one of the allowed tools or return a final text answer."
+                        // #2757 — first-class audit signal: hallucinated tool is
+                        // a different event from policy-denied or execution error.
+                        // Fires before the recovery message goes into context, so
+                        // an auditor sees the rejection on the same wall-clock
+                        // ordering as the streaming ToolCallFinished(isError=true).
+                        // Allowed list deliberately bounded by the skill (not the
+                        // wider agent.toolMap) — same boundary as the message.
+                        agent.toolHallucinatedListener?.invoke(call.name, call.arguments, allowedList)
                         if (emitter != null && call.callId != null) {
                             emitter(
                                 agents_engine.runtime.events.AgentEvent.ToolCallFinished(
@@ -603,7 +689,13 @@ internal suspend fun <IN> executeAgentic(
                 toolCalls = toolCalls,
                 toolCallLimit = toolCallLimit,
                 tokensUsed = cumulativeUsage,
-                memory = agent.memoryBank?.entries() ?: emptyMap(),
+                // #2755 — snapshot only THIS agent's slot in a (possibly shared)
+                // bank. The pre-#2755 `bank.entries()` dump included every other
+                // agent's slot — leaking unrelated data into the snapshot file
+                // and breaking the namespaced-restore guarantee.
+                memory = agent.memoryBank?.let { b ->
+                    b.snapshotForAgent(agent.name)?.let { v -> mapOf(agent.name to v) }
+                } ?: emptyMap(),
                 requestId = runtimeContext.requestId,
                 sessionId = runtimeContext.sessionId,
                 manifestHash = agent.manifestHash,
@@ -927,16 +1019,17 @@ private fun formatDeniedToolError(toolName: String, reason: String): String =
 /**
  * Wrap a tool result from an `untrustedOutput = true` tool in a JSON envelope so
  * the LLM can distinguish data from instructions. See #642.
+ *
+ * #2756 — routes through the central [toJsonString] escaper instead of a local
+ * 5-char replace chain. The local chain handled `\`, `"`, `\n`, `\r`, `\t` but
+ * left U+0000–U+001F control characters (`\b`, `\f`, NUL, ESC, etc.) unescaped,
+ * producing invalid JSON for binary/OCR/captured-terminal tool output. The
+ * central escaper is RFC 8259 §7-conformant — see [JsonEscape]. Tool name is
+ * now escaped too, in case a custom tool name contains `"` or `\`.
  */
 private fun wrapUntrustedToolResult(toolName: String, result: Any?): String {
     val value = result?.toString() ?: "null"
-    val escaped = value
-        .replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t")
-    return """{"tool":"$toolName","trusted":false,"value":"$escaped"}"""
+    return """{"tool":${toolName.toJsonString()},"trusted":false,"value":${value.toJsonString()}}"""
 }
 
 private fun parseOutput(text: String, outType: KClass<*>): Any? = when {

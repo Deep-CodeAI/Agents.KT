@@ -1,214 +1,210 @@
-# Agents.KT v0.5.0 — Streaming runtime + MCP-as-skills
+# Agents.KT v0.6.4 — Trust patch
 
-**Release date:** 2026-05-16
+**Release date:** 2026-05-30
 
-v0.4.x established what an agent IS — typed boundaries, kotlin-reflect optional, KSP @Generable compile-time codegen. **v0.5.0 establishes what an agent does to the outside world**: it streams, and it speaks MCP fluently in both directions.
+0.6.4 is a deliberate **trust patch** on top of 0.6.3. Boring on features, focused on closing real boundary gaps that an outside auditor flagged in the 0.6.3 review. The tagline:
+
+> 0.6.4 makes Agents.KT more tolerant of real model behavior without weakening runtime boundaries.
+
+The product identity is unchanged: **auditable Kotlin agent runtime for regulated JVM teams**.
 
 ```kotlin
-implementation("ai.deep-code:agents-kt:0.5.0")
-implementation("ai.deep-code:agents-kt-ksp:0.5.0")  // optional but recommended
+implementation("ai.deep-code:agents-kt:0.6.4")
+implementation("ai.deep-code:agents-kt-ksp:0.6.4")           // optional but recommended
+implementation("ai.deep-code:agents-kt-manifest:0.6.4")      // permission manifests
+implementation("ai.deep-code:agents-kt-observability:0.6.4") // JSONL audit + ObservabilityBridge
+// optional bridges
+implementation("ai.deep-code:agents-kt-otel:0.6.4")
+implementation("ai.deep-code:agents-kt-langsmith:0.6.4")
+implementation("ai.deep-code:agents-kt-langfuse:0.6.4")
 ```
 
-Drop-in for v0.4.6 consumers. Every existing API works unchanged. Streaming and MCP-as-skills are additive surfaces — opt in when you want them.
+Drop-in for 0.6.3. No API renames, no removed methods. The behavior changes are spelled out below; in every case the new default is the safe one.
 
 ---
 
-## What ships
+## What ships in 0.6.4
 
-### Streaming inside the agent loop
+### Snapshot path-traversal closed (#2753)
+
+`FileSnapshotStore.save / load / delete` previously concatenated the raw session id into the filename:
 
 ```kotlin
-val session = myAgent.session(input)
+val target = dir.resolve("$key.json")
+```
 
-session.events.collect { event ->
+If session ids derive from any external input (request header, JWT subject, user-supplied id), a value like `"../../../etc/poisoned"` would let the caller read or write outside `dir`. The class header even admitted as much: *"v1: keys are used as filenames; assumes filesystem-safe session ids."*
+
+0.6.4 hashes the key to SHA-256 hex before forming the filename. The original session id is still inside the snapshot body (`sessionId` / `requestId` fields) for traceability — only its filesystem representation changes. Deterministic, so repeated saves with the same key overwrite atomically.
+
+```kotlin
+val store = FileSnapshotStore(snapshotsDir)
+store.save("../../../etc/poisoned", snap("evil"))
+// → snapshotsDir/<sha256-hex>.json — inside snapshotsDir, NOT outside
+store.load("../../../etc/poisoned")?.sessionId
+// → "evil" (original session id preserved in body)
+```
+
+No on-disk migration needed; 0.6.3 had not shipped `FileSnapshotStore` widely enough for production state to exist.
+
+### Manifest-hash restore guard (#2754)
+
+`SessionSnapshot.manifestHash` already existed but wasn't enforced on resume. That let a snapshot taken under one tool/permission set replay silently against an agent whose manifest had since changed — tools added, policies tightened, secrets rotated. For an audit-first runtime that was the wrong default.
+
+0.6.4 fails closed: if `snapshot.manifestHash` is non-null and disagrees with the current agent's `manifestHash`, resume throws `SnapshotManifestMismatchException`. Callers who own the migration story can opt out via a flag.
+
+```kotlin
+try {
+    executeAgentic(agent, skill, input, resumeFrom = snap)
+} catch (e: SnapshotManifestMismatchException) {
+    // e.expected, e.actual — both hashes preserved for forensics
+    // legitimate migration path:
+    executeAgentic(agent, skill, input, resumeFrom = snap, allowManifestMismatch = true)
+}
+```
+
+`null` snapshot.manifestHash is allowed regardless — back-compat for any pre-0.6.4 snapshots that don't carry one.
+
+### Namespaced memory restore (#2755)
+
+`MemoryBank` was documented to support a **shared-workspace topology** — one bank, many agents — but `MemoryBank.restore(state)` cleared the entire backing store. Resuming session A wiped session B's slot. That was a destructive default for a topology the README actively recommends.
+
+0.6.4 pivots snapshot/restore to the natural per-agent namespace:
+
+```kotlin
+val bank = MemoryBank()
+bank.write("ActorsAgent", "a-state")
+bank.write("MerchAgent", "m-state")
+
+// snapshot/restore one agent — leaves the other alone
+val mine = bank.snapshotForAgent("ActorsAgent")
+bank.restoreForAgent("ActorsAgent", mine)
+// MerchAgent slot untouched
+```
+
+The wipe-all `restore(Map<String, String>)` is kept (Snapshotable interface contract) but deprecated. AgenticLoop's snapshot capture and resume both flow through the new namespaced methods.
+
+### Tool-result JSON escaping fixed (#2756)
+
+`wrapUntrustedToolResult` had a hand-rolled 5-char escape chain (`\\`, `"`, `\n`, `\r`, `\t`) that left the rest of U+0000–U+001F unescaped, producing invalid JSON for binary tool results, OCR text, captured terminal output. The central `toJsonString()` escaper (added in #2378) was the project-wide source of truth everywhere else; the local copy was the last holdout.
+
+0.6.4 routes through `toJsonString()`. NUL / BS / FF / ESC and the rest of the control range are now escaped per RFC 8259 §7. Tool name is escaped too — a name containing `"` no longer breaks the envelope.
+
+This is an adversarial-boundary fix; `untrustedOutput = true` tools exist precisely because their output might try to corrupt downstream parsing.
+
+### `PipelineEvent.ToolHallucinated` audit event (#2757)
+
+Since #2476, unknown / unlisted tool calls are recoverable — the runtime appends a tool-result error and continues. Good runtime behavior, but an auditor reviewing the JSONL audit stream could only distinguish "model hallucinated a tool" from "tool ran and returned an error" by parsing the error message body. Fragile.
+
+0.6.4 surfaces hallucinations as a typed first-class event:
+
+```kotlin
+val a = agent<...> { ... }
+a.onToolHallucinated { name, args, allowedTools ->
+    auditLog.write("hallucination: $name, allowed=$allowedTools")
+}
+
+// Or via observe():
+a.observe { event ->
     when (event) {
-        is AgentEvent.Token              -> render(event.text)
-        is AgentEvent.ToolCallStarted    -> log("→ ${event.toolName}")
-        is AgentEvent.ToolCallFinished   -> show(event.result, event.isError)
-        is AgentEvent.SkillStarted       -> log("skill: ${event.skillName}")
-        is AgentEvent.SkillCompleted     -> log("✓ ${event.tokensUsed} tokens")
-        is AgentEvent.Completed          -> done(event.output)
-        is AgentEvent.Failed             -> err(event.cause)
-        else                             -> {}
+        is PipelineEvent.ToolHallucinated -> { /* grep by event class */ }
+        is PipelineEvent.ToolDenied -> { /* different reason */ }
+        is PipelineEvent.ToolCalled -> { /* executed normally */ }
+        else -> { }
     }
 }
-
-val output: OUT = session.await()
 ```
 
-`agent.session(input): AgentSession<OUT>` is the consumer-facing entry point: a cold `Flow<AgentEvent<OUT>>` of typed events plus a `suspend fun await()` terminal. Eight event subtypes cover the whole lifecycle. Every event carries `agentId` so consumers can demultiplex composed streams.
+Streaming consumers still get `ToolCallFinished(isError = true)` on the same wall-clock — `ToolHallucinated` is additive evidence, not a replacement.
 
-**Native wire-level streaming on all three adapters:**
+### `onBudgetExceeded` broadened (#2750)
 
-| Provider | Protocol | Live result (count 1→10 prompt) |
+#2412 wired the `onBudgetExceeded` handler for `TOOL_CALLS` only. The other reasons — `TURNS`, `DURATION`, `TOKENS`, `CONSECUTIVE_TOOL` — threw unconditionally even when a handler was registered. The handler contract was asymmetric.
+
+0.6.4 fires the handler at every cumulative throw site with the same `Stop` / `Extend(newLimit)` semantics. `Extend` raises the local limit and the loop continues; `Stop` or a missing handler throws exactly as before.
+
+```kotlin
+agent<String, String>("a") {
+    budget {
+        maxTurns = 8
+        maxToolCalls = 32
+        maxDuration = 30.seconds
+        maxTokens = 100_000
+        maxConsecutiveSameTool = 3
+    }
+    onBudgetExceeded { reason, current ->
+        when (reason) {
+            BudgetReason.TURNS            -> BudgetDecision.Extend(current + 4)
+            BudgetReason.TOOL_CALLS       -> BudgetDecision.Extend(current + 16)
+            BudgetReason.TOKENS           -> BudgetDecision.Extend(current * 2)
+            BudgetReason.DURATION         -> BudgetDecision.Extend(60_000) // millis
+            BudgetReason.CONSECUTIVE_TOOL -> BudgetDecision.Stop
+            BudgetReason.PER_TOOL_TIMEOUT -> BudgetDecision.Stop // still always throws
+        }
+    }
+}
+```
+
+Units when `Extend(newLimit)` is returned:
+
+| Reason | Unit |
+|---|---|
+| TOOL_CALLS / TURNS / TOKENS / CONSECUTIVE_TOOL | integer count |
+| DURATION | milliseconds |
+
+PER_TOOL_TIMEOUT stays unconditionally throwing — extending a single in-flight tool mid-execution needs interrupt semantics and belongs in a separate ticket.
+
+### Docs and release hygiene
+
+The auditor's biggest 0.6.3 concern was docs/code drift. 0.6.4 reconciles:
+
+- README dependency coordinate `0.6.0` → `0.6.4`, lead paragraph rewritten for the full 0.6 line, "Current Release" blurb chronologically restructured.
+- `RELEASE_NOTES.md` (this file) refreshed from the stale v0.5.0 body.
+- Provider count consistent everywhere: four built-in adapters — Ollama, Anthropic, OpenAI, DeepSeek (`docs/model-and-tools.md`, `SECURITY.md`).
+- Unknown-tool behavior described correctly: recoverable error, not `IllegalStateException` (`docs/prd.md`, `docs/model-and-tools.md`).
+- MCP server adjunct fixed: output routes through `toLlmInput` (per #2483), not raw `toString()`.
+- CHANGELOG duplicate `## [0.6.3]` header removed.
+- CHANGELOG [0.6.2] attribution entry annotated with the 0.6.3 revert (the API no longer exists).
+
+---
+
+## Compatibility
+
+| Change | Affects | Migration |
 |---|---|---|
-| Ollama | NDJSON (`stream: true`) | 19 chunks across the response |
-| Anthropic | SSE with indexed content blocks | 2+ chunks, ~30ms span |
-| OpenAI | SSE with `[DONE]` terminator | 19 chunks, ~200ms span |
+| `FileSnapshotStore` hashes filenames | On-disk snapshot files written by 0.6.3 (unlikely in production) | If any exist, re-save via 0.6.4 |
+| Manifest-hash restore guard | Resume across an agent rebuild that changed tools/policies | Catch `SnapshotManifestMismatchException` or pass `allowManifestMismatch = true` |
+| `MemoryBank.restore(Map)` deprecated | Callers calling `bank.restore(...)` directly | Switch to `restoreForAgent(agentName, value)` — internal callers already updated |
+| `wrapUntrustedToolResult` escaping | Consumers that parse the JSON envelope of an `untrustedOutput = true` tool | Parsers that were tolerant of invalid JSON keep working; valid JSON consumers see the fix |
+| `onBudgetExceeded` broadened | Existing handlers receive calls for new reasons | Add a `when` branch per reason or default to `BudgetDecision.Stop` |
 
-Anthropic's streaming gets the harder case right: SSE can interleave `content_block_delta` events for text and `tool_use` blocks at different indices, so the adapter tracks `Map<Int, BlockState>` and routes each delta to the right block. The `toolu_*` id from `tool_use` blocks flows through verbatim as `LlmChunk.ToolCallStarted.callId` — that's what `ToolCall.callId` was designed for.
-
-Cumulative `TokenUsage` flows on `SkillCompleted` and `Completed` — summed across every LLM turn of one skill invocation, prompt and completion tokens accumulated independently. Per-skill billing visibility without a separate listener.
-
-### Every composition operator surfaces a session
-
-Composition preserves provenance: events from each inner agent flow through with their own `agentId`, terminated by a single `Completed`/`Failed`. The framework's eight composition operators (counting Pipeline overloads as one) all expose sessions:
-
-```kotlin
-// Sequential: a runs to completion (streaming its tokens), then b starts.
-val pipe = parse then generate then review
-pipe.session(input).events.collect { ... }
-
-// Conditional: source streams, then the matched route's agent streams.
-val routed = classifier.branch<String, Decision, String> {
-    on<Approved>() then approvedHandler
-    on<Rejected>() then rejectedHandler
-}
-routed.session(input).events.collect { ... }
-
-// Concurrent: events from both branches interleave, demultiplexable by agentId.
-val parallel = analyzer / critic
-parallel.session(input).events.collect { event ->
-    when (event.agentId) { "analyzer" -> ..., "critic" -> ... }
-}
-
-// teacher wrap student: teacher streams, its output becomes student's prompt override, student streams.
-val constrained = supervisor wrap worker
-constrained.session(input).events.collect { ... }
-
-// Loop / Forum / Swarm — same shape: inner events flow, single terminal.
-```
-
-For `Swarm.absorb(sibling)`, the sibling's inner events stream into the captain's session between the captain's own `ToolCallStarted` and `ToolCallFinished` brackets. `ToolDef` gained a `sessionExecutor` channel — any future sub-agent-wrapping tool can plug into it.
-
-### MCP-as-skills unification
-
-The point of v0.5.0's birth. **An MCP capability and an agent Skill are the same shape** — named, described, typed unit of work. v0.5.0 makes that literal: all three MCP capability surfaces expose as `Skill<Map<String, Any?>, String>`:
-
-```kotlin
-val mcp = McpClient.connect(url)
-val agent = agent<Map<String, Any?>, String>("wrapper") {
-    skills {
-        mcp.toolSkills().forEach { +it }       // every callable function
-        mcp.promptSkills().forEach { +it }     // every prompt template
-        mcp.resourceSkills().forEach { +it }   // every URI-addressable doc
-    }
-}
-```
-
-That's the entire integration. The agent's skill-selection logic — manual `skillSelection { }` routing or automatic LLM routing — dispatches between MCP capabilities the same way it dispatches between native skills. No special case.
-
-`McpClient` gains the new RPC layer underneath:
-- `listPrompts()` + `getPrompt(name, args): String` (joins MCP message content blocks)
-- `listResources()` + `readResource(uri): String`
-
-`McpServer.from(agent)` gains the corresponding DSL — register prompt templates and static resources alongside the existing tool exposure:
-
-```kotlin
-McpServer.from(agent) {
-    port = 0
-    expose("respond")                                                // tool (existing)
-    prompt("review_math", "System prompt for reviewers",
-           arguments = listOf(McpPromptArgument("topic", required = true))) { args ->
-        "You are reviewing math on ${args["topic"]}. Be precise."
-    }
-    resource("policy:///precision.md", "precision-policy",
-             description = "Internal policy", mimeType = "text/markdown") {
-        "Be precise. Cite sources. Round half-to-even."
-    }
-}
-```
-
-The server now declares `prompts` and `resources` capabilities in its `initialize` response when registrations exist, and handles `prompts/list`, `prompts/get`, `resources/list`, `resources/read` over the wire. `McpClient.snapshot: McpServerInfo` gives consumers a single immutable view of the connected server's full capability surface.
-
-`mcp.toolDefs()` (tools-as-auxiliary-functions, the v0.4.x shape) stays. Consumers pick the shape that matches their agent design:
-- `toolDefs()` → MCP caps as helpers an agent's skill calls during its agentic loop
-- `toolSkills()` → MCP caps as primary entry points the agent dispatches between (use case: agent IS a thin wrapper over MCP)
-
-### Self-contained MCP test infrastructure
-
-Live-MCP tests no longer need `MCP_REDMINE_URL`. The framework hosts both ends of the wire — `McpServer.from(agent)` on a loopback port, `McpClient.connect(server.url)` on the other end. The new `LoopbackMcpAlgebraTest` exercises a real-math round-trip: agent computes `sqrt(π/e)` (digits-as-arrays + BigInteger), exposes via MCP, client reads it back, verifies with both a `Math.sqrt` floor and a BigDecimal square-back proving `result² ≈ π/e` to 20 decimal places.
-
-Three pre-existing tests (`McpClientLiveTest` × 2 + `AgentMcpToolUseTest`) converted from `MCP_REDMINE_URL`-gated to loopback fixtures. `./gradlew mcpIntegrationTest` runs **7 tests, 0 skipped, 0 failures** out of the box.
-
-### Test growth
-
-| Suite | Tests | Failures |
-|---|---|---|
-| Unit (root + KSP + no-reflect smoke) | **1,074+** | 0 |
-| Live-LLM integration | 54 | 0 (clean runs) |
-| Live-MCP integration | 7 | 0 |
-
-`./gradlew testAll` aggregates everything — the canonical pre-push command.
+Source-compatible drop-in for 0.6.3 in every other respect.
 
 ---
 
-## Premortem-driven discipline
+## Verification
 
-`docs/premortem-0.5.0-streaming.md` was written before any v0.5.0 code shipped. It listed:
-- The typed `AgentEvent` hierarchy (now in code)
-- The `AgentSession` shape (now in code)
-- The cancellation contract (verified by per-adapter regression-guard tests)
-- The composition fidelity matrix (every operator implemented per the matrix)
-- Seven success criteria (all ticked)
-
-Every claim in this release points at a premortem criterion. No floating wins.
-
-`docs/streaming.md` is the consumer-facing reference: API walkthrough, provider streaming status with live-measured numbers, cancellation contract, test coverage map.
-
----
-
-## Honest gaps deferred past v0.5.0
-
-- **HTTP socket cancellation via `sendAsync`** — Kotlin Flow's channel-backed `emit` already propagates collector cancellation cleanly (verified by per-adapter regression-guard tests). The blocking `BufferedReader.readLine()` doesn't get interrupted mid-line — that's a latency optimization, not a correctness gap. `sendAsync` migration lands in a future patch.
-- **Coroutine-aware per-tool timeouts** — depends on the `sendAsync` migration. Today's `Thread.join(timeout)` per-tool deadline still works for synchronous tools; suspending tools (the `sessionExecutor` path for absorbed siblings) bypass it.
-- **Binary MCP resources** — `resourceSkills()` returns text content from the `text` field of `resources/read` responses. Base64 binary content isn't exposed yet.
-- **Sealed-root `fromLlmOutput` dispatch without `kotlin-reflect`** — still returns null (the v0.4.6 honest gap remains).
-
-These are tracked; none block real usage of the v0.5.0 surface.
-
----
-
-## Migration
-
-**For v0.4.6 consumers: drop-in.** Bump the artifact version, you're done. Every existing API works unchanged.
-
-To opt into streaming:
-```kotlin
-myAgent.session(input).events.collect { event -> /* ... */ }
+```bash
+./gradlew test    # full suite across all modules
 ```
 
-To consume MCP servers via the unified skills surface:
-```kotlin
-val mcp = McpClient.connect(url)
-agent<...> {
-    skills { mcp.toolSkills().forEach { +it } /* + promptSkills, resourceSkills */ }
-}
-```
+Manifest review (audit-time):
 
-To expose your agent's prompts and resources via MCP:
-```kotlin
-McpServer.from(yourAgent) {
-    expose("skill-name")
-    prompt(...) { args -> ... }
-    resource(...) { ... }
-}
+```bash
+./gradlew :agents-kt-manifest:permissionManifestVerify
 ```
 
 ---
 
-## Comparison checklist against `docs/premortem-0.5.0-streaming.md`
+## Where to read more
 
-- [x] `AgentEvent` sealed hierarchy defined, `Completed<OUT>` carries typed output
-- [x] `agent.session(input)` returns `AgentSession<OUT>` with cold `events` and `await()`
-- [x] `agent.invoke` / `agent.invokeSuspend` continue to work byte-for-byte; every existing test passes unchanged
-- [x] All three current adapters (Ollama, Anthropic, OpenAI) implement `chatStream` natively
-- [x] Loopback `agents-kt-streaming-test`-equivalent coverage via integration tests
-- [x] Documentation: `docs/streaming.md` and `README.md` updated
-- [x] No regressions in `./gradlew testAll`
-
-Every box ticked. No premortem criterion is unfulfilled at release time.
+- [`README.md`](README.md) — feature index pointing at `docs/`.
+- [`docs/permission-manifest.md`](docs/permission-manifest.md) — manifest semantics and the SHA-256 hash that feeds the restore guard.
+- [`docs/threat-model.md`](docs/threat-model.md) — what 0.6 owns vs. what your deployment owns.
+- [`docs/regulated-deployment.md`](docs/regulated-deployment.md) — wiring for compliance-supporting evidence.
 
 ---
 
-*The next chapter (v0.6.0): provider breadth (Google, Mistral, OpenRouter, Bedrock), Spring Boot + Ktor starters, OpenTelemetry, AgentUnit testing framework. Per `docs/roadmap.md` Phase 2.*
+## Credits
+
+The 0.6.4 trust patch was scoped from an outside-auditor review of 0.6.3 (#2752 epic). Sub-tickets: #2753 (FileSnapshotStore hashing), #2754 (manifest-hash restore guard), #2755 (namespaced memory restore), #2756 (untrusted-tool JSON escaping), #2757 (PipelineEvent.ToolHallucinated), #2750 (onBudgetExceeded broadening).

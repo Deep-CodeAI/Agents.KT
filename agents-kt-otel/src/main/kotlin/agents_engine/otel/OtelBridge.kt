@@ -85,6 +85,21 @@ class OtelBridge(
                         .build(),
                 )
             }
+            is PipelineEvent.ToolHallucinated -> {
+                // #2757 — distinct from ToolDenied: the model emitted a name not
+                // in the skill's allowlist. Recoverable per #2476; this span event
+                // is the audit evidence for auditors filtering by event class.
+                mostRecentAgentSpan()?.addEvent(
+                    "agent.tool.hallucinated",
+                    Attributes.builder()
+                        .put("tool.requested_name", event.requestedName)
+                        .put(
+                            AttributeKey.stringArrayKey("tool.allowed_tools"),
+                            event.allowedTools,
+                        )
+                        .build(),
+                )
+            }
         }
     }
 

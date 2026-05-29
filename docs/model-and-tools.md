@@ -40,13 +40,14 @@ calculator("Calculate ((15 + 35) / 2)^2")
 // → "The result is 625."
 ```
 
-**`model { }`** — configures the LLM backend. Three providers ship today:
+**`model { }`** — configures the LLM backend. Four providers ship today:
 
 - `model { ollama("gpt-oss:120b-cloud"); host = "..."; port = 11434; temperature = 0.0 }` — local or cloud Ollama; auto-fallback to inline JSON tool-call format for models without native tool support (#706).
 - `model { claude("claude-opus-4-7"); apiKey = System.getenv("ANTHROPIC_API_KEY"); temperature = 0.0; maxTokens = 4096 }` — Anthropic Messages API; maps `LlmMessage` / `LlmResponse` to Anthropic's structured `tool_use` / `tool_result` content blocks; tools advertise as `input_schema` (Anthropic's spelling) (#1644).
 - `model { openai("gpt-4o"); apiKey = System.getenv("OPENAI_API_KEY"); temperature = 0.0; maxTokens = 4096 }` — OpenAI Chat Completions; assistant `tool_calls` paired with `tool_call_id`-tagged tool messages via synthesized ids per request; `function.arguments` rides the wire as a stringified JSON; tools advertise as `parameters` (OpenAI's spelling) (#1656).
+- `model { deepseek("deepseek-v4-flash"); apiKey = System.getenv("DEEPSEEK_API_KEY") }` — DeepSeek's OpenAI-compatible API; shares the OpenAI adapter's wire shape (#1949 family).
 
-All three adapters share the `ModelClient` interface — switching providers is a one-line DSL change. The injectable `client = ...` escape hatch is still there for test stubs or custom adapters (e.g., Google/Gemini ahead of native support).
+All four adapters share the `ModelClient` interface — switching providers is a one-line DSL change. The injectable `client = ...` escape hatch is still there for test stubs or custom adapters (e.g., Google/Gemini ahead of native support).
 
 #### Reasoning / thinking (opt-in, #2406)
 
@@ -170,13 +171,13 @@ skill.toolNames                          (what the skill explicitly listed)
 ∪ skill.knowledge() entries              (lazy knowledge providers, exposed as tools)
 ```
 
-Anything outside that set is rejected with:
+Anything outside that set is rejected. Before 0.6.3 the runtime threw `IllegalStateException` and killed the loop; since #2476 the rejection is **recoverable** — the runtime appends a tool-result error message naming the bad call and listing the skill's allowed tools, and the loop continues so the model gets a turn to self-correct. The disallowed executor still never runs (authorization boundary unchanged), and the skill's allowlist is the only set named — no leak of the wider `agent.toolMap` to the model or to logs.
 
 ```
-IllegalStateException: Tool 'X' is not allowed for skill 'Y'. Allowed: [a, b, c]
+ERROR: Tool 'X' is unknown for skill 'Y'. Allowed tools: a, b, c. Pick one of the allowed tools or return a final text answer.
 ```
 
-The error names the offending skill and lists only the allowed tools — it does **not** leak the wider `agent.toolMap` to the model or to logs.
+Streaming consumers see `AgentEvent.ToolCallFinished(isError = true)` for the rejected call. For audit-stream consumers, 0.6.4 adds a typed `PipelineEvent.ToolHallucinated` event (#2757) — distinct from policy denial or executor errors, so auditors can grep by event class rather than parsing the error message body. Wire via `agent.onToolHallucinated { name, args, allowedTools -> ... }` or pick it up automatically through `agent.observe { }`.
 
 **Practical guidance.** Tools registered on the agent (`tools { tool(...) }`) are pooled at the agent level, but they are **not** auto-available to every skill — each skill must opt in via `tools(name)`. For dangerous tools (`shell`, `writeFile`, `deploy`, anything that hits production), the safest pattern is:
 
@@ -186,7 +187,7 @@ The error names the offending skill and lists only the allowed tools — it does
 
 ### Declarative tool policy DSL
 
-Tools can also declare what they are expected to touch. This is **declarative only in 0.6.0**: it feeds manifest/audit evidence, but it does not sandbox the executor. Process/container enforcement is the sibling #1916 track.
+Tools can also declare what they are expected to touch. This is **declarative only in the 0.6.x line**: it feeds manifest/audit evidence, but it does not sandbox the executor. Process/container enforcement is the sibling #1916 track.
 
 ```kotlin
 tools {

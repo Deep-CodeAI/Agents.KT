@@ -91,7 +91,11 @@ class SnapshotResumeTest {
     }
 
     @Test
-    fun `MemoryBank snapshot and restore round-trips`() {
+    @Suppress("DEPRECATION")
+    fun `MemoryBank snapshot and restore round-trips (legacy wipe-all path)`() {
+        // #2755 — the wipe-all restore() is deprecated; this test still pins
+        // its behavior because it remains the Snapshotable<Map<String,String>>
+        // contract. Snapshot/resume callers should use restoreForAgent.
         val a = MemoryBank().apply { write("agent", "line one\nline two") }
         val state = a.snapshot()
 
