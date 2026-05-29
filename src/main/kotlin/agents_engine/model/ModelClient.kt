@@ -80,8 +80,30 @@ data class TokenUsage(
      * — surfaced for cost/observability. Null when the provider doesn't report it.
      */
     val reasoningTokens: Int? = null,
+    /**
+     * Cache-write tokens billed at premium rate (#2663 — Anthropic prompt-caching
+     * split). Anthropic charges 25% more for the tokens that *populated* the
+     * cache and ~10% for [cachedInputTokens] that *hit* it; null on providers
+     * that don't expose the write side (OpenAI / DeepSeek / Ollama report
+     * cache reads only). A subset of [promptTokens] semantically — not extra
+     * billable tokens to add to [total].
+     */
+    val cacheWriteTokens: Int? = null,
 ) {
     val total: Int get() = promptTokens + completionTokens
+
+    /**
+     * Cache hit ratio for this round-trip (#2663): cached input tokens as a
+     * fraction of total prompt tokens. Null when the provider didn't report
+     * cached-token usage, or when [promptTokens] is zero (no prompt to cache).
+     * Range `[0.0, 1.0]`; `1.0` means the entire prompt hit the cache.
+     */
+    val cacheHitRate: Double?
+        get() {
+            val cached = cachedInputTokens ?: return null
+            if (promptTokens <= 0) return null
+            return cached.toDouble() / promptTokens.toDouble()
+        }
 }
 
 sealed interface LlmResponse {

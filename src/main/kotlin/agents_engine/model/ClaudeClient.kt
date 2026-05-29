@@ -298,13 +298,73 @@ open class ClaudeClient(
         return String(bytes, Charsets.UTF_8)
     }
 
+    /**
+     * #2658 — Anthropic `cache_control` JSON for a [CacheHint]. Anthropic
+     * supports two TTL values: ephemeral default (~5 min, no explicit
+     * `ttl` field) and an explicit `"ttl": "1h"`. Any [CacheHint.ttl]
+     * greater than 5 minutes maps to `"1h"`; smaller or null TTLs use
+     * the default ephemeral form.
+     */
+    private fun cacheControlJson(hint: CacheHint): String {
+        val ttlMinutes = hint.ttl?.inWholeMinutes ?: 0
+        return if (ttlMinutes > 5L) {
+            """"cache_control":{"type":"ephemeral","ttl":"1h"}"""
+        } else {
+            """"cache_control":{"type":"ephemeral"}"""
+        }
+    }
+
+    /**
+     * #2658 — emit Anthropic's `system` field. When any system message
+     * carries a [CacheHint], render `system` as the array form with one
+     * `{type:"text", text, cache_control?}` block per system message;
+     * otherwise emit the legacy `"system":"<text>"` string form.
+     */
+    private fun buildSystemField(
+        systemMessages: List<LlmMessage>,
+        cacheControlForHint: (CacheHint) -> String?,
+    ): String {
+        if (systemMessages.isEmpty()) return ""
+        val anyHinted = systemMessages.any { it.cacheHint != null }
+        if (!anyHinted) {
+            // Legacy form — single string, preserves byte-identical wire
+            // for callers that didn't enable caching.
+            val combined = systemMessages.joinToString("\n\n") { it.content }
+            return ""","system":${combined.toJsonString()}"""
+        }
+        val blocks = systemMessages.map { msg ->
+            val hint = msg.cacheHint
+            val cc = if (hint != null) cacheControlForHint(hint) else null
+            if (cc == null) {
+                """{"type":"text","text":${msg.content.toJsonString()}}"""
+            } else {
+                """{"type":"text","text":${msg.content.toJsonString()},$cc}"""
+            }
+        }
+        return ""","system":[${blocks.joinToString(",")}]"""
+    }
+
     internal fun buildRequestJson(
         messages: List<LlmMessage>,
         stream: Boolean = false,
         jsonSchema: JsonSchema? = null,
     ): String {
-        val systemText = messages.firstOrNull { it.role == "system" }?.content
+        // #2658 — collect ALL system-role messages so the custom-cacheable
+        // segments emitted by AgenticLoop (each as its own system-role
+        // message with a CacheHint of segment=Custom) can be encoded as
+        // additional items in Anthropic's `system` array.
+        val systemMessages = messages.filter { it.role == "system" }
         val nonSystem = messages.filter { it.role != "system" }
+
+        // #2658 — breakpoint accounting. Anthropic caps cache_control
+        // markers at 4 per request; coalesce silently when over budget
+        // (drop the rest, log once).
+        var breakpointBudget = 4
+        fun consumeBreakpoint(): Boolean {
+            if (breakpointBudget <= 0) return false
+            breakpointBudget--
+            return true
+        }
 
         // Synthesize stable tool_use ids in order across the conversation — one
         // counter per request. Tool-result messages consume ids in the same
@@ -313,8 +373,19 @@ open class ClaudeClient(
         var toolUseCounter = 0
 
         val messageObjects = nonSystem.map { msg ->
+            // #2658 — when an assistant/user message carries a CacheHint
+            // (typically segment=Conversation for rolling mode), attach
+            // cache_control to the LAST content block on the wire.
+            val cacheControl = if (msg.cacheHint != null && consumeBreakpoint()) cacheControlJson(msg.cacheHint) else null
             when (msg.role) {
-                "user" -> """{"role":"user","content":${msg.content.toJsonString()}}"""
+                "user" -> {
+                    if (cacheControl == null) {
+                        """{"role":"user","content":${msg.content.toJsonString()}}"""
+                    } else {
+                        // Single text content block with cache_control attached.
+                        """{"role":"user","content":[{"type":"text","text":${msg.content.toJsonString()},$cacheControl}]}"""
+                    }
+                }
 
                 "assistant" -> {
                     val blocks = mutableListOf<String>()
@@ -332,20 +403,38 @@ open class ClaudeClient(
                         // role marker is still present and well-formed.
                         blocks += """{"type":"text","text":""}"""
                     }
+                    // Append cache_control to the LAST block when this
+                    // message carries a hint (rolling conversation breakpoint).
+                    if (cacheControl != null) {
+                        val last = blocks.removeAt(blocks.size - 1)
+                        // Strip the closing brace and append cache_control.
+                        blocks += last.removeSuffix("}") + ",$cacheControl}"
+                    }
                     """{"role":"assistant","content":[${blocks.joinToString(",")}]}"""
                 }
 
                 "tool" -> {
                     val id = pendingToolUseIds.removeFirstOrNull()
                         ?: error("tool result with no preceding assistant tool_use to pair with")
-                    """{"role":"user","content":[{"type":"tool_result","tool_use_id":${id.toJsonString()},"content":${msg.content.toJsonString()}}]}"""
+                    val toolBlock = if (cacheControl == null) {
+                        """{"type":"tool_result","tool_use_id":${id.toJsonString()},"content":${msg.content.toJsonString()}}"""
+                    } else {
+                        """{"type":"tool_result","tool_use_id":${id.toJsonString()},"content":${msg.content.toJsonString()},$cacheControl}"""
+                    }
+                    """{"role":"user","content":[$toolBlock]}"""
                 }
 
                 else -> error("Unknown LlmMessage role for Claude: '${msg.role}'")
             }
         }
 
-        val systemField = systemText?.let { ""","system":${it.toJsonString()}""" } ?: ""
+        // #2658 — system field. With cache hints, emit as the array form so
+        // each segment carries its own cache_control marker. The first
+        // system message is the "main" prompt; subsequent ones are custom
+        // cacheable segments registered via `caching { cacheable("id") {...} }`.
+        val systemField = buildSystemField(systemMessages) { hint ->
+            if (consumeBreakpoint()) cacheControlJson(hint) else null
+        }
         val structuredSchema = jsonSchema?.takeIf { tools.isEmpty() }
         val toolDefs = buildList {
             tools.forEach { t ->
@@ -360,7 +449,25 @@ open class ClaudeClient(
                 )
             }
         }
-        val toolsField = if (toolDefs.isNotEmpty()) ""","tools":[${toolDefs.joinToString(",")}]""" else ""
+        // #2658 — attach cache_control to the LAST tool def when the main
+        // system message carries a SystemPrompt-segment hint with
+        // cacheToolDefs (default-on) — caches the tool-def block as part
+        // of the prefix the next call can hit.
+        val mainSystemHint = systemMessages.firstOrNull()?.cacheHint
+        val toolsWithCacheMarker: List<String> = if (
+            toolDefs.isNotEmpty() &&
+            mainSystemHint != null &&
+            mainSystemHint.segment == CacheSegment.SystemPrompt &&
+            consumeBreakpoint()
+        ) {
+            val cc = cacheControlJson(mainSystemHint)
+            // Append cache_control to the LAST tool def only — that marks
+            // the cacheable end of the tool block.
+            toolDefs.dropLast(1) + (toolDefs.last().removeSuffix("}") + ",$cc}")
+        } else {
+            toolDefs
+        }
+        val toolsField = if (toolsWithCacheMarker.isNotEmpty()) ""","tools":[${toolsWithCacheMarker.joinToString(",")}]""" else ""
         val toolChoiceField = if (structuredSchema != null) {
             ""","tool_choice":{"type":"tool","name":${STRUCTURED_OUTPUT_TOOL_NAME.toJsonString()}}"""
         } else ""

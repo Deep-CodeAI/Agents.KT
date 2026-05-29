@@ -4,7 +4,18 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **Prompt caching across all providers (#2655 epic — #2657, #2658, #2659, #2661, #2662, #2663)** — completes the vendor-neutral caching epic started by the #2656 DSL in 0.6.3. The `caching { }` agent block now drives real cost/latency savings end-to-end:
+  - **#2658 — Anthropic explicit `cache_control` breakpoints** in `ClaudeClient`. Emits `cache_control:{type:"ephemeral"}` on the system block (array form), the last tool definition (caches the tool-defs prefix), each `Custom` segment in `system[]`, and rolling-conversation breakpoints on the latest assistant/user message. TTL mapping: `Duration ≤ 5min` → default ephemeral; `> 5min` → `"ttl":"1h"`. Breakpoint budget coalesced at Anthropic's per-request cap of 4. Backward-compat: requests without cache hints emit the legacy `system: "<text>"` string form byte-identically.
+  - **#2659 / #2661 — OpenAI / DeepSeek automatic prefix caching + `prompt_cache_key` routing**. OpenAI does automatic prefix caching above ~1024 tokens; the adapter now emits a `prompt_cache_key` derived from the agent identity (+ first 12 chars of `manifestHash` when present) so same-shape requests land on the same cache shard, improving hit rate. DeepSeek (OpenAI-compatible) inherits the same. Cached-input tokens already surface on `TokenUsage`.
+  - **#2662 — Ollama / self-hosted engine APC**. Engines (Ollama context reuse, vLLM APC, SGLang RadixAttention) cache at the KV-cache level with no wire control; cache hints degrade to a documented no-op. Prefix stability — covered by #2657 — is what makes the engine cache hit. Pinned by `OllamaCacheHintNoopTest`: a hinted message produces a hint-free Ollama request body.
+  - **#2657 — Prefix-stability guard**. The vendor cache silently misses on a non-byte-identical prefix; the framework now hashes each cache-hinted segment per-agent across invocations and emits a `WARNING` ("cacheable segment [SystemPrompt] for agent X changed between invocations") when it drifts. First-sighting pattern probe warns on Unix-millis timestamps, ISO-8601 datetimes, and UUIDs in cacheable content — the silent killers. State lives in a `WeakHashMap` keyed by `Agent` identity; off when the message has no cache hint.
+  - **#2663 — Cache observability on `TokenUsage`**. New `cacheWriteTokens: Int? = null` field for Anthropic's premium-billed write side (~25% surcharge on first-write tokens; null on providers that don't expose it). Derived `cacheHitRate: Double?` returns `cachedInputTokens / promptTokens` when both are present. Cumulative `TokenUsage` in the agentic loop now sums `cacheWriteTokens` across turns alongside the existing `cachedInputTokens` accumulation.
+  - **Gemini cached-content handles (#2660)** — deferred: no Gemini adapter exists in this codebase yet, so this slice is blocked on the underlying provider work.
+  - See [docs/caching.md](docs/caching.md) for the per-provider behavior table, the `CacheHint` model, the prefix-stability rules, and the common cache-buster anti-patterns.
+
+## [0.6.3] — 2026-05-29
 
 ## [0.6.3] — 2026-05-29
 

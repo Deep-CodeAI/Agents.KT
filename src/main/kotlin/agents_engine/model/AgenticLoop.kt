@@ -158,7 +158,15 @@ internal suspend fun <IN> executeAgentic(
     // different skill. This is the runtime enforcement the prompt does NOT do.
     val allowedToolMap = allToolDefs.associateBy { it.name }
 
-    val client = config.client ?: defaultClientFor(config, allToolDefs)
+    // #2659 — `prompt_cache_key` for OpenAI routing. Derived from agent
+    // identity so same-shape requests land on the same OpenAI cache shard.
+    // Null when caching is disabled or the agent has no manifest hash —
+    // both correctness-neutral, just no routing hint to send.
+    val cacheRoutingKey: String? = if (agent.cacheConfig.enabled) {
+        agent.manifestHash?.let { "agents-kt:${agent.name}:${it.take(12)}" }
+            ?: "agents-kt:${agent.name}"
+    } else null
+    val client = config.client ?: defaultClientFor(config, allToolDefs, cacheRoutingKey)
     val constrainedOutputSchema = constrainedOutputSchemaFor(agent.outType, skill, client)
 
     val hasUntrustedTools = allToolDefs.any { it.untrustedOutput }
@@ -207,7 +215,14 @@ internal suspend fun <IN> executeAgentic(
         } else null
 
         if (systemContent.isNotBlank()) {
-            messages.add(LlmMessage("system", systemContent, cacheHint = systemHint))
+            val systemMsg = LlmMessage("system", systemContent, cacheHint = systemHint)
+            messages.add(systemMsg)
+            // #2657 — prefix-stability guard. Warns the deployer when a
+            // cacheable segment's content changed between invocations of the
+            // same agent (timestamps, UUIDs, non-deterministic ordering),
+            // since the vendor cache silently misses without any signal.
+            // No-op when systemHint is null (caching disabled).
+            PrefixStabilityGuard.observe(agent, systemMsg)
         }
         // Custom cacheable segments — large retrieved docs / instruction sets
         // declared via `caching { cacheable("id") { content } }`. Emitted as
@@ -218,7 +233,9 @@ internal suspend fun <IN> executeAgentic(
             val hint = if (cache.enabled) {
                 CacheHint(segment = CacheSegment.Custom(seg.id), ttl = seg.ttl ?: cache.ttl)
             } else null
-            messages.add(LlmMessage("system", seg.content, cacheHint = hint))
+            val customMsg = LlmMessage("system", seg.content, cacheHint = hint)
+            messages.add(customMsg)
+            PrefixStabilityGuard.observe(agent, customMsg)
         }
         // User: serialized input. Typed @Generable inputs become JSON; primitives
         // and Strings render literally; non-Generable types fall back to toString.
@@ -343,6 +360,10 @@ internal suspend fun <IN> executeAgentic(
                     },
                     provider = usage.provider,
                     model = usage.model,
+                    cacheWriteTokens = when {
+                        prev.cacheWriteTokens == null && usage.cacheWriteTokens == null -> null
+                        else -> (prev.cacheWriteTokens ?: 0) + (usage.cacheWriteTokens ?: 0)
+                    },
                 )
             } ?: usage
             val cap = budget.maxTokens
@@ -618,7 +639,9 @@ suspend fun <IN> selectSkillByLlm(
         LlmMessage("user", toLlmInput(input)),  // #937 — typed Generable inputs as JSON
     )
 
-    val client = config.client ?: defaultClientFor(config, emptyList())
+    // Skill-routing round-trip is its own LLM call; caching here is rarely
+    // useful (skill descriptions are highly variable), so no routing key.
+    val client = config.client ?: defaultClientFor(config, emptyList(), promptCacheKey = null)
     val routeSchema = if (client.supportsConstrainedDecoding()) {
         JsonSchema("SkillRoute", SkillRoute::class.jsonSchema())
     } else null
@@ -890,7 +913,11 @@ private fun constrainedOutputSchemaFor(
 
 // #1644 / #1656 — provider dispatch for the default client. Mirrors the prior
 // eager `OllamaClient(...)` construction; user-supplied `config.client` still wins.
-private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelClient =
+private fun defaultClientFor(
+    config: ModelConfig,
+    tools: List<ToolDef>,
+    promptCacheKey: String? = null,
+): ModelClient =
     when (config.provider) {
         ModelProvider.OLLAMA -> OllamaClient(
             host = config.host,
@@ -919,6 +946,9 @@ private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelCl
             tools = tools,
             baseUrl = config.openAiBaseUrl,
             reasoning = config.reasoning,
+            // #2659 — OpenAI automatic prefix caching: pass routing key when
+            // the agent has caching enabled (computed at the call site).
+            promptCacheKey = promptCacheKey,
         )
         ModelProvider.DEEPSEEK -> DeepSeekClient(
             apiKey = config.apiKey
