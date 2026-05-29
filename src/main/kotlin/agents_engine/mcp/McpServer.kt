@@ -12,6 +12,7 @@ import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import kotlin.reflect.KClass
 import agents_engine.generation.hasGenerableAnnotation
+import agents_engine.generation.toLlmInput
 
 /**
  * `agents_engine/mcp/McpServer.kt` — exposes an [Agent]'s skills as MCP
@@ -370,7 +371,13 @@ class McpServer private constructor(
             val input = exposed.deserializeInput(effectiveArgs)
             @Suppress("UNCHECKED_CAST")
             val output = (exposed.skill as Skill<Any?, Any?>).execute(input)
-            jsonRpcResult(id, mcpToolResult(output?.toString() ?: "", isError = false))
+            // #2483 — route through `toLlmInput` so `@Generable` outputs render
+            // as JSON instead of the Kotlin data-class debug form
+            // (`SearchPayload(text=Hello, source=wiki)`). String / Number /
+            // Boolean stay clean; non-`@Generable` types still fall back to
+            // `.toString()` (documented limitation — register a `@Generable`
+            // output type for typed MCP boundaries).
+            jsonRpcResult(id, mcpToolResult(toLlmInput(output), isError = false))
         } catch (e: Exception) {
             jsonRpcResult(id, mcpToolResult(e.message ?: e.toString(), isError = true))
         }
