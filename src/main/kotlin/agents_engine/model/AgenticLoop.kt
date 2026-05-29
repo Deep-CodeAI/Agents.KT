@@ -413,10 +413,34 @@ internal suspend fun <IN> executeAgentic(
                     }
                     val isKnowledge = call.name in knowledgeToolMap
                     val tool = allowedToolMap[call.name]
-                        ?: error(
-                            "Tool '${call.name}' is not allowed for skill '${skill.name}'. " +
-                                "Allowed: ${allowedToolMap.keys}"
-                        )
+                    if (tool == null) {
+                        // #2476 — the LLM emitted a tool name that isn't in the
+                        // skill's allowed set (hallucinated, or a tool that
+                        // belongs to a different skill on the same agent). Don't
+                        // throw — that kills the loop and the model never gets
+                        // to retry. Append a tool-result message naming the
+                        // unknown call and listing the allowed tools, and let
+                        // the loop continue. The model can now self-correct on
+                        // the next turn.
+                        val unknownToolMessage =
+                            "ERROR: Tool '${call.name}' is unknown for skill '${skill.name}'. " +
+                                "Allowed tools: ${allowedToolMap.keys.joinToString(", ")}. " +
+                                "Pick one of the allowed tools or return a final text answer."
+                        if (emitter != null && call.callId != null) {
+                            emitter(
+                                agents_engine.runtime.events.AgentEvent.ToolCallFinished(
+                                    agentId = agent.name,
+                                    callId = call.callId,
+                                    toolName = call.name,
+                                    arguments = call.arguments,
+                                    result = unknownToolMessage,
+                                    isError = true,
+                                )
+                            )
+                        }
+                        messages.add(LlmMessage("tool", unknownToolMessage))
+                        continue
+                    }
                     var effectiveCall = call
                     var denied = false
                     var deniedReason: String? = null

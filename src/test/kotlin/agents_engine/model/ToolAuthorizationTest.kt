@@ -15,18 +15,31 @@ import kotlin.test.fail
  * meaning a skill could indirectly call any tool registered globally on the
  * agent — even tools not in its `tools(...)` list.
  *
- * The fix: execution must look up against the per-invocation allowlist
+ * The fix: execution looks up against the per-invocation allowlist
  * (skill-declared + auto + memory + knowledge tools).
+ *
+ * #2476 — when the model emits a name NOT in that allowlist (unlisted or
+ * outright unknown), the runtime appends a clear tool-result error to the
+ * conversation and the loop CONTINUES, so the model can self-correct. The
+ * disallowed tool's executor still never runs. Tests below pin both halves
+ * of that contract.
  */
 class ToolAuthorizationTest {
 
     @Test
-    fun `model emitting an unlisted tool name is rejected with a clear error naming the skill`() {
+    fun `model emitting an unlisted tool gets a clear error in context — executor never runs, loop continues`() {
         var dangerousExecuted = false
         val responses = ArrayDeque<LlmResponse>()
         responses.add(LlmResponse.ToolCalls(listOf(ToolCall(name = "dangerousTool", arguments = emptyMap()))))
+        // Second turn (after the recovery message): plain text answer ends the loop.
         responses.add(LlmResponse.Text("done"))
-        val mock = ModelClient { _ -> responses.removeFirst() }
+        var turnIndex = 0
+        var seenOnTurn2: List<LlmMessage>? = null
+        val mock = ModelClient { messages ->
+            turnIndex++
+            if (turnIndex == 2) seenOnTurn2 = messages.toList()
+            responses.removeFirst()
+        }
 
         val a = agent<String, String>("guarded") {
             lateinit var safeTool: Tool<Map<String, Any?>, Any?>
@@ -35,30 +48,38 @@ class ToolAuthorizationTest {
                 safeTool = tool("safeTool", "ok") { _ -> "safe-result" }
                 tool("dangerousTool", "danger") { _ -> dangerousExecuted = true; "should-not-run" }
             }
-            // Skill only allows safeTool; dangerousTool exists on the agent but not in this skill's allowlist
             skills { skill<String, String>("only-safe", "stub") { tools(safeTool) } }
         }
 
-        try {
-            a("input")
-            fail("expected runtime to refuse execution of unlisted tool")
-        } catch (e: Throwable) {
-            assertFalse(dangerousExecuted, "dangerousTool must NOT have run")
-            val msg = e.message ?: e.toString()
-            assertTrue(msg.contains("dangerousTool"), "error must name the offending tool, got: $msg")
-            assertTrue(
-                msg.contains("only-safe", ignoreCase = true) || msg.contains("not allowed"),
-                "error must mention the skill or 'not allowed', got: $msg",
-            )
-        }
+        val out = a("input")
+
+        assertFalse(dangerousExecuted, "the unlisted tool's executor must never run")
+        assertEquals("done", out, "the loop must continue and complete via the model's next turn")
+
+        // The recovery message must reach the model on the next turn.
+        val msgs = seenOnTurn2 ?: fail("the model must get a second turn after recovery")
+        val toolErr = msgs.firstOrNull { it.role == "tool" && it.content.contains("dangerousTool") }
+            ?: fail("a tool message must name the offending tool 'dangerousTool'; got: ${msgs.filter { it.role == "tool" }.map { it.content }}")
+        assertTrue(
+            toolErr.content.contains("only-safe", ignoreCase = true) ||
+                toolErr.content.contains("unknown", ignoreCase = true) ||
+                toolErr.content.contains("allowed", ignoreCase = true),
+            "the error must guide the model toward the allowed tool set: ${toolErr.content}",
+        )
     }
 
     @Test
-    fun `model emitting an entirely unknown tool name still throws`() {
+    fun `model emitting an entirely unknown name is recoverable too — error appended, loop continues`() {
         val responses = ArrayDeque<LlmResponse>()
         responses.add(LlmResponse.ToolCalls(listOf(ToolCall(name = "doesNotExistAnywhere", arguments = emptyMap()))))
         responses.add(LlmResponse.Text("done"))
-        val mock = ModelClient { _ -> responses.removeFirst() }
+        var seenOnTurn2: List<LlmMessage>? = null
+        var turnIndex = 0
+        val mock = ModelClient { messages ->
+            turnIndex++
+            if (turnIndex == 2) seenOnTurn2 = messages.toList()
+            responses.removeFirst()
+        }
 
         val a = agent<String, String>("a") {
             lateinit var safeTool: Tool<Map<String, Any?>, Any?>
@@ -67,20 +88,28 @@ class ToolAuthorizationTest {
             skills { skill<String, String>("s", "stub") { tools(safeTool) } }
         }
 
-        try {
-            a("input")
-            fail("expected runtime to refuse execution of unknown tool")
-        } catch (e: Throwable) {
-            assertTrue((e.message ?: "").contains("doesNotExistAnywhere"))
-        }
+        val out = a("input")
+
+        assertEquals("done", out)
+        val msgs = seenOnTurn2 ?: fail("the model must get a second turn after recovery")
+        assertTrue(
+            msgs.any { it.role == "tool" && it.content.contains("doesNotExistAnywhere") },
+            "the recovery message must name the unknown tool",
+        )
     }
 
     @Test
-    fun `error message does NOT leak the wider agent toolmap`() {
+    fun `recovery message must NOT leak tools outside the skill's allowlist`() {
         val responses = ArrayDeque<LlmResponse>()
         responses.add(LlmResponse.ToolCalls(listOf(ToolCall(name = "secretTool", arguments = emptyMap()))))
         responses.add(LlmResponse.Text("done"))
-        val mock = ModelClient { _ -> responses.removeFirst() }
+        var seenOnTurn2: List<LlmMessage>? = null
+        var turnIndex = 0
+        val mock = ModelClient { messages ->
+            turnIndex++
+            if (turnIndex == 2) seenOnTurn2 = messages.toList()
+            responses.removeFirst()
+        }
 
         val a = agent<String, String>("a") {
             lateinit var publicTool: Tool<Map<String, Any?>, Any?>
@@ -90,20 +119,18 @@ class ToolAuthorizationTest {
                 tool("secretTool", "") { _ -> "should-stay-hidden" }
                 tool("anotherSecretTool", "") { _ -> "also-hidden" }
             }
-            // Only publicTool allowed for this skill
             skills { skill<String, String>("s", "stub") { tools(publicTool) } }
         }
 
-        try {
-            a("input")
-            fail("expected refusal")
-        } catch (e: Throwable) {
-            val msg = e.message ?: ""
-            assertFalse(
-                msg.contains("anotherSecretTool"),
-                "error must not enumerate tools the skill is not allowed to know about: $msg",
-            )
-        }
+        a("input")
+
+        val msgs = seenOnTurn2 ?: fail("expected a second turn carrying the recovery message")
+        val recovery = msgs.firstOrNull { it.role == "tool" && it.content.contains("secretTool") }
+            ?: fail("expected a recovery message for the secretTool call")
+        assertFalse(
+            recovery.content.contains("anotherSecretTool"),
+            "recovery must not enumerate tools outside the skill's allowlist: ${recovery.content}",
+        )
     }
 
     @Test
@@ -121,7 +148,6 @@ class ToolAuthorizationTest {
             skills { skill<String, String>("s", "stub") { tools() /* no specific tools, but memory should still work */ } }
         }
 
-        // Should NOT throw — memory tools are auto-injected into the allowlist when memory is configured
         val result = a("input")
         assertEquals("done", result)
     }
@@ -147,13 +173,19 @@ class ToolAuthorizationTest {
     }
 
     @Test
-    fun `two skills on one agent have disjoint allowlists - cross-call refused`() {
+    fun `cross-skill call is refused — disjoint allowlists, executor never runs, loop recovers`() {
         var skillBToolExecuted = false
         val responses = ArrayDeque<LlmResponse>()
         // Model running under skill-A tries to call a tool that only skill-B declares
         responses.add(LlmResponse.ToolCalls(listOf(ToolCall(name = "bOnly", arguments = emptyMap()))))
         responses.add(LlmResponse.Text("done"))
-        val mock = ModelClient { _ -> responses.removeFirst() }
+        var seenOnTurn2: List<LlmMessage>? = null
+        var turnIndex = 0
+        val mock = ModelClient { messages ->
+            turnIndex++
+            if (turnIndex == 2) seenOnTurn2 = messages.toList()
+            responses.removeFirst()
+        }
 
         val a = agent<String, String>("twoSkills") {
             lateinit var aOnly: Tool<Map<String, Any?>, Any?>
@@ -167,16 +199,17 @@ class ToolAuthorizationTest {
                 skill<String, String>("skill-A", "stub") { tools(aOnly) }
                 skill<String, String>("skill-B", "stub") { tools(bOnly) }
             }
-            // Force skill-A so the LLM is running under skill-A's allowlist
             skillSelection { _ -> "skill-A" }
         }
 
-        try {
-            a("input")
-            fail("expected refusal — bOnly is not in skill-A's allowlist")
-        } catch (e: Throwable) {
-            assertFalse(skillBToolExecuted, "skill-A must not be able to call skill-B's tools")
-            assertTrue((e.message ?: "").contains("bOnly"))
-        }
+        val out = a("input")
+
+        assertFalse(skillBToolExecuted, "skill-A must not be able to call skill-B's tools")
+        assertEquals("done", out)
+        val msgs = seenOnTurn2 ?: fail("recovery must reach the model on a second turn")
+        assertTrue(
+            msgs.any { it.role == "tool" && it.content.contains("bOnly") },
+            "recovery message must name the disallowed cross-skill tool",
+        )
     }
 }
