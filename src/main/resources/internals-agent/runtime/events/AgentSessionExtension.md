@@ -20,7 +20,7 @@ Per call:
 
 1. Build `Channel<AgentEvent<OUT>>(Channel.BUFFERED)` — production decoupled from consumer pace; a fast skill can complete and queue all four events before the collector starts pulling.
 2. Build `CompletableDeferred<OUT>()` for the typed result.
-3. Build `AgentRuntimeContext` with a fresh `requestId`, a fresh `sessionId`, and the agent's `manifestHash` (null when no manifest exists yet).
+3. Build `AgentRuntimeContext` via `agent.newRuntimeContext(sessionId = UUID)`: fresh `requestId`, fresh `sessionId`, the agent's `manifestHash` (null when no manifest exists yet), AND `attribution` inherited from the wrapping ThreadLocal scope (#2720). The inheritance is what makes the bridge pattern work: callers wrap `agent.session(input)` in `withAgentRuntimeContext(currentOrNew().copy(attribution = ...))` and every downstream event surfaces the same attribution on its `runtimeContext` (plus convenience getters `event.userId` / `event.projectId` / `event.dialogId`).
 4. Build a dedicated `CoroutineScope(SupervisorJob() + Dispatchers.Default)` per session. SupervisorJob keeps the session independent of any larger scope.
 5. Launch the producer coroutine under `withAgentRuntimeContext(context)`: invokes `agent.invokeSuspendForSession(input, emitter, onSkillCompleted, onSkillStarted)`. The emitter forwards `AgentEvent`s via `channel.trySend`.
 6. On normal completion → emit `Completed(agentId, output)`, complete the deferred, close the channel.

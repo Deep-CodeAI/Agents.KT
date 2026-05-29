@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/core/PipelineEvent.kt — the sealed PipelineEvent (SkillChosen, ToolCalled, ToolDenied, KnowledgeLoaded, ErrorOccurred, BudgetThreshold) and the Agent.observe { } extension that chains it over the per-event listeners additively (#965, #2395). Every event carries AgentRuntimeContext fields requestId, sessionId, manifestHash (#1913). Call when the IDE LLM needs to reason about post-hoc observability vs the in-loop AgentEvent stream.
+description: Source-file knowledge for agents_engine/core/PipelineEvent.kt — the sealed PipelineEvent (SkillChosen, ToolCalled, ToolDenied, KnowledgeLoaded, ErrorOccurred, BudgetThreshold) and the Agent.observe { } extension that chains it over the per-event listeners additively (#965, #2395). Every event carries AgentRuntimeContext fields requestId, sessionId, manifestHash (#1913) plus the deployer-set attribution map with userId/projectId/dialogId convenience getters (#2720). Call when the IDE LLM needs to reason about post-hoc observability vs the in-loop AgentEvent stream.
 ---
 
 # `agents_engine/core/PipelineEvent.kt` — unified observability event
@@ -12,9 +12,16 @@ A typed sealed-interface union over the four per-event listener hooks an `Agent`
 sealed interface PipelineEvent {
     val agentName: String
     val timestamp: Instant
+    val runtimeContext: AgentRuntimeContext
+    // Convenience getters reading from runtimeContext:
     val requestId: String
     val sessionId: String?
     val manifestHash: String?
+    // #2720 — business attribution from the wrapping scope:
+    val attribution: Map<String, String>
+    val userId: String?
+    val projectId: String?
+    val dialogId: String?
 
     data class SkillChosen(...,    skillName: String)
     data class ToolCalled(...,     toolName: String, arguments: Map<String, Any?>, result: Any?, toolPolicyRisk, usedDeclaredCapability)
@@ -25,6 +32,8 @@ sealed interface PipelineEvent {
 ```
 
 `agentName`, `timestamp`, `requestId`, `sessionId`, and `manifestHash` are present on every variant — sort, filter, attribute, and audit-correlate without inspecting the variant.
+
+`attribution` plus the `userId` / `projectId` / `dialogId` getters (#2720) carry deployer-defined business identifiers set once at the wrapping `withAgentRuntimeContext(currentOrNew().copy(attribution = ...))` scope; empty by default. Arbitrary keys (`tenantId`, `keyOwner`, …) round-trip through `event.attribution[...]`. See `AgentRuntimeContext.md` for the propagation rules.
 
 `ToolCalled` also carries `toolPolicyRisk` and `usedDeclaredCapability` from the executed `ToolDef` (#1915). The flag means "the tool declared at least one filesystem/network/environment capability"; it is audit metadata, not sandbox proof.
 

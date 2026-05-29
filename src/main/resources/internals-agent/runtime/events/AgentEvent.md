@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/runtime/events/AgentEvent.kt — typed sealed event union for sessions (#1736). Variants: SkillStarted, SkillCompleted, Completed (carries OUT), Failed; Token, ToolCallStarted, ToolCallArgumentsDelta, ToolCallFinished. agentId on every variant preserves provenance through composition; requestId, sessionId, manifestHash provide audit correlation (#1913). AgentEvent<Nothing> for non-OUT variants flows through any AgentSession<OUT>. Call when the IDE LLM needs to reason about consuming streamed agent events.
+description: Source-file knowledge for agents_engine/runtime/events/AgentEvent.kt — typed sealed event union for sessions (#1736). Variants: SkillStarted, SkillCompleted, Completed (carries OUT), Failed; Token, ToolCallStarted, ToolCallArgumentsDelta, ToolCallFinished. agentId on every variant preserves provenance through composition; requestId, sessionId, manifestHash provide audit correlation (#1913), plus attribution + userId/projectId/dialogId convenience getters carry deployer-set business identifiers (#2720). AgentEvent<Nothing> for non-OUT variants flows through any AgentSession<OUT>. Call when the IDE LLM needs to reason about consuming streamed agent events.
 ---
 
 # `agents_engine/runtime/events/AgentEvent.kt` — typed session event union
@@ -50,6 +50,8 @@ Every event carries `agentId` — the name of the agent that emitted it. Composi
 ## Runtime correlation
 
 Every event also carries `requestId`, `sessionId`, and `manifestHash` from `AgentRuntimeContext`. `requestId` is a fresh UUID per invocation, `sessionId` is set for `session(...)` calls, and `manifestHash` is null until a permission manifest is generated for the running agent.
+
+**Business attribution (#2720).** Every event additionally surfaces `attribution: Map<String, String>` plus typed convenience getters `userId` / `projectId` / `dialogId` (canonical keys via `AttributionKeys.*`). Attribution is set by wrapping the session entry in `withAgentRuntimeContext(AgentRuntimeContext.currentOrNew().copy(attribution = mapOf(...)))` — `Agent.newRuntimeContext` (called by `session(...)`) inherits attribution from the wrapping ThreadLocal scope so every nested event sees it without per-event plumbing. Empty by default; non-canonical keys (`tenantId`, `keyOwner`, …) round-trip through `event.attribution[...]`.
 
 ## Typing trick: `AgentEvent<Nothing>` for non-OUT variants
 

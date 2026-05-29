@@ -131,6 +131,34 @@ The OTel adapter maps to the **OpenTelemetry GenAI semantic conventions**:
 
 Every event already carries `requestId`, `sessionId`, and `manifestHash`; bridge adapters propagate them as `agent.request.id`, `agent.session.id`, and `agent.manifest.hash` attributes when present.
 
+**Business attribution (#2720).** `AgentRuntimeContext` also carries `attribution: Map<String, String>` for deployer-defined identifiers — invoking user, project, dialog, tenant, key owner, anything else a trace needs to filter by. Wrap the invocation in `withAgentRuntimeContext(...)` once at the session boundary and every nested `AgentEvent` / `PipelineEvent` surfaces the same attribution on its `runtimeContext` (plus convenience getters: `event.userId` / `event.projectId` / `event.dialogId` / `event.attribution`). This is the seam that drives Langfuse's User-ID filter, LangSmith's run attribution, and OTel's resource-attribute correlation without per-bridge side-channels.
+
+```kotlin
+import agents_engine.core.AgentRuntimeContext
+import agents_engine.core.AttributionKeys
+import agents_engine.core.withAgentRuntimeContext
+import agents_engine.runtime.events.session
+
+withAgentRuntimeContext(
+    AgentRuntimeContext.currentOrNew().copy(
+        attribution = mapOf(
+            AttributionKeys.USER_ID to userId,
+            AttributionKeys.PROJECT_ID to projectId,
+            AttributionKeys.DIALOG_ID to dialogId,
+            "tenantId" to tenantId,
+            "keyOwner" to keyOwner,
+        ),
+    ),
+) {
+    agent.session(input).events.collect { event ->
+        // event.userId / event.projectId / event.dialogId all populated.
+        // event.attribution["tenantId"] also available.
+    }
+}
+```
+
+Three canonical keys (`AttributionKeys.USER_ID` / `PROJECT_ID` / `DIALOG_ID`) get typed accessors; arbitrary keys round-trip through `event.attribution[...]`. The default is `emptyMap()` — bridges that don't read attribution are unaffected, and consumers that don't set attribution incur no cost.
+
 The adapter intentionally records identifiers, type names, token lengths, and usage counts rather than raw prompts, streamed text, tool arguments, tool results, or interceptor denial reasons.
 
 **Reasoning (#2406).** When `model { reasoning(...) }` is enabled, `AgentEvent.Reasoning` carries the model's thinking text on the live session stream. The tracing bridges record reasoning *length* only (`gen_ai.reasoning` / `llm.reasoning`, mirroring tokens), and the JSONL audit exporter omits reasoning entirely — it's high-volume and potentially sensitive, so it stays a live-stream signal rather than a persisted/traced one.

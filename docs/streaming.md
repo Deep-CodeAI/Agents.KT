@@ -34,6 +34,8 @@ Each `agent.session(input)` call starts a fresh invocation. `events` is a cold `
 
 All subtypes carry `agentId`, `requestId`, `sessionId`, and `manifestHash`. `agentId` names the agent that produced the event; the runtime IDs let audit logs correlate every token/tool/terminal event with one invocation and, when manifests are enabled, the approved capability graph. Only `Completed` is parameterized on the agent's `OUT`; everything else is `AgentEvent<Nothing>` so events flow through any `AgentSession<OUT>`.
 
+Every subtype additionally exposes `attribution: Map<String, String>` plus convenience getters `userId` / `projectId` / `dialogId` (#2720). Attribution is deployer-defined business correlation — populate it by wrapping the session entry in `withAgentRuntimeContext(AgentRuntimeContext.currentOrNew().copy(attribution = mapOf(...)))` and every nested event sees it. Empty by default. See [docs/observability.md](observability.md) for the bridge consumption pattern.
+
 | Event | Fires when | Carries |
 |---|---|---|
 | `SkillStarted` | Before the resolved skill executes | `skillName` |

@@ -46,7 +46,7 @@ MCP server exposed: yes (port 8443, behind Envoy mTLS).
 
 **Framework support:**
 - **Today:** `:agents-kt-observability` ships a first-party JSONL exporter (#1914). JSONL into a WORM bucket (S3 with Object Lock, GCS Bucket Lock, Azure Immutable Storage) is the typical retained shape.
-- **Runtime correlation:** every exported `PipelineEvent` and `AgentEvent` row carries `requestId`, `sessionId`, and `manifestHash`. `manifestHash` is `null` until a permission manifest is generated, then binds the dynamic event back to the approved capability graph.
+- **Runtime correlation:** every exported `PipelineEvent` and `AgentEvent` row carries `requestId`, `sessionId`, and `manifestHash`. `manifestHash` is `null` until a permission manifest is generated, then binds the dynamic event back to the approved capability graph. **Business attribution (#2720)** rides on the same events via `attribution: Map<String, String>` plus typed `userId` / `projectId` / `dialogId` accessors — populated by the deployer wrapping the invocation in `withAgentRuntimeContext(currentOrNew().copy(attribution = mapOf(...)))`. Set once at the session boundary; every nested event surfaces it for the observability bridges to filter on. The JSONL audit exporter retains its PII-conservative default columns; attribution stays on the live event surface unless you extend the exporter to project specific keys.
 - **PII posture:** the exporter emits identifiers, event names, type names, and provider/model metadata. It deliberately does not serialize raw tool arguments, tool results, streamed text, generated output, or exception messages.
 
 Minimal JSONL setup:
