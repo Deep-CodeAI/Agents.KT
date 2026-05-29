@@ -283,7 +283,22 @@ private fun KType.jsonSchemaTypeObject(): String = when (val cls = classifier) {
         if (itemType != null) """{"type":"array","items":${itemType.jsonSchemaTypeObject()}}"""
         else """{"type":"array"}"""
     }
-    is KClass<*> -> if (cls.hasAnnotation<Generable>()) cls.jsonSchema() else """{"type":"string"}"""
+    is KClass<*> -> when {
+        // #2479 — enum fields render as a typed string with an `enum` value
+        // list so the LLM (and the constrained-decoding provider path) knows
+        // exactly which values are legal. Constant names are emitted verbatim
+        // from `Enum.name` — no case mutation (Koog regression: their
+        // Anthropic client lowercased these and broke `@SerialName`).
+        cls.java.isEnum -> {
+            val constants = cls.java.enumConstants
+                ?.mapNotNull { (it as? Enum<*>)?.name }
+                ?: emptyList()
+            val values = constants.joinToString(",") { "\"${it.escapeJson()}\"" }
+            """{"type":"string","enum":[$values]}"""
+        }
+        cls.hasAnnotation<Generable>() -> cls.jsonSchema()
+        else -> """{"type":"string"}"""
+    }
     else -> """{"type":"string"}"""
 }
 
