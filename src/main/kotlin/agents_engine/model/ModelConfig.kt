@@ -10,7 +10,7 @@ package agents_engine.model
  * adjunct surfaced to IDE-side LLM tools (#1837 / #1851).
  */
 
-enum class ModelProvider { OLLAMA, ANTHROPIC, OPENAI, DEEPSEEK }
+enum class ModelProvider { OLLAMA, ANTHROPIC, OPENAI, DEEPSEEK, KIMI }
 
 /** Reasoning-effort hint for providers that take one (OpenAI `reasoning_effort`, Ollama). */
 enum class ReasoningEffort { LOW, MEDIUM, HIGH }
@@ -46,6 +46,8 @@ data class ModelConfig(
     val openAiBaseUrl: String = "https://api.openai.com",
     /** Override the DeepSeek base URL (regional endpoints, proxies, beta paths). */
     val deepSeekBaseUrl: String = DeepSeekClient.DEFAULT_BASE_URL,
+    /** Override the Kimi (Moonshot) base URL — regional endpoints, proxies (#2697). */
+    val kimiBaseUrl: String = KimiClient.DEFAULT_BASE_URL,
     /** max_tokens carried on every Anthropic / OpenAI-compatible request. */
     val maxTokens: Int = 4096,
     /** Opt-in reasoning/thinking config (#2406); null = off (default, no behavior change). */
@@ -63,6 +65,7 @@ data class ModelConfig(
             "host=$host, port=$port, client=$client, apiKey=${maskApiKey(apiKey)}, " +
             "anthropicBaseUrl=$anthropicBaseUrl, openAiBaseUrl=$openAiBaseUrl, " +
             "deepSeekBaseUrl=$deepSeekBaseUrl, " +
+            "kimiBaseUrl=$kimiBaseUrl, " +
             "maxTokens=$maxTokens, reasoning=$reasoning)"
 
     private fun maskApiKey(key: String?): String = when {
@@ -85,6 +88,7 @@ class ModelBuilder {
     var anthropicBaseUrl: String = "https://api.anthropic.com"
     var openAiBaseUrl: String = "https://api.openai.com"
     var deepSeekBaseUrl: String = DeepSeekClient.DEFAULT_BASE_URL
+    var kimiBaseUrl: String = KimiClient.DEFAULT_BASE_URL
     var maxTokens: Int = ClaudeClient.DEFAULT_MAX_TOKENS
 
     fun ollama(modelName: String) {
@@ -120,6 +124,17 @@ class ModelBuilder {
         provider = ModelProvider.DEEPSEEK
     }
 
+    /**
+     * Select Kimi (Moonshot AI) Chat Completions (#2697). [KimiClient] is
+     * constructed lazily at AgenticLoop time so the agent's full tool catalog
+     * is available. Model names follow Moonshot's naming, e.g.
+     * `"moonshot-v1-8k"`, `"moonshot-v1-32k"`, `"moonshot-v1-128k"`.
+     */
+    fun kimi(modelName: String) {
+        name = modelName
+        provider = ModelProvider.KIMI
+    }
+
     /** Backing field for the [reasoning] DSL (#2406). Off by default. */
     private var reasoningConfig: ReasoningConfig? = null
 
@@ -142,6 +157,7 @@ class ModelBuilder {
                 ModelProvider.ANTHROPIC -> error("model { claude(\"$name\") } requires apiKey to be set")
                 ModelProvider.OPENAI -> error("model { openai(\"$name\") } requires apiKey to be set")
                 ModelProvider.DEEPSEEK -> error("model { deepseek(\"$name\") } requires apiKey to be set")
+                ModelProvider.KIMI -> error("model { kimi(\"$name\") } requires apiKey to be set (load from .secrets/kimi-key)")
                 ModelProvider.OLLAMA -> Unit
             }
         }
@@ -156,6 +172,7 @@ class ModelBuilder {
             anthropicBaseUrl = anthropicBaseUrl,
             openAiBaseUrl = openAiBaseUrl,
             deepSeekBaseUrl = deepSeekBaseUrl,
+            kimiBaseUrl = kimiBaseUrl,
             maxTokens = maxTokens,
             reasoning = reasoningConfig,
         )

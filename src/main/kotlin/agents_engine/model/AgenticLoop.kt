@@ -493,6 +493,7 @@ private fun semconvProviderName(provider: ModelProvider): String =
         ModelProvider.DEEPSEEK -> "deepseek"
         ModelProvider.OPENAI -> "openai"
         ModelProvider.OLLAMA -> "ollama"
+        ModelProvider.KIMI -> "kimi"
     }
 
 private fun coerceSubstituteOutput(result: Any?, outType: KClass<*>): Any {
@@ -871,6 +872,18 @@ private fun defaultClientFor(config: ModelConfig, tools: List<ToolDef>): ModelCl
             maxTokens = config.maxTokens,
             tools = tools,
             baseUrl = config.deepSeekBaseUrl,
+            reasoning = config.reasoning,
+        )
+        // #2697 — Kimi (Moonshot AI) Chat Completions; thin OpenAI-compatible
+        // subclass, identical wiring to DeepSeek but with the Moonshot base URL.
+        ModelProvider.KIMI -> KimiClient(
+            apiKey = config.apiKey
+                ?: error("Agent uses Kimi but ModelConfig.apiKey is null — load it from .secrets/kimi-key"),
+            model = config.name,
+            temperature = config.temperature,
+            maxTokens = config.maxTokens,
+            tools = tools,
+            baseUrl = config.kimiBaseUrl,
             reasoning = config.reasoning,
         )
     }
