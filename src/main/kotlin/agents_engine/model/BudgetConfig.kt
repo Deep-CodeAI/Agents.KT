@@ -78,6 +78,18 @@ enum class BudgetReason {
  * Returned by [agents_engine.core.Agent.onBudgetExceeded] when a budget cap is
  * about to throw (#2412). The handler can let it stop, or raise the limit and
  * continue — e.g. "ActorsAgent hit 32 tool calls but we need to keep going."
+ *
+ * #2412 wired this for [BudgetReason.TOOL_CALLS] only. #2750 broadened
+ * coverage to [BudgetReason.TURNS], [BudgetReason.DURATION],
+ * [BudgetReason.TOKENS], and [BudgetReason.CONSECUTIVE_TOOL]. The handler now
+ * fires consistently at every cumulative-cap throw site. [BudgetReason
+ * .PER_TOOL_TIMEOUT] remains unconditionally throwing because extending
+ * mid-tool needs interrupt semantics (separate ticket).
+ *
+ * Units for [Extend.newLimit] by reason:
+ * - [BudgetReason.TOOL_CALLS] / [BudgetReason.TURNS] / [BudgetReason.TOKENS]
+ *   / [BudgetReason.CONSECUTIVE_TOOL] → integer count
+ * - [BudgetReason.DURATION] → milliseconds
  */
 sealed interface BudgetDecision {
     /** Throw [BudgetExceededException] — the default when no handler is registered. */

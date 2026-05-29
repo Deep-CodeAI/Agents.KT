@@ -273,12 +273,21 @@ internal suspend fun <IN> executeAgentic(
 
     var turns = resumeFrom?.turns ?: 0
     var toolCalls = resumeFrom?.toolCalls ?: 0
-    // #2412 — effective tool-call cap; starts at the configured budget and can be
-    // raised mid-run by an onBudgetExceeded handler so the loop continues.
-    // #2749 — when resuming, honor whichever limit is HIGHER between the
-    // snapshot's saved limit and the current agent's budget. That lets the
-    // "raise the cap and resume" UX work — the agent author rebuilds with
-    // a higher maxToolCalls, calls invokeSuspendResuming(resumeFrom = …),
+    // #2412 / #2750 — effective caps; start at the configured budget and can
+    // be raised mid-run by an onBudgetExceeded handler so the loop continues.
+    // #2412 wired TOOL_CALLS only; #2750 broadens to TURNS / DURATION /
+    // TOKENS / CONSECUTIVE_TOOL using the same Stop/Extend pattern. Units
+    // when handlers return Extend(newLimit):
+    //   - TOOL_CALLS / TURNS / TOKENS / CONSECUTIVE_TOOL → integer count
+    //   - DURATION → milliseconds (clock budget, not turn count)
+    // PER_TOOL_TIMEOUT is per-call, not cumulative, so it stays unconditionally
+    // throwing — extending it mid-tool would require interrupting an in-flight
+    // executor, which is a different ticket.
+    //
+    // #2749 — when resuming, honor whichever TOOL_CALLS limit is HIGHER
+    // between the snapshot's saved limit and the current agent's budget. That
+    // lets the "raise the cap and resume" UX work — the agent author rebuilds
+    // with a higher maxToolCalls, calls invokeSuspendResuming(resumeFrom = …),
     // and the loop honors the new ceiling. Falls back to the saved snapshot
     // value when the agent's budget hasn't been raised (preserves the #2416
     // contract that the snapshot is authoritative for the loop counters
@@ -288,6 +297,10 @@ internal suspend fun <IN> executeAgentic(
     } else {
         budget.maxToolCalls
     }
+    var turnLimit = budget.maxTurns
+    var durationLimitNanos = budget.maxDuration.inWholeNanoseconds
+    var tokenLimit: Int? = budget.maxTokens
+    var consecutiveSameToolLimit: Int? = budget.maxConsecutiveSameTool
     var totalTokens = 0
     // #1740: cumulative usage across all turns. Provider reports per-turn;
     // we sum prompt and completion independently (TokenUsage.total is derived).
@@ -309,17 +322,38 @@ internal suspend fun <IN> executeAgentic(
 
     while (true) {
         val elapsedNanos = System.nanoTime() - invocationStartNanos
-        if (elapsedNanos >= budget.maxDuration.inWholeNanoseconds) {
-            throw BudgetExceededException(
-                "Agent '${agent.name}' exceeded duration budget of ${budget.maxDuration}",
-                BudgetReason.DURATION,
-            )
+        if (elapsedNanos >= durationLimitNanos) {
+            // #2750 — DURATION is now extendable via onBudgetExceeded(). The
+            // handler returns Extend(newLimit) in MILLISECONDS; we convert
+            // back to nanos for the loop counter. Stop / no handler / Extend
+            // with a value ≤ current still throws (back-compat with #2412).
+            val currentMillis = (durationLimitNanos / 1_000_000L).toInt().coerceAtLeast(1)
+            val decision = agent.budgetExceededListener?.invoke(BudgetReason.DURATION, currentMillis)
+            val newMillis = (decision as? BudgetDecision.Extend)?.newLimit
+            if (newMillis != null && newMillis > currentMillis) {
+                durationLimitNanos = newMillis.toLong() * 1_000_000L
+                firedThresholds.remove(BudgetReason.DURATION)
+            } else {
+                throw BudgetExceededException(
+                    "Agent '${agent.name}' exceeded duration budget of ${budget.maxDuration}",
+                    BudgetReason.DURATION,
+                )
+            }
         }
-        if (turns >= budget.maxTurns)
-            throw BudgetExceededException(
-                "Agent '${agent.name}' exceeded budget of ${budget.maxTurns} turns",
-                BudgetReason.TURNS,
-            )
+        if (turns >= turnLimit) {
+            // #2750 — TURNS is now extendable. Same Stop/Extend semantics.
+            val decision = agent.budgetExceededListener?.invoke(BudgetReason.TURNS, turnLimit)
+            val newLimit = (decision as? BudgetDecision.Extend)?.newLimit
+            if (newLimit != null && newLimit > turnLimit) {
+                turnLimit = newLimit
+                firedThresholds.remove(BudgetReason.TURNS)
+            } else {
+                throw BudgetExceededException(
+                    "Agent '${agent.name}' exceeded budget of $turnLimit turns",
+                    BudgetReason.TURNS,
+                )
+            }
+        }
 
         // Threshold check before the next chat — DURATION is wall-clock, so
         // it can cross the threshold purely by waiting (e.g., on a slow tool).
@@ -327,7 +361,7 @@ internal suspend fun <IN> executeAgentic(
         // accumulator updates below.
         maybeFireThreshold(
             BudgetReason.DURATION,
-            elapsedNanos.toDouble() / budget.maxDuration.inWholeNanoseconds,
+            elapsedNanos.toDouble() / durationLimitNanos,
         )
 
         when (val decision = agent.decideBeforeTurn(messages.toList())) {
@@ -380,7 +414,7 @@ internal suspend fun <IN> executeAgentic(
                 tokensUsed = responseUsage,
             )
         )
-        maybeFireThreshold(BudgetReason.TURNS, turns.toDouble() / budget.maxTurns)
+        maybeFireThreshold(BudgetReason.TURNS, turns.toDouble() / turnLimit)
 
         // #963: accumulate tokens only when the provider reported usage —
         // a missing `tokenUsage` does NOT count as zero toward the cap.
@@ -406,14 +440,22 @@ internal suspend fun <IN> executeAgentic(
                     },
                 )
             } ?: usage
-            val cap = budget.maxTokens
+            val cap = tokenLimit
             if (cap != null) {
                 maybeFireThreshold(BudgetReason.TOKENS, totalTokens.toDouble() / cap)
                 if (totalTokens > cap) {
-                    throw BudgetExceededException(
-                        "Agent '${agent.name}' exceeded token budget of $cap (used $totalTokens)",
-                        BudgetReason.TOKENS,
-                    )
+                    // #2750 — TOKENS is now extendable. Same Stop/Extend semantics.
+                    val decision = agent.budgetExceededListener?.invoke(BudgetReason.TOKENS, cap)
+                    val newLimit = (decision as? BudgetDecision.Extend)?.newLimit
+                    if (newLimit != null && newLimit > cap) {
+                        tokenLimit = newLimit
+                        firedThresholds.remove(BudgetReason.TOKENS)
+                    } else {
+                        throw BudgetExceededException(
+                            "Agent '${agent.name}' exceeded token budget of $cap (used $totalTokens)",
+                            BudgetReason.TOKENS,
+                        )
+                    }
                 }
             }
         }
@@ -499,12 +541,19 @@ internal suspend fun <IN> executeAgentic(
                     // matters is "no other tool came between," not "in the same turn."
                     if (call.name == lastToolName) consecutiveSameTool++
                     else { lastToolName = call.name; consecutiveSameTool = 1 }
-                    budget.maxConsecutiveSameTool?.let { cap ->
+                    consecutiveSameToolLimit?.let { cap ->
                         if (consecutiveSameTool > cap) {
-                            throw BudgetExceededException(
-                                "Agent '${agent.name}' invoked tool '${call.name}' $consecutiveSameTool times in a row (cap: $cap)",
-                                BudgetReason.CONSECUTIVE_TOOL,
-                            )
+                            // #2750 — CONSECUTIVE_TOOL is now extendable.
+                            val decision = agent.budgetExceededListener?.invoke(BudgetReason.CONSECUTIVE_TOOL, cap)
+                            val newLimit = (decision as? BudgetDecision.Extend)?.newLimit
+                            if (newLimit != null && newLimit > cap) {
+                                consecutiveSameToolLimit = newLimit
+                            } else {
+                                throw BudgetExceededException(
+                                    "Agent '${agent.name}' invoked tool '${call.name}' $consecutiveSameTool times in a row (cap: $cap)",
+                                    BudgetReason.CONSECUTIVE_TOOL,
+                                )
+                            }
                         }
                     }
                     val isKnowledge = call.name in knowledgeToolMap
