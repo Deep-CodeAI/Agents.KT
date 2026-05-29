@@ -927,16 +927,17 @@ private fun formatDeniedToolError(toolName: String, reason: String): String =
 /**
  * Wrap a tool result from an `untrustedOutput = true` tool in a JSON envelope so
  * the LLM can distinguish data from instructions. See #642.
+ *
+ * #2756 — routes through the central [toJsonString] escaper instead of a local
+ * 5-char replace chain. The local chain handled `\`, `"`, `\n`, `\r`, `\t` but
+ * left U+0000–U+001F control characters (`\b`, `\f`, NUL, ESC, etc.) unescaped,
+ * producing invalid JSON for binary/OCR/captured-terminal tool output. The
+ * central escaper is RFC 8259 §7-conformant — see [JsonEscape]. Tool name is
+ * now escaped too, in case a custom tool name contains `"` or `\`.
  */
 private fun wrapUntrustedToolResult(toolName: String, result: Any?): String {
     val value = result?.toString() ?: "null"
-    val escaped = value
-        .replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t")
-    return """{"tool":"$toolName","trusted":false,"value":"$escaped"}"""
+    return """{"tool":${toolName.toJsonString()},"trusted":false,"value":${value.toJsonString()}}"""
 }
 
 private fun parseOutput(text: String, outType: KClass<*>): Any? = when {
