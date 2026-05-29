@@ -31,7 +31,7 @@ Please do not file public GitHub issues for security-sensitive reports.
 
 ## Handling LLM provider credentials
 
-Agents.KT ships three model adapters (Ollama, Anthropic, OpenAI). Anthropic and OpenAI require a real API key. The framework's contract:
+Agents.KT ships four model adapters (Ollama, Anthropic, OpenAI, DeepSeek). Anthropic, OpenAI, and DeepSeek require a real API key. The framework's contract:
 
 - **Keys live outside the working tree.** The integration tests load from `<repo-root>/.secrets/<provider>-key` (gitignored at the project root) or the provider's standard env var (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`). The `.secrets/` directory must never be committed; verify via `git check-ignore .secrets/your-key` before use.
 - **File permissions.** Set `chmod 0600 .secrets/*-key` and `chmod 0700 .secrets/` so other local users on shared machines cannot read them.

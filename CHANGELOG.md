@@ -21,8 +21,6 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [0.6.3] — 2026-05-29
 
-## [0.6.3] — 2026-05-29
-
 **"Prompt-caching foundation + Koog-bug regression net."** Ships the vendor-neutral prompt-caching DSL — the foundation of the #2655 epic — and lands the first eight Koog issue-set regression checks under #2474 (five real fixes including the sealed `@Generable` parent-dispatch unblock, plus three regression-pin tests against the existing contracts).
 
 ### Added
@@ -49,9 +47,11 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 **"Attribution you can filter by."** Closes the bridge-observability gap that every downstream Langfuse / LangSmith / OTel consumer was working around: business identifiers flow through the runtime context, so bridges drop their per-bridge `ConcurrentHashMap<requestId, userId>` + `onBeforeTurn` capture pattern and read user / project / dialog identifiers directly off `AgentRuntimeContext`. Bundles the entire 0.6.1 release because 0.6.1 shipped on a parallel branch and never reached main — see the [0.6.1] section for the carried-forward bullets.
 
+> **Reverted in 0.6.3.** The `AgentRuntimeContext.attribution` surface added below was reverted in 0.6.3. Today's `AgentRuntimeContext` carries only `requestId`, `sessionId`, and `manifestHash`. The current position: attribution is a deployer concern, not a framework concern — the integrating bridge / API gateway / session boundary owns its own side-channel and can attach arbitrary identifiers in its own layer without the framework opining on the schema. The bullet below is retained as the historical record of what shipped under the 0.6.2 tag, but consumers should not depend on the attribution API.
+
 ### Added
 
-- **Business-attribution on `AgentRuntimeContext` (#2720)** — `AgentRuntimeContext.attribution: Map<String, String>` plus typed `userId` / `projectId` / `dialogId` accessors. Set once at the session boundary via `withAgentRuntimeContext(...)`; every nested `AgentEvent` / `PipelineEvent` surfaces it, and bridges (Langfuse / LangSmith / OTel) read it directly instead of capturing it themselves. Free-form keys are honoured for product-specific identifiers; the typed accessors are conveniences over well-known keys.
+- **Business-attribution on `AgentRuntimeContext` (#2720)** [*reverted in 0.6.3, see note above*] — `AgentRuntimeContext.attribution: Map<String, String>` plus typed `userId` / `projectId` / `dialogId` accessors. Set once at the session boundary via `withAgentRuntimeContext(...)`; every nested `AgentEvent` / `PipelineEvent` surfaces it, and bridges (Langfuse / LangSmith / OTel) read it directly instead of capturing it themselves. Free-form keys are honoured for product-specific identifiers; the typed accessors are conveniences over well-known keys.
 
 ### Bundled from 0.6.1
 
