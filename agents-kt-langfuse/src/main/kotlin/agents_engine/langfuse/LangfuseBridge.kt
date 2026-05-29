@@ -156,6 +156,23 @@ class LangfuseBridge internal constructor(
                     )
                 }
             }
+            is PipelineEvent.ToolHallucinated -> {
+                // #2757 — the model emitted a tool name not in the skill's allowlist.
+                // Distinct from ToolDenied (policy rejection) — auditor wants to grep
+                // by event class, not by error message body.
+                mostRecentTrace()?.let { state ->
+                    enqueueEventObservation(
+                        trace = state,
+                        name = "agent.tool.hallucinated",
+                        input = mapOf(
+                            "requested_name" to event.requestedName,
+                            "allowed_tools" to event.allowedTools,
+                        ),
+                        metadata = metadata(event.runtimeContext),
+                        level = "WARNING",
+                    )
+                }
+            }
         }
     }
 

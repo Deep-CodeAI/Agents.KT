@@ -202,6 +202,9 @@ class JsonlAuditExporter(
             toolId = when (event) {
                 is PipelineEvent.ToolCalled -> event.toolName
                 is PipelineEvent.ToolDenied -> event.toolName
+                // #2757 — record the hallucinated tool name as the toolId so
+                // audit-stream consumers can group by requested name.
+                is PipelineEvent.ToolHallucinated -> event.requestedName
                 else -> null
             },
             eventType = event.javaClass.simpleName,

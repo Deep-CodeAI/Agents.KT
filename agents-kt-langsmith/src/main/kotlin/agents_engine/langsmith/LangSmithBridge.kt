@@ -146,6 +146,21 @@ class LangSmithBridge internal constructor(
                     )
                 }
             }
+            is PipelineEvent.ToolHallucinated -> {
+                // #2757 — distinct from ToolDenied; the model emitted a name not
+                // in the skill's allowlist (per #2476 the runtime recovers and
+                // continues; this is the audit evidence).
+                mostRecentAgentRun()?.let { state ->
+                    enqueueEvent(
+                        state,
+                        "agent.tool.hallucinated",
+                        mapOf(
+                            "requested_name" to event.requestedName,
+                            "allowed_tools" to event.allowedTools,
+                        ),
+                    )
+                }
+            }
         }
     }
 
