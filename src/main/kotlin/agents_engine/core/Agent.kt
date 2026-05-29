@@ -515,6 +515,50 @@ class Agent<IN, OUT>(
             invokeSuspendForSession(input, emitter = null) { /* no-op */ }
         }
 
+    /**
+     * #2749 — public snapshot/resume seam.
+     *
+     * Runs the agentic loop the same way [invokeSuspend] does, but also:
+     * - When [resumeFrom] is non-null, seeds the loop with the saved
+     *   conversation + counters from a prior [agents_engine.core.SessionSnapshot]
+     *   instead of starting fresh. Does NOT replay dialog history — the
+     *   conversation continues at exactly the turn where the snapshot was
+     *   captured.
+     * - When [onTurnCheckpoint] is non-null, fires at every turn boundary
+     *   with the current resumable state. The caller persists it (e.g.
+     *   `FileSnapshotStore(...).save(dialogId, snapshot)`) so a later
+     *   process restart, budget bump, or human-in-the-loop decision can
+     *   resume from the latest checkpoint.
+     *
+     * Composes with [agents_engine.model.BudgetDecision.Checkpoint]: when
+     * an `onBudgetExceeded` handler returns `Checkpoint`, this method's
+     * `onTurnCheckpoint` hook receives the in-flight snapshot AND the
+     * loop throws [agents_engine.model.BudgetCheckpointException] carrying
+     * the same snapshot on its own field — letting the caller surface a
+     * "raise the cap?" UX without losing the conversation history.
+     *
+     * With both parameters at their defaults (null), behavior is
+     * byte-for-byte identical to [invokeSuspend] — opt-in throughout.
+     *
+     * @param input the user-side input for this invocation.
+     * @param resumeFrom optional seed snapshot. Null = fresh run.
+     * @param onTurnCheckpoint optional per-turn callback. Null = no
+     *   checkpoints captured.
+     */
+    suspend fun invokeSuspendResuming(
+        input: IN,
+        resumeFrom: agents_engine.core.SessionSnapshot? = null,
+        onTurnCheckpoint: ((agents_engine.core.SessionSnapshot) -> Unit)? = null,
+    ): OUT =
+        withAgentRuntimeContext(newRuntimeContext()) {
+            invokeSuspendForSession(
+                input = input,
+                emitter = null,
+                resumeFrom = resumeFrom,
+                onTurnCheckpoint = onTurnCheckpoint,
+            ) { /* no-op onSkillStarted */ }
+        }
+
     internal fun newRuntimeContext(sessionId: String? = null): AgentRuntimeContext =
         AgentRuntimeContext(sessionId = sessionId, manifestHash = manifestHash)
 
@@ -540,6 +584,23 @@ class Agent<IN, OUT>(
          * delegates here with `emitter = null`.
          */
         promptOverride: String? = null,
+        /**
+         * #2749 — optional seed for snapshot/resume. When non-null, the agentic
+         * loop starts from this snapshot's messages + counters (and restores
+         * memory) instead of from a fresh conversation. The `executeAgentic`
+         * loop has carried this parameter as internal since #2416; this layer
+         * is now the public seam.
+         */
+        resumeFrom: agents_engine.core.SessionSnapshot? = null,
+        /**
+         * #2749 — optional per-turn checkpoint callback. Fires at each turn
+         * boundary (after the tool round completes, before the next model
+         * call) with the current resumable state. Also fires when an
+         * `onBudgetExceeded` handler returns [agents_engine.model.BudgetDecision.Checkpoint]
+         * — that path then throws [agents_engine.model.BudgetCheckpointException]
+         * carrying the same snapshot.
+         */
+        onTurnCheckpoint: ((agents_engine.core.SessionSnapshot) -> Unit)? = null,
         onSkillCompleted: (agents_engine.model.TokenUsage?) -> Unit = { /* no-op */ },
         onSkillStarted: (String) -> Unit,
     ): OUT {
@@ -564,6 +625,8 @@ class Agent<IN, OUT>(
                     effectivePrompt = promptOverride ?: this.prompt,
                     emitter = emitter,
                     runtimeContext = runtimeContext,
+                    resumeFrom = resumeFrom,
+                    onTurnCheckpoint = onTurnCheckpoint,
                 )
                 // #1740: surface cumulative usage on the way out. Non-agentic
                 // skills don't go through executeAgentic, so onSkillCompleted

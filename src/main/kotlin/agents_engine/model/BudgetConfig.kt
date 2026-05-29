@@ -88,9 +88,59 @@ sealed interface BudgetDecision {
      * Ignored (falls back to [Stop]) unless [newLimit] exceeds the current limit.
      */
     data class Extend(val newLimit: Int) : BudgetDecision
+
+    /**
+     * #2749 — pause the agentic loop at the current turn boundary. The runtime
+     * captures a [agents_engine.core.SessionSnapshot] of the in-flight state,
+     * delivers it to the caller via the registered `onTurnCheckpoint` hook,
+     * and throws a recoverable [BudgetCheckpointException] that carries the
+     * same snapshot on its own field.
+     *
+     * The caller (typically an HTTP handler / chat-app dialog controller)
+     * catches the exception, surfaces a "raise the cap and continue?" prompt
+     * to the human, and on acceptance resumes via
+     * `agent.invokeSuspendResuming(input, resumeFrom = snapshot)` with the
+     * budget config updated to a larger cap. The conversation history is
+     * preserved end-to-end — no replay tax.
+     *
+     * Falls back to [Stop] semantics (throws [BudgetExceededException])
+     * when no `onTurnCheckpoint` is registered on the invocation —
+     * Checkpoint without a place to land the snapshot is no different from
+     * Stop, and silently swallowing the budget breach would be worse.
+     */
+    object Checkpoint : BudgetDecision
 }
 
-class BudgetExceededException(
+open class BudgetExceededException(
     message: String,
     val reason: BudgetReason,
 ) : RuntimeException(message)
+
+/**
+ * #2749 — recoverable budget breach carrying the captured
+ * [agents_engine.core.SessionSnapshot]. Subclass of [BudgetExceededException]
+ * so existing `catch (BudgetExceededException)` blocks still fire; consumers
+ * that want the snapshot path use `catch (BudgetCheckpointException)` or
+ * pattern-match on the type.
+ *
+ * Thrown from the agentic loop when an `onBudgetExceeded` handler returns
+ * [BudgetDecision.Checkpoint] AND an `onTurnCheckpoint` is registered on
+ * the current invocation. Without the hook, the runtime falls back to
+ * regular [BudgetExceededException] (Stop semantics).
+ *
+ * @property snapshot the captured loop state at the turn boundary
+ *   immediately before the would-be cap breach. Resume with
+ *   `agent.invokeSuspendResuming(input, resumeFrom = snapshot)`.
+ * @property currentLimit the cap that the breach would have hit (passed
+ *   verbatim from the breach site so the caller can compute a sensible
+ *   raise — `newLimit = currentLimit * 2` or similar).
+ */
+class BudgetCheckpointException(
+    val snapshot: agents_engine.core.SessionSnapshot,
+    reason: BudgetReason,
+    val currentLimit: Int,
+) : BudgetExceededException(
+    "Agent run checkpointed at $reason cap ($currentLimit). " +
+        "Resume via invokeSuspendResuming(input, resumeFrom = exception.snapshot).",
+    reason,
+)

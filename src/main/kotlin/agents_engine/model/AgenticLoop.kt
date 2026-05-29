@@ -247,7 +247,19 @@ internal suspend fun <IN> executeAgentic(
     var toolCalls = resumeFrom?.toolCalls ?: 0
     // #2412 — effective tool-call cap; starts at the configured budget and can be
     // raised mid-run by an onBudgetExceeded handler so the loop continues.
-    var toolCallLimit = resumeFrom?.toolCallLimit ?: budget.maxToolCalls
+    // #2749 — when resuming, honor whichever limit is HIGHER between the
+    // snapshot's saved limit and the current agent's budget. That lets the
+    // "raise the cap and resume" UX work — the agent author rebuilds with
+    // a higher maxToolCalls, calls invokeSuspendResuming(resumeFrom = …),
+    // and the loop honors the new ceiling. Falls back to the saved snapshot
+    // value when the agent's budget hasn't been raised (preserves the #2416
+    // contract that the snapshot is authoritative for the loop counters
+    // including the running limit raised via Extend mid-flight).
+    var toolCallLimit = if (resumeFrom != null) {
+        maxOf(resumeFrom.toolCallLimit, budget.maxToolCalls)
+    } else {
+        budget.maxToolCalls
+    }
     var totalTokens = 0
     // #1740: cumulative usage across all turns. Provider reports per-turn;
     // we sum prompt and completion independently (TokenUsage.total is derived).
@@ -400,6 +412,11 @@ internal suspend fun <IN> executeAgentic(
                     if (toolCalls >= toolCallLimit) {
                         // #2412 — give an onBudgetExceeded handler the chance to raise
                         // the cap and continue instead of throwing.
+                        // #2749 — also accept BudgetDecision.Checkpoint: capture
+                        // the current SessionSnapshot, deliver it via
+                        // onTurnCheckpoint (if registered), and throw
+                        // BudgetCheckpointException so the caller can resume
+                        // later with a larger budget via invokeSuspendResuming.
                         val decision = agent.budgetExceededListener
                             ?.invoke(BudgetReason.TOOL_CALLS, toolCallLimit)
                         val newLimit = (decision as? agents_engine.model.BudgetDecision.Extend)?.newLimit
@@ -407,7 +424,37 @@ internal suspend fun <IN> executeAgentic(
                             toolCallLimit = newLimit
                             // Re-arm the pre-cap warning so it fires again toward the new cap.
                             firedThresholds.remove(BudgetReason.TOOL_CALLS)
+                        } else if (
+                            decision == agents_engine.model.BudgetDecision.Checkpoint &&
+                            onTurnCheckpoint != null
+                        ) {
+                            // Build a checkpoint of the in-flight state at the
+                            // turn boundary BEFORE the would-be cap breach.
+                            // messages here include the assistant tool-calls turn
+                            // that triggered the breach but NONE of its tool results
+                            // have run yet — resume re-enters at that same turn.
+                            val snapshot = agents_engine.core.SessionSnapshot(
+                                messages = messages.toList(),
+                                turns = turns,
+                                toolCalls = toolCalls,
+                                toolCallLimit = toolCallLimit,
+                                tokensUsed = cumulativeUsage,
+                                memory = agent.memoryBank?.entries() ?: emptyMap(),
+                                requestId = runtimeContext.requestId,
+                                sessionId = runtimeContext.sessionId,
+                                manifestHash = agent.manifestHash,
+                            )
+                            onTurnCheckpoint.invoke(snapshot)
+                            throw BudgetCheckpointException(
+                                snapshot = snapshot,
+                                reason = BudgetReason.TOOL_CALLS,
+                                currentLimit = toolCallLimit,
+                            )
                         } else {
+                            // Either no handler, Stop, an Extend that didn't raise
+                            // the limit, or Checkpoint without an onTurnCheckpoint
+                            // hook to deliver the snapshot to. All map to Stop
+                            // semantics — throw the regular breach exception.
                             throw BudgetExceededException(
                                 "Agent '${agent.name}' exceeded tool-call budget of $toolCallLimit",
                                 BudgetReason.TOOL_CALLS,
