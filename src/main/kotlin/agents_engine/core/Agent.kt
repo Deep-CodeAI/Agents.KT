@@ -3,6 +3,8 @@ package agents_engine.core
 import agents_engine.model.BudgetBuilder
 import agents_engine.model.BudgetConfig
 import agents_engine.model.BudgetReason
+import agents_engine.model.CacheBuilder
+import agents_engine.model.CacheConfig
 import agents_engine.model.ModelBuilder
 import agents_engine.model.ModelConfig
 import agents_engine.model.OnErrorBuilder
@@ -79,6 +81,13 @@ class Agent<IN, OUT>(
     var modelConfig: ModelConfig? = null
         private set
     var budgetConfig: BudgetConfig = BudgetConfig()
+        private set
+    /**
+     * Vendor-neutral prompt-caching configuration (#2656). Default is the
+     * production-friendly profile in [CacheConfig]: system prompt + tool
+     * defs cached, conversation rolling off. Override via `caching { }`.
+     */
+    var cacheConfig: CacheConfig = CacheConfig()
         private set
     private val _toolMap: MutableMap<String, ToolDef> = mutableMapOf()
     private val _toolMapView: Map<String, ToolDef> = java.util.Collections.unmodifiableMap(_toolMap)
@@ -240,6 +249,19 @@ class Agent<IN, OUT>(
         val builder = BudgetBuilder()
         builder.block()
         budgetConfig = builder.build()
+    }
+
+    /**
+     * `caching { }` DSL slot — declarative, vendor-neutral prompt-caching
+     * control (#2656). Adapters that can't honour a hint (e.g. providers
+     * with no caching surface) silently no-op. See [CacheConfig] for the
+     * knobs and defaults.
+     */
+    fun caching(block: CacheBuilder.() -> Unit) {
+        checkNotFrozen()
+        val builder = CacheBuilder()
+        builder.block()
+        cacheConfig = builder.build()
     }
 
     fun onToolUse(block: (name: String, args: Map<String, Any?>, result: Any?) -> Unit) {
