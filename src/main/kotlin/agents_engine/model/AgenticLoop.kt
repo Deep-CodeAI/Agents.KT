@@ -201,7 +201,15 @@ internal suspend fun <IN> executeAgentic(
     // them. A fresh run builds them as usual.
     if (resumeFrom != null) {
         messages.addAll(resumeFrom.messages)
-        agent.memoryBank?.restore(resumeFrom.memory)
+        // #2755 — only restore THIS agent's namespaced slot, not the whole bank.
+        // The wipe-all `restore(Map)` was destructive in the documented
+        // shared-workspace topology (one bank, many agents): resuming session
+        // A would erase session B's slot. Snapshot.memory carries `{agentName:
+        // value}` for the resuming agent only (see capture site below).
+        agent.memoryBank?.let { bank ->
+            val mine = resumeFrom.memory[agent.name]
+            bank.restoreForAgent(agent.name, mine)
+        }
     } else {
         // #2656 — vendor-neutral cache hints derived from agent.cacheConfig.
         // The hint marks an LlmMessage as the end of a cacheable group;
@@ -603,7 +611,13 @@ internal suspend fun <IN> executeAgentic(
                 toolCalls = toolCalls,
                 toolCallLimit = toolCallLimit,
                 tokensUsed = cumulativeUsage,
-                memory = agent.memoryBank?.entries() ?: emptyMap(),
+                // #2755 — snapshot only THIS agent's slot in a (possibly shared)
+                // bank. The pre-#2755 `bank.entries()` dump included every other
+                // agent's slot — leaking unrelated data into the snapshot file
+                // and breaking the namespaced-restore guarantee.
+                memory = agent.memoryBank?.let { b ->
+                    b.snapshotForAgent(agent.name)?.let { v -> mapOf(agent.name to v) }
+                } ?: emptyMap(),
                 requestId = runtimeContext.requestId,
                 sessionId = runtimeContext.sessionId,
                 manifestHash = agent.manifestHash,

@@ -50,9 +50,37 @@ class MemoryBank(val maxLines: Int = Int.MAX_VALUE) : Snapshotable<Map<String, S
     // on write, so restore replays them verbatim.
     override fun snapshot(): Map<String, String> = entries()
 
+    /**
+     * @deprecated #2755 — wipes the entire backing store. When two agents share
+     *   a bank (the documented "shared workspace" topology), this destroys the
+     *   other agent's slots. Callers participating in snapshot/resume should
+     *   use [snapshotForAgent] / [restoreForAgent] instead. Kept for the
+     *   Snapshotable<Map<String,String>> interface contract but marked
+     *   internal so accidental call sites surface as compile errors.
+     */
+    @Deprecated("Use restoreForAgent to avoid wiping unrelated agents' slots in a shared bank (#2755).")
     override fun restore(state: Map<String, String>) {
         store.clear()
         store.putAll(state)
+    }
+
+    /**
+     * #2755 — per-agent snapshot. `MemoryBank` keys each slot by `agentName`,
+     * so the snapshot is just that one entry. A shared-bank topology can
+     * snapshot/resume one agent's session without disturbing the other
+     * agents' slots.
+     *
+     * Returns `null` if the agent has never written to the bank.
+     */
+    fun snapshotForAgent(agentName: String): String? = store[agentName]
+
+    /**
+     * #2755 — per-agent restore. Only touches the slot for `agentName`.
+     * `null` clears that slot; a non-null value replaces it. Other agents'
+     * slots in the same shared bank are untouched.
+     */
+    fun restoreForAgent(agentName: String, value: String?) {
+        if (value == null) store.remove(agentName) else store[agentName] = value
     }
 
     private fun truncate(content: String): String {
