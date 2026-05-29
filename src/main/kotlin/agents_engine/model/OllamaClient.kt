@@ -9,6 +9,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.util.logging.Logger
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
@@ -83,6 +84,16 @@ open class OllamaClient(
     private val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
     /** #2410 — opt-in reasoning: sends `think:true` and surfaces `message.thinking`. Off when null. */
     private val reasoning: ReasoningConfig? = null,
+    /**
+     * #2479 part 2 — vendor-neutral tool-choice control. Ollama has no
+     * native `tool_choice` field today; non-[ToolChoice.Auto] values are
+     * a best-effort hint. The first chat call logs a one-shot JUL warning
+     * naming the requested choice (so deployers see it in their pipeline
+     * logs) and otherwise treats the call as Auto. [ToolChoice.None]
+     * additionally drops the tools array from the request so the model
+     * genuinely can't call anything — that part IS enforceable on Ollama.
+     */
+    private val toolChoice: ToolChoice = ToolChoice.Auto,
 ) : ModelClient {
     private val baseUrl = "http://$host:$port"
 
@@ -98,6 +109,26 @@ open class OllamaClient(
      * the same incapability.
      */
     @Volatile private var nativeToolsKnownUnsupported: Boolean = false
+
+    // #2479 part 2 — one-shot warning latch when toolChoice is set to a
+    // value Ollama can't natively express (Required / Specific). None is
+    // enforced by dropping the tools array, so it doesn't warn.
+    @Volatile private var toolChoiceWarningEmitted: Boolean = false
+
+    private fun maybeWarnOllamaToolChoice() {
+        if (toolChoiceWarningEmitted) return
+        val needsWarning = when (toolChoice) {
+            ToolChoice.Required, is ToolChoice.Specific -> true
+            else -> false
+        }
+        if (!needsWarning) return
+        toolChoiceWarningEmitted = true
+        OLLAMA_LOGGER.warning(
+            "ToolChoice=$toolChoice requested for Ollama, which has no native tool_choice " +
+                "field. Falling back to Auto for this call. Switch providers (Anthropic / OpenAI " +
+                "/ DeepSeek) for hard enforcement.",
+        )
+    }
 
     override fun supportsConstrainedDecoding(): Boolean = true
 
@@ -271,6 +302,9 @@ open class OllamaClient(
     }
 
     companion object {
+        // #2479 part 2 — JUL logger for the one-shot ToolChoice warning.
+        private val OLLAMA_LOGGER: Logger = Logger.getLogger(OllamaClient::class.java.name)
+
         // 60s — chat completions can be slow; large enough not to false-trip on
         // legitimate long responses, small enough to bound a hung Ollama instance.
         // See #852.
@@ -367,7 +401,14 @@ open class OllamaClient(
                 append("}")
             }
         }
-        val toolsJson = if (includeTools && tools.isNotEmpty()) {
+        // #2479 part 2 — Ollama has no native `tool_choice` field. None IS
+        // enforceable (drop tools so the model literally can't call any);
+        // Required/Specific is best-effort — warn once per agent + treat
+        // functionally as Auto. The latch keeps the log channel quiet under
+        // the per-turn loop.
+        maybeWarnOllamaToolChoice()
+        val effectiveIncludeTools = includeTools && toolChoice != ToolChoice.None
+        val toolsJson = if (effectiveIncludeTools && tools.isNotEmpty()) {
             val defs = tools.joinToString(",") { t ->
                 val parametersJson = t.argsType?.jsonSchema()
                     ?: t.parametersSchemaJson

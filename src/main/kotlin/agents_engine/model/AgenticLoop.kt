@@ -176,7 +176,7 @@ internal suspend fun <IN> executeAgentic(
         agent.manifestHash?.let { "agents-kt:${agent.name}:${it.take(12)}" }
             ?: "agents-kt:${agent.name}"
     } else null
-    val client = config.client ?: defaultClientFor(config, allToolDefs, cacheRoutingKey)
+    val client = config.client ?: defaultClientFor(config, allToolDefs, cacheRoutingKey, agent.toolChoice)
     val constrainedOutputSchema = constrainedOutputSchemaFor(agent.outType, skill, client)
 
     val hasUntrustedTools = allToolDefs.any { it.untrustedOutput }
@@ -1087,6 +1087,10 @@ private fun defaultClientFor(
     config: ModelConfig,
     tools: List<ToolDef>,
     promptCacheKey: String? = null,
+    // #2479 part 2 — agent.toolChoice flows through each adapter ctor. The
+    // adapters translate to their provider's wire shape (or no-op + warn on
+    // Ollama, which has no native tool_choice).
+    toolChoice: ToolChoice = ToolChoice.Auto,
 ): ModelClient =
     when (config.provider) {
         ModelProvider.OLLAMA -> OllamaClient(
@@ -1096,6 +1100,7 @@ private fun defaultClientFor(
             temperature = config.temperature,
             tools = tools,
             reasoning = config.reasoning,
+            toolChoice = toolChoice,
         )
         ModelProvider.ANTHROPIC -> ClaudeClient(
             apiKey = config.apiKey
@@ -1106,6 +1111,7 @@ private fun defaultClientFor(
             tools = tools,
             baseUrl = config.anthropicBaseUrl,
             reasoning = config.reasoning,
+            toolChoice = toolChoice,
         )
         ModelProvider.OPENAI -> OpenAiClient(
             apiKey = config.apiKey
@@ -1119,6 +1125,7 @@ private fun defaultClientFor(
             // #2659 — OpenAI automatic prefix caching: pass routing key when
             // the agent has caching enabled (computed at the call site).
             promptCacheKey = promptCacheKey,
+            toolChoice = toolChoice,
         )
         ModelProvider.DEEPSEEK -> DeepSeekClient(
             apiKey = config.apiKey
@@ -1129,5 +1136,6 @@ private fun defaultClientFor(
             tools = tools,
             baseUrl = config.deepSeekBaseUrl,
             reasoning = config.reasoning,
+            toolChoice = toolChoice,
         )
     }

@@ -76,6 +76,14 @@ open class OpenAiClient(
      * may pass it directly).
      */
     private val promptCacheKey: String? = null,
+    /**
+     * #2479 part 2 — vendor-neutral tool-choice control. The agentic loop
+     * passes this through from `agent.toolChoice`. [ToolChoice.Auto] omits
+     * the field entirely (preserves pre-#2479-pt2 wire shape). [ToolChoice
+     * .None] also drops the `tools` array from the request so the model
+     * literally cannot call anything.
+     */
+    private val toolChoice: ToolChoice = ToolChoice.Auto,
 ) : ModelClient {
 
     private val http: HttpClient = HttpClient.newBuilder()
@@ -310,7 +318,20 @@ open class OpenAiClient(
         // prefix caching. Same-key requests get routed to the same cache
         // shard, improving hit rate. Omitted when null.
         val cacheKeyField = promptCacheKey?.let { ""","prompt_cache_key":${it.toJsonString()}""" } ?: ""
-        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$additionalFields$cacheKeyField$streamField,"messages":[${messageObjects.joinToString(",")}]$toolsField$responseFormatField}"""
+        // #2479 part 2 — tool_choice wire mapping. Auto = field omitted
+        // (provider default). None additionally drops the tools array (no
+        // separate "tool_choice":"none" needed when tools aren't sent — but
+        // we send "none" anyway so an operator inspecting the wire shape
+        // sees an explicit signal).
+        val toolChoiceField = when (val tc = toolChoice) {
+            ToolChoice.Auto -> ""
+            ToolChoice.Required -> ""","tool_choice":"required""""
+            ToolChoice.None -> ""","tool_choice":"none""""
+            is ToolChoice.Specific ->
+                ""","tool_choice":{"type":"function","function":{"name":${tc.name.toJsonString()}}}"""
+        }
+        val effectiveToolsField = if (toolChoice == ToolChoice.None) "" else toolsField
+        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$additionalFields$cacheKeyField$streamField,"messages":[${messageObjects.joinToString(",")}]$effectiveToolsField$toolChoiceField$responseFormatField}"""
     }
 
     protected open fun additionalRequestJsonFields(
