@@ -15,6 +15,17 @@ data class LlmMessage(
     val role: String,
     val content: String,
     val toolCalls: List<ToolCall>? = null,
+    /**
+     * #2656 — optional vendor-neutral cache hint. When non-null, the
+     * agentic loop is signalling that this message ends a cacheable
+     * group; the adapter translates to its provider's mechanism
+     * (Anthropic `cache_control` breakpoint, Gemini handle boundary,
+     * etc.). Adapters that don't support caching ignore the hint —
+     * caching is a latency / cost optimisation, not a correctness
+     * condition. Defaults to null so pre-#2656 call sites are
+     * unchanged on the wire.
+     */
+    val cacheHint: CacheHint? = null,
 )
 
 data class ToolCall(

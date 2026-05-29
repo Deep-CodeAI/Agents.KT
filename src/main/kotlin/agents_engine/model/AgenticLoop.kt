@@ -195,7 +195,31 @@ internal suspend fun <IN> executeAgentic(
         messages.addAll(resumeFrom.messages)
         agent.memoryBank?.restore(resumeFrom.memory)
     } else {
-        if (systemContent.isNotBlank()) messages.add(LlmMessage("system", systemContent))
+        // #2656 — vendor-neutral cache hints derived from agent.cacheConfig.
+        // The hint marks an LlmMessage as the end of a cacheable group;
+        // adapters translate to their provider's mechanism (Anthropic
+        // cache_control breakpoint, Gemini handle boundary, OpenAI / DeepSeek /
+        // Ollama automatic prefix caching, …). Adapters that don't support
+        // caching ignore the hint — no correctness impact.
+        val cache = agent.cacheConfig
+        val systemHint = if (cache.enabled && (cache.cacheSystemPrompt || cache.cacheToolDefs)) {
+            CacheHint(segment = CacheSegment.SystemPrompt, ttl = cache.ttl)
+        } else null
+
+        if (systemContent.isNotBlank()) {
+            messages.add(LlmMessage("system", systemContent, cacheHint = systemHint))
+        }
+        // Custom cacheable segments — large retrieved docs / instruction sets
+        // declared via `caching { cacheable("id") { content } }`. Emitted as
+        // their own "system"-role messages so each carries its own Custom hint.
+        // Content is preserved even when caching is disabled (the DSL declared
+        // prompt content, not just a cache directive); only the hint drops.
+        for (seg in cache.customSegments) {
+            val hint = if (cache.enabled) {
+                CacheHint(segment = CacheSegment.Custom(seg.id), ttl = seg.ttl ?: cache.ttl)
+            } else null
+            messages.add(LlmMessage("system", seg.content, cacheHint = hint))
+        }
         // User: serialized input. Typed @Generable inputs become JSON; primitives
         // and Strings render literally; non-Generable types fall back to toString.
         // See #937 / GenerableSupport.toLlmInput.
@@ -341,7 +365,16 @@ internal suspend fun <IN> executeAgentic(
                 return AgenticResult(parsed, cumulativeUsage)
             }
             is LlmResponse.ToolCalls -> {
-                messages.add(LlmMessage("assistant", "", response.calls))
+                // #2656 — Rolling conversation: anchor a cache breakpoint at
+                // each turn boundary so the growing prefix keeps hitting.
+                // Off by default; opt-in via `caching { cacheConversation = Rolling }`.
+                val convHint = if (
+                    agent.cacheConfig.enabled &&
+                    agent.cacheConfig.cacheConversation == CacheConversation.Rolling
+                ) {
+                    CacheHint(segment = CacheSegment.Conversation, ttl = agent.cacheConfig.ttl)
+                } else null
+                messages.add(LlmMessage("assistant", "", response.calls, cacheHint = convHint))
                 for (call in response.calls) {
                     if (toolCalls >= toolCallLimit) {
                         // #2412 — give an onBudgetExceeded handler the chance to raise
