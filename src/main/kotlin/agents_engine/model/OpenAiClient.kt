@@ -67,6 +67,15 @@ open class OpenAiClient(
      * (DeepSeek) read it to gate their own reasoning behavior. Off when null.
      */
     protected val reasoning: ReasoningConfig? = null,
+    /**
+     * #2659 — optional `prompt_cache_key` for OpenAI's automatic prefix-caching
+     * routing. A stable string groups same-shape requests onto the same cache
+     * shard, improving hit rate. Set by the agentic loop to a derivative of
+     * the agent identity + manifest hash when [CacheConfig.enabled] is on;
+     * null = field omitted from the request (consumer-supplied subclasses
+     * may pass it directly).
+     */
+    private val promptCacheKey: String? = null,
 ) : ModelClient {
 
     private val http: HttpClient = HttpClient.newBuilder()
@@ -297,7 +306,11 @@ open class OpenAiClient(
             ""","response_format":{"type":"json_schema","json_schema":{"name":${schema.wireName().toJsonString()},"schema":${schema.schema},"strict":true}}"""
         } ?: ""
         val additionalFields = additionalRequestJsonFields(stream = stream, jsonSchema = jsonSchema)
-        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$additionalFields$streamField,"messages":[${messageObjects.joinToString(",")}]$toolsField$responseFormatField}"""
+        // #2659 — `prompt_cache_key` routing hint for OpenAI's automatic
+        // prefix caching. Same-key requests get routed to the same cache
+        // shard, improving hit rate. Omitted when null.
+        val cacheKeyField = promptCacheKey?.let { ""","prompt_cache_key":${it.toJsonString()}""" } ?: ""
+        return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$additionalFields$cacheKeyField$streamField,"messages":[${messageObjects.joinToString(",")}]$toolsField$responseFormatField}"""
     }
 
     protected open fun additionalRequestJsonFields(
