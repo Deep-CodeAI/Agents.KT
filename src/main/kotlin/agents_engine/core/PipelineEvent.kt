@@ -94,6 +94,26 @@ sealed interface PipelineEvent {
         val usedPercent: Double,
         override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : PipelineEvent
+
+    /**
+     * #2757 — the model emitted a tool name that is NOT in the active skill's
+     * allowlist (hallucinated, or a tool that belongs to a different skill on
+     * the same agent). The runtime appends a tool-result error to context and
+     * continues (per #2476), but this event is first-class audit evidence:
+     * "the model tried to call X" is distinct from "tool X failed" or "policy
+     * denied X" or "model returned text Y." Auditors can grep by event class.
+     *
+     * `allowedTools` is the skill's allowlist, same set the recovery message
+     * names — does NOT leak the wider `agent.toolMap`.
+     */
+    data class ToolHallucinated(
+        override val agentName: String,
+        override val timestamp: Instant,
+        val requestedName: String,
+        val arguments: Map<String, Any?>,
+        val allowedTools: List<String>,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
+    ) : PipelineEvent
 }
 
 /**
@@ -112,6 +132,7 @@ sealed interface PipelineEvent {
  * - [PipelineEvent.KnowledgeLoaded] — when a knowledge entry is fetched (see [Agent.onKnowledgeUsed])
  * - [PipelineEvent.ErrorOccurred] — when an exception is about to propagate out (see [Agent.onError])
  * - [PipelineEvent.BudgetThreshold] — when a budget crosses [Agent.onBudgetThreshold]'s threshold
+ * - [PipelineEvent.ToolHallucinated] — when the model emits a tool name not in the skill's allowlist (#2757)
  */
 fun Agent<*, *>.observe(handler: (PipelineEvent) -> Unit) {
     val agentName = this.name
@@ -172,5 +193,19 @@ fun Agent<*, *>.observe(handler: (PipelineEvent) -> Unit) {
     onBudgetThreshold(budgetThreshold) { reason, usedPercent ->
         priorBudget?.invoke(reason, usedPercent)
         handler(PipelineEvent.BudgetThreshold(agentName, Instant.now(), reason, usedPercent))
+    }
+
+    val priorHallucinated = this.toolHallucinatedListener
+    onToolHallucinated { name, args, allowed ->
+        priorHallucinated?.invoke(name, args, allowed)
+        handler(
+            PipelineEvent.ToolHallucinated(
+                agentName = agentName,
+                timestamp = Instant.now(),
+                requestedName = name,
+                arguments = args,
+                allowedTools = allowed,
+            ),
+        )
     }
 }

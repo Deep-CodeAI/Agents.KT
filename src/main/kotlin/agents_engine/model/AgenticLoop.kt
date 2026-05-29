@@ -518,10 +518,19 @@ internal suspend fun <IN> executeAgentic(
                         // unknown call and listing the allowed tools, and let
                         // the loop continue. The model can now self-correct on
                         // the next turn.
+                        val allowedList = allowedToolMap.keys.toList()
                         val unknownToolMessage =
                             "ERROR: Tool '${call.name}' is unknown for skill '${skill.name}'. " +
-                                "Allowed tools: ${allowedToolMap.keys.joinToString(", ")}. " +
+                                "Allowed tools: ${allowedList.joinToString(", ")}. " +
                                 "Pick one of the allowed tools or return a final text answer."
+                        // #2757 — first-class audit signal: hallucinated tool is
+                        // a different event from policy-denied or execution error.
+                        // Fires before the recovery message goes into context, so
+                        // an auditor sees the rejection on the same wall-clock
+                        // ordering as the streaming ToolCallFinished(isError=true).
+                        // Allowed list deliberately bounded by the skill (not the
+                        // wider agent.toolMap) — same boundary as the message.
+                        agent.toolHallucinatedListener?.invoke(call.name, call.arguments, allowedList)
                         if (emitter != null && call.callId != null) {
                             emitter(
                                 agents_engine.runtime.events.AgentEvent.ToolCallFinished(
