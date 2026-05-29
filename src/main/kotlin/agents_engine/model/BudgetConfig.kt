@@ -119,6 +119,12 @@ sealed interface BudgetDecision {
      * when no `onTurnCheckpoint` is registered on the invocation —
      * Checkpoint without a place to land the snapshot is no different from
      * Stop, and silently swallowing the budget breach would be worse.
+     *
+     * #2764 — Checkpoint coverage now matches [Extend]: it fires at every
+     * cumulative-cap throw site (TOOL_CALLS / TURNS / DURATION / TOKENS /
+     * CONSECUTIVE_TOOL). [BudgetReason.PER_TOOL_TIMEOUT] remains
+     * unconditionally throwing (extending a single in-flight tool needs
+     * interrupt semantics — separate ticket).
      */
     object Checkpoint : BudgetDecision
 }
