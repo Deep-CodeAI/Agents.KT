@@ -111,6 +111,16 @@ internal suspend fun <IN> executeAgentic(
      * the next model call) with the current resumable state, for persistence.
      */
     onTurnCheckpoint: ((agents_engine.core.SessionSnapshot) -> Unit)? = null,
+    /**
+     * #2754 — when [resumeFrom] is non-null and carries a `manifestHash` that
+     * differs from the current agent's `manifestHash`, resume fails closed by
+     * throwing [agents_engine.core.SnapshotManifestMismatchException]. Set to
+     * `true` to override (callers take responsibility for any migration
+     * semantics). `null` snapshot.manifestHash is treated as "no manifest at
+     * the time of snapshot" — allowed regardless, for back-compat with pre-
+     * 0.6.4 snapshots.
+     */
+    allowManifestMismatch: Boolean = false,
 ): AgenticResult {
     val config = requireNotNull(agent.modelConfig) {
         "Agent '${agent.name}' has no model configured. Add a model { } block."
@@ -200,6 +210,16 @@ internal suspend fun <IN> executeAgentic(
     // history already contains the system + user messages, so we don't re-add
     // them. A fresh run builds them as usual.
     if (resumeFrom != null) {
+        // #2754 — fail closed on manifestHash mismatch unless the caller
+        // explicitly opts out. Null snapshot.manifestHash means the snapshot
+        // predates the guard (or the originating agent had no manifest); allow.
+        val snapHash = resumeFrom.manifestHash
+        if (!allowManifestMismatch && snapHash != null && snapHash != agent.manifestHash) {
+            throw agents_engine.core.SnapshotManifestMismatchException(
+                expected = snapHash,
+                actual = agent.manifestHash,
+            )
+        }
         messages.addAll(resumeFrom.messages)
         // #2755 — only restore THIS agent's namespaced slot, not the whole bank.
         // The wipe-all `restore(Map)` was destructive in the documented

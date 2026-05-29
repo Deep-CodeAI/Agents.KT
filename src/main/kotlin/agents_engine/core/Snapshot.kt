@@ -32,8 +32,14 @@ interface Snapshotable<S> {
 /**
  * The resumable state of one agent invocation, captured at a turn boundary
  * (after tools complete — never mid-tool). Serialises through plain JSON; no
- * new serializer dependency. `manifestHash` is carried for the Phase-2 restore
- * guard (#2386) — not yet enforced.
+ * new serializer dependency.
+ *
+ * `manifestHash` is enforced by the restore path (#2754 in 0.6.4): when a
+ * non-null snapshot.manifestHash disagrees with the current agent's
+ * manifestHash, resume throws [SnapshotManifestMismatchException] unless the
+ * caller passes `allowManifestMismatch = true`. Null snapshot.manifestHash is
+ * treated as "no manifest at the time of snapshot" (e.g., pre-0.6.4 file) and
+ * is allowed.
  */
 data class SessionSnapshot(
     val messages: List<LlmMessage>,
@@ -45,6 +51,25 @@ data class SessionSnapshot(
     val requestId: String,
     val sessionId: String?,
     val manifestHash: String?,
+)
+
+/**
+ * #2754 — thrown by the resume path when a snapshot's `manifestHash` does not
+ * match the resuming agent's current `manifestHash`. Fail-closed by default;
+ * callers who own the migration story can opt out via the resume seam's
+ * `allowManifestMismatch = true` flag.
+ *
+ * For an audit-first runtime this is the right default: a snapshot taken
+ * under one tool/permission set must not silently replay against an agent
+ * whose manifest has since changed (tools added, policies tightened, secrets
+ * rotated, etc.). Better to refuse than to widen authority by accident.
+ */
+class SnapshotManifestMismatchException(
+    val expected: String?,
+    val actual: String?,
+) : RuntimeException(
+    "Cannot resume: snapshot manifestHash=$expected does not match current agent manifestHash=$actual. " +
+        "If you own the migration semantics, pass allowManifestMismatch = true to the resume seam.",
 )
 
 /** Persistence backend for [SessionSnapshot], keyed by session id. */
