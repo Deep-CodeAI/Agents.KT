@@ -525,6 +525,24 @@ internal fun <T : Any> KClass<T>.constructFromMap(fields: Map<*, Any?>): T? {
 
 @Suppress("UNCHECKED_CAST")
 private fun <T : Any> KClass<T>.constructFromMapReflective(fields: Map<*, Any?>): T? {
+    // #2482a — sealed parent dispatch. When the called class is a sealed
+    // PARENT (not a variant), `primaryConstructor` is null and we'd return
+    // null below — meaning a sealed @Generable input type (e.g. a McpServer
+    // skill IN type) is unusable. Look up the variant by the `type`
+    // discriminator and recurse into it. data-object variants resolve via
+    // `objectInstance` (no constructor to call).
+    if (this.isSealed) {
+        val typeName = fields["type"] as? String ?: return null
+        val variant = sealedSubclasses.firstOrNull { it.simpleName == typeName } ?: return null
+        // data-object variants: no fields, the singleton IS the value.
+        variant.objectInstance?.let {
+            @Suppress("UNCHECKED_CAST")
+            return it as? T
+        }
+        @Suppress("UNCHECKED_CAST")
+        return (variant as KClass<Any>).constructFromMap(fields) as? T
+    }
+
     val ctor = primaryConstructor ?: return null
     // Strict args (#665): refuse extras so additionalProperties:false is enforced
     // at the Kotlin layer regardless of provider behavior. The "type" discriminator
@@ -576,14 +594,27 @@ private fun coerceValue(value: Any?, type: KType): Any? {
         Float::class -> (value as? Number)?.toFloat()
         Boolean::class -> value as? Boolean
         List::class -> {
-            val items = value as? List<*> ?: return null
+            // #2482b — accept a stringified JSON array when the value
+            // arrives as a String (some providers / LLMs send list-typed
+            // args wrapped as JSON text). String FIELDS stay strings
+            // because the `String::class` branch above runs first.
+            val items = (value as? List<*>)
+                ?: (value as? String)?.let { LenientJsonParser.parse(it) as? List<*> }
+                ?: return null
             val elementType = type.arguments.firstOrNull()?.type ?: return items
             items.map { coerceValue(it, elementType) }
         }
         else -> {
             val cls = type.classifier as? KClass<*>
             if (cls != null && cls.hasAnnotation<Generable>()) {
-                (cls as KClass<Any>).constructFromMap(value as? Map<*, *> ?: return null)
+                // #2482b — accept a stringified JSON object when the value
+                // arrives as a String. Same guard as the List branch —
+                // String FIELDS already returned above; only fields typed
+                // `Generable` (object or sealed) reach here.
+                val map: Map<*, *> = (value as? Map<*, *>)
+                    ?: (value as? String)?.let { LenientJsonParser.parse(it) as? Map<*, *> }
+                    ?: return null
+                (cls as KClass<Any>).constructFromMap(map)
             } else {
                 value
             }
