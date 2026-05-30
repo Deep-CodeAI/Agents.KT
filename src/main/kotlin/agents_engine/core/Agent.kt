@@ -191,6 +191,18 @@ class Agent<IN, OUT>(
         private set
     var skillChosenListener: ((name: String) -> Unit)? = null
         private set
+    /**
+     * #2470 slice b — optional [agents_engine.content.BlobStore] for
+     * dereferencing `Content.Image` attachments at the agent invoke
+     * surface. When the caller passes `attachments = listOf(Content.Image(
+     * ref, mime))`, the runtime reads the bytes from this store and builds
+     * the corresponding [agents_engine.model.ImagePart] for the first user
+     * LlmMessage. Null when the agent doesn't accept image attachments —
+     * passing attachments to such an agent errors fast at invoke time
+     * with a clear message.
+     */
+    var blobStore: agents_engine.content.BlobStore? = null
+        private set
     var memoryBank: MemoryBank? = null
         private set
     var routerRationaleListener: ((rationale: String) -> Unit)? = null
@@ -547,6 +559,36 @@ class Agent<IN, OUT>(
         }
     }
 
+    /**
+     * #2470 slice b — inject a [agents_engine.content.BlobStore] so the
+     * agent can dereference `Content.Image` attachments at invoke time.
+     *
+     * ```kotlin
+     * val store = FileBlobStore(Path.of("blobs"))
+     * val agent = agent<String, String>("vision") {
+     *     model { ollama("qwen3-vl:8b") }
+     *     blobStore(store)
+     *     skills { skill<String, String>("describe", "") { tools() } }
+     * }
+     *
+     * val ref = store.put(pngBytes, ImageMime.Png.wireMime)
+     * val out = agent.invokeWithAttachments(
+     *     "What is in this image?",
+     *     attachments = listOf(Content.Image(ref, ImageMime.Png)),
+     * )
+     * ```
+     *
+     * The runtime reads the blob from this store, base64-encodes once,
+     * and attaches it to the first user LlmMessage as
+     * `images: List<ImagePart>`. Per-provider wire translation is the
+     * #2470 slice-a work in `OllamaClient` / `ClaudeClient` /
+     * `OpenAiClient`.
+     */
+    fun blobStore(store: agents_engine.content.BlobStore) {
+        checkNotFrozen()
+        blobStore = store
+    }
+
     fun tools(block: ToolsBuilder.() -> Unit) {
         checkNotFrozen()
         val builder = ToolsBuilder()
@@ -601,6 +643,46 @@ class Agent<IN, OUT>(
         withAgentRuntimeContext(newRuntimeContext()) {
             invokeSuspendForSession(input, emitter = null) { /* no-op */ }
         }
+
+    /**
+     * #2470 slice b — suspending entry point with image attachments. The
+     * caller passes `attachments = listOf(Content.Image(ref, mime), ...)`;
+     * the runtime dereferences each ref against [blobStore], base64-encodes
+     * once, and attaches them to the first user LlmMessage. Per-provider
+     * wire translation is the slice-a work (Ollama / Claude / OpenAI all
+     * already implement the wire format for `LlmMessage.images`).
+     *
+     * Errors fast with a clear message when:
+     * - [blobStore] is null but [attachments] are passed
+     * - A ref's blob is missing from the store (purged / rewired)
+     *
+     * Document / Audio / Video variants in [attachments] are silently
+     * skipped in v1 — they'll be wired through provider doc/audio/video
+     * adapters in later slices of #2470.
+     */
+    suspend fun invokeSuspendWithAttachments(
+        input: IN,
+        attachments: List<agents_engine.content.Content>,
+    ): OUT =
+        withAgentRuntimeContext(newRuntimeContext()) {
+            invokeSuspendForSession(
+                input = input,
+                emitter = null,
+                attachments = attachments,
+            ) { /* no-op */ }
+        }
+
+    /**
+     * #2470 slice b — blocking shim over [invokeSuspendWithAttachments]
+     * for callers outside coroutine scopes. Mirrors the [invoke] /
+     * [invokeSuspend] split.
+     */
+    fun invokeWithAttachments(
+        input: IN,
+        attachments: List<agents_engine.content.Content>,
+    ): OUT = kotlinx.coroutines.runBlocking {
+        invokeSuspendWithAttachments(input, attachments)
+    }
 
     /**
      * #2749 — public snapshot/resume seam.
@@ -716,6 +798,15 @@ class Agent<IN, OUT>(
          * #2754 — opt out of the snapshot manifest-hash restore guard.
          */
         allowManifestMismatch: Boolean = false,
+        /**
+         * #2470 slice b — image attachments to ride on the FIRST user
+         * LlmMessage. Runtime dereferences each `Content.Image` against
+         * [Agent.blobStore] (errors fast when null) and renders into
+         * [agents_engine.model.ImagePart]. Non-image variants in the
+         * list (Document / Audio / Video) are deferred — Stage 2 with
+         * provider adapters. Null = no attachments; wire shape unchanged.
+         */
+        attachments: List<agents_engine.content.Content>? = null,
         onSkillCompleted: (agents_engine.model.TokenUsage?) -> Unit = { /* no-op */ },
         onSkillStarted: (String) -> Unit,
     ): OUT {
@@ -744,6 +835,7 @@ class Agent<IN, OUT>(
                     onTurnCheckpoint = onTurnCheckpoint,
                     resumeWith = resumeWith,
                     allowManifestMismatch = allowManifestMismatch,
+                    attachments = attachments,
                 )
                 // #1740: surface cumulative usage on the way out. Non-agentic
                 // skills don't go through executeAgentic, so onSkillCompleted

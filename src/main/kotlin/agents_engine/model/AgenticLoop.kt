@@ -130,6 +130,17 @@ internal suspend fun <IN> executeAgentic(
      * snapshot; ignored otherwise.
      */
     resumeWith: Any? = null,
+    /**
+     * #2470 slice b — image attachments for the FIRST user LlmMessage.
+     * Each `Content.Image` is dereferenced against [Agent.blobStore]
+     * (errors fast when null), base64-encoded once, and rendered into
+     * an [ImagePart]. Non-image content variants are skipped — Document
+     * / Audio / Video flow through the wire only once #2470 slice c
+     * (provider doc/audio/video adapters) ships. Ignored on resume (the
+     * snapshot's restored conversation already carries the original
+     * attachments on the saved user turn).
+     */
+    attachments: List<agents_engine.content.Content>? = null,
 ): AgenticResult {
     val config = requireNotNull(agent.modelConfig) {
         "Agent '${agent.name}' has no model configured. Add a model { } block."
@@ -318,7 +329,54 @@ internal suspend fun <IN> executeAgentic(
         // User: serialized input. Typed @Generable inputs become JSON; primitives
         // and Strings render literally; non-Generable types fall back to toString.
         // See #937 / GenerableSupport.toLlmInput.
-        messages.add(LlmMessage("user", toLlmInput(input)))
+        //
+        // #2470 slice b — when the caller passes `attachments`, dereference
+        // each `Content.Image` against the agent's BlobStore, base64-encode
+        // once, and ride along on this first user message as `images: List<
+        // ImagePart>`. The slice-a per-provider adapters translate that to
+        // the right wire shape (Ollama `images: [...]`, Claude image blocks,
+        // OpenAI image_url blocks). Non-image content variants (Document /
+        // Audio / Video) skipped — provider doc/audio/video paths land in
+        // later slices. Image-less attachments lists are a fast-path no-op.
+        val attachedImages: List<ImagePart>? = if (attachments.isNullOrEmpty()) {
+            null
+        } else {
+            val store = agent.blobStore
+            require(store != null) {
+                "Agent '${agent.name}' has attachments but no blobStore — call `blobStore(store)` " +
+                    "inside the agent { } block so Content.Image refs can be dereferenced."
+            }
+            attachments.mapNotNull { content ->
+                when (content) {
+                    is agents_engine.content.Content.Image -> {
+                        val bytes = store.get(content.ref)
+                            ?: error(
+                                "BlobStore on agent '${agent.name}' has no entry for ContentRef(" +
+                                    "hash=${content.ref.hash.take(12)}…, size=${content.ref.sizeBytes}); " +
+                                    "did the store get rewired or the blob purged?",
+                            )
+                        ImagePart(
+                            base64 = java.util.Base64.getEncoder().encodeToString(bytes),
+                            wireMime = when (content.mime) {
+                                agents_engine.content.ImageMime.Png -> ImagePart.WireMime.Png
+                                agents_engine.content.ImageMime.Jpeg -> ImagePart.WireMime.Jpeg
+                                agents_engine.content.ImageMime.Gif -> ImagePart.WireMime.Gif
+                                agents_engine.content.ImageMime.Webp -> ImagePart.WireMime.Webp
+                            },
+                        )
+                    }
+                    is agents_engine.content.Content.Text,
+                    is agents_engine.content.Content.Audio,
+                    is agents_engine.content.Content.Video,
+                    is agents_engine.content.Content.Document -> {
+                        // Not an image — skip in v1. Slice c (provider doc/
+                        // audio/video paths) covers the rest.
+                        null
+                    }
+                }
+            }.takeIf { it.isNotEmpty() }
+        }
+        messages.add(LlmMessage("user", toLlmInput(input), images = attachedImages))
     }
 
     var turns = resumeFrom?.turns ?: 0
