@@ -54,7 +54,11 @@ class McpServerInfoSnapshotTest {
 
         // ── Identity ───────────────────────────────────────────────
         assertEquals("agents-kt-mcp-server", info.name)
-        assertEquals("0.1.3", info.version)
+        // #2806 — was pinned to a hardcoded "0.1.3" SERVER_VERSION constant
+        // that drifted from the project version. Now flows through
+        // BuildInfo.version, which reads Implementation-Version from the
+        // JAR manifest (production) or "dev" (tests running off build/classes).
+        assertEquals(agents_engine.internal.BuildInfo.version, info.version)
         assertEquals(MCP_PROTOCOL_VERSION, info.protocolVersion)
         // McpServer doesn't emit title or instructions today; assert their absence
         // so a future change that DOES emit them updates this test.

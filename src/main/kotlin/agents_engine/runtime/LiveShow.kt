@@ -30,30 +30,26 @@ import kotlinx.coroutines.runBlocking
 /** ANSI escape codes for terminal coloring. [NONE] is a no-op pass-through. */
 enum class AnsiColor(val code: String) {
     NONE(""),
-    BLACK("[30m"),
-    RED("[31m"),
-    GREEN("[32m"),
-    YELLOW("[33m"),
-    BLUE("[34m"),
-    MAGENTA("[35m"),
-    CYAN("[36m"),
-    WHITE("[37m"),
-    BRIGHT_BLACK("[90m"),
-    BRIGHT_RED("[91m"),
-    BRIGHT_GREEN("[92m"),
-    BRIGHT_YELLOW("[93m"),
-    BRIGHT_BLUE("[94m"),
-    BRIGHT_MAGENTA("[95m"),
-    BRIGHT_CYAN("[96m"),
-    BRIGHT_WHITE("[97m"),
+    BLACK("${Ansi.ESC}[30m"),
+    RED("${Ansi.ESC}[31m"),
+    GREEN("${Ansi.ESC}[32m"),
+    YELLOW("${Ansi.ESC}[33m"),
+    BLUE("${Ansi.ESC}[34m"),
+    MAGENTA("${Ansi.ESC}[35m"),
+    CYAN("${Ansi.ESC}[36m"),
+    WHITE("${Ansi.ESC}[37m"),
+    BRIGHT_BLACK("${Ansi.ESC}[90m"),
+    BRIGHT_RED("${Ansi.ESC}[91m"),
+    BRIGHT_GREEN("${Ansi.ESC}[92m"),
+    BRIGHT_YELLOW("${Ansi.ESC}[93m"),
+    BRIGHT_BLUE("${Ansi.ESC}[94m"),
+    BRIGHT_MAGENTA("${Ansi.ESC}[95m"),
+    BRIGHT_CYAN("${Ansi.ESC}[96m"),
+    BRIGHT_WHITE("${Ansi.ESC}[97m"),
     ;
 
     /** Wrap [s] in this color, resetting after. Returns [s] unchanged when [code] is empty. */
-    fun wrap(s: String): String = if (code.isEmpty()) s else "$code$s[0m"
-
-    companion object {
-        private const val RESET = "[0m"
-    }
+    fun wrap(s: String): String = if (code.isEmpty()) s else "$code$s${Ansi.RESET}"
 }
 
 /** Color theme for the LiveShow REPL. Roles map to ANSI colors; [NONE] disables all. */
@@ -322,7 +318,7 @@ class LiveShow internal constructor(
             running.set(false)
             thread.interrupt()
             // Carriage return + ANSI erase-to-end-of-line clears the spinner.
-            writer.print("\r[2K")
+            writer.print("\r${Ansi.ERASE_LINE}")
             writer.flush()
         }
     }

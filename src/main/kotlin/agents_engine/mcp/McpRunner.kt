@@ -35,7 +35,9 @@ import java.util.concurrent.CountDownLatch
  */
 object McpRunner {
 
-    private const val VERSION = "0.3.0"
+    // #2806 — was a hardcoded "0.3.0"; now sourced from BuildInfo so
+    // `--version` prints what's actually built.
+    private val VERSION: String = agents_engine.internal.BuildInfo.version
 
     fun serve(
         agent: Agent<*, *>,
