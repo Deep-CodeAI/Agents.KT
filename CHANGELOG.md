@@ -4,6 +4,19 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — Vision input across all providers (#2470 slice a)
+
+- **`LlmMessage.images: List<ImagePart>? = null`** — new optional field; back-compat default leaves the wire shape byte-identical to pre-#2470 for callers that don't pass images. Closed `ImagePart(base64, wireMime)` with `WireMime` sealed type (`Png`, `Jpeg`, `Gif`, `Webp`) — `String` mime is intentionally not accepted in the public ctor.
+- **Per-provider adapters** translate vision on `role = "user"` messages:
+  - Ollama: `{role:"user", content:"text", images:["<b64>", ...]}` — works with `qwen3-vl:8b`, `llava`, `llama3.2-vision`, etc. Non-vision models silently ignore the field.
+  - Claude: typed content array — `[{type:"text"}, {type:"image", source:{type:"base64", media_type:"image/png", data:"<b64>"}}, ...]`. Works with all Claude vision-capable models (Haiku 4.5, Sonnet 4.6, Opus 4.7).
+  - OpenAI: typed content array — `[{type:"text"}, {type:"image_url", image_url:{url:"data:image/png;base64,<b64>"}}, ...]`. Works with gpt-4o, gpt-4o-mini, gpt-4-turbo, the o* reasoning models.
+  - DeepSeek: inherits the OpenAI adapter shape; current DeepSeek models lack vision and silently ignore the field. Shape-tested; no live call to avoid spending on a no-op.
+- **Role-gated:** non-user messages (system/assistant/tool) with non-null `images` ignore the field on the wire — no provider's API accepts images on those roles. Pinned by tests.
+- **Programmatic fixtures** in `src/test`: `VisionFixtures.threeSquaresPng()` (256×256 red/blue/green squares for "count the squares" eval) and `VisionFixtures.housePng()` (256×256 cartoon house for "what is this?" eval). Rendered via `BufferedImage` + `ImageIO` — reproducible byte-for-byte across machines and CI, no external assets in the repo.
+- **Live integration tests** (`VisionLiveTest`) cover all three vision-capable providers with cost discipline (`temperature = 0`, `maxTokens = 80`, single-turn, ~5KB base64 payloads): Ollama `qwen3-vl:8b` (tagged `live-llm`, runs via `:integrationTest`), Claude `claude-haiku-4-5` and OpenAI `gpt-4o-mini` (tagged `live-cloud-api`, runs in default `:test` with `assumeTrue` skipping when no key). Model names overridable via env. Assertion shape is loose keyword-match — robust against per-model phrasing variance.
+- 8 wire-format unit tests pin per-provider JSON shape + the no-images back-compat path. See [docs/multimodal.md](docs/multimodal.md#vision-input--talking-to-the-model-2470-slice-a).
+
 ### Added — Multimodal foundation (#2465 epic, Stage 1)
 
 - **Typed `Content` hierarchy (#2466)** — `sealed interface Content` with variants `Text`, `Image`, `Audio`, `Video`, `Document` in package `agents_engine.content`. Each non-text variant carries a `ContentRef` plus a typed mime (`ImageMime`, `AudioMime`, `VideoMime`, `DocMime`). Mime types are closed sealed interfaces with `wireMime: String` accessors — no `String` mime in any public API. Extension property `Content.modality: String` is the audit-stable per-variant name. Stage 1 wires Image + Document end-to-end (the modalities the 0.8 spec → product loop consumes); Audio + Video are modelled now and exercised through provider adapters in Stage 2 (#2470, deferred).
