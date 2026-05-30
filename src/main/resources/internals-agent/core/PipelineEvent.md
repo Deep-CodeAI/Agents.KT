@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/core/PipelineEvent.kt — the sealed PipelineEvent (SkillChosen, ToolCalled, ToolDenied, KnowledgeLoaded, ErrorOccurred, BudgetThreshold) and the Agent.observe { } extension that chains it over the per-event listeners additively (#965, #2395). Every event carries AgentRuntimeContext fields requestId, sessionId, manifestHash (#1913). Call when the IDE LLM needs to reason about post-hoc observability vs the in-loop AgentEvent stream.
+description: Source-file knowledge for agents_engine/core/PipelineEvent.kt — the sealed PipelineEvent (SkillChosen, ToolCalled, ToolDenied, KnowledgeLoaded, ErrorOccurred, BudgetThreshold, ToolHallucinated, ApprovalRequested, ApprovalDecided) and the Agent.observe { } extension that chains it over the per-event listeners additively (#965, #2395, #2757, #2489). Every event carries AgentRuntimeContext fields requestId, sessionId, manifestHash (#1913). Call when the IDE LLM needs to reason about post-hoc observability vs the in-loop AgentEvent stream.
 ---
 
 # `agents_engine/core/PipelineEvent.kt` — unified observability event
@@ -16,11 +16,15 @@ sealed interface PipelineEvent {
     val sessionId: String?
     val manifestHash: String?
 
-    data class SkillChosen(...,    skillName: String)
-    data class ToolCalled(...,     toolName: String, arguments: Map<String, Any?>, result: Any?, toolPolicyRisk, usedDeclaredCapability)
-    data class ToolDenied(...,     toolName: String, arguments: Map<String, Any?>, reason: String, toolPolicyRisk, usedDeclaredCapability)
-    data class KnowledgeLoaded(..., entryName: String, contentLength: Int)
-    data class ErrorOccurred(...,  error: Throwable)
+    data class SkillChosen(...,        skillName: String)
+    data class ToolCalled(...,         toolName: String, arguments: Map<String, Any?>, result: Any?, toolPolicyRisk, usedDeclaredCapability)
+    data class ToolDenied(...,         toolName: String, arguments: Map<String, Any?>, reason: String, toolPolicyRisk, usedDeclaredCapability)
+    data class KnowledgeLoaded(...,    entryName: String, contentLength: Int)
+    data class ErrorOccurred(...,      error: Throwable)
+    data class BudgetThreshold(...,    reason: BudgetReason, usedPercent: Double)
+    data class ToolHallucinated(...,   requestedName: String, arguments: Map<String, Any?>, allowedTools: List<String>)
+    data class ApprovalRequested(...,  title: String, hasBody: Boolean, timeoutMs: Long?)
+    data class ApprovalDecided(...,    decision: String, hasPayload: Boolean)
 }
 ```
 
@@ -30,6 +34,12 @@ sealed interface PipelineEvent {
 
 `ToolDenied` (#2395) is emitted when an `onBeforeToolCall` `Decision.Deny` blocks a call — the executor never runs, so it rides `onToolDenied` (not `onToolUse`/`ToolCalled`). It carries the denial `reason` plus the same `toolPolicyRisk`/`usedDeclaredCapability` audit fields, so a security log built on `observe { }` captures blocked attempts that would otherwise be invisible.
 
+`ToolHallucinated` (#2757) fires when the model emits a tool name that is NOT in the active skill's allowlist (per #2476 the runtime recovers; this is the audit evidence). `allowedTools` is skill-scoped — no leak of the wider `agent.toolMap`. Distinct from `ToolDenied`: policy denial vs unknown name.
+
+`ApprovalRequested` (#2489) fires before `AgentInterruptException` is thrown when a tool calls `humanApproval { }`. Field-only — `title` + `hasBody` + `timeoutMs`; the body itself stays off the audit row (PII discipline).
+
+`ApprovalDecided` (#2489) fires on resume when `resumeWith` is a `HumanDecision`. `decision` is the variant name (`Approved` / `Rejected` / `Edited` / `Responded`); `hasPayload` flags whether the variant carried a payload.
+
 ## Wiring
 
 ```kotlin
@@ -37,11 +47,15 @@ val tracer = agent<String, String>("tracer") { /* ... */ }
 
 tracer.observe { event ->
     when (event) {
-        is PipelineEvent.SkillChosen     -> emit("skill", event.skillName)
-        is PipelineEvent.ToolCalled      -> emit("tool",  "${event.toolName}:${event.toolPolicyRisk}")
-        is PipelineEvent.ToolDenied      -> emit("deny",  "${event.toolName}: ${event.reason}")
-        is PipelineEvent.KnowledgeLoaded -> emit("know",  event.entryName)
-        is PipelineEvent.ErrorOccurred   -> emit("error", event.error.message ?: "<no msg>")
+        is PipelineEvent.SkillChosen       -> emit("skill",   event.skillName)
+        is PipelineEvent.ToolCalled        -> emit("tool",    "${event.toolName}:${event.toolPolicyRisk}")
+        is PipelineEvent.ToolDenied        -> emit("deny",    "${event.toolName}: ${event.reason}")
+        is PipelineEvent.KnowledgeLoaded   -> emit("know",    event.entryName)
+        is PipelineEvent.ErrorOccurred     -> emit("error",   event.error.message ?: "<no msg>")
+        is PipelineEvent.BudgetThreshold   -> emit("budget",  "${event.reason}@${event.usedPercent}")
+        is PipelineEvent.ToolHallucinated  -> emit("halluc",  "${event.requestedName} not in ${event.allowedTools}")
+        is PipelineEvent.ApprovalRequested -> emit("approve", "request: ${event.title}")
+        is PipelineEvent.ApprovalDecided   -> emit("approve", "decided: ${event.decision}")
     }
 }
 ```
