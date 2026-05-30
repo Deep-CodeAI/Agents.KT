@@ -143,10 +143,71 @@ The same discipline applies (when wired) to the OTel / LangSmith / Langfuse brid
 
 Pairs with the #2754 manifest-hash restore guard: resume across an agent rebuild that changed tools (including the `BlobStore` wiring) fails closed unless the caller opts in.
 
-## What's coming (the rest of #2465)
+## Vision input — talking to the model (#2470 slice a)
+
+The foundation above answers "how do tools return mixed content?" The follow-on slice answers "how does the agent send an image to a vision-capable model?"
+
+`LlmMessage` gains an optional `images: List<ImagePart>` field. Adapters translate it per provider:
+
+```kotlin
+import agents_engine.model.LlmMessage
+import agents_engine.model.ImagePart
+
+val png: ByteArray = Files.readAllBytes(Path.of("screenshot.png"))
+val client = OllamaClient(model = "qwen3-vl:8b", temperature = 0.0)
+
+client.chat(listOf(
+    LlmMessage(
+        role = "user",
+        content = "How many windows in this picture?",
+        images = listOf(ImagePart(
+            base64 = Base64.getEncoder().encodeToString(png),
+            wireMime = ImagePart.WireMime.Png,
+        )),
+    ),
+))
+```
+
+`ImagePart` carries the base64 payload + a closed `WireMime` sealed type (`Png`, `Jpeg`, `Gif`, `Webp`). `String` mime is not accepted in the public ctor — same closed-mime discipline as `Content.Image`. Caller base64-encodes upfront so the adapter can splat the payload straight onto the wire without re-encoding per provider.
+
+| Provider | User-message shape |
+|---|---|
+| Ollama | `{role:"user", content:"text", images:["<b64>", ...]}` |
+| Claude | `{role:"user", content:[{type:"text"}, {type:"image", source:{type:"base64", media_type:"image/png", data:"<b64>"}}, ...]}` |
+| OpenAI | `{role:"user", content:[{type:"text"}, {type:"image_url", image_url:{url:"data:image/png;base64,<b64>"}}, ...]}` |
+| DeepSeek | inherits OpenAI; current DeepSeek models lack vision and silently ignore the field |
+
+**Back-compat:** `images = null` (or empty) produces byte-identical wire shape to pre-#2470. Pinned by dedicated tests.
+
+**Role-gating:** images are emitted only on `role = "user"` messages. System / assistant / tool messages with non-null `images` ignore the field on the wire — no provider's API carries images on those roles.
+
+### Programmatic image fixtures
+
+`VisionFixtures` (in `src/test`) ships two reproducible PNGs rendered via `BufferedImage`:
+
+- `threeSquaresPng()` — 256×256, three colored squares (red/blue/green) on white with thick black outlines. Used for "count the squares" eval against cheap vision models.
+- `housePng()` — 256×256 cartoon house: triangle roof + body + door + two windows. Used for "what is this?" eval.
+
+No external assets, no binary blobs in the repo — every byte is reproducible across machines and CI runs.
+
+### Live tests
+
+`VisionLiveTest.kt` runs the two fixtures against all three vision-capable providers, with cost discipline (256×256 PNG ~5KB, `temperature = 0`, `maxTokens = 80`, single-turn):
+
+| Provider | Default model | How to run |
+|---|---|---|
+| Ollama | `qwen3-vl:8b` | `./gradlew integrationTest --tests "*VisionLiveTest*"` (tagged `live-llm`) |
+| Claude | `claude-haiku-4-5` | `./gradlew test --tests "*VisionLiveTest*"` (tagged `live-cloud-api`; `assumeTrue` skips when no key) |
+| OpenAI | `gpt-4o-mini` | same |
+
+Models overridable via env (`AGENTSKT_TEST_OLLAMA_VISION_MODEL`, `AGENTSKT_TEST_CLAUDE_VISION_MODEL`, `AGENTSKT_TEST_OPENAI_VISION_MODEL`).
+
+Assertion shape is loose: the test passes if the model's text response mentions one of a small acceptable keyword set (`3` / `three` for counting; `house` / `home` / `cottage` / `building` / `cabin` / `barn` for the house). Goal is "did the image reach the model and elicit a sensible reply" — not exact phrasing.
+
+## What's still coming (rest of #2465)
 
 - **#2468** Compile-time modality routing — `Agent<Image, X>` becomes a real type; cross-modality miswiring is a compile error. Multi-part `@Generable` inputs via KSP.
-- **#2470** Provider adapters — Claude vision, OpenAI vision, Gemini, Ollama multimodal. Translates `Content → provider-specific payload` at the wire.
+- **#2470 (slice b)** `Content` → `LlmMessage.images` translation at the agentic loop — currently the caller dereferences `ContentRef` → bytes → `ImagePart` manually. Sliced this way to land the wire format first; the loop hook is a small follow-up.
 - **#2471** Manifest-anchored modality capability — declared per-agent modalities recorded in the permission manifest, validated against provider capabilities at build time.
 - **#2472** Multimodal memory — `MemoryBank` entries carry `ContentRef` for image/audio/video state.
 - **#2473** Testing fixtures + snapshot + mutation coverage.

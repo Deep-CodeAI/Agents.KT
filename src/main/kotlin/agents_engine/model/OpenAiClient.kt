@@ -269,8 +269,29 @@ open class OpenAiClient(
 
         val messageObjects = messages.map { msg ->
             when (msg.role) {
-                "system", "user" ->
-                    """{"role":${msg.role.toJsonString()},"content":${msg.content.toJsonString()}}"""
+                "system" ->
+                    """{"role":"system","content":${msg.content.toJsonString()}}"""
+                "user" -> {
+                    val images = msg.images
+                    if (!images.isNullOrEmpty()) {
+                        // #2470 — vision input. OpenAI Chat Completions
+                        // accepts a content array of typed blocks; one text
+                        // block + N image_url blocks. Images ride as data:
+                        // URLs (data:<wireMime>;base64,<payload>). Works on
+                        // gpt-4o, gpt-4o-mini, gpt-4-turbo, and the o*
+                        // reasoning models. DeepSeek inherits this adapter;
+                        // vision is silently ignored by non-vision DeepSeek
+                        // models.
+                        val textBlock = """{"type":"text","text":${msg.content.toJsonString()}}"""
+                        val imageBlocks = images.joinToString(",") { part ->
+                            val dataUrl = "data:${part.wireMime.value};base64,${part.base64}"
+                            """{"type":"image_url","image_url":{"url":${dataUrl.toJsonString()}}}"""
+                        }
+                        """{"role":"user","content":[$textBlock,$imageBlocks]}"""
+                    } else {
+                        """{"role":"user","content":${msg.content.toJsonString()}}"""
+                    }
+                }
 
                 "assistant" -> {
                     val toolCallsJson = msg.toolCalls?.joinToString(",") { call ->
