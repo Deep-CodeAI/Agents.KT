@@ -204,10 +204,58 @@ Models overridable via env (`AGENTSKT_TEST_OLLAMA_VISION_MODEL`, `AGENTSKT_TEST_
 
 Assertion shape is loose: the test passes if the model's text response mentions one of a small acceptable keyword set (`3` / `three` for counting; `house` / `home` / `cottage` / `building` / `cabin` / `barn` for the house). Goal is "did the image reach the model and elicit a sensible reply" — not exact phrasing.
 
+## Agent attachments — typed `Content.Image` at the invoke surface (#2470 slice b)
+
+Slice a wires the per-provider wire format on `LlmMessage.images`. Slice b puts a clean user-facing API on top: the caller passes typed `Content.Image` (carrying a `ContentRef`) at the agent's invoke surface; the runtime dereferences against an injected `BlobStore`, base64-encodes once, and attaches `ImagePart` to the first user message.
+
+```kotlin
+import agents_engine.content.Content
+import agents_engine.content.ImageMime
+import agents_engine.content.FileBlobStore
+
+val store = FileBlobStore(Path.of("snapshots/blobs"))
+
+val agent = agent<String, String>("vision") {
+    model { ollama("qwen3-vl:8b") }
+    blobStore(store)
+    skills { skill<String, String>("describe", "") { tools() } }
+}
+
+val ref = store.put(pngBytes, ImageMime.Png.wireMime)
+val reply = agent.invokeWithAttachments(
+    "What is in this image?",
+    attachments = listOf(Content.Image(ref, ImageMime.Png)),
+)
+```
+
+### What the runtime guarantees
+
+- **First user message only.** Attachments ride on the initial user turn. Multi-turn vision is composable but each invocation owns its own first-turn attachments.
+- **Closed-mime mapping.** `ImageMime → ImagePart.WireMime` for all four variants — `Png`, `Jpeg`, `Gif`, `Webp`. No String conversions anywhere.
+- **Fail-fast on misconfiguration.** Passing attachments to an agent with no `blobStore` configured errors fast at invoke time with `Agent '<name>' has attachments but no blobStore`. A ref pointing at a missing blob errors fast with the ref's hash prefix in the message for forensics.
+- **Skip non-image variants.** `Content.Text` / `Content.Document` / `Content.Audio` / `Content.Video` are silently skipped in v1 — slice c will wire Document via provider doc-input adapters, audio/video as part of Stage 2.
+- **Back-compat.** `agent.invokeSuspend(input)` (without attachments) stays byte-identical on the wire. The attachments path is purely additive — opt in via the new `invokeWithAttachments` / `invokeSuspendWithAttachments` entry points.
+- **Snapshot/resume composition.** On resume the saved user turn already carries the original `LlmMessage.images`; the runtime ignores the `attachments` argument because the conversation was restored intact.
+
+### Suspending vs blocking
+
+| Entry point | Use when |
+|---|---|
+| `agent.invokeSuspendWithAttachments(input, attachments)` | Inside coroutine scopes — composition operators, structured concurrency. |
+| `agent.invokeWithAttachments(input, attachments)` | Outside coroutine scopes — quick scripts, REPL, blocking glue. Thin `runBlocking` shim. |
+
+Mirrors the existing `invokeSuspend` / `invoke` split.
+
+### Live tests
+
+`AgentVisionLiveTest.kt` runs the two `VisionFixtures` (`threeSquaresPng()` + `housePng()`) through the agent surface on all three vision-capable providers. Same cost discipline as slice a — 256×256 PNG, `temperature = 0`, `maxTokens = 80`, single-turn. Tagged `live-llm` (Ollama) / `live-cloud-api` (Claude + OpenAI); `assumeTrue` skips per-provider when no key.
+
+The slice-b live tests complement the slice-a tests: the slice-a `VisionLiveTest` exercises the raw `ModelClient`; slice-b's `AgentVisionLiveTest` exercises the full agent loop including BlobStore deref.
+
 ## What's still coming (rest of #2465)
 
 - **#2468** Compile-time modality routing — `Agent<Image, X>` becomes a real type; cross-modality miswiring is a compile error. Multi-part `@Generable` inputs via KSP.
-- **#2470 (slice b)** `Content` → `LlmMessage.images` translation at the agentic loop — currently the caller dereferences `ContentRef` → bytes → `ImagePart` manually. Sliced this way to land the wire format first; the loop hook is a small follow-up.
+- **#2470 slice c** Document/Audio/Video provider-input adapters — currently only images flow through the wire; Document/Audio/Video Content variants are skipped on the attachment path.
 - **#2471** Manifest-anchored modality capability — declared per-agent modalities recorded in the permission manifest, validated against provider capabilities at build time.
 - **#2472** Multimodal memory — `MemoryBank` entries carry `ContentRef` for image/audio/video state.
 - **#2473** Testing fixtures + snapshot + mutation coverage.

@@ -4,6 +4,17 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — Typed agent attachments (#2470 slice b)
+
+- **`agent.invokeWithAttachments(input, attachments)`** + suspending sibling `invokeSuspendWithAttachments` — user-facing API for vision input via typed `Content.Image`. The runtime dereferences each ref against the agent's injected `BlobStore`, base64-encodes once, and attaches `ImagePart` to the first user `LlmMessage`. Per-provider wire translation is the slice-a work — this commit routes the typed surface into it.
+- **`Agent.blobStore: BlobStore?` + `blobStore(store)` DSL** — optional injection; null when the agent doesn't take attachments. Passing attachments to an agent with no `blobStore` errors fast at invoke time with a clear message — caller misconfiguration surfaces before any provider HTTP.
+- **Closed mime mapping** — `ImageMime → ImagePart.WireMime` for all four variants (`Png`, `Jpeg`, `Gif`, `Webp`). No `String` conversion at any boundary.
+- **Forensic-friendly errors** — when a ref's blob is missing from the store, the error names the ref's hash prefix. Helps debug snapshot resumes against partially-purged stores.
+- **Non-image variants skipped in v1** — `Content.Text` / `Document` / `Audio` / `Video` flow through the attachment path as no-ops. Slice c will wire Document via provider doc-input adapters; Audio/Video land in Stage 2.
+- **Empty / all-skipped attachments → null images** — no provider sees an empty array; legacy wire shape preserved.
+- **Resume composition** — `attachments` argument is ignored on resume because the restored conversation already carries the original `LlmMessage.images` on the saved user turn.
+- **Tests:** 8 unit cases (`AgentAttachmentsTest`) + 6 live cases (`AgentVisionLiveTest`) running the same `VisionFixtures` from slice a through the agent surface on Ollama qwen3-vl:8b, Claude Haiku 4.5, OpenAI gpt-4o-mini. See [docs/multimodal.md](docs/multimodal.md#agent-attachments--typed-contentimage-at-the-invoke-surface-2470-slice-b).
+
 ### Added — Vision input across all providers (#2470 slice a)
 
 - **`LlmMessage.images: List<ImagePart>? = null`** — new optional field; back-compat default leaves the wire shape byte-identical to pre-#2470 for callers that don't pass images. Closed `ImagePart(base64, wireMime)` with `WireMime` sealed type (`Png`, `Jpeg`, `Gif`, `Webp`) — `String` mime is intentionally not accepted in the public ctor.
