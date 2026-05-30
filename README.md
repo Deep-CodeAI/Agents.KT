@@ -41,6 +41,9 @@ Or clone and build from source:
 git clone https://github.com/Deep-CodeAI/Agents.KT.git
 cd Agents.KT
 ./gradlew test
+# #2807 — static analysis. Baseline freezes existing violations;
+# new code is held to the rules in `detekt.yml`.
+./gradlew detekt
 ```
 
 Then build one typed pipeline:

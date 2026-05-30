@@ -1,0 +1,788 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues></ManuallySuppressedIssues>
+  <CurrentIssues>
+    <ID>ClassNaming:GeneratedMetaCacheTest.kt$MetaCacheBadTypeBaz__GeneratedSchema</ID>
+    <ID>ClassNaming:GeneratedMetaCacheTest.kt$MetaCacheCleanFoo__GeneratedSchema</ID>
+    <ID>ClassNaming:GeneratedMetaCacheTest.kt$MetaCacheCtorOnly__GeneratedSchema</ID>
+    <ID>ClassNaming:GeneratedMetaCacheTest.kt$MetaCacheEmptyBar__GeneratedSchema</ID>
+    <ID>ClassNaming:GeneratedMetaCacheTest.kt$MetaCacheInstanceFields__GeneratedSchema</ID>
+    <ID>ClassNaming:GeneratedMetaCacheTest.kt$MetaCacheMutableQux__GeneratedSchema</ID>
+    <ID>ClassNaming:GeneratedMetaCacheTest.kt$MetaCacheNullValueQuux__GeneratedSchema</ID>
+    <ID>ClassNaming:GeneratedSchemaLookupTest.kt$HandGeneratedDecision__GeneratedSchema</ID>
+    <ID>ClassNaming:GeneratedSchemaLookupTest.kt$HandGeneratedUser__GeneratedSchema</ID>
+    <ID>ComplexCondition:ClaudeClient.kt$ClaudeClient$toolDefs.isNotEmpty() &amp;&amp; mainSystemHint != null &amp;&amp; mainSystemHint.segment == CacheSegment.SystemPrompt &amp;&amp; consumeBreakpoint()</ID>
+    <ID>CyclomaticComplexMethod:AgenticLoop.kt$internal suspend fun &lt;IN&gt; executeAgentic( agent: Agent&lt;IN, *&gt;, skill: Skill&lt;*, *&gt;, input: IN, /** * #1707/#3: the effective system prompt for this invocation. Defaults * to the agent's baked-in `prompt`. The `wrap` operator passes the * teacher's output here instead of mutating `agent.prompt` (which * races on concurrent invocation of the same pipeline). */ effectivePrompt: String = agent.prompt, /** * #1739: optional AgentEvent emitter. When non-null, the loop streams * via `client.chatStream(...)`, surfaces `Token` / `ToolCallStarted` / * `ToolCallArgumentsDelta` events from chunks, and emits * `ToolCallFinished` after each tool executor runs. When null, the * loop uses `client.chat(...)` byte-for-byte as before — non-streaming * callers (`Agent.invoke`, `Agent.invokeSuspend`) pay no overhead. */ emitter: AgentEventEmitter? = null, runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(), /** * #2416 — resume seed. When non-null, the loop starts from this snapshot's * messages + counters (and restores memory) instead of a fresh conversation. */ resumeFrom: agents_engine.core.SessionSnapshot? = null, /** * #2416 — fired at each turn boundary (after a tool round completes, before * the next model call) with the current resumable state, for persistence. */ onTurnCheckpoint: ((agents_engine.core.SessionSnapshot) -&gt; Unit)? = null, /** * #2754 — when [resumeFrom] is non-null and carries a `manifestHash` that * differs from the current agent's `manifestHash`, resume fails closed by * throwing [agents_engine.core.SnapshotManifestMismatchException]. Set to * `true` to override (callers take responsibility for any migration * semantics). `null` snapshot.manifestHash is treated as "no manifest at * the time of snapshot" — allowed regardless, for back-compat with pre- * 0.6.4 snapshots. */ allowManifestMismatch: Boolean = false, /** * #2488 — typed resume input for the HITL interrupt primitive. When * [resumeFrom] is non-null and carries `pendingInterruptCallId`, this * value is rendered via [toLlmInput] (so typed `@Generable` replies * become JSON) and synthesised as the interrupted tool's result message * before the loop resumes. Required when resuming an interrupted * snapshot; ignored otherwise. */ resumeWith: Any? = null, /** * #2470 slice b — image attachments for the FIRST user LlmMessage. * Each `Content.Image` is dereferenced against [Agent.blobStore] * (errors fast when null), base64-encoded once, and rendered into * an [ImagePart]. Non-image content variants are skipped — Document * / Audio / Video flow through the wire only once #2470 slice c * (provider doc/audio/video adapters) ships. Ignored on resume (the * snapshot's restored conversation already carries the original * attachments on the saved user turn). */ attachments: List&lt;agents_engine.content.Content&gt;? = null, ): AgenticResult</ID>
+    <ID>CyclomaticComplexMethod:ClaudeClient.kt$ClaudeClient$@Suppress("UNCHECKED_CAST") private suspend fun dispatchSseEvent( event: String, dataJson: String, blocks: MutableMap&lt;Int, BlockState&gt;, collector: kotlinx.coroutines.flow.FlowCollector&lt;LlmChunk&gt;, onInputTokens: (Int) -&gt; Unit, onCachedInputTokens: (Int) -&gt; Unit, onOutputTokens: (Int) -&gt; Unit, onMessageStop: suspend () -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:ClaudeClient.kt$ClaudeClient$internal fun buildRequestJson( messages: List&lt;LlmMessage&gt;, stream: Boolean = false, jsonSchema: JsonSchema? = null, ): String</ID>
+    <ID>CyclomaticComplexMethod:LenientJsonParser.kt$LenientJsonParser.Parser$private fun parseNumber(): Number</ID>
+    <ID>CyclomaticComplexMethod:OllamaClient.kt$OllamaClient$override suspend fun chatStream(messages: List&lt;LlmMessage&gt;, jsonSchema: JsonSchema?): Flow&lt;LlmChunk&gt;</ID>
+    <ID>CyclomaticComplexMethod:OpenAiClient.kt$OpenAiClient$private suspend fun parseSseStream(stream: InputStream, collector: kotlinx.coroutines.flow.FlowCollector&lt;LlmChunk&gt;)</ID>
+    <ID>DestructuringDeclarationWithTooManyEntries:AgentSessionIntegrationTest.kt$AgentSessionIntegrationTest$val (eventsA, outputA, eventsB, outputB) = coroutineScope { val sessionA = echoAgent.session("alpha") val sessionB = echoAgent.session("bravo") val a = async { sessionA.events.toList() } val b = async { sessionB.events.toList() } val outA = sessionA.await() val outB = sessionB.await() Quad(a.await(), outA, b.await(), outB) }</ID>
+    <ID>EmptyDefaultConstructor:AllSpecsDeepIntegrationTest.kt$AllSpecsDeepIntegrationTest.Spec$()</ID>
+    <ID>EmptyElseBlock:SnapshotResumeTest.kt$SnapshotResumeTest$if (firstSeenMessages == null) firstSeenMessages = msgs.toList()</ID>
+    <ID>LongMethod:AgenticLoop.kt$internal suspend fun &lt;IN&gt; executeAgentic( agent: Agent&lt;IN, *&gt;, skill: Skill&lt;*, *&gt;, input: IN, /** * #1707/#3: the effective system prompt for this invocation. Defaults * to the agent's baked-in `prompt`. The `wrap` operator passes the * teacher's output here instead of mutating `agent.prompt` (which * races on concurrent invocation of the same pipeline). */ effectivePrompt: String = agent.prompt, /** * #1739: optional AgentEvent emitter. When non-null, the loop streams * via `client.chatStream(...)`, surfaces `Token` / `ToolCallStarted` / * `ToolCallArgumentsDelta` events from chunks, and emits * `ToolCallFinished` after each tool executor runs. When null, the * loop uses `client.chat(...)` byte-for-byte as before — non-streaming * callers (`Agent.invoke`, `Agent.invokeSuspend`) pay no overhead. */ emitter: AgentEventEmitter? = null, runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(), /** * #2416 — resume seed. When non-null, the loop starts from this snapshot's * messages + counters (and restores memory) instead of a fresh conversation. */ resumeFrom: agents_engine.core.SessionSnapshot? = null, /** * #2416 — fired at each turn boundary (after a tool round completes, before * the next model call) with the current resumable state, for persistence. */ onTurnCheckpoint: ((agents_engine.core.SessionSnapshot) -&gt; Unit)? = null, /** * #2754 — when [resumeFrom] is non-null and carries a `manifestHash` that * differs from the current agent's `manifestHash`, resume fails closed by * throwing [agents_engine.core.SnapshotManifestMismatchException]. Set to * `true` to override (callers take responsibility for any migration * semantics). `null` snapshot.manifestHash is treated as "no manifest at * the time of snapshot" — allowed regardless, for back-compat with pre- * 0.6.4 snapshots. */ allowManifestMismatch: Boolean = false, /** * #2488 — typed resume input for the HITL interrupt primitive. When * [resumeFrom] is non-null and carries `pendingInterruptCallId`, this * value is rendered via [toLlmInput] (so typed `@Generable` replies * become JSON) and synthesised as the interrupted tool's result message * before the loop resumes. Required when resuming an interrupted * snapshot; ignored otherwise. */ resumeWith: Any? = null, /** * #2470 slice b — image attachments for the FIRST user LlmMessage. * Each `Content.Image` is dereferenced against [Agent.blobStore] * (errors fast when null), base64-encoded once, and rendered into * an [ImagePart]. Non-image content variants are skipped — Document * / Audio / Video flow through the wire only once #2470 slice c * (provider doc/audio/video adapters) ships. Ignored on resume (the * snapshot's restored conversation already carries the original * attachments on the saved user turn). */ attachments: List&lt;agents_engine.content.Content&gt;? = null, ): AgenticResult</ID>
+    <ID>LongMethod:ClaudeClient.kt$ClaudeClient$internal fun buildRequestJson( messages: List&lt;LlmMessage&gt;, stream: Boolean = false, jsonSchema: JsonSchema? = null, ): String</ID>
+    <ID>LongMethod:PipelineEvent.kt$fun Agent&lt;*, *&gt;.observe(handler: (PipelineEvent) -&gt; Unit)</ID>
+    <ID>LoopWithTooManyJumpStatements:LineDelimitedMcpTransport.kt$LineDelimitedMcpTransport$while</ID>
+    <ID>LoopWithTooManyJumpStatements:LiveShow.kt$LiveShow$while</ID>
+    <ID>LoopWithTooManyJumpStatements:OllamaClient.kt$OllamaClient$for</ID>
+    <ID>LoopWithTooManyJumpStatements:OllamaGemmaFallbackScenariosTest.kt$OllamaGemmaFallbackScenariosTest.ArithParser$while</ID>
+    <ID>LoopWithTooManyJumpStatements:OpenAiClient.kt$OpenAiClient$for</ID>
+    <ID>MagicNumber:Agent.kt$Agent$0.6</ID>
+    <ID>MagicNumber:Agent.kt$Agent$0.8</ID>
+    <ID>MagicNumber:Agent.kt$Agent$77</ID>
+    <ID>MagicNumber:Agent.kt$Agent$80</ID>
+    <ID>MagicNumber:AgenticLoop.kt$1_000_000L</ID>
+    <ID>MagicNumber:BudgetConfig.kt$BudgetBuilder$32</ID>
+    <ID>MagicNumber:BudgetConfig.kt$BudgetBuilder$8</ID>
+    <ID>MagicNumber:ClaudeClient.kt$ClaudeClient$1024</ID>
+    <ID>MagicNumber:InternalsAgent.kt$4</ID>
+    <ID>MagicNumber:JsonEscape.kt$0x20</ID>
+    <ID>MagicNumber:LenientJsonParser.kt$LenientJsonParser.Parser$16</ID>
+    <ID>MagicNumber:LenientJsonParser.kt$LenientJsonParser.Parser$4</ID>
+    <ID>MagicNumber:LenientJsonParser.kt$LenientJsonParser.Parser$5</ID>
+    <ID>MagicNumber:LiveShow.kt$LiveShowBuilder$20</ID>
+    <ID>MagicNumber:Main.kt$60</ID>
+    <ID>MagicNumber:McpJson.kt$McpJson$0x20</ID>
+    <ID>MagicNumber:McpRunner.kt$McpRunner$50</ID>
+    <ID>MagicNumber:McpServer.kt$McpServer$200</ID>
+    <ID>MagicNumber:McpServer.kt$McpServer$202</ID>
+    <ID>MagicNumber:McpServer.kt$McpServer$32600</ID>
+    <ID>MagicNumber:McpServer.kt$McpServer$32601</ID>
+    <ID>MagicNumber:McpServer.kt$McpServer$32602</ID>
+    <ID>MagicNumber:McpServer.kt$McpServer$32603</ID>
+    <ID>MagicNumber:McpServer.kt$McpServer$32700</ID>
+    <ID>MagicNumber:McpServer.kt$McpServer$400</ID>
+    <ID>MagicNumber:McpServer.kt$McpServer$403</ID>
+    <ID>MagicNumber:McpServer.kt$McpServer$405</ID>
+    <ID>MagicNumber:McpServer.kt$McpServer$413</ID>
+    <ID>MagicNumber:McpServer.kt$McpServer$415</ID>
+    <ID>MagicNumber:McpServer.kt$McpServer$500</ID>
+    <ID>MagicNumber:McpServerSecurity.kt$McpServerAuth.RequireBearerToken$401</ID>
+    <ID>MagicNumber:McpServerSecurity.kt$McpServerAuth.RequireBearerTokens$401</ID>
+    <ID>MagicNumber:McpServerSecurity.kt$McpServerAuth.TrustedLocal$401</ID>
+    <ID>MagicNumber:ModelClient.kt$64</ID>
+    <ID>MagicNumber:ModelConfig.kt$ModelBuilder$0.7</ID>
+    <ID>MagicNumber:ModelConfig.kt$ModelBuilder$11434</ID>
+    <ID>MagicNumber:ModelConfig.kt$ModelConfig$6</ID>
+    <ID>MagicNumber:ModelConfig.kt$ModelConfig$8</ID>
+    <ID>MagicNumber:PrefixStabilityGuard.kt$PrefixStabilityGuard$4</ID>
+    <ID>MagicNumber:StdioMcpTransport.kt$StdioMcpTransport.Companion$500</ID>
+    <ID>MagicNumber:ToolPolicy.kt$ManifestJson$16</ID>
+    <ID>MagicNumber:ToolPolicy.kt$ManifestJson$4</ID>
+    <ID>MagicNumber:ToolResult.kt$12</ID>
+    <ID>MaxLineLength:Agent.kt$Agent$"Router uncertain (confidence=${route.confidence}, threshold=$skillSelectionConfidenceThreshold). "</ID>
+    <ID>MaxLineLength:Agent.kt$Agent$var</ID>
+    <ID>MaxLineLength:AgentEvent.kt$AgentEvent$/** The agent that produced this event. For composed pipelines this is the inner agent's name, not the composition's. */</ID>
+    <ID>MaxLineLength:AgentFibonacciMcpTest.kt$AgentFibonacciMcpTest$transformOutput { it.trim().toIntOrNull() ?: Regex("\\d+").find(it)?.value?.toInt() ?: error("No int in: $it") }</ID>
+    <ID>MaxLineLength:AgentMcpDsl.kt$McpServerBuilder$"MCP server \"$name\": auth is only supported on HTTP transport (url=). Connection identity is the auth on stdio/TCP."</ID>
+    <ID>MaxLineLength:AgentMemoryTest.kt$AgentMemoryTest$responses.add(LlmResponse.ToolCalls(listOf(ToolCall("memory_write", mapOf("content" to "Known: user prefers dark mode\nKnown: user uses Kotlin")))))</ID>
+    <ID>MaxLineLength:AgentSessionBasicEventsTest.kt$AgentSessionBasicEventsTest$assertNull(completed.tokensUsed, "SkillCompleted.tokensUsed stays null until step 3 threads it through executeAgentic")</ID>
+    <ID>MaxLineLength:AgentSessionIntegrationTest.kt$AgentSessionIntegrationTest$"expected [SkillStarted, ModelTurnStarted, Token, ModelTurnCompleted, SkillCompleted, Completed]; got: $events"</ID>
+    <ID>MaxLineLength:AgentSessionIntegrationTest.kt$AgentSessionIntegrationTest$assertEquals("done", token.text, "the entire stub Text response becomes one Token chunk under default chatStream")</ID>
+    <ID>MaxLineLength:AgentSessionIntegrationTest.kt$AgentSessionIntegrationTest$assertEquals("uppercase", started.skillName, "session $label: skill name must not be corrupted by the other session")</ID>
+    <ID>MaxLineLength:AgentSessionIntegrationTest.kt$AgentSessionIntegrationTest$assertEquals(expected, completed.tokensUsed, "Completed.tokensUsed must sum prompt and completion tokens across turns")</ID>
+    <ID>MaxLineLength:AgentSessionIntegrationTest.kt$AgentSessionIntegrationTest$assertEquals(expected, skillCompleted.tokensUsed, "SkillCompleted.tokensUsed must sum prompt and completion tokens across turns")</ID>
+    <ID>MaxLineLength:AgentSessionIntegrationTest.kt$AgentSessionIntegrationTest$assertTrue(argsDeltas.isNotEmpty(), "expected at least one ToolCallArgumentsDelta with the same callId; got: $events")</ID>
+    <ID>MaxLineLength:AgentSessionIntegrationTest.kt$AgentSessionIntegrationTest$fun</ID>
+    <ID>MaxLineLength:AgentSessionIntegrationTest.kt$AgentSessionIntegrationTest$val argsDeltas = events.filterIsInstance&lt;AgentEvent.ToolCallArgumentsDelta&gt;().filter { it.callId == explicitCallId }</ID>
+    <ID>MaxLineLength:AgentSessionIntegrationTest.kt$AgentSessionIntegrationTest$val completed = events[4]</ID>
+    <ID>MaxLineLength:AgentSessionIntegrationTest.kt$AgentSessionIntegrationTest$val terminal = events[5]</ID>
+    <ID>MaxLineLength:AgentSessionLiveTest.kt$AgentSessionLiveTest$fun</ID>
+    <ID>MaxLineLength:AgenticLoop.kt$"Agent '${agent.name}' invoked tool '${call.name}' $consecutiveSameTool times in a row (cap: $cap)"</ID>
+    <ID>MaxLineLength:AgenticLoop.kt$"hash=${content.ref.hash.take(BLOB_HASH_PREFIX_LEN)}…, size=${content.ref.sizeBytes}); "</ID>
+    <ID>MaxLineLength:AgenticLoop.kt$appendLine("""{"skillName": "&lt;one of the listed skills&gt;", "confidence": 0.0..1.0, "rationale": "&lt;one sentence&gt;"}""")</ID>
+    <ID>MaxLineLength:AgenticLoopMutationTest.kt$AgenticLoopMutationTest$arguments = mapOf("name" to "world")</ID>
+    <ID>MaxLineLength:AgenticLoopTest.kt$AgenticLoopTest$"Ollama returned text with no digits — likely tool-call divergence flake; skipping rather than red-flagging"</ID>
+    <ID>MaxLineLength:AgenticLoopTest.kt$AgenticLoopTest$add = tool("add", "Add two numbers. Args: a, b") { args -&gt; num(args, "a") + num(args, "b") }</ID>
+    <ID>MaxLineLength:AgenticLoopTest.kt$AgenticLoopTest$divide = tool("divide", "Divide a by b. Args: a, b") { args -&gt; num(args, "a") / num(args, "b") }</ID>
+    <ID>MaxLineLength:AgenticLoopTest.kt$AgenticLoopTest$multiply = tool("multiply", "Multiply two numbers. Args: a, b") { args -&gt; num(args, "a") * num(args, "b") }</ID>
+    <ID>MaxLineLength:AgenticLoopTest.kt$AgenticLoopTest$power = tool("power", "Raise base to exponent. Args: base, exp") { args -&gt; Math.pow(num(args, "base"), num(args, "exp")) }</ID>
+    <ID>MaxLineLength:AgenticLoopTest.kt$AgenticLoopTest$prompt("You are a calculator. Use the provided tools to evaluate expressions step by step. After all tool calls, reply with ONLY the final number.")</ID>
+    <ID>MaxLineLength:AgenticLoopTest.kt$AgenticLoopTest$prompt("You are a calculator. Use the provided tools to evaluate the expression, then reply with ONLY the final number — no explanation.")</ID>
+    <ID>MaxLineLength:AgenticLoopTest.kt$AgenticLoopTest$prompt("You are a calculator. You MUST use the provided tools for every arithmetic operation — never compute mentally. After all tool calls, reply with ONLY the final number.")</ID>
+    <ID>MaxLineLength:AgenticLoopTest.kt$AgenticLoopTest$subtract = tool("subtract", "Subtract b from a. Args: a, b") { args -&gt; num(args, "a") - num(args, "b") }</ID>
+    <ID>MaxLineLength:AgenticLoopTest.kt$AgenticLoopTest$transformOutput { it.trim().toIntOrNull() ?: Regex("-?\\d+").find(it)?.value?.toInt() ?: error("No integer in: $it") }</ID>
+    <ID>MaxLineLength:AgentsForumTest.kt$AgentsForumTest$val pipeline = inputToSpecsConverter then (forumInitiationAgent * crazyCodeSlopGenerator * passiveCodeGenerator * answerMaster) then printMaster</ID>
+    <ID>MaxLineLength:AgentsPipelineTest.kt$AgentsPipelineTest$val totalPipelineWithType: Pipeline&lt;SomeSpecAsk, SomeProductionMachineryManagement&gt; = pipelinePt1 then pipelinePt2</ID>
+    <ID>MaxLineLength:AllSpecsDeepIntegrationTest.kt$AllSpecsDeepIntegrationTest$val featuresMaster = agent&lt;SpecsParcel, List&lt;Spec&gt;&gt;("ft_master") { skills { skill&lt;SpecsParcel, List&lt;Spec&gt;&gt;("ft_master") { implementedBy { List(featureCount) { Feature() } } } } }</ID>
+    <ID>MaxLineLength:AllSpecsDeepIntegrationTest.kt$AllSpecsDeepIntegrationTest$val featuresMaster = agent&lt;SpecsParcel, Spec&gt;("features_master") { skills { skill&lt;SpecsParcel, Spec&gt;("features_master") { implementedBy { Feature() } } } }</ID>
+    <ID>MaxLineLength:AllSpecsDeepIntegrationTest.kt$AllSpecsDeepIntegrationTest$val glossaryMaster = agent&lt;SpecsParcel, List&lt;Spec&gt;&gt;("gl_master") { skills { skill&lt;SpecsParcel, List&lt;Spec&gt;&gt;("gl_master") { implementedBy { List(glossaryCount) { GlossaryTerm() } } } } }</ID>
+    <ID>MaxLineLength:AllSpecsDeepIntegrationTest.kt$AllSpecsDeepIntegrationTest$val glossaryMaster = agent&lt;SpecsParcel, Spec&gt;("glossary_master") { skills { skill&lt;SpecsParcel, Spec&gt;("glossary_master") { implementedBy { GlossaryTerm() } } } }</ID>
+    <ID>MaxLineLength:AllSpecsDeepIntegrationTest.kt$AllSpecsDeepIntegrationTest$val outerRefsMaster = agent&lt;SpecsParcel, List&lt;Spec&gt;&gt;("or_master") { skills { skill&lt;SpecsParcel, List&lt;Spec&gt;&gt;("or_master") { implementedBy { List(outerRefCount) { OuterReference() } } } } }</ID>
+    <ID>MaxLineLength:AllSpecsDeepIntegrationTest.kt$AllSpecsDeepIntegrationTest$val outerRefsMaster = agent&lt;SpecsParcel, Spec&gt;("outer_refs_master") { skills { skill&lt;SpecsParcel, Spec&gt;("outer_refs_master") { implementedBy { OuterReference() } } } }</ID>
+    <ID>MaxLineLength:AllSpecsDeepIntegrationTest.kt$AllSpecsDeepIntegrationTest$val requirementsMaster = agent&lt;SpecsParcel, List&lt;Spec&gt;&gt;("req_master") { skills { skill&lt;SpecsParcel, List&lt;Spec&gt;&gt;("req_master") { implementedBy { List(requirementCount) { Requirement() } } } } }</ID>
+    <ID>MaxLineLength:AllSpecsDeepIntegrationTest.kt$AllSpecsDeepIntegrationTest$val requirementsMaster = agent&lt;SpecsParcel, Spec&gt;("requirements_master") { skills { skill&lt;SpecsParcel, Spec&gt;("requirements_master") { implementedBy { Requirement() } } } }</ID>
+    <ID>MaxLineLength:AllSpecsDeepIntegrationTest.kt$AllSpecsDeepIntegrationTest$val systemActorsMaster = agent&lt;SpecsParcel, List&lt;Spec&gt;&gt;("sa_master") { skills { skill&lt;SpecsParcel, List&lt;Spec&gt;&gt;("sa_master") { implementedBy { List(actorCount) { SystemActor() } } } } }</ID>
+    <ID>MaxLineLength:AllSpecsDeepIntegrationTest.kt$AllSpecsDeepIntegrationTest$val systemActorsMaster = agent&lt;SpecsParcel, Spec&gt;("system_actors_master") { skills { skill&lt;SpecsParcel, Spec&gt;("system_actors_master") { implementedBy { SystemActor() } } } }</ID>
+    <ID>MaxLineLength:AllSpecsDeepIntegrationTest.kt$AllSpecsDeepIntegrationTest$val useCasesMaster = agent&lt;SpecsParcel, List&lt;Spec&gt;&gt;("uc_master") { skills { skill&lt;SpecsParcel, List&lt;Spec&gt;&gt;("uc_master") { implementedBy { List(useCaseCount) { UseCase() } } } } }</ID>
+    <ID>MaxLineLength:AllSpecsDeepIntegrationTest.kt$AllSpecsDeepIntegrationTest$val useCasesMaster = agent&lt;SpecsParcel, Spec&gt;("use_case_master") { skills { skill&lt;SpecsParcel, Spec&gt;("use_case_master") { implementedBy { UseCase() } } } }</ID>
+    <ID>MaxLineLength:BranchAgenticIntegrationTest.kt$BranchAgenticIntegrationTest$prompt("Classify the sentiment of the input as exactly one word: positive, negative, or neutral. Reply with ONLY that word.")</ID>
+    <ID>MaxLineLength:BranchAgenticIntegrationTest.kt$BranchAgenticIntegrationTest$prompt("Determine if the given item is edible (food) or not. Reply with ONLY one word: edible or inedible.")</ID>
+    <ID>MaxLineLength:BranchAgenticIntegrationTest.kt$BranchAgenticIntegrationTest$prompt("You are a creative chef. Given a food item, suggest a dish. Reply with ONLY: Yummy, we can make {dish name} from it")</ID>
+    <ID>MaxLineLength:BranchAgenticIntegrationTest.kt$BranchAgenticIntegrationTest$prompt("You are a creative crafter. Given a non-food item, suggest what to make from it. Reply with ONLY: Don't eat this! Better {what to make from it}")</ID>
+    <ID>MaxLineLength:BranchAgenticIntegrationTest.kt$BranchAgenticIntegrationTest$skills { skill&lt;Negative, String&gt;("neg", "Respond to complaint") { implementedBy { "Sorry to hear that." } } }</ID>
+    <ID>MaxLineLength:BranchAgenticIntegrationTest.kt$BranchAgenticIntegrationTest$skills { skill&lt;Positive, String&gt;("pos", "Respond positively") { implementedBy { "Thanks for the kind words!" } } }</ID>
+    <ID>MaxLineLength:BranchAgenticIntegrationTest.kt$BranchAgenticIntegrationTest$tools { logIssue = tool("log_issue", "Log a support issue") { args -&gt; toolCalls.add(args["msg"].toString()); "logged" } }</ID>
+    <ID>MaxLineLength:BranchBuilderCoverageTest.kt$BranchBuilderCoverageTest$agent&lt;Any, String&gt;(name) { skills { skill&lt;Any, String&gt;("s") { implementedBy { "any: ${it::class.simpleName}" } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$circleHandler then agent&lt;String, String&gt;("x") { skills { skill&lt;String, String&gt;("x") { implementedBy { it } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$on&lt;Circle&gt;() then agent&lt;Circle, Double&gt;("c") { skills { skill&lt;Circle, Double&gt;("c") { implementedBy { it.radius } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$on&lt;Circle&gt;() then agent&lt;Circle, Int&gt;("c") { skills { skill&lt;Circle, Int&gt;("c") { implementedBy { it.radius.toInt() } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$on&lt;Circle&gt;() then agent&lt;Circle, String&gt;("c") { skills { skill&lt;Circle, String&gt;("c") { implementedBy { "circle r=${it.radius}" } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$on&lt;Circle&gt;() then agent&lt;Circle, String&gt;("c") { skills { skill&lt;Circle, String&gt;("c") { implementedBy { "circle" } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$on&lt;Rectangle&gt;() then agent&lt;Rectangle, Double&gt;("r") { skills { skill&lt;Rectangle, Double&gt;("r") { implementedBy { it.w * it.h } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$on&lt;Rectangle&gt;() then agent&lt;Rectangle, Int&gt;("r") { skills { skill&lt;Rectangle, Int&gt;("r") { implementedBy { (it.w * it.h).toInt() } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$on&lt;Rectangle&gt;() then agent&lt;Rectangle, String&gt;("r") { skills { skill&lt;Rectangle, String&gt;("r") { implementedBy { "rect ${it.w}x${it.h}" } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$on&lt;Rectangle&gt;() then agent&lt;Rectangle, String&gt;("r") { skills { skill&lt;Rectangle, String&gt;("r") { implementedBy { "rect" } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$on&lt;Triangle&gt;() then agent&lt;Triangle, Double&gt;("t") { skills { skill&lt;Triangle, Double&gt;("t") { implementedBy { it.base * it.height / 2 } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$on&lt;Triangle&gt;() then agent&lt;Triangle, Int&gt;("t") { skills { skill&lt;Triangle, Int&gt;("t") { implementedBy { (it.base * it.height / 2).toInt() } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$on&lt;Triangle&gt;() then agent&lt;Triangle, String&gt;("t") { skills { skill&lt;Triangle, String&gt;("t") { implementedBy { "tri b=${it.base}" } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$on&lt;Triangle&gt;() then agent&lt;Triangle, String&gt;("t") { skills { skill&lt;Triangle, String&gt;("t") { implementedBy { "tri" } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$val area = agent&lt;Circle, Double&gt;("area") { skills { skill&lt;Circle, Double&gt;("area") { implementedBy { Math.PI * it.radius * it.radius } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$val circleHandler = agent&lt;Circle, String&gt;("c") { skills { skill&lt;Circle, String&gt;("c") { implementedBy { "circle" } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$val prepare = agent&lt;Int, String&gt;("prepare") { skills { skill&lt;Int, String&gt;("prepare") { implementedBy { if (it &gt; 0) "circle" else "rect" } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$val rounded = agent&lt;Double, String&gt;("round") { skills { skill&lt;Double, String&gt;("round") { implementedBy { "%.2f".format(Locale.US, it) } } } }</ID>
+    <ID>MaxLineLength:BranchExecutionTest.kt$BranchExecutionTest$val wrap = agent&lt;Double, String&gt;("wrap") { skills { skill&lt;Double, String&gt;("wrap") { implementedBy { "area=%.1f".format(Locale.US, it) } } } }</ID>
+    <ID>MaxLineLength:BranchSessionTest.kt$BranchSessionTest$assertEquals("approved-handler", terminal.agentId, "Completed.agentId = name of the agent that produced the final output")</ID>
+    <ID>MaxLineLength:BranchSessionTest.kt$BranchSessionTest$assertTrue(classifierCompletedIdx &lt; handlerStartedIdx, "classifier.SkillCompleted must precede approved-handler.SkillStarted")</ID>
+    <ID>MaxLineLength:BranchSessionTest.kt$BranchSessionTest$val classifierCompletedIdx = events.indexOfFirst { it is AgentEvent.SkillCompleted &amp;&amp; it.agentId == "classifier" }</ID>
+    <ID>MaxLineLength:BranchSessionTest.kt$BranchSessionTest$val handlerStartedIdx = events.indexOfFirst { it is AgentEvent.SkillStarted &amp;&amp; it.agentId == "approved-handler" }</ID>
+    <ID>MaxLineLength:BudgetConfig.kt$BudgetConfig$if (maxConsecutiveSameTool != d.maxConsecutiveSameTool) add("maxConsecutiveSameTool=$maxConsecutiveSameTool")</ID>
+    <ID>MaxLineLength:BuiltInToolWireSchema.kt$BuiltInToolWireSchema$"Claude" to object : ClaudeClient(apiKey = "test", model = "test", tools = tools) {}.buildRequestJson(emptyList())</ID>
+    <ID>MaxLineLength:BuiltInToolWireSchema.kt$BuiltInToolWireSchema$"OpenAI" to object : OpenAiClient(apiKey = "test", model = "test", tools = tools) {}.buildRequestJson(emptyList())</ID>
+    <ID>MaxLineLength:CacheObservabilityTest.kt$CacheObservabilityTest$val turn1 = TokenUsage(promptTokens = 1000, completionTokens = 30, cachedInputTokens = 0, cacheWriteTokens = 900, provider = "claude", model = "x")</ID>
+    <ID>MaxLineLength:CacheObservabilityTest.kt$CacheObservabilityTest$val turn2 = TokenUsage(promptTokens = 1000, completionTokens = 30, cachedInputTokens = 900, cacheWriteTokens = 0, provider = "claude", model = "x")</ID>
+    <ID>MaxLineLength:CacheObservabilityTest.kt$CacheObservabilityTest$val u = TokenUsage(promptTokens = 100, completionTokens = 20, cacheWriteTokens = 80, provider = "claude", model = "x")</ID>
+    <ID>MaxLineLength:CacheObservabilityTest.kt$CacheObservabilityTest$val u = TokenUsage(promptTokens = 1000, completionTokens = 50, cachedInputTokens = 850, provider = "claude", model = "x")</ID>
+    <ID>MaxLineLength:CacheObservabilityTest.kt$CacheObservabilityTest$val u = TokenUsage(promptTokens = 1000, completionTokens = 50, cachedInputTokens = null, provider = "ollama", model = "x")</ID>
+    <ID>MaxLineLength:CacheObservabilityTest.kt$CacheObservabilityTest$val u = TokenUsage(promptTokens = 500, completionTokens = 10, cachedInputTokens = 500, provider = "x", model = "x")</ID>
+    <ID>MaxLineLength:ClaudeClient.kt$ClaudeClient$"""{"name":${STRUCTURED_OUTPUT_TOOL_NAME.toJsonString()},"description":"Return the final response using the requested JSON schema.","input_schema":${schema.schema}}"""</ID>
+    <ID>MaxLineLength:ClaudeClient.kt$ClaudeClient$"""{"role":"user","content":[{"type":"text","text":${msg.content.toJsonString()},$cacheControl}]}"""</ID>
+    <ID>MaxLineLength:ClaudeClient.kt$ClaudeClient$"""{"type":"image","source":{"type":"base64","media_type":${part.wireMime.value.toJsonString()},"data":${part.base64.toJsonString()}}}"""</ID>
+    <ID>MaxLineLength:ClaudeClient.kt$ClaudeClient$"""{"type":"tool_result","tool_use_id":${id.toJsonString()},"content":${msg.content.toJsonString()},$cacheControl}"""</ID>
+    <ID>MaxLineLength:ClaudeClient.kt$ClaudeClient$"""{"type":"tool_result","tool_use_id":${id.toJsonString()},"content":${msg.content.toJsonString()}}"""</ID>
+    <ID>MaxLineLength:ClaudeClient.kt$ClaudeClient$add("""{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"input_schema":$schema}""")</ID>
+    <ID>MaxLineLength:ClaudeClient.kt$ClaudeClient$blocks += """{"type":"tool_use","id":${id.toJsonString()},"name":${call.name.toJsonString()},"input":$argsJson}"""</ID>
+    <ID>MaxLineLength:ClaudeClient.kt$ClaudeClient$private suspend</ID>
+    <ID>MaxLineLength:ClaudeClient.kt$ClaudeClient$return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$effectiveTemperature$thinkingField$streamField$systemField,"messages":[${messageObjects.joinToString(",")}]$toolsField$toolChoiceField}"""</ID>
+    <ID>MaxLineLength:ClaudeClient.kt$ClaudeClient$val cacheControl = if (msg.cacheHint != null &amp;&amp; consumeBreakpoint()) cacheControlJson(msg.cacheHint) else null</ID>
+    <ID>MaxLineLength:ClaudeClientCancellationTest.kt$ClaudeClientCancellationTest$fun</ID>
+    <ID>MaxLineLength:ClaudeClientCancellationTest.kt$ClaudeClientCancellationTest.SlowSseStream$add("event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"chunk$i \"}}\n\n")</ID>
+    <ID>MaxLineLength:ClaudeClientCancellationTest.kt$ClaudeClientCancellationTest.SlowSseStream$add("event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\"}}\n\n")</ID>
+    <ID>MaxLineLength:ClaudeClientCancellationTest.kt$ClaudeClientCancellationTest.SlowSseStream$add("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":3,\"output_tokens\":1}}}\n\n")</ID>
+    <ID>MaxLineLength:ClaudeClientChatStreamLiveTest.kt$ClaudeClientChatStreamLiveTest$"expected either &gt;=10ms gap OR &gt;=5 chunks; first=${firstMs}ms last=${lastMs}ms gap=${gapMs}ms chunks=${textDeltas.size}"</ID>
+    <ID>MaxLineLength:ClaudeClientChatStreamLiveTest.kt$ClaudeClientChatStreamLiveTest$fun</ID>
+    <ID>MaxLineLength:ClaudeClientChatStreamTest.kt$ClaudeClientChatStreamTest$assertEquals("toolu_XYZ", argsDelta.callId, "tool-args delta must be tagged with the tool_use block's callId, not the text block")</ID>
+    <ID>MaxLineLength:ClaudeClientChatStreamTest.kt$ClaudeClientChatStreamTest$fun</ID>
+    <ID>MaxLineLength:ClaudeReasoningTest.kt$ClaudeReasoningTest$assertNull(assertIs&lt;LlmResponse.Text&gt;(object : ClaudeClient(apiKey = "k", model = "m") {}.parseResponse(body)).reasoning)</ID>
+    <ID>MaxLineLength:ClaudeReasoningTest.kt$ClaudeReasoningTest$val body = """{"content":[{"type":"thinking","thinking":"let me reason"},{"type":"text","text":"answer"}],"usage":{"input_tokens":1,"output_tokens":1}}"""</ID>
+    <ID>MaxLineLength:ContentRef.kt$FileBlobStore$Files.move(tmp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)</ID>
+    <ID>MaxLineLength:DeepSeekClientIntegrationTest.kt$DeepSeekClientIntegrationTest$LlmMessage("system", "You are a tool-calling assistant. Always call the available tool; do not answer in text.")</ID>
+    <ID>MaxLineLength:DeepSeekReasoningTest.kt$DeepSeekReasoningTest$object : DeepSeekClient(apiKey = "k", model = "deepseek-reasoner", reasoning = ReasoningConfig()) {}.parseResponse(body)</ID>
+    <ID>MaxLineLength:DeepSeekReasoningTest.kt$DeepSeekReasoningTest$val body = """{"choices":[{"index":0,"message":{"role":"assistant","content":"42","reasoning_content":"divide then check"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}"""</ID>
+    <ID>MaxLineLength:EscalateToolTest.kt$EscalateToolTest$assertTrue(!systemMsg.content.contains("escalate"), "escalate should NOT be in system prompt when not referenced")</ID>
+    <ID>MaxLineLength:EscalateToolTest.kt$EscalateToolTest$assertTrue(!systemMsg.content.contains("throwException"), "throwException should NOT be in system prompt when not referenced")</ID>
+    <ID>MaxLineLength:EvalDsl.kt$EvalCase$EvalOutcome(expectation.label, passed, failureDetail = if (passed) null else expectation.describe(output))</ID>
+    <ID>MaxLineLength:EvalDsl.kt$EvalResult$"eval case \"$caseName\" failed: agent threw ${invocationError::class.simpleName}: ${invocationError.message}"</ID>
+    <ID>MaxLineLength:FibonacciMemoryTest.kt$FibonacciMemoryTest$transformOutput { it.trim().toIntOrNull() ?: Regex("\\d+").find(it)?.value?.toInt() ?: error("No int in: $it") }</ID>
+    <ID>MaxLineLength:Forum.kt$description = "Finalize the forum immediately. Args: value (optional) or a JSON object matching the forum result type."</ID>
+    <ID>MaxLineLength:ForumExecutionTest.kt$ForumExecutionTest$LlmResponse.ToolCalls(listOf(agents_engine.model.ToolCall("forum_return", mapOf("value" to "captain verdict"))))</ID>
+    <ID>MaxLineLength:ForumExecutionTest.kt$ForumExecutionTest$skills { skill&lt;String, String&gt;("a", "A") { implementedBy { threads["a"] = Thread.currentThread().name; "a" } } }</ID>
+    <ID>MaxLineLength:ForumExecutionTest.kt$ForumExecutionTest$skills { skill&lt;String, String&gt;("b", "B") { implementedBy { threads["b"] = Thread.currentThread().name; "b" } } }</ID>
+    <ID>MaxLineLength:ForumExecutionTest.kt$ForumExecutionTest$skills { skill&lt;String, String&gt;("participant", "Finalize immediately when enough information is available") { tools() } }</ID>
+    <ID>MaxLineLength:ForumTranscriptTest.kt$ForumTranscriptTest$assertEquals(setOf("voter1", "voter2", "voter3"), receivedTranscript!!.contributions.map { it.agentName }.toSet())</ID>
+    <ID>MaxLineLength:ForumTranscriptTest.kt$ForumTranscriptTest$val a = agent&lt;String, String&gt;("alpha") { skills { skill&lt;String, String&gt;("s", "") { implementedBy { "out-a" } } } }</ID>
+    <ID>MaxLineLength:ForumTranscriptTest.kt$ForumTranscriptTest$val b = agent&lt;String, String&gt;("beta") { skills { skill&lt;String, String&gt;("s", "") { implementedBy { "out-b" } } } }</ID>
+    <ID>MaxLineLength:GenerableSupportCoverageTest.kt$GenerableSupportCoverageTest$// NestedResult is from GenerableTest.kt: data class NestedResult(@Guide val inner: ScoreResult, val label: String)</ID>
+    <ID>MaxLineLength:GenerableSupportMutationTest.kt$GenerableSupportMutationTest$val result = MixedFields::class.constructFromMap(mapOf("req" to "x", "nul" to null, "opt" to 1, "extra" to "nope"))</ID>
+    <ID>MaxLineLength:InternalsAgentTest.kt$InternalsAgentTest$"""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"$MCP_PROTOCOL_VERSION"}}""" + "\n"</ID>
+    <ID>MaxLineLength:InternalsAgentTest.kt$InternalsAgentTest$assertTrue(adjunctCount &gt; 0, "Found 0 adjuncts on classpath — the scanner is broken or the resources dir moved.")</ID>
+    <ID>MaxLineLength:InterruptResumeTest.kt$InterruptResumeTest$assertEquals(ex.snapshot.pendingInterruptCallId, loaded.pendingInterruptCallId, "callId survives JSON round-trip")</ID>
+    <ID>MaxLineLength:InterruptResumeTest.kt$InterruptResumeTest$assertTrue("pendingInterruptCallId" in resumeError.message!!, "error explains the contract: ${resumeError.message}")</ID>
+    <ID>MaxLineLength:JsonParseEscalationIntegrationTest.kt$JsonParseEscalationIntegrationTest$"Count top-level keys in a JSON object. Args: json (string — valid JSON with double-quoted keys, e.g. '{\"name\":\"world\"}')"</ID>
+    <ID>MaxLineLength:JsonParseEscalationIntegrationTest.kt$JsonParseEscalationIntegrationTest$"You are a JSON analysis assistant. Use the calculateNumberOfKeys tool to count keys in JSON objects. "</ID>
+    <ID>MaxLineLength:JsonParseEscalationIntegrationTest.kt$JsonParseEscalationIntegrationTest$assertTrue(errorToolMsg.content.contains("Malformed JSON"), "Reason should be in error: ${errorToolMsg.content}")</ID>
+    <ID>MaxLineLength:JsonParseEscalationIntegrationTest.kt$JsonParseEscalationIntegrationTest$assertTrue(rawCallCount &gt;= 2, "Tool must have been called at least twice (first fail + retry), got: $rawCallCount")</ID>
+    <ID>MaxLineLength:JsonParseEscalationIntegrationTest.kt$JsonParseEscalationIntegrationTest$assertTrue(toolUses.size &gt;= 2, "onToolUse must fire at least twice (escalation error + success), got: ${toolUses.size}")</ID>
+    <ID>MaxLineLength:JsonParseEscalationIntegrationTest.kt$JsonParseEscalationIntegrationTest$description("Count top-level keys in a JSON object. Args: json (string — valid JSON with double-quoted keys)")</ID>
+    <ID>MaxLineLength:JsonParseEscalationIntegrationTest.kt$JsonParseEscalationIntegrationTest$throw IllegalArgumentException("No valid keys found — JSON may have unquoted keys. All keys must be double-quoted.")</ID>
+    <ID>MaxLineLength:KnowledgeToolDescriptionTest.kt$KnowledgeToolDescriptionTest$knowledge("checklist", "Self-verification steps before returning output") { "1. Check length\n2. Check tone" }</ID>
+    <ID>MaxLineLength:KoogRegressionMcpCleanTextOutputTest.kt$KoogRegressionMcpCleanTextOutputTest$val request = """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"$toolName","arguments":$argsJson}}"""</ID>
+    <ID>MaxLineLength:KoogRegressionUnknownToolTest.kt$KoogRegressionUnknownToolTest$?:</ID>
+    <ID>MaxLineLength:KoogRegressionWrongTypedArgsTest.kt$KoogRegressionWrongTypedArgsTest$fun</ID>
+    <ID>MaxLineLength:LiveRunnerCliAndOnceTest.kt$LiveRunnerCliAndOnceTest$assertTrue(baos.toString().contains("hi"), "empty prompt should still invoke agent: '${baos.toString().trim()}'")</ID>
+    <ID>MaxLineLength:LlmChunk.kt$LlmChunk.ToolCallStarted$/** A new tool call has begun streaming. Arguments arrive next as ArgumentsDelta events; finalised in ToolCallFinished. */</ID>
+    <ID>MaxLineLength:LoopAgenticIntegrationTest.kt$LoopAgenticIntegrationTest$prompt("You are a text improver. Make the given text more formal and professional. Reply with ONLY the improved text, nothing else. Keep it to one sentence.")</ID>
+    <ID>MaxLineLength:LoopAgenticIntegrationTest.kt$LoopAgenticIntegrationTest$tools { increment = tool("increment", "Increment a number") { args -&gt; toolLog.add(args["n"].toString()); "ok" } }</ID>
+    <ID>MaxLineLength:LoopExecutionTest.kt$LoopExecutionTest$val</ID>
+    <ID>MaxLineLength:LoopExecutionTest.kt$LoopExecutionTest$val finalize = agent&lt;Int, String&gt;("wrap") { skills { skill&lt;Int, String&gt;("wrap") { implementedBy { "result:$it" } } } }</ID>
+    <ID>MaxLineLength:LoopExecutionTest.kt$LoopExecutionTest$val prepare = agent&lt;String, Int&gt;("len") { skills { skill&lt;String, Int&gt;("len") { implementedBy { it.length } } } }</ID>
+    <ID>MaxLineLength:LoopPlacementTest.kt$LoopPlacementTest$val prepare = agent&lt;String, Int&gt;("prepare") { skills { skill&lt;String, Int&gt;("prepare") { implementedBy { it.length } } } }</ID>
+    <ID>MaxLineLength:LoopPlacementTest.kt$LoopPlacementTest$val refine = agent&lt;Int, Int&gt;("refine") { skills { skill&lt;Int, Int&gt;("refine") { implementedBy { it + 1 } } } }</ID>
+    <ID>MaxLineLength:LoopPlacementTest.kt$LoopPlacementTest$val wrap = agent&lt;Int, String&gt;("wrap") { skills { skill&lt;Int, String&gt;("wrap") { implementedBy { "[$it]" } } } }</ID>
+    <ID>MaxLineLength:LoopWhilePatternTest.kt$LoopWhilePatternTest$skills { skill&lt;State, State&gt;("step") { implementedBy { s -&gt; State(s.remaining - 1, s.total + s.remaining) } } }</ID>
+    <ID>MaxLineLength:LoopWhilePatternTest.kt$LoopWhilePatternTest$val amplify = agent&lt;Signal, Signal&gt;("amplify") { skills { skill&lt;Signal, Signal&gt;("amplify") { implementedBy { Signal(it.value * 1.5) } } } }</ID>
+    <ID>MaxLineLength:LoopWhilePatternTest.kt$LoopWhilePatternTest$val body = agent&lt;Int, Int&gt;("body") { skills { skill&lt;Int, Int&gt;("body") { implementedBy { it * 2 } } } }</ID>
+    <ID>MaxLineLength:LoopWhilePatternTest.kt$LoopWhilePatternTest$val checker = agent&lt;Int, Boolean&gt;("checker") { skills { skill&lt;Int, Boolean&gt;("checker") { implementedBy { it &lt; 10 } } } }</ID>
+    <ID>MaxLineLength:LoopWhilePatternTest.kt$LoopWhilePatternTest$val normalize = agent&lt;Signal, Signal&gt;("normalize") { skills { skill&lt;Signal, Signal&gt;("normalize") { implementedBy { Signal(it.value + 1.0) } } } }</ID>
+    <ID>MaxLineLength:McpAuthRedactionTest.kt$McpAuthRedactionTest$assertTrue(rendered.contains("redacted", ignoreCase = true), "toString must indicate redaction; got: '$rendered'")</ID>
+    <ID>MaxLineLength:McpClient.kt$McpClient$/** Server-reported capabilities map from the initialize handshake; raw shape so we can refine later without re-fetching. */</ID>
+    <ID>MaxLineLength:McpClient.kt$McpClient$fun</ID>
+    <ID>MaxLineLength:McpRunnerMutationTest.kt$McpRunnerMutationTest$assertTrue(!thread.isAlive, "Runner thread must exit within 2s of server.stop() — stop-watcher start() removal would block here")</ID>
+    <ID>MaxLineLength:McpServer.kt$ExposedSkill.Companion$?:</ID>
+    <ID>MaxLineLength:McpServer.kt$McpServer$"""{"jsonrpc":"2.0","id":${McpJson.encode(id)},"error":${McpJson.encode(mapOf("code" to code, "message" to message))}}"""</ID>
+    <ID>MaxLineLength:McpServer.kt$McpServer.Companion$"Skill \"$name\" is agentic — McpServer only exposes non-agentic skills (implementedBy { }) in this slice."</ID>
+    <ID>MaxLineLength:McpServerBeforeInterceptorTest.kt$McpServerBeforeInterceptorTest$"""{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","arguments":{"input":"original"}}}"""</ID>
+    <ID>MaxLineLength:McpServerConformanceTest.kt$McpServerConformanceTest$"""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"$MCP_PROTOCOL_VERSION","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"""</ID>
+    <ID>MaxLineLength:McpServerConformanceTest.kt$McpServerConformanceTest$"""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"9999-01-01","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"""</ID>
+    <ID>MaxLineLength:McpServerConformanceTest.kt$McpServerConformanceTest$assertEquals("Greets a person by name", desc, "description should be the raw skill.description prose, not toLlmDescription")</ID>
+    <ID>MaxLineLength:McpServerConformanceTest.kt$McpServerConformanceTest$assertEquals("POST", response.headers().firstValue("Allow").orElse(null), "$method should advertise Allow: POST")</ID>
+    <ID>MaxLineLength:McpServerPromptResourceHandlersTest.kt$McpServerPromptResourceHandlersTest$val r = postRaw(server.url, """{"jsonrpc":"2.0","id":1,"method":"prompts/get","params":{"name":"nonexistent"}}""")</ID>
+    <ID>MaxLineLength:McpServerPromptResourceHandlersTest.kt$McpServerPromptResourceHandlersTest$val r = postRaw(server.url, """{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"file:///broken"}}""")</ID>
+    <ID>MaxLineLength:McpServerPromptResourceHandlersTest.kt$McpServerPromptResourceHandlersTest$val r = postRaw(server.url, """{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"file:///nope"}}""")</ID>
+    <ID>MaxLineLength:McpServerPromptResourceHandlersTest.kt$McpServerPromptResourceHandlersTest$val r = postRaw(server.url, """{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"plain://x"}}""")</ID>
+    <ID>MaxLineLength:McpServerPromptResourceHandlersTest.kt$McpServerPromptResourceHandlersTest$val r = postRaw(server.url, """{"jsonrpc":"2.0","id":42,"method":"prompts/get","params":{"name":"greet","arguments":{"name":"Alice"}}}""")</ID>
+    <ID>MaxLineLength:McpServerSecurityTest.kt$McpServerSecurityTest$"""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"$MCP_PROTOCOL_VERSION","capabilities":{},"clientInfo":{"name":"blocked","version":"0"}}}"""</ID>
+    <ID>MaxLineLength:McpServerSecurityTest.kt$McpServerSecurityTest$"""{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"secret","arguments":{"input":"x"}}}"""</ID>
+    <ID>MaxLineLength:McpServerSecurityTest.kt$McpServerSecurityTest$"""{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"secret","arguments":{"input":"x"}}}"""</ID>
+    <ID>MaxLineLength:McpStdioServerTest.kt$McpStdioServerTest$"""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"$MCP_PROTOCOL_VERSION"}}"""</ID>
+    <ID>MaxLineLength:McpStdioServerTest.kt$McpStdioServerTest$"""{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"greet","arguments":{"input":"Ada"}}}"""</ID>
+    <ID>MaxLineLength:McpStdioServerTest.kt$McpStdioServerTest$"""{"jsonrpc":"2.0","id":5,"method":"prompts/get","params":{"name":"hello","arguments":{"name":"Grace"}}}"""</ID>
+    <ID>MaxLineLength:MemoryToolPerSkillOptInTest.kt$MemoryToolPerSkillOptInTest$assertEquals(emptyList(), tools.filter { it.startsWith("memory_") }, "no memoryBank means no memory tools regardless of opt-in")</ID>
+    <ID>MaxLineLength:MemoryToolPerSkillOptInTest.kt$MemoryToolPerSkillOptInTest$assertTrue(captured.single().contains("memory_read"), "legacy auto-inject must still work; got: ${captured.single()}")</ID>
+    <ID>MaxLineLength:MockMcpServer.kt$MockMcpServer$val presentedToken = authHeader?.removePrefix("Bearer ")?.trim()?.takeIf { authHeader.startsWith("Bearer ") }</ID>
+    <ID>MaxLineLength:MockStdioMcpServer.kt$MockStdioMcpServer$"""{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":${McpJson.encode(e.message ?: e.toString())}}}"""</ID>
+    <ID>MaxLineLength:MockTcpMcpServer.kt$MockTcpMcpServer$"""{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":${McpJson.encode(e.message ?: e.toString())}}}"""</ID>
+    <ID>MaxLineLength:OllamaClient.kt$OllamaClient$"""{"function":{"name":${tc.name.toJsonString()},"arguments":${InlineToolCallParser.argsToJson(tc.arguments)}}}"""</ID>
+    <ID>MaxLineLength:OllamaClient.kt$OllamaClient$"""{"type":"function","function":{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"parameters":$parametersJson}}"""</ID>
+    <ID>MaxLineLength:OllamaClient.kt$OllamaClient$return """{"model":${model.toJsonString()},"stream":$stream,"temperature":$temperature,"messages":[$messagesJson]$toolsJson$formatJson$thinkJson}"""</ID>
+    <ID>MaxLineLength:OllamaClientCancellationTest.kt$OllamaClientCancellationTest$fun</ID>
+    <ID>MaxLineLength:OllamaClientChatStreamLiveTest.kt$OllamaClientChatStreamLiveTest$"expected either &gt;=10ms gap OR &gt;=5 chunks; first=${firstMs}ms last=${lastMs}ms gap=${gapMs}ms chunks=${textDeltas.size}"</ID>
+    <ID>MaxLineLength:OllamaClientChatStreamTest.kt$OllamaClientChatStreamTest$appendLine("""{"model":"llama","message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"lookup","arguments":{"id":42}}}]},"done":true,"prompt_eval_count":20,"eval_count":3}""")</ID>
+    <ID>MaxLineLength:OllamaClientChatStreamTest.kt$OllamaClientChatStreamTest$appendLine("""{"model":"llama","message":{"role":"assistant","content":""},"done":true,"prompt_eval_count":12,"eval_count":8}""")</ID>
+    <ID>MaxLineLength:OllamaClientChatStreamTest.kt$OllamaClientChatStreamTest$appendLine("""{"model":"llama","message":{"role":"assistant","content":""},"done":true,"prompt_eval_count":5,"eval_count":2}""")</ID>
+    <ID>MaxLineLength:OllamaClientIntegrationTest.kt$OllamaClientIntegrationTest$private val client = OllamaClient(host = HOST, port = PORT, model = MODEL, temperature = 0.0, tools = listOf(greetTool))</ID>
+    <ID>MaxLineLength:OllamaClientIntegrationTest.kt$OllamaClientIntegrationTest$prompt("You are a tool-calling agent. You MUST use the available tools to complete tasks. Never answer directly without calling a tool first.")</ID>
+    <ID>MaxLineLength:OllamaClientRetryTest.kt$OllamaClientRetryTest$assertTrue(attempts.get() &lt;= 2, "capability mismatch took ${attempts.get()} attempts — must not enter transient-retry loop")</ID>
+    <ID>MaxLineLength:OllamaInlineToolFallbackTest.kt$OllamaInlineToolFallbackTest$assertTrue(second.contains("\\\"tool\\\""), "fallback system message must show the inline {\"tool\":...} format")</ID>
+    <ID>MaxLineLength:OllamaInlineToolFallbackTest.kt$OllamaInlineToolFallbackTest$private</ID>
+    <ID>MaxLineLength:OllamaReasoningTest.kt$OllamaReasoningTest$appendLine("""{"message":{"role":"assistant","content":""},"done":true,"prompt_eval_count":1,"eval_count":1}""")</ID>
+    <ID>MaxLineLength:OllamaSchemaGenerationTest.kt$OllamaSchemaGenerationTest$val function = (toolsArr.first()["function"] as? Map&lt;String, Any?&gt;) ?: error("no function in tool: ${toolsArr.first()}")</ID>
+    <ID>MaxLineLength:OpenAiClient.kt$OpenAiClient$""","response_format":{"type":"json_schema","json_schema":{"name":${schema.wireName().toJsonString()},"schema":${schema.schema},"strict":true}}"""</ID>
+    <ID>MaxLineLength:OpenAiClient.kt$OpenAiClient$"""{"id":${id.toJsonString()},"type":"function","function":{"name":${call.name.toJsonString()},"arguments":${argsString.toJsonString()}}}"""</ID>
+    <ID>MaxLineLength:OpenAiClient.kt$OpenAiClient$"""{"type":"function","function":{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"parameters":$schema}}"""</ID>
+    <ID>MaxLineLength:OpenAiClient.kt$OpenAiClient$private suspend</ID>
+    <ID>MaxLineLength:OpenAiClient.kt$OpenAiClient$return """{"model":${model.toJsonString()},"max_tokens":$maxTokens,"temperature":$temperature$additionalFields$cacheKeyField$streamField,"messages":[${messageObjects.joinToString(",")}]$effectiveToolsField$toolChoiceField$responseFormatField}"""</ID>
+    <ID>MaxLineLength:OpenAiClient.kt$OpenAiClient$throw LlmProviderException("$providerLabel returned an error: ${type ?: "unknown"}: ${message ?: "no message"}")</ID>
+    <ID>MaxLineLength:OpenAiClientCancellationTest.kt$OpenAiClientCancellationTest$fun</ID>
+    <ID>MaxLineLength:OpenAiClientCancellationTest.kt$OpenAiClientCancellationTest.SlowOpenAiSseStream$add("data: {\"id\":\"x\",\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":12,\"total_tokens\":15}}\n\n")</ID>
+    <ID>MaxLineLength:OpenAiClientCancellationTest.kt$OpenAiClientCancellationTest.SlowOpenAiSseStream$add("data: {\"id\":\"x\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"chunk$i \"},\"finish_reason\":null}]}\n\n")</ID>
+    <ID>MaxLineLength:OpenAiClientChatStreamLiveTest.kt$OpenAiClientChatStreamLiveTest$"expected either &gt;=10ms gap OR &gt;=5 chunks; first=${firstMs}ms last=${lastMs}ms gap=${gapMs}ms chunks=${textDeltas.size}"</ID>
+    <ID>MaxLineLength:OpenAiClientChatStreamLiveTest.kt$OpenAiClientChatStreamLiveTest$fun</ID>
+    <ID>MaxLineLength:OpenAiClientChatStreamTest.kt$OpenAiClientChatStreamTest$appendLine("""data: {"id":"x","choices":[],"usage":{"prompt_tokens":11,"completion_tokens":6,"total_tokens":17,"prompt_tokens_details":{"cached_tokens":4}}}""")</ID>
+    <ID>MaxLineLength:OpenAiClientChatStreamTest.kt$OpenAiClientChatStreamTest$appendLine("""data: {"id":"x","choices":[],"usage":{"prompt_tokens":42,"completion_tokens":18,"total_tokens":60}}""")</ID>
+    <ID>MaxLineLength:OpenAiClientChatStreamTest.kt$OpenAiClientChatStreamTest$appendLine("""data: {"id":"x","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_abc","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}""")</ID>
+    <ID>MaxLineLength:OpenAiClientChatStreamTest.kt$OpenAiClientChatStreamTest$appendLine("""data: {"id":"x","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\":\"SF\"}"}}]},"finish_reason":null}]}""")</ID>
+    <ID>MaxLineLength:OpenAiClientChatStreamTest.kt$OpenAiClientChatStreamTest$appendLine("""data: {"id":"x","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"location"}}]},"finish_reason":null}]}""")</ID>
+    <ID>MaxLineLength:OpenAiClientChatStreamTest.kt$OpenAiClientChatStreamTest$appendLine("""data: {"id":"x","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}""")</ID>
+    <ID>MaxLineLength:OpenAiClientChatStreamTest.kt$OpenAiClientChatStreamTest$fun</ID>
+    <ID>MaxLineLength:OpenAiClientCoverageTest.kt$OpenAiClientCoverageTest$appendLine("""data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"name":"late_named"}}]}}]}""")</ID>
+    <ID>MaxLineLength:OpenAiClientCoverageTest.kt$OpenAiClientCoverageTest$appendLine("""data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_X","type":"function","function":{"arguments":""}}]}}]}""")</ID>
+    <ID>MaxLineLength:OpenAiClientCoverageTest.kt$OpenAiClientCoverageTest$assertEquals("", started.toolName, "name absent on first delta → started carries empty name (kills mutants on the id-only-first branch)")</ID>
+    <ID>MaxLineLength:OpenAiClientCoverageTest.kt$OpenAiClientCoverageTest$val errBody = """{"error":{"type":"invalid_request_error","message":"Invalid API key","code":"invalid_api_key"}}"""</ID>
+    <ID>MaxLineLength:OpenAiClientTest.kt$OpenAiClientTest$assertTrue(argsString is String, "tool_calls.function.arguments must be a stringified JSON, was ${argsString?.let { it::class.simpleName }}")</ID>
+    <ID>MaxLineLength:OpenAiReasoningTest.kt$OpenAiReasoningTest$appendLine("""data: {"choices":[{"index":0,"delta":{"reasoning_content":"think "},"finish_reason":null}]}""")</ID>
+    <ID>MaxLineLength:OpenAiReasoningTest.kt$OpenAiReasoningTest$val</ID>
+    <ID>MaxLineLength:OpenAiReasoningTest.kt$OpenAiReasoningTest$val body = """{"choices":[{"index":0,"message":{"role":"assistant","content":"42"}}],"usage":{"prompt_tokens":10,"completion_tokens":50,"completion_tokens_details":{"reasoning_tokens":40}}}"""</ID>
+    <ID>MaxLineLength:OpenAiReasoningTest.kt$OpenAiReasoningTest$val body = """{"choices":[{"index":0,"message":{"role":"assistant","content":"answer","reasoning_content":"step by step"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}"""</ID>
+    <ID>MaxLineLength:ParallelExecutionTest.kt$ParallelExecutionTest$prompt("You receive a list of arguments. Combine them into a single balanced summary sentence. Reply with ONLY the summary.")</ID>
+    <ID>MaxLineLength:ParallelExecutionTest.kt$ParallelExecutionTest$skills { skill&lt;String, String&gt;("a", "A") { implementedBy { threads["a"] = Thread.currentThread().name; "a" } } }</ID>
+    <ID>MaxLineLength:ParallelExecutionTest.kt$ParallelExecutionTest$skills { skill&lt;String, String&gt;("b", "B") { implementedBy { threads["b"] = Thread.currentThread().name; "b" } } }</ID>
+    <ID>MaxLineLength:ParallelSessionTest.kt$ParallelSessionTest$assertEquals("parallel", terminal.agentId, "Parallel has no single output agent; terminal Completed.agentId is the literal 'parallel'")</ID>
+    <ID>MaxLineLength:ParallelSessionTest.kt$ParallelSessionTest$assertEquals(2, completedBeforeTerminal.size, "both branches must complete before the terminal; got events: $events")</ID>
+    <ID>MaxLineLength:ParallelSessionTest.kt$ParallelSessionTest$assertIs&lt;AgentEvent.Completed&lt;List&lt;String&gt;&gt;&gt;(terminal, "last event must be Completed&lt;List&lt;String&gt;&gt;; got: $terminal")</ID>
+    <ID>MaxLineLength:ParallelSessionTest.kt$ParallelSessionTest$fun</ID>
+    <ID>MaxLineLength:PipelineAgenticIntegrationTest.kt$PipelineAgenticIntegrationTest$prompt("Extract the key nouns from the text. Reply with a comma-separated list of nouns only, nothing else.")</ID>
+    <ID>MaxLineLength:PipelineAgenticIntegrationTest.kt$PipelineAgenticIntegrationTest$prompt("Format the comma-separated items as a markdown bullet list. Each item on its own line starting with '- '. Nothing else.")</ID>
+    <ID>MaxLineLength:PipelineSessionTest.kt$PipelineSessionTest$assertEquals("describe", e4.agentId, "Completed.agentId uses the last agent's name (its OUT matches Pipeline's OUT)")</ID>
+    <ID>MaxLineLength:PipelineSessionTest.kt$PipelineSessionTest$fun</ID>
+    <ID>MaxLineLength:PipelineSessionTest.kt$PipelineSessionTest$val e0 = events[0]</ID>
+    <ID>MaxLineLength:PipelineSessionTest.kt$PipelineSessionTest$val e1 = events[1]</ID>
+    <ID>MaxLineLength:PipelineSessionTest.kt$PipelineSessionTest$val e2 = events[2]</ID>
+    <ID>MaxLineLength:PipelineSessionTest.kt$PipelineSessionTest$val e3 = events[3]</ID>
+    <ID>MaxLineLength:PrefixStabilityGuardTest.kt$PrefixStabilityGuardTest$assertTrue(probeWarn != null, "first-sighting probe should flag the timestamp; got: ${capturing.records.map { it.message }}")</ID>
+    <ID>MaxLineLength:PrefixStabilityGuardTest.kt$PrefixStabilityGuardTest$val unstable = capturing.records.filter { it.level == Level.WARNING &amp;&amp; it.message.contains("changed between invocations") }</ID>
+    <ID>MaxLineLength:ReflectionFallbackTest.kt$ReflectionFallbackTest$val out = ReflectionFallback.withReflection&lt;Int&gt; { throw NoClassDefFoundError("simulated absent kotlin-reflect") }</ID>
+    <ID>MaxLineLength:RepairedArgsValidationTest.kt$RepairedArgsValidationTest$"executionError handler must NOT fire — typed deserialization failure is an invalidArgs concern, not an execution failure"</ID>
+    <ID>MaxLineLength:RepairedArgsValidationTest.kt$RepairedArgsValidationTest$"invalidArgs handler must be called for the initial bad args AND for the re-validated repair (got $invalidArgsHandlerCallCount)"</ID>
+    <ID>MaxLineLength:SealedSchemaGenerationTest.kt$SealedSchemaGenerationTest$assertEquals(2, variantCommas, "ReviewDecision has 3 variants → exactly 2 inter-variant commas, got $variantCommas in $schema")</ID>
+    <ID>MaxLineLength:SealedSchemaGenerationTest.kt$SealedSchemaGenerationTest$assertFalse(requiredSection.contains(""""notes""""), "nullable 'notes' must NOT be required, got: $requiredSection")</ID>
+    <ID>MaxLineLength:SharedKnowledgeTest.kt$SharedKnowledgeTest$knowledge("config", "Shared configuration store") { sharedKnowledge.entries.joinToString("\n") { "${it.key}=${it.value}" } }</ID>
+    <ID>MaxLineLength:SharedKnowledgeTest.kt$SharedKnowledgeTest$prompt("You are a code reviewer. Given an implementation plan and coding conventions, check if the plan follows conventions. Reply with a one-sentence verdict.")</ID>
+    <ID>MaxLineLength:SharedKnowledgeTest.kt$SharedKnowledgeTest$prompt("You are a technical planner. Given a feature request and the tech stack, outline 2-3 implementation steps. Be brief — one line per step.")</ID>
+    <ID>MaxLineLength:SignInAgentTest.kt$SignInAgentTest$buildRequest</ID>
+    <ID>MaxLineLength:SignInAgentTest.kt$SignInAgentTest$prompt("You are a sign-in assistant. To build a sign-in request you MUST: 1) call the passwords tool to look up credentials, 2) call build_request with the login and password from that lookup. After build_request returns the JSON, reply with ONLY that JSON — no explanation.")</ID>
+    <ID>MaxLineLength:Skill.kt$Skill$message = "Use the typed `tools(first, vararg rest)` overload that takes Tool&lt;*, *&gt; handles returned by `tool(...)` builders. The string form is kept for built-in tools (escalate, throwException, memory_*) and negative tests of validate()."</ID>
+    <ID>MaxLineLength:Skill.kt$SkillsBuilder$inline</ID>
+    <ID>MaxLineLength:Skill.kt$inline</ID>
+    <ID>MaxLineLength:SkillSelectionTest.kt$SkillSelectionTest$assertTrue(systemPrompt.contains("Convert text to lowercase"), "Routing prompt should contain lower description")</ID>
+    <ID>MaxLineLength:SkillSelectionTest.kt$SkillSelectionTest$assertTrue(systemPrompt.contains("Convert text to uppercase"), "Routing prompt should contain upper description")</ID>
+    <ID>MaxLineLength:SnapshotResumeTest.kt$SnapshotResumeTest$ModelClient { msgs -&gt; if (firstSeenMessages == null) firstSeenMessages = msgs.toList(); deque.removeFirst() }</ID>
+    <ID>MaxLineLength:SnapshotResumeTest.kt$SnapshotResumeTest$tools { step = tool("step", "") { _ -&gt; runsA[0]++; bankA.write("ActorsAgent", "progress=${runsA[0]}"); "ok" } }</ID>
+    <ID>MaxLineLength:StdioMcpTransportForProcessTest.kt$StdioMcpTransportForProcessTest$"""read req; echo err-line-1 &gt;&amp;2; echo err-line-2 &gt;&amp;2; printf '{"jsonrpc":"2.0","id":1,"result":null}\n'"""</ID>
+    <ID>MaxLineLength:StdioMcpTransportForProcessTest.kt$StdioMcpTransportForProcessTest$command = listOf("sh", "-c", "read req; printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"%s\"}\\n' \"\$(pwd)\"")</ID>
+    <ID>MaxLineLength:StdioMcpTransportForProcessTest.kt$StdioMcpTransportForProcessTest$command = listOf("sh", "-c", "read req; printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"%s\"}\\n' \"\$TEST_VAR\"")</ID>
+    <ID>MaxLineLength:SuspendInvocationTest.kt$SuspendInvocationTest$assertTrue(started.get() &gt;= 1, "at least one branch should have started before cancel (started=${started.get()})")</ID>
+    <ID>MaxLineLength:SwarmSessionTest.kt$SwarmSessionTest$?:</ID>
+    <ID>MaxLineLength:ThrowExceptionIntegrationTest.kt$ThrowExceptionIntegrationTest$@Suppress("DEPRECATION")</ID>
+    <ID>MaxLineLength:ToolAuthorizationTest.kt$ToolAuthorizationTest$?:</ID>
+    <ID>MaxLineLength:ToolAuthorizationTest.kt$ToolAuthorizationTest$skills { skill&lt;String, String&gt;("s", "stub") { tools() /* no specific tools, but memory should still work */ } }</ID>
+    <ID>MaxLineLength:ToolChoiceTest.kt$ToolChoiceTest$assertNull(parsed["tools"], "Ollama None drops tools — that part is enforceable even without native tool_choice")</ID>
+    <ID>MaxLineLength:ToolChoiceTest.kt$ToolChoiceTest$val client = OllamaClient(model = "gpt-oss:120b-cloud", tools = listOf(stubToolDef()), toolChoice = ToolChoice.Auto)</ID>
+    <ID>MaxLineLength:ToolChoiceTest.kt$ToolChoiceTest$val client = OllamaClient(model = "gpt-oss:120b-cloud", tools = listOf(stubToolDef()), toolChoice = ToolChoice.None)</ID>
+    <ID>MaxLineLength:ToolChoiceTest.kt$ToolChoiceTest$val client = OllamaClient(model = "gpt-oss:120b-cloud", tools = listOf(stubToolDef()), toolChoice = ToolChoice.Required)</ID>
+    <ID>MaxLineLength:ToolDef.kt$description = "Signal that you cannot fix the problem. Args: reason (string), severity (LOW/MEDIUM/HIGH/CRITICAL, optional, defaults to HIGH)."</ID>
+    <ID>MaxLineLength:ToolErrorIntegrationTest.kt$ToolErrorIntegrationTest$prompt("You are a calculator. Use the add tool. If a tool returns an error, reply with the error description — do NOT retry the tool.")</ID>
+    <ID>MaxLineLength:ToolErrorIntegrationTest.kt$ToolErrorIntegrationTest$prompt("You are a calculator. Use the provided tools to evaluate expressions step by step. Reply with ONLY the final number.")</ID>
+    <ID>MaxLineLength:ToolResult.kt$is Content.Document -&gt; "[document: ${part.mime.wireMime}] (${part.ref.hash.take(12)}, ${part.ref.sizeBytes}B)"</ID>
+    <ID>MaxLineLength:TypedToolDslTest.kt$TypedToolDslTest$responses.add(LlmResponse.ToolCalls(listOf(ToolCall(name = "greet", arguments = mapOf("name" to "world", "language" to "ru")))))</ID>
+    <ID>MaxLineLength:TypedToolValidationRoutingTest.kt$TypedToolValidationRoutingTest$responses.add(LlmResponse.ToolCalls(listOf(ToolCall(name = "greet", arguments = mapOf("name" to "ok", "language" to "en")))))</ID>
+    <ID>MaxLineLength:UntrustedToolOutputTest.kt$UntrustedToolOutputTest$sysMsg.content.contains("trusted", ignoreCase = true) &amp;&amp; sysMsg.content.contains("untrusted", ignoreCase = true)</ID>
+    <ID>MaxLineLength:WhileLoopTest.kt$WhileLoopTest$val isDone = agent&lt;Int, Boolean&gt;("isDone") { skills { skill&lt;Int, Boolean&gt;("isDone") { implementedBy { it &gt;= 15 } } } }</ID>
+    <ID>MaxLineLength:WhileLoopTest.kt$WhileLoopTest$val process = agent&lt;Int, Int&gt;("process") { skills { skill&lt;Int, Int&gt;("process") { implementedBy { it + 3 } } } }</ID>
+    <ID>MaxLineLength:WhileLoopTest.kt$WhileLoopTest$val revise = agent&lt;Document, Document&gt;("revise") { skills { skill&lt;Document, Document&gt;("revise") { implementedBy { Document(it.text + ".", it.revisions + 1) } } } }</ID>
+    <ID>MaxLineLength:WhileLoopTest.kt$WhileLoopTest$val trim = agent&lt;Document, Document&gt;("trim") { skills { skill&lt;Document, Document&gt;("trim") { implementedBy { Document(it.text.trim(), it.revisions) } } } }</ID>
+    <ID>MaxLineLength:WrapConcurrencyTest.kt$WrapConcurrencyTest$"cross-talk: user input '$userInput' saw system prompt '$systemPrompt' (expected start with '$expectedHead')"</ID>
+    <ID>NestedBlockDepth:AgenticLoop.kt$internal suspend fun &lt;IN&gt; executeAgentic( agent: Agent&lt;IN, *&gt;, skill: Skill&lt;*, *&gt;, input: IN, /** * #1707/#3: the effective system prompt for this invocation. Defaults * to the agent's baked-in `prompt`. The `wrap` operator passes the * teacher's output here instead of mutating `agent.prompt` (which * races on concurrent invocation of the same pipeline). */ effectivePrompt: String = agent.prompt, /** * #1739: optional AgentEvent emitter. When non-null, the loop streams * via `client.chatStream(...)`, surfaces `Token` / `ToolCallStarted` / * `ToolCallArgumentsDelta` events from chunks, and emits * `ToolCallFinished` after each tool executor runs. When null, the * loop uses `client.chat(...)` byte-for-byte as before — non-streaming * callers (`Agent.invoke`, `Agent.invokeSuspend`) pay no overhead. */ emitter: AgentEventEmitter? = null, runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(), /** * #2416 — resume seed. When non-null, the loop starts from this snapshot's * messages + counters (and restores memory) instead of a fresh conversation. */ resumeFrom: agents_engine.core.SessionSnapshot? = null, /** * #2416 — fired at each turn boundary (after a tool round completes, before * the next model call) with the current resumable state, for persistence. */ onTurnCheckpoint: ((agents_engine.core.SessionSnapshot) -&gt; Unit)? = null, /** * #2754 — when [resumeFrom] is non-null and carries a `manifestHash` that * differs from the current agent's `manifestHash`, resume fails closed by * throwing [agents_engine.core.SnapshotManifestMismatchException]. Set to * `true` to override (callers take responsibility for any migration * semantics). `null` snapshot.manifestHash is treated as "no manifest at * the time of snapshot" — allowed regardless, for back-compat with pre- * 0.6.4 snapshots. */ allowManifestMismatch: Boolean = false, /** * #2488 — typed resume input for the HITL interrupt primitive. When * [resumeFrom] is non-null and carries `pendingInterruptCallId`, this * value is rendered via [toLlmInput] (so typed `@Generable` replies * become JSON) and synthesised as the interrupted tool's result message * before the loop resumes. Required when resuming an interrupted * snapshot; ignored otherwise. */ resumeWith: Any? = null, /** * #2470 slice b — image attachments for the FIRST user LlmMessage. * Each `Content.Image` is dereferenced against [Agent.blobStore] * (errors fast when null), base64-encoded once, and rendered into * an [ImagePart]. Non-image content variants are skipped — Document * / Audio / Video flow through the wire only once #2470 slice c * (provider doc/audio/video adapters) ships. Ignored on resume (the * snapshot's restored conversation already carries the original * attachments on the saved user turn). */ attachments: List&lt;agents_engine.content.Content&gt;? = null, ): AgenticResult</ID>
+    <ID>PackageNaming:AdditionalPropertiesFalseTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:Agent.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:AgentAttachmentsTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:AgentBudgetExtensionAllReasonsTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:AgentBudgetExtensionTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:AgentCoverageTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:AgentEntityDSLTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:AgentEvent.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:AgentFibonacciMcpTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:AgentFreezeTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:AgentMcpDsl.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:AgentMcpDslTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:AgentMcpToolUseTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:AgentMemoryTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:AgentPlacementTest.kt$package agents_engine.composition</ID>
+    <ID>PackageNaming:AgentRuntimeContext.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:AgentRuntimeContextTest.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:AgentSession.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:AgentSessionBasicEventsTest.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:AgentSessionCancellationTest.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:AgentSessionExtension.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:AgentSessionIncrementalArrivalTest.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:AgentSessionIntegrationTest.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:AgentSessionLiveTest.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:AgentToStringTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:AgentVisionLiveTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:AgenticLoop.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:AgenticLoopCacheHintTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:AgenticLoopCoverageTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:AgenticLoopMutationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:AgenticLoopTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:AgenticSkillTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:AgentsForumTest.kt$package agents_engine.composition.forum</ID>
+    <ID>PackageNaming:AgentsParallelTest.kt$package agents_engine.composition.parallel</ID>
+    <ID>PackageNaming:AgentsPipelineTest.kt$package agents_engine.composition.pipeline</ID>
+    <ID>PackageNaming:AgentsSkillsTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:AllSpecsDeepIntegrationTest.kt$package agents_engine.composition</ID>
+    <ID>PackageNaming:Annotations.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:Ansi.kt$package agents_engine.runtime</ID>
+    <ID>PackageNaming:AnsiTest.kt$package agents_engine.runtime</ID>
+    <ID>PackageNaming:BaseSkillUnitTest.kt$package agent_unit</ID>
+    <ID>PackageNaming:BearerAuthTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:BeforeInterceptorTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:Branch.kt$package agents_engine.composition.branch</ID>
+    <ID>PackageNaming:BranchAgenticIntegrationTest.kt$package agents_engine.composition.branch</ID>
+    <ID>PackageNaming:BranchBuilder.kt$package agents_engine.composition.branch</ID>
+    <ID>PackageNaming:BranchBuilderCoverageTest.kt$package agents_engine.composition.branch</ID>
+    <ID>PackageNaming:BranchExecutionTest.kt$package agents_engine.composition.branch</ID>
+    <ID>PackageNaming:BranchMatchRouteTest.kt$package agents_engine.composition.branch</ID>
+    <ID>PackageNaming:BranchSafetyTest.kt$package agents_engine.composition.branch</ID>
+    <ID>PackageNaming:BranchSessionExtension.kt$package agents_engine.composition.branch</ID>
+    <ID>PackageNaming:BranchSessionTest.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:BranchSuspendTest.kt$package agents_engine.composition.branch</ID>
+    <ID>PackageNaming:BudgetConfig.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:BudgetDefaultTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:BuildInfo.kt$package agents_engine.internal</ID>
+    <ID>PackageNaming:BuiltInToolWireSchema.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:CacheConfig.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:CacheConfigTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:CacheHint.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:CacheHintTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:CacheObservabilityTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:CheckpointAllReasonsTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ClaudeCacheBreakpointTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ClaudeClient.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ClaudeClientCancellationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ClaudeClientChatStreamLiveTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ClaudeClientChatStreamTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ClaudeClientCoverageTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ClaudeClientIntegrationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ClaudeClientTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ClaudeReasoningTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:CoerceBoundaryAndDispatchTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:CoerceHelpersBranchTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:CoerceValueOverflowTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:ConstrainedDecodingTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:Content.kt$package agents_engine.content</ID>
+    <ID>PackageNaming:ContentAndRefTest.kt$package agents_engine.content</ID>
+    <ID>PackageNaming:ContentRef.kt$package agents_engine.content</ID>
+    <ID>PackageNaming:CustomCacheSegmentTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:Decision.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:DeepSeekClient.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:DeepSeekClientIntegrationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:DeepSeekClientTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:DeepSeekReasoningTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:DeterministicModelClient.kt$package agents_engine.testing</ID>
+    <ID>PackageNaming:DeterministicModelClientTest.kt$package agents_engine.testing</ID>
+    <ID>PackageNaming:DuplicateToolNameTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:EscalateToolTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:EvalDsl.kt$package agents_engine.testing</ID>
+    <ID>PackageNaming:EvalDslTest.kt$package agents_engine.testing</ID>
+    <ID>PackageNaming:ExitAgent.kt$package agents_engine.runtime.swarmdemo.exitagent</ID>
+    <ID>PackageNaming:ExtendedBudgetTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:FactorAgent.kt$package agents_engine.runtime.swarmdemo.factor</ID>
+    <ID>PackageNaming:FibAgent.kt$package agents_engine.runtime.swarmdemo.fib</ID>
+    <ID>PackageNaming:FibStreamingLiveIntegrationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:FibonacciMcpServer.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:FibonacciMcpServerTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:FibonacciMemoryTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:FibonacciResourcePromptTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:FileSnapshotStoreSafetyTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:Files.kt$package agents_engine.content</ID>
+    <ID>PackageNaming:FilesTest.kt$package agents_engine.content</ID>
+    <ID>PackageNaming:Forum.kt$package agents_engine.composition.forum</ID>
+    <ID>PackageNaming:ForumCastReturnTest.kt$package agents_engine.composition.forum</ID>
+    <ID>PackageNaming:ForumExecutionTest.kt$package agents_engine.composition.forum</ID>
+    <ID>PackageNaming:ForumReturnToolSchemaTest.kt$package agents_engine.composition.forum</ID>
+    <ID>PackageNaming:ForumSessionExtension.kt$package agents_engine.composition.forum</ID>
+    <ID>PackageNaming:ForumSessionTest.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:ForumTranscriptTest.kt$package agents_engine.composition.forum</ID>
+    <ID>PackageNaming:GenerableEnforcementTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:GenerableLlmDescriptionTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:GenerableSupport.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:GenerableSupportCoverageTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:GenerableSupportMutationTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:GenerableTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:GeneratedMetaCacheTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:GeneratedSchemaLookupTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:GuessingGameLiveTest.kt$package agents_engine.composition.wrap</ID>
+    <ID>PackageNaming:GuessingGameTest.kt$package agents_engine.composition.wrap</ID>
+    <ID>PackageNaming:HttpMcpTransport.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:HumanApproval.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:HumanApprovalTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:InlineToolCallParser.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:InlineToolCallParserTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:InteractiveLiveShowDemo.kt$package agents_engine.runtime</ID>
+    <ID>PackageNaming:InteractivePipelineDemo.kt$package agents_engine.runtime</ID>
+    <ID>PackageNaming:InternalsAgent.kt$package agents_engine.runtime.internals</ID>
+    <ID>PackageNaming:InternalsAgentTest.kt$package agents_engine.runtime.internals</ID>
+    <ID>PackageNaming:Interrupt.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:InterruptResumeTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:InvokeSuspendResumingTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:JsonEscape.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:JsonEscapeTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:JsonParseEscalationIntegrationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:KnowledgeToolDescriptionTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:KoogRegressionEnumSchemaTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:KoogRegressionLoopProtectionTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:KoogRegressionMcpCleanTextOutputTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:KoogRegressionSealedDispatchTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:KoogRegressionSessionHistoryTest.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:KoogRegressionStreamingChunkReconstructionTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:KoogRegressionStringifiedJsonCoercionTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:KoogRegressionUnknownToolTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:KoogRegressionWrongTypedArgsTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:LenientJsonParser.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:LenientJsonParserCoverageTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:LenientJsonParserDepthAndBoundaryTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:LenientJsonParserDepthLimitTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:LenientJsonParserMutationTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:LenientJsonParserOomGuardTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:LenientJsonParserTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:LenientJsonParserUnterminatedTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:LineDelimitedMcpTransport.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:LineEditor.kt$package agents_engine.runtime</ID>
+    <ID>PackageNaming:LiveRunner.kt$package agents_engine.runtime</ID>
+    <ID>PackageNaming:LiveRunnerCliAndOnceTest.kt$package agents_engine.runtime</ID>
+    <ID>PackageNaming:LiveShow.kt$package agents_engine.runtime</ID>
+    <ID>PackageNaming:LiveShowLineEditorTest.kt$package agents_engine.runtime</ID>
+    <ID>PackageNaming:LiveShowTest.kt$package agents_engine.runtime</ID>
+    <ID>PackageNaming:LiveShowUiTest.kt$package agents_engine.runtime</ID>
+    <ID>PackageNaming:LlmChunk.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:LlmInputSerializationTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:LlmJudge.kt$package agents_engine.testing</ID>
+    <ID>PackageNaming:LlmJudgeTest.kt$package agents_engine.testing</ID>
+    <ID>PackageNaming:LlmMessageCacheHintTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:LlmProviderException.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:LoadResourceTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:Loop.kt$package agents_engine.composition.loop</ID>
+    <ID>PackageNaming:LoopAgenticIntegrationTest.kt$package agents_engine.composition.loop</ID>
+    <ID>PackageNaming:LoopExecutionTest.kt$package agents_engine.composition.loop</ID>
+    <ID>PackageNaming:LoopPlacementTest.kt$package agents_engine.composition.loop</ID>
+    <ID>PackageNaming:LoopSessionExtension.kt$package agents_engine.composition.loop</ID>
+    <ID>PackageNaming:LoopSessionTest.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:LoopWhilePatternTest.kt$package agents_engine.composition.loop</ID>
+    <ID>PackageNaming:LoopbackMcpAlgebraTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:Main.kt$package agents_engine.runtime.internals</ID>
+    <ID>PackageNaming:MaxConsecutiveSameToolTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:MaxTokensBudgetTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:McpAuth.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpAuthRedactionTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpClient.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpClientInputSchemaForwardingTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpClientLiveTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpClientMockTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpClientWireParsingTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpJson.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpPromptsAsSkillsTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpProtocolVersion.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpProtocolVersionTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpResourcesAsSkillsTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpRunner.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpRunnerMissingFlagValueTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpRunnerMutationTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpRunnerTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpServer.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpServerBeforeInterceptorTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpServerBodySizeLimitTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpServerConformanceTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpServerErrorPathsTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpServerInfo.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpServerInfoSnapshotTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpServerLifecycleTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpServerPromptResourceHandlersTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpServerSecurity.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpServerSecurityTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpServerTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpStdioServer.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpStdioServerTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpTool.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpToolsAsSkillsTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:McpTransport.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:Memory.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:MemoryBankNamespacedRestoreTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:MemoryToolPerSkillOptInTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:MemoryToolSchemaTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:MockMcpProtocol.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:MockMcpServer.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:MockStdioMcpServer.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:MockTcpMcpServer.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:ModelClient.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ModelClientChatStreamDefaultTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ModelConfig.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ModelConfigTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ObservePipelineEventTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:OllamaAssistantToolCallContentTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaCacheHintNoopTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaClient.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaClientCancellationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaClientChatStreamLiveTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaClientChatStreamTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaClientCoverageTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaClientIntegrationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaClientResponseSizeLimitTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaClientRetryTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaClientTimeoutTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaGemmaFallbackScenariosTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaInlineToolFallbackTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaPreflight.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaPreflightTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaProviderErrorIntegrationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaProviderErrorTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaReasoningTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaRequestJsonEscapingTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OllamaSchemaGenerationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OnBudgetThresholdTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OnErrorBuilder.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OnErrorDSLTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OnErrorListenerTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OnTokenUsageTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OpenAiClient.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OpenAiClientCancellationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OpenAiClientChatStreamLiveTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OpenAiClientChatStreamTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OpenAiClientCoverageTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OpenAiClientIntegrationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OpenAiClientTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OpenAiPromptCacheKeyTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:OpenAiReasoningTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:Parallel.kt$package agents_engine.composition.parallel</ID>
+    <ID>PackageNaming:ParallelExecutionTest.kt$package agents_engine.composition.parallel</ID>
+    <ID>PackageNaming:ParallelSessionExtension.kt$package agents_engine.composition.parallel</ID>
+    <ID>PackageNaming:ParallelSessionTest.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:ParseToolArgumentsBranchTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:PartiallyGenerated.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:Pipeline.kt$package agents_engine.composition.pipeline</ID>
+    <ID>PackageNaming:PipelineAgenticIntegrationTest.kt$package agents_engine.composition.pipeline</ID>
+    <ID>PackageNaming:PipelineEvent.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:PipelineExecutionTest.kt$package agents_engine.composition.pipeline</ID>
+    <ID>PackageNaming:PipelineIntegrationTest.kt$package agent_unit</ID>
+    <ID>PackageNaming:PipelineSessionExtension.kt$package agents_engine.composition.pipeline</ID>
+    <ID>PackageNaming:PipelineSessionTest.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:PrefixStabilityGuard.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:PrefixStabilityGuardTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ReasoningCoreTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:RecapAgent.kt$package agents_engine.runtime.swarmdemo.recap</ID>
+    <ID>PackageNaming:ReflectionFallback.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:ReflectionFallbackTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:RepairedArgsValidationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ReservedMemoryToolNamesTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:Resources.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:SealedSchemaGenerationTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:SessionHistory.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:SharedKnowledgeTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:SignInAgentTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:Skill.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:SkillFreezeTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:SkillInvokeTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:SkillKnowledgeTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:SkillLlmContextTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:SkillLlmDescriptionTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:SkillRoute.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:SkillRoutingTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:SkillSelectionTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:SkillsEncapsulationTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:Snapshot.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:SnapshotManifestGuardTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:SnapshotResumeTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:StdioMcpTransport.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:StdioMcpTransportForProcessTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:StdioTransportTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:StreamingAggregator.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:StreamingAggregatorCoverageTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:StrictArgsValidationTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:SuspendInvocationTest.kt$package agents_engine.composition</ID>
+    <ID>PackageNaming:Swarm.kt$package agents_engine.runtime</ID>
+    <ID>PackageNaming:SwarmDelegateToolSchemaTest.kt$package agents_engine.runtime</ID>
+    <ID>PackageNaming:SwarmJarIntegrationTest.kt$package agents_engine.runtime</ID>
+    <ID>PackageNaming:SwarmSessionTest.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:SwarmTest.kt$package agents_engine.runtime</ID>
+    <ID>PackageNaming:TcpMcpTransport.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:TcpTransportTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:ThrowExceptionIntegrationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:Tool.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:ToolAuthorizationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ToolBlockOnErrorTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ToolChoice.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ToolChoiceTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ToolDef.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ToolError.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ToolErrorAgentRepairTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ToolErrorAgenticLoopTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ToolErrorDefaultsTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ToolErrorIntegrationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ToolErrorTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ToolHallucinatedEventTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:ToolHandleTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ToolLevelOnErrorTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ToolMapEncapsulationTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:ToolNameNamespacingTest.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:ToolParametersSchemaTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ToolPolicy.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:ToolPolicyDslTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:ToolPolicyEnforcementTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:ToolRegistrationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:ToolResult.kt$package agents_engine.content</ID>
+    <ID>PackageNaming:ToolResultIntegrationTest.kt$package agents_engine.content</ID>
+    <ID>PackageNaming:ToolsBuilderMutationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:TypedArgsLiveIntegrationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:TypedToolDslTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:TypedToolRefsTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:TypedToolValidationRoutingTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:UnknownToolNameValidationTest.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:UntrustedToolOutputTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:UntrustedToolResultEscapingTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:VisionFixtures.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:VisionLiveTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:VisionWireFormatTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:WhileLoopTest.kt$package agents_engine.composition.pipeline</ID>
+    <ID>PackageNaming:Wrap.kt$package agents_engine.composition.wrap</ID>
+    <ID>PackageNaming:WrapConcurrencyTest.kt$package agents_engine.composition.wrap</ID>
+    <ID>PackageNaming:WrapLiveIntegrationTest.kt$package agents_engine.composition.wrap</ID>
+    <ID>PackageNaming:WrapSessionTest.kt$package agents_engine.runtime.events</ID>
+    <ID>PackageNaming:WrapTest.kt$package agents_engine.composition.wrap</ID>
+    <ID>SwallowedException:AgenticLoop.kt$signal: agents_engine.core.PendingInterruptSignal</ID>
+    <ID>SwallowedException:OllamaClientTimeoutTest.kt$OllamaClientTimeoutTest$e: HttpTimeoutException</ID>
+    <ID>SwallowedException:ToolDef.kt$e: IllegalArgumentException</ID>
+    <ID>ThrowsCount:AgenticLoop.kt$internal suspend fun &lt;IN&gt; executeAgentic( agent: Agent&lt;IN, *&gt;, skill: Skill&lt;*, *&gt;, input: IN, /** * #1707/#3: the effective system prompt for this invocation. Defaults * to the agent's baked-in `prompt`. The `wrap` operator passes the * teacher's output here instead of mutating `agent.prompt` (which * races on concurrent invocation of the same pipeline). */ effectivePrompt: String = agent.prompt, /** * #1739: optional AgentEvent emitter. When non-null, the loop streams * via `client.chatStream(...)`, surfaces `Token` / `ToolCallStarted` / * `ToolCallArgumentsDelta` events from chunks, and emits * `ToolCallFinished` after each tool executor runs. When null, the * loop uses `client.chat(...)` byte-for-byte as before — non-streaming * callers (`Agent.invoke`, `Agent.invokeSuspend`) pay no overhead. */ emitter: AgentEventEmitter? = null, runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(), /** * #2416 — resume seed. When non-null, the loop starts from this snapshot's * messages + counters (and restores memory) instead of a fresh conversation. */ resumeFrom: agents_engine.core.SessionSnapshot? = null, /** * #2416 — fired at each turn boundary (after a tool round completes, before * the next model call) with the current resumable state, for persistence. */ onTurnCheckpoint: ((agents_engine.core.SessionSnapshot) -&gt; Unit)? = null, /** * #2754 — when [resumeFrom] is non-null and carries a `manifestHash` that * differs from the current agent's `manifestHash`, resume fails closed by * throwing [agents_engine.core.SnapshotManifestMismatchException]. Set to * `true` to override (callers take responsibility for any migration * semantics). `null` snapshot.manifestHash is treated as "no manifest at * the time of snapshot" — allowed regardless, for back-compat with pre- * 0.6.4 snapshots. */ allowManifestMismatch: Boolean = false, /** * #2488 — typed resume input for the HITL interrupt primitive. When * [resumeFrom] is non-null and carries `pendingInterruptCallId`, this * value is rendered via [toLlmInput] (so typed `@Generable` replies * become JSON) and synthesised as the interrupted tool's result message * before the loop resumes. Required when resuming an interrupted * snapshot; ignored otherwise. */ resumeWith: Any? = null, /** * #2470 slice b — image attachments for the FIRST user LlmMessage. * Each `Content.Image` is dereferenced against [Agent.blobStore] * (errors fast when null), base64-encoded once, and rendered into * an [ImagePart]. Non-image content variants are skipped — Document * / Audio / Video flow through the wire only once #2470 slice c * (provider doc/audio/video adapters) ships. Ignored on resume (the * snapshot's restored conversation already carries the original * attachments on the saved user turn). */ attachments: List&lt;agents_engine.content.Content&gt;? = null, ): AgenticResult</ID>
+    <ID>ThrowsCount:AgenticLoop.kt$private fun &lt;IN&gt; executeToolWithExecutionRecovery( agent: Agent&lt;IN, *&gt;, tool: ToolDef, toolName: String, args: Map&lt;String, Any?&gt;, handler: ToolErrorHandler?, ): Any?</ID>
+    <ID>ThrowsCount:AgenticLoop.kt$private fun &lt;IN&gt; recoverInvalidArguments( agent: Agent&lt;IN, *&gt;, tool: ToolDef, call: ToolCall, handler: ToolErrorHandler?, parseError: String, ): Any?</ID>
+    <ID>ThrowsCount:AgenticLoop.kt$private suspend fun &lt;IN&gt; executeToolWithBudget( agent: Agent&lt;IN, *&gt;, tool: ToolDef, call: ToolCall, budget: BudgetConfig, emitter: AgentEventEmitter? = null, ): Any?</ID>
+    <ID>TooGenericExceptionCaught:Agent.kt$Agent$callbackError: Throwable</ID>
+    <ID>TooGenericExceptionCaught:Agent.kt$Agent$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:AgentSessionExtension.kt$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:AgenticLoop.kt$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:AgenticLoop.kt$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:BranchSessionExtension.kt$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:Decision.kt$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:EvalDsl.kt$EvalCase$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:ForumSessionExtension.kt$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:LiveRunner.kt$LiveRunner$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:LiveShow.kt$LiveShow$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:LoopSessionExtension.kt$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:ParallelSessionExtension.kt$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:PipelineSessionExtension.kt$t: Throwable</ID>
+    <ID>TooGenericExceptionThrown:AgenticLoopCoverageTest.kt$AgenticLoopCoverageTest$throw RuntimeException("original-failure")</ID>
+    <ID>TooGenericExceptionThrown:AgenticLoopCoverageTest.kt$AgenticLoopCoverageTest$throw RuntimeException("real-failure")</ID>
+    <ID>TooGenericExceptionThrown:AgenticLoopMutationTest.kt$AgenticLoopMutationTest$throw RuntimeException("boom")</ID>
+    <ID>TooGenericExceptionThrown:AgenticLoopMutationTest.kt$AgenticLoopMutationTest$throw RuntimeException("explicit failure")</ID>
+    <ID>TooGenericExceptionThrown:EscalateToolTest.kt$EscalateToolTest$throw RuntimeException("Parse failed")</ID>
+    <ID>TooGenericExceptionThrown:McpServerErrorPathsTest.kt$McpServerErrorPathsTest$throw RuntimeException("kaboom")</ID>
+    <ID>TooGenericExceptionThrown:McpServerPromptResourceHandlersTest.kt$McpServerPromptResourceHandlersTest$throw RuntimeException("io fail")</ID>
+    <ID>TooGenericExceptionThrown:ObservePipelineEventTest.kt$ObservePipelineEventTest$throw RuntimeException("transport down")</ID>
+    <ID>TooGenericExceptionThrown:OnErrorListenerTest.kt$OnErrorListenerTest$throw RuntimeException("infra")</ID>
+    <ID>TooGenericExceptionThrown:OnErrorListenerTest.kt$OnErrorListenerTest$throw RuntimeException("once")</ID>
+    <ID>TooGenericExceptionThrown:OnErrorListenerTest.kt$OnErrorListenerTest$throw RuntimeException("real failure")</ID>
+    <ID>TooGenericExceptionThrown:OnErrorListenerTest.kt$OnErrorListenerTest$throw RuntimeException("transport blew up")</ID>
+    <ID>TooGenericExceptionThrown:ThrowExceptionIntegrationTest.kt$ThrowExceptionIntegrationTest$throw RuntimeException("Bad data")</ID>
+    <ID>TooGenericExceptionThrown:ThrowExceptionIntegrationTest.kt$ThrowExceptionIntegrationTest$throw RuntimeException("Broken")</ID>
+    <ID>TooGenericExceptionThrown:ThrowExceptionIntegrationTest.kt$ThrowExceptionIntegrationTest$throw RuntimeException("Cannot decode binary")</ID>
+    <ID>TooGenericExceptionThrown:ThrowExceptionIntegrationTest.kt$ThrowExceptionIntegrationTest$throw RuntimeException("Fail")</ID>
+    <ID>TooGenericExceptionThrown:ThrowExceptionIntegrationTest.kt$ThrowExceptionIntegrationTest$throw RuntimeException("Invalid UTF-8 sequence: null bytes detected")</ID>
+    <ID>TooGenericExceptionThrown:ToolBlockOnErrorTest.kt$ToolBlockOnErrorTest$throw RuntimeException("corrupt input")</ID>
+    <ID>TooGenericExceptionThrown:ToolBlockOnErrorTest.kt$ToolBlockOnErrorTest$throw RuntimeException("transient")</ID>
+    <ID>TooGenericExceptionThrown:ToolErrorAgenticLoopTest.kt$ToolErrorAgenticLoopTest$throw RuntimeException("Bad args")</ID>
+    <ID>TooGenericExceptionThrown:ToolErrorAgenticLoopTest.kt$ToolErrorAgenticLoopTest$throw RuntimeException("Boom")</ID>
+    <ID>TooGenericExceptionThrown:ToolErrorAgenticLoopTest.kt$ToolErrorAgenticLoopTest$throw RuntimeException("Fail")</ID>
+    <ID>TooGenericExceptionThrown:ToolErrorAgenticLoopTest.kt$ToolErrorAgenticLoopTest$throw RuntimeException("Network error")</ID>
+    <ID>TooGenericExceptionThrown:ToolErrorAgenticLoopTest.kt$ToolErrorAgenticLoopTest$throw RuntimeException("Transient")</ID>
+    <ID>TooGenericExceptionThrown:ToolErrorIntegrationTest.kt$ToolErrorIntegrationTest$throw RuntimeException("Hardware fault")</ID>
+    <ID>TooGenericExceptionThrown:ToolErrorIntegrationTest.kt$ToolErrorIntegrationTest$throw RuntimeException("Service permanently down")</ID>
+    <ID>TooGenericExceptionThrown:ToolErrorIntegrationTest.kt$ToolErrorIntegrationTest$throw RuntimeException("Transient network error")</ID>
+    <ID>TooGenericExceptionThrown:ToolErrorIntegrationTest.kt$ToolErrorIntegrationTest$throw RuntimeException("Transient")</ID>
+    <ID>TooGenericExceptionThrown:ToolErrorIntegrationTest.kt$ToolErrorIntegrationTest$throw RuntimeException("add service unavailable")</ID>
+    <ID>TooGenericExceptionThrown:ToolLevelOnErrorTest.kt$ToolLevelOnErrorTest$throw RuntimeException("Bad input")</ID>
+    <ID>TooGenericExceptionThrown:ToolLevelOnErrorTest.kt$ToolLevelOnErrorTest$throw RuntimeException("Broken")</ID>
+    <ID>TooGenericExceptionThrown:ToolLevelOnErrorTest.kt$ToolLevelOnErrorTest$throw RuntimeException("Permanent failure")</ID>
+    <ID>TooGenericExceptionThrown:ToolLevelOnErrorTest.kt$ToolLevelOnErrorTest$throw RuntimeException("broken")</ID>
+    <ID>TooGenericExceptionThrown:ToolLevelOnErrorTest.kt$ToolLevelOnErrorTest$throw RuntimeException("flaky compile")</ID>
+    <ID>TooGenericExceptionThrown:ToolLevelOnErrorTest.kt$ToolLevelOnErrorTest$throw RuntimeException("timeout")</ID>
+    <ID>TooGenericExceptionThrown:ToolLevelOnErrorTest.kt$ToolLevelOnErrorTest$throw RuntimeException("transient")</ID>
+    <ID>UnusedParameter:AgenticLoop.kt$agent: Agent&lt;IN, *&gt;</ID>
+    <ID>UnusedParameter:FilesTest.kt$FilesTest$@TempDir dir: Path</ID>
+    <ID>UnusedPrivateMember:McpRunnerMissingFlagValueTest.kt$McpRunnerMissingFlagValueTest$private fun trivial()</ID>
+    <ID>UnusedPrivateProperty:AgentEntityDSLTest.kt$AgentEntityDSLTest$val someAgent = agent&lt;SomeAgentAsk, SomeAgentResult&gt;("SomeAgentAsk-to-SomeAgentResult") { skills { skill&lt;SomeAgentAsk, SomeAgentResult&gt;("convert") { implementedBy { SomeAgentResult(it.v, 1L) } } } }</ID>
+    <ID>UnusedPrivateProperty:AgentsForumTest.kt$AgentsForumTest$val pipeline = inputToSpecsConverter then (forumInitiationAgent * crazyCodeSlopGenerator * passiveCodeGenerator * answerMaster) then printMaster</ID>
+    <ID>UnusedPrivateProperty:AgentsPipelineTest.kt$AgentsPipelineTest$val pipeline: Pipeline&lt;SomeAgentAsk, SomeAgentResult&gt; = first then second</ID>
+    <ID>UnusedPrivateProperty:AgentsPipelineTest.kt$AgentsPipelineTest$val pipeline: Pipeline&lt;SomeSpecAsk, SomeProduction&gt; = specMaster then coderMaster then reviewMaster then productionMaster</ID>
+    <ID>UnusedPrivateProperty:AgentsPipelineTest.kt$AgentsPipelineTest$val totalPipeline = pipelinePt1 then pipelinePt2</ID>
+    <ID>UnusedPrivateProperty:AgentsPipelineTest.kt$AgentsPipelineTest$val totalPipelineWithType: Pipeline&lt;SomeSpecAsk, SomeProductionMachineryManagement&gt; = pipelinePt1 then pipelinePt2</ID>
+    <ID>UnusedPrivateProperty:LoopAgenticIntegrationTest.kt$LoopAgenticIntegrationTest$var bestDraft = ""</ID>
+    <ID>UnusedPrivateProperty:MockTcpMcpServer.kt$MockTcpMcpServer$private val acceptThread = Thread({ acceptLoop() }, "MockTcpMcpServer-accept-${server.localPort}").apply { isDaemon = true start() }</ID>
+    <ID>UseCheckOrError:LenientJsonParser.kt$LenientJsonParser.Parser$throw IllegalStateException( "LenientJsonParser: unexpected character '${s[pos]}' at pos $pos" )</ID>
+    <ID>UseCheckOrError:LenientJsonParser.kt$LenientJsonParser.Parser$throw IllegalStateException( "LenientJsonParser: zero-progress at pos $pos in array" )</ID>
+    <ID>UseCheckOrError:LenientJsonParser.kt$LenientJsonParser.Parser$throw IllegalStateException( "LenientJsonParser: zero-progress at pos $pos in object" )</ID>
+    <ID>UseCheckOrError:LenientJsonParser.kt$LenientJsonParser.Parser$throw IllegalStateException("JSON nesting exceeds $MAX_NESTING_DEPTH")</ID>
+    <ID>UseRequire:JsonParseEscalationIntegrationTest.kt$JsonParseEscalationIntegrationTest$throw IllegalArgumentException("Invalid JSON: must be an object starting with { and ending with }")</ID>
+    <ID>UseRequire:JsonParseEscalationIntegrationTest.kt$JsonParseEscalationIntegrationTest$throw IllegalArgumentException("No valid keys found — JSON may have unquoted keys. All keys must be double-quoted.")</ID>
+    <ID>VariableNaming:GeneratedMetaCacheTest.kt$MetaCacheInstanceFields__GeneratedSchema$@JvmField val JSON_SCHEMA: String = "should-be-filtered" // instance field, not static</ID>
+  </CurrentIssues>
+</SmellBaseline>
