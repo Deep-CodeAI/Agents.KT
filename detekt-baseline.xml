@@ -48,11 +48,6 @@
     <ID>MagicNumber:McpRunner.kt$McpRunner$50</ID>
     <ID>MagicNumber:McpServer.kt$McpServer$200</ID>
     <ID>MagicNumber:McpServer.kt$McpServer$202</ID>
-    <ID>MagicNumber:McpServer.kt$McpServer$32600</ID>
-    <ID>MagicNumber:McpServer.kt$McpServer$32601</ID>
-    <ID>MagicNumber:McpServer.kt$McpServer$32602</ID>
-    <ID>MagicNumber:McpServer.kt$McpServer$32603</ID>
-    <ID>MagicNumber:McpServer.kt$McpServer$32700</ID>
     <ID>MagicNumber:McpServer.kt$McpServer$400</ID>
     <ID>MagicNumber:McpServer.kt$McpServer$403</ID>
     <ID>MagicNumber:McpServer.kt$McpServer$405</ID>
@@ -69,8 +64,6 @@
     <ID>MagicNumber:ModelConfig.kt$ModelConfig$8</ID>
     <ID>MagicNumber:PrefixStabilityGuard.kt$PrefixStabilityGuard$4</ID>
     <ID>MagicNumber:StdioMcpTransport.kt$StdioMcpTransport.Companion$500</ID>
-    <ID>MagicNumber:ToolPolicy.kt$ManifestJson$16</ID>
-    <ID>MagicNumber:ToolPolicy.kt$ManifestJson$4</ID>
     <ID>MagicNumber:ToolResult.kt$12</ID>
     <ID>MaxLineLength:Agent.kt$Agent$"Router uncertain (confidence=${route.confidence}, threshold=$skillSelectionConfidenceThreshold). "</ID>
     <ID>MaxLineLength:Agent.kt$Agent$var</ID>
@@ -207,6 +200,8 @@
     <ID>MaxLineLength:JsonParseEscalationIntegrationTest.kt$JsonParseEscalationIntegrationTest$assertTrue(toolUses.size &gt;= 2, "onToolUse must fire at least twice (escalation error + success), got: ${toolUses.size}")</ID>
     <ID>MaxLineLength:JsonParseEscalationIntegrationTest.kt$JsonParseEscalationIntegrationTest$description("Count top-level keys in a JSON object. Args: json (string — valid JSON with double-quoted keys)")</ID>
     <ID>MaxLineLength:JsonParseEscalationIntegrationTest.kt$JsonParseEscalationIntegrationTest$throw IllegalArgumentException("No valid keys found — JSON may have unquoted keys. All keys must be double-quoted.")</ID>
+    <ID>MaxLineLength:JsonRpc.kt$JsonRpc$"""{"${JsonRpcWire.KEY_JSONRPC}":"${JsonRpcWire.VERSION}","${JsonRpcWire.KEY_ID}":${McpJson.encode(id)},"${JsonRpcWire.KEY_RESULT}":${McpJson.encode(result)}}"""</ID>
+    <ID>MaxLineLength:JsonRpc.kt$JsonRpc$return """{"${JsonRpcWire.KEY_JSONRPC}":"${JsonRpcWire.VERSION}","${JsonRpcWire.KEY_ID}":${McpJson.encode(id)},"${JsonRpcWire.KEY_ERROR}":${McpJson.encode(errorObj)}}"""</ID>
     <ID>MaxLineLength:KnowledgeToolDescriptionTest.kt$KnowledgeToolDescriptionTest$knowledge("checklist", "Self-verification steps before returning output") { "1. Check length\n2. Check tone" }</ID>
     <ID>MaxLineLength:KoogRegressionMcpCleanTextOutputTest.kt$KoogRegressionMcpCleanTextOutputTest$val request = """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"$toolName","arguments":$argsJson}}"""</ID>
     <ID>MaxLineLength:KoogRegressionUnknownToolTest.kt$KoogRegressionUnknownToolTest$?:</ID>
@@ -228,10 +223,10 @@
     <ID>MaxLineLength:LoopWhilePatternTest.kt$LoopWhilePatternTest$val normalize = agent&lt;Signal, Signal&gt;("normalize") { skills { skill&lt;Signal, Signal&gt;("normalize") { implementedBy { Signal(it.value + 1.0) } } } }</ID>
     <ID>MaxLineLength:McpAuthRedactionTest.kt$McpAuthRedactionTest$assertTrue(rendered.contains("redacted", ignoreCase = true), "toString must indicate redaction; got: '$rendered'")</ID>
     <ID>MaxLineLength:McpClient.kt$McpClient$/** Server-reported capabilities map from the initialize handshake; raw shape so we can refine later without re-fetching. */</ID>
-    <ID>MaxLineLength:McpClient.kt$McpClient$fun</ID>
     <ID>MaxLineLength:McpRunnerMutationTest.kt$McpRunnerMutationTest$assertTrue(!thread.isAlive, "Runner thread must exit within 2s of server.stop() — stop-watcher start() removal would block here")</ID>
     <ID>MaxLineLength:McpServer.kt$ExposedSkill.Companion$?:</ID>
-    <ID>MaxLineLength:McpServer.kt$McpServer$"""{"jsonrpc":"2.0","id":${McpJson.encode(id)},"error":${McpJson.encode(mapOf("code" to code, "message" to message))}}"""</ID>
+    <ID>MaxLineLength:McpServer.kt$McpServer$jsonRpcError(id, JsonRpcErrorCode.INTERNAL_ERROR, "Prompt '$name' rendering failed: ${e.message ?: e.toString()}")</ID>
+    <ID>MaxLineLength:McpServer.kt$McpServer$jsonRpcError(id, JsonRpcErrorCode.INTERNAL_ERROR, "Resource '$uri' read failed: ${e.message ?: e.toString()}")</ID>
     <ID>MaxLineLength:McpServer.kt$McpServer.Companion$"Skill \"$name\" is agentic — McpServer only exposes non-agentic skills (implementedBy { }) in this slice."</ID>
     <ID>MaxLineLength:McpServerBeforeInterceptorTest.kt$McpServerBeforeInterceptorTest$"""{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","arguments":{"input":"original"}}}"""</ID>
     <ID>MaxLineLength:McpServerConformanceTest.kt$McpServerConformanceTest$"""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"$MCP_PROTOCOL_VERSION","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"""</ID>
@@ -476,6 +471,7 @@
     <ID>PackageNaming:GuessingGameLiveTest.kt$package agents_engine.composition.wrap</ID>
     <ID>PackageNaming:GuessingGameTest.kt$package agents_engine.composition.wrap</ID>
     <ID>PackageNaming:HttpMcpTransport.kt$package agents_engine.mcp</ID>
+    <ID>PackageNaming:HttpModelClientSupport.kt$package agents_engine.model</ID>
     <ID>PackageNaming:HumanApproval.kt$package agents_engine.core</ID>
     <ID>PackageNaming:HumanApprovalTest.kt$package agents_engine.core</ID>
     <ID>PackageNaming:InlineToolCallParser.kt$package agents_engine.model</ID>
@@ -487,9 +483,10 @@
     <ID>PackageNaming:Interrupt.kt$package agents_engine.core</ID>
     <ID>PackageNaming:InterruptResumeTest.kt$package agents_engine.core</ID>
     <ID>PackageNaming:InvokeSuspendResumingTest.kt$package agents_engine.core</ID>
-    <ID>PackageNaming:JsonEscape.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:JsonEscape.kt$package agents_engine.internal</ID>
     <ID>PackageNaming:JsonEscapeTest.kt$package agents_engine.model</ID>
     <ID>PackageNaming:JsonParseEscalationIntegrationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:JsonRpc.kt$package agents_engine.mcp</ID>
     <ID>PackageNaming:KnowledgeToolDescriptionTest.kt$package agents_engine.core</ID>
     <ID>PackageNaming:KoogRegressionEnumSchemaTest.kt$package agents_engine.generation</ID>
     <ID>PackageNaming:KoogRegressionLoopProtectionTest.kt$package agents_engine.model</ID>
@@ -637,6 +634,7 @@
     <ID>PackageNaming:ReservedMemoryToolNamesTest.kt$package agents_engine.model</ID>
     <ID>PackageNaming:Resources.kt$package agents_engine.core</ID>
     <ID>PackageNaming:SealedSchemaGenerationTest.kt$package agents_engine.generation</ID>
+    <ID>PackageNaming:SessionCancellationTest.kt$package agents_engine.runtime.events</ID>
     <ID>PackageNaming:SessionHistory.kt$package agents_engine.runtime.events</ID>
     <ID>PackageNaming:SharedKnowledgeTest.kt$package agents_engine.core</ID>
     <ID>PackageNaming:SignInAgentTest.kt$package agents_engine.model</ID>

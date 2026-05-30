@@ -93,15 +93,18 @@ fun <IN, OUT> Parallel<IN, OUT>.session(input: IN): AgentSession<List<OUT>> {
                 channel.send(AgentEvent.Completed("parallel", outputs, null))
                 channel.close()
                 result.complete(outputs)
+            } catch (timeout: TimeoutCancellationException) {
+                // #2863 — caught BEFORE CancellationException (subtype). Real
+                // failure path: emit Failed.
+                channel.send(AgentEvent.Failed("parallel", timeout))
+                channel.close()
+                result.completeExceptionally(timeout)
+            } catch (cancel: CancellationException) {
+                // #2863 — bare cancellation propagates per structured concurrency.
+                result.completeExceptionally(cancel)
+                channel.close(cancel)
+                throw cancel
             } catch (t: Throwable) {
-                // #2863 — bare cancellation propagates per structured-concurrency
-                // contract. TimeoutCancellationException is a real failure
-                // and stays on the Failed path.
-                if (t is CancellationException && t !is TimeoutCancellationException) {
-                    result.completeExceptionally(t)
-                    channel.close(t)
-                    throw t
-                }
                 channel.send(AgentEvent.Failed("parallel", t))
                 channel.close()
                 result.completeExceptionally(t)

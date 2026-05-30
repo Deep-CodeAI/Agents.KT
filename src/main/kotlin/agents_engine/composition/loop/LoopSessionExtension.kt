@@ -77,13 +77,17 @@ fun <IN, OUT> Loop<IN, OUT>.session(input: IN): AgentSession<OUT> {
                 channel.trySend(AgentEvent.Completed(terminalAgentId, current, null))
                 channel.close()
                 result.complete(current)
+            } catch (timeout: TimeoutCancellationException) {
+                // #2863 — caught BEFORE CancellationException (subtype).
+                channel.trySend(AgentEvent.Failed(terminalAgentId, timeout))
+                channel.close()
+                result.completeExceptionally(timeout)
+            } catch (cancel: CancellationException) {
+                // #2863 — bare cancellation propagates per structured concurrency.
+                result.completeExceptionally(cancel)
+                channel.close(cancel)
+                throw cancel
             } catch (t: Throwable) {
-                // #2863 — propagate bare cancellation; keep timeout on Failed.
-                if (t is CancellationException && t !is TimeoutCancellationException) {
-                    result.completeExceptionally(t)
-                    channel.close(t)
-                    throw t
-                }
                 channel.trySend(AgentEvent.Failed(terminalAgentId, t))
                 channel.close()
                 result.completeExceptionally(t)
