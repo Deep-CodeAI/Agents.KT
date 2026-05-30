@@ -317,7 +317,7 @@ open class ClaudeClient(
      */
     private fun cacheControlJson(hint: CacheHint): String {
         val ttlMinutes = hint.ttl?.inWholeMinutes ?: 0
-        return if (ttlMinutes > 5L) {
+        return if (ttlMinutes > EPHEMERAL_TTL_BOUNDARY_MINUTES) {
             """"cache_control":{"type":"ephemeral","ttl":"1h"}"""
         } else {
             """"cache_control":{"type":"ephemeral"}"""
@@ -367,9 +367,9 @@ open class ClaudeClient(
         val nonSystem = messages.filter { it.role != "system" }
 
         // #2658 — breakpoint accounting. Anthropic caps cache_control
-        // markers at 4 per request; coalesce silently when over budget
-        // (drop the rest, log once).
-        var breakpointBudget = 4
+        // markers per request (see ANTHROPIC_MAX_CACHE_BREAKPOINTS);
+        // coalesce silently when over budget (drop the rest, log once).
+        var breakpointBudget = ANTHROPIC_MAX_CACHE_BREAKPOINTS
         fun consumeBreakpoint(): Boolean {
             if (breakpointBudget <= 0) return false
             breakpointBudget--
@@ -602,6 +602,17 @@ open class ClaudeClient(
 
     companion object {
         private const val STRUCTURED_OUTPUT_TOOL_NAME = "structured_output"
+
+        // #2804 — Anthropic Messages API caps `cache_control` markers per
+        // request. Hit the cap and any further marker is silently ignored
+        // by the server; the runtime coalesces breakpoints by intentionally
+        // capping at the documented limit.
+        // Source: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+        internal const val ANTHROPIC_MAX_CACHE_BREAKPOINTS: Int = 4
+
+        // #2804 — TTL boundary between ephemeral (default ~5 min) and the
+        // 1h cache tier. CacheHint.ttl above this maps to `"ttl":"1h"`.
+        internal const val EPHEMERAL_TTL_BOUNDARY_MINUTES: Long = 5L
 
         // Hotfix from #2850 field report — 60s killed long Sonnet turns
         // (extended thinking, large outputs, tool-heavy loops, loaded API).

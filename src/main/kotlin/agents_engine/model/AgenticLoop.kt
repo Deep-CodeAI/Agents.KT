@@ -67,6 +67,16 @@ import kotlinx.coroutines.withTimeout
 
 private const val MAX_ARGUMENT_REPAIR_STEPS = 8
 
+// #2804 — first N hex chars of the manifest SHA-256 used in OpenAI
+// `prompt_cache_key` routing. 12 = 48 bits, ample to disambiguate agent
+// revisions in the route hint without flooding cache-key cardinality.
+private const val MANIFEST_HASH_PREFIX_LEN = 12
+
+// #2804 — first N hex chars of a content-addressed blob hash used when
+// rendering multipart tool-result placeholders into the LLM message. Same
+// 12-char convention as MANIFEST_HASH_PREFIX_LEN.
+private const val BLOB_HASH_PREFIX_LEN = 12
+
 /**
  * #1740 — return shape from [executeAgentic]. Carries the parsed output
  * alongside cumulative [TokenUsage] summed across all LLM turns of the
@@ -160,7 +170,9 @@ internal suspend fun <IN> executeAgentic(
     val memoryToolDefs = when {
         agent.memoryBank == null -> emptyList()
         anySkillOptedIntoMemory && !skill.useMemory -> emptyList()
-        else -> agent.toolMap.values.filter { it.name in setOf("memory_read", "memory_write", "memory_search") }
+        // #2804 — reuse RESERVED_MEMORY_TOOL_NAMES (ToolDef.kt) so adding a
+        // 4th memory tool (e.g. memory_delete) only updates one set, not two.
+        else -> agent.toolMap.values.filter { it.name in RESERVED_MEMORY_TOOL_NAMES }
     }
     val actionToolDefs = (skillToolDefs + autoToolDefs + memoryToolDefs).distinctBy { it.name }
 
@@ -193,7 +205,11 @@ internal suspend fun <IN> executeAgentic(
     // Null when caching is disabled or the agent has no manifest hash —
     // both correctness-neutral, just no routing hint to send.
     val cacheRoutingKey: String? = if (agent.cacheConfig.enabled) {
-        agent.manifestHash?.let { "agents-kt:${agent.name}:${it.take(12)}" }
+        // #2804 — MANIFEST_HASH_PREFIX_LEN named so the OpenAI routing key's
+        // shape doesn't drift on a typo. 12 hex chars = 48 bits of manifest
+        // identity, ample to disambiguate agent revisions in the route hint
+        // without flooding cache-key cardinality.
+        agent.manifestHash?.let { "agents-kt:${agent.name}:${it.take(MANIFEST_HASH_PREFIX_LEN)}" }
             ?: "agents-kt:${agent.name}"
     } else null
     val client = config.client ?: defaultClientFor(config, allToolDefs, cacheRoutingKey, agent.toolChoice)
@@ -352,7 +368,7 @@ internal suspend fun <IN> executeAgentic(
                         val bytes = store.get(content.ref)
                             ?: error(
                                 "BlobStore on agent '${agent.name}' has no entry for ContentRef(" +
-                                    "hash=${content.ref.hash.take(12)}…, size=${content.ref.sizeBytes}); " +
+                                    "hash=${content.ref.hash.take(BLOB_HASH_PREFIX_LEN)}…, size=${content.ref.sizeBytes}); " +
                                     "did the store get rewired or the blob purged?",
                             )
                         ImagePart(
@@ -718,18 +734,7 @@ internal suspend fun <IN> executeAgentic(
                         // Allowed list deliberately bounded by the skill (not the
                         // wider agent.toolMap) — same boundary as the message.
                         agent.toolHallucinatedListener?.invoke(call.name, call.arguments, allowedList)
-                        if (emitter != null && call.callId != null) {
-                            emitter(
-                                agents_engine.runtime.events.AgentEvent.ToolCallFinished(
-                                    agentId = agent.name,
-                                    callId = call.callId,
-                                    toolName = call.name,
-                                    arguments = call.arguments,
-                                    result = unknownToolMessage,
-                                    isError = true,
-                                )
-                            )
-                        }
+                        emitToolFinished(emitter, agent, call, unknownToolMessage, isError = true)
                         messages.add(LlmMessage("tool", unknownToolMessage))
                         continue
                     }
@@ -812,18 +817,7 @@ internal suspend fun <IN> executeAgentic(
                                 deniedReason ?: "",
                             )
                         }
-                        if (emitter != null && effectiveCall.callId != null) {
-                            emitter(
-                                agents_engine.runtime.events.AgentEvent.ToolCallFinished(
-                                    agentId = agent.name,
-                                    callId = effectiveCall.callId,
-                                    toolName = effectiveCall.name,
-                                    arguments = effectiveCall.arguments,
-                                    result = result,
-                                    isError = true,
-                                )
-                            )
-                        }
+                        emitToolFinished(emitter, agent, effectiveCall, result, isError = true)
                     } else {
                         if (isKnowledge) {
                             withAgentRuntimeContext(runtimeContext) {
@@ -839,18 +833,7 @@ internal suspend fun <IN> executeAgentic(
                         // aggregator stamped on this ToolCall — null only when the
                         // emitter is null (no event work needed) or the non-streaming
                         // path produced a ToolCall without one.
-                        if (emitter != null && effectiveCall.callId != null) {
-                            emitter(
-                                agents_engine.runtime.events.AgentEvent.ToolCallFinished(
-                                    agentId = agent.name,
-                                    callId = effectiveCall.callId,
-                                    toolName = effectiveCall.name,
-                                    arguments = effectiveCall.arguments,
-                                    result = result,
-                                    isError = false,
-                                )
-                            )
-                        }
+                        emitToolFinished(emitter, agent, effectiveCall, result, isError = false)
                     }
                     val toolMessage = if (!denied && tool.untrustedOutput) {
                         wrapUntrustedToolResult(tool.name, renderToolResultForLlm(result))
@@ -918,18 +901,7 @@ private suspend fun <IN> executeToolWithBudgetHandlingEvents(
     // #1739: tool executor threw and onError didn't recover.
     // Surface a ToolCallFinished event with isError=true so consumers see
     // the failure, then rethrow — the outer error path emits session Failed.
-    if (emitter != null && call.callId != null) {
-        emitter(
-            agents_engine.runtime.events.AgentEvent.ToolCallFinished(
-                agentId = agent.name,
-                callId = call.callId,
-                toolName = call.name,
-                arguments = call.arguments,
-                result = t.message,
-                isError = true,
-            )
-        )
-    }
+    emitToolFinished(emitter, agent, call, t.message, isError = true)
     throw t
 }
 
@@ -1322,3 +1294,27 @@ private fun defaultClientFor(
             toolChoice = toolChoice,
         )
     }
+
+// #2804 — central emit helper for `AgentEvent.ToolCallFinished`. Replaces
+// four near-identical emit blocks (unknown-tool, denied, success, exception)
+// each of which differed only in `result` / `isError`. No-op when emitter
+// is null or callId is absent (the streaming surface needs both).
+private fun emitToolFinished(
+    emitter: AgentEventEmitter?,
+    agent: Agent<*, *>,
+    call: ToolCall,
+    result: Any?,
+    isError: Boolean,
+) {
+    if (emitter == null || call.callId == null) return
+    emitter(
+        AgentEvent.ToolCallFinished(
+            agentId = agent.name,
+            callId = call.callId,
+            toolName = call.name,
+            arguments = call.arguments,
+            result = result,
+            isError = isError,
+        )
+    )
+}

@@ -7,7 +7,11 @@ import agents_engine.generation.toLlmInput
 import agents_engine.core.ToolPolicy
 import agents_engine.core.toolPolicy
 import kotlin.reflect.KClass
+import java.util.logging.Logger
 import agents_engine.generation.hasGenerableAnnotation
+
+// #2804 — used for FINE/WARNING diagnostics emitted from the built-in tools.
+private val TOOL_LOGGER: Logger = Logger.getLogger("agents_engine.model.Tool")
 
 /**
  * `agents_engine/model/ToolDef.kt` — the `ToolDef` shape (wire-level
@@ -141,6 +145,18 @@ class ToolDefaultsBuilder {
     }
 }
 
+// #2804 — shared guard for the "Tool already defined in this tools block" check,
+// previously duplicated 4× across the `tool(...)` overloads and the `unaryPlus`
+// operator. Centralising it means a future cap change (e.g. case-insensitive
+// uniqueness) touches one line.
+@PublishedApi internal fun MutableList<ToolDef>.reserveName(name: String) {
+    requireUserNotReservedToolName(name)
+    require(none { it.name == name }) {
+        "Tool \"$name\" is already defined in this tools block. " +
+            "Tool names must be unique."
+    }
+}
+
 class ToolsBuilder {
     @PublishedApi internal val defs = mutableListOf<ToolDef>()
     internal var defaultErrorHandler: ToolErrorHandler? = null
@@ -156,11 +172,7 @@ class ToolsBuilder {
         description: String,
         executor: (Map<String, Any?>) -> Any?,
     ): Tool<Map<String, Any?>, Any?> {
-        requireUserNotReservedToolName(name)
-        require(defs.none { it.name == name }) {
-            "Tool \"$name\" is already defined in this tools block. " +
-                "Tool names must be unique."
-        }
+        defs.reserveName(name)
         val def = ToolDef(name = name, description = description, executor = executor)
         defs.add(def)
         return Tool(def, Map::class, Any::class, ::mapInput)
@@ -172,11 +184,7 @@ class ToolsBuilder {
         onError: OnErrorBuilder.() -> Unit,
         executor: (Map<String, Any?>) -> Any?,
     ): Tool<Map<String, Any?>, Any?> {
-        requireUserNotReservedToolName(name)
-        require(defs.none { it.name == name }) {
-            "Tool \"$name\" is already defined in this tools block. " +
-                "Tool names must be unique."
-        }
+        defs.reserveName(name)
         val def = ToolDef(name = name, description = description, executor = executor)
         def.errorHandler = OnErrorBuilder().apply(onError).build()
         defs.add(def)
@@ -184,11 +192,7 @@ class ToolsBuilder {
     }
 
     fun tool(name: String, block: ToolDefBuilder.() -> Unit): Tool<Map<String, Any?>, Any?> {
-        requireUserNotReservedToolName(name)
-        require(defs.none { it.name == name }) {
-            "Tool \"$name\" is already defined in this tools block. " +
-                "Tool names must be unique."
-        }
+        defs.reserveName(name)
         val builder = ToolDefBuilder(name)
         builder.block()
         val def = builder.build()
@@ -197,11 +201,7 @@ class ToolsBuilder {
     }
 
     operator fun ToolDef.unaryPlus() {
-        requireUserNotReservedToolName(this.name)
-        require(defs.none { it.name == this.name }) {
-            "Tool \"${this.name}\" is already defined in this tools block. " +
-                "Tool names must be unique."
-        }
+        defs.reserveName(this.name)
         defs.add(this)
     }
 
@@ -224,11 +224,7 @@ class ToolsBuilder {
         policy: ToolPolicy? = null,
         crossinline executor: (Args) -> Result,
     ): Tool<Args, Result> {
-        requireUserNotReservedToolName(name)
-        require(defs.none { it.name == name }) {
-            "Tool \"$name\" is already defined in this tools block. " +
-                "Tool names must be unique."
-        }
+        defs.reserveName(name)
         val argsClass = Args::class
         // #1718: route through the KSP-cache-aware probe so the check works
         // without kotlin-reflect on the classpath when KSP has generated the
@@ -313,7 +309,19 @@ fun buildBuiltInTools(): List<ToolDef> = listOf(
         executor = { args ->
             val reason = args["reason"]?.toString() ?: "Unknown reason"
             val severityStr = args["severity"]?.toString()?.uppercase() ?: "HIGH"
-            val severity = try { Severity.valueOf(severityStr) } catch (_: Exception) { Severity.HIGH }
+            // #2804 — was a silent fall-through to HIGH that masked LLM-supplied
+            // typos / out-of-vocab values. Logging at WARNING surfaces the
+            // misuse without changing the routing decision (default-to-HIGH
+            // is the safe fallback for the escalate signal).
+            val severity = try {
+                Severity.valueOf(severityStr)
+            } catch (e: IllegalArgumentException) {
+                TOOL_LOGGER.warning(
+                    "escalate: unknown severity \"$severityStr\" — defaulting to HIGH " +
+                        "(valid values: ${Severity.entries.joinToString { it.name }})"
+                )
+                Severity.HIGH
+            }
             throw EscalationException(reason, severity)
         },
     ),
