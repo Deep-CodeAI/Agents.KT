@@ -4,6 +4,15 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — HITL epic completion (#2487, #2490)
+
+- **Declarative policy DSL (#2490)** — `agent { policy { ... } }` block that compiles into existing enforcement surfaces. No new runtime check is added; the DSL is sugar.
+  - **`requireHumanApprovalFor(names)` (#2490a)** — listed tools pause for human approval before their executor runs. The agentic loop fires `humanApproval { title = "Approve tool call: $name"; body = call.arguments }` BEFORE invoking the executor, throwing `AgentInterruptException` with an `ApprovalRequest` payload. On resume, the runtime dispatches by `HumanDecision`: `Approved` runs the executor with original args; `Edited(payload)` runs with edited args (payload must be `Map<String, Any?>`); `Rejected` skips execution and synthesises a refusal tool result; `Responded(payload)` skips execution and synthesises the payload (via `toLlmInput`) as the result. Unknown tool names in `requireHumanApprovalFor` fail fast at agent construction (same philosophy as #631). `SessionSnapshot.pendingApprovalGate: Boolean` flag distinguishes gate snapshots from regular `interrupt()` snapshots — both serialise through `SnapshotJson` for process-restart resume.
+  - **`redact(fields)` (#2490b)** — field-name redaction in observability bridges. Public top-level `redactArguments(args, fields)` helper replaces matching top-level keys with `"[REDACTED]"`, recurses into nested `Map<String, Any?>` (covers `headers: {Authorization}` shapes), case-sensitive match, no allocation when fields is empty. `LangSmithBridge` and `LangfuseBridge` accept `redactionFields` at construction and apply it to tool argument writeouts in their audit traces. OTel bridge unchanged (already records only type + delta length); JSONL audit exporter unchanged (already omits args by design).
+  - **Permission manifest entry (#2490c)** — each agent's manifest section gains `"policy": {"approvalRequiredTools": [...], "redactionFields": [...]}` alongside `guardrails` and `humanOversight`. Both lists are sorted for byte-determinism across runs (Set iteration order is undefined). Empty policy still produces the section with empty arrays. The manifest SHA-256 hash automatically covers the policy block, so combined with the #2754 restore guard, a resume across a policy change fails closed unless the caller opts in with `allowManifestMismatch = true`.
+  - `denyToolsForRole(role, ...)` deferred to a follow-up — needs an `AgentRoleContext` propagation mechanism that doesn't exist yet.
+  - See [docs/policy.md](docs/policy.md).
+
 ## [0.6.4] — 2026-05-30
 
 **"Trust patch."** Outside auditor reviewed 0.6.3 at 7.5/10 with the verdict *"useful hardening release, but not a repositioning release."* 0.6.4 is the deliberate response: boring on features, focused on closing every real boundary gap the audit found. The tagline:
