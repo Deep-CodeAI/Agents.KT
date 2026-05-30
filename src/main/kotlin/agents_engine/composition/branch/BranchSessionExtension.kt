@@ -14,6 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
+import java.util.logging.Logger
 
 /**
  * `agents_engine/composition/branch/BranchSessionExtension.kt` — adds the
@@ -54,7 +55,14 @@ fun <IN, OUT> Branch<IN, OUT>.session(input: IN): AgentSession<OUT> {
         withAgentRuntimeContext(runtimeContext) {
             @Suppress("UNCHECKED_CAST")
             val emitter: AgentEventEmitter = { event ->
-                channel.trySend(event.withRuntimeContext(runtimeContext) as AgentEvent<OUT>)
+                val typed = event.withRuntimeContext(runtimeContext) as AgentEvent<OUT>
+                val sendResult = channel.trySend(typed)
+                if (sendResult.isFailure) {
+                    BRANCH_LOGGER.warning(
+                        "channel.trySend dropped a ${typed::class.simpleName} from branch session " +
+                            "(sessionId='${runtimeContext.sessionId}')"
+                    )
+                }
             }
             var terminalAgentId = branch.source.name
             try {
@@ -82,11 +90,11 @@ fun <IN, OUT> Branch<IN, OUT>.session(input: IN): AgentSession<OUT> {
                 val output: OUT = route.sessionExecutor?.invoke(sourceOut, emitter)
                     ?: route.executor(sourceOut)
 
-                channel.trySend(AgentEvent.Completed(terminalAgentId, output, null))
+                channel.send(AgentEvent.Completed(terminalAgentId, output, null))
                 channel.close()
                 result.complete(output)
             } catch (t: Throwable) {
-                channel.trySend(AgentEvent.Failed(terminalAgentId, t))
+                channel.send(AgentEvent.Failed(terminalAgentId, t))
                 channel.close()
                 result.completeExceptionally(t)
             }
@@ -98,3 +106,6 @@ fun <IN, OUT> Branch<IN, OUT>.session(input: IN): AgentSession<OUT> {
         resultDeferred = result,
     )
 }
+
+// #2806 — visible drops on the non-suspending emitter path.
+private val BRANCH_LOGGER: Logger = Logger.getLogger("agents_engine.composition.branch.BranchSession")

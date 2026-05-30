@@ -407,7 +407,10 @@ class McpServer private constructor(
 
     companion object {
         private const val SERVER_NAME = "agents-kt-mcp-server"
-        private const val SERVER_VERSION = "0.1.3"
+        // #2806 — was a hardcoded "0.1.3" that drifted from the project version;
+        // now flows through BuildInfo so the JAR's Implementation-Version is the
+        // single source of truth.
+        private val SERVER_VERSION: String = agents_engine.internal.BuildInfo.version
 
         // 8 MiB — generous for tools/call payloads, far short of OOM on a typical
         // JVM heap. See #851.

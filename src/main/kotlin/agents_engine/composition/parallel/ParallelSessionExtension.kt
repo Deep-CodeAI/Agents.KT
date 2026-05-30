@@ -16,6 +16,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
+import java.util.logging.Logger
 
 /**
  * `agents_engine/composition/parallel/ParallelSessionExtension.kt` — the
@@ -62,7 +63,14 @@ fun <IN, OUT> Parallel<IN, OUT>.session(input: IN): AgentSession<List<OUT>> {
         withAgentRuntimeContext(runtimeContext) {
             @Suppress("UNCHECKED_CAST")
             val emitter: AgentEventEmitter = { event ->
-                channel.trySend(event.withRuntimeContext(runtimeContext) as AgentEvent<List<OUT>>)
+                val typed = event.withRuntimeContext(runtimeContext) as AgentEvent<List<OUT>>
+                val sendResult = channel.trySend(typed)
+                if (sendResult.isFailure) {
+                    PARALLEL_LOGGER.warning(
+                        "channel.trySend dropped a ${typed::class.simpleName} from parallel session " +
+                            "(sessionId='${runtimeContext.sessionId}') — consumer is slower than branches"
+                    )
+                }
             }
             try {
                 val outputs = coroutineScope {
@@ -80,11 +88,11 @@ fun <IN, OUT> Parallel<IN, OUT>.session(input: IN): AgentSession<List<OUT>> {
                     }
                 }
 
-                channel.trySend(AgentEvent.Completed("parallel", outputs, null))
+                channel.send(AgentEvent.Completed("parallel", outputs, null))
                 channel.close()
                 result.complete(outputs)
             } catch (t: Throwable) {
-                channel.trySend(AgentEvent.Failed("parallel", t))
+                channel.send(AgentEvent.Failed("parallel", t))
                 channel.close()
                 result.completeExceptionally(t)
             }
@@ -96,3 +104,7 @@ fun <IN, OUT> Parallel<IN, OUT>.session(input: IN): AgentSession<List<OUT>> {
         resultDeferred = result,
     )
 }
+
+// #2806 — visible drops on the non-suspending emitter path; bracket events
+// switched to suspending `send` (above) so they cannot be dropped.
+private val PARALLEL_LOGGER: Logger = Logger.getLogger("agents_engine.composition.parallel.ParallelSession")

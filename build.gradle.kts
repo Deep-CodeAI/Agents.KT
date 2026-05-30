@@ -79,6 +79,21 @@ kotlin {
     jvmToolchain(21)
 }
 
+// #2806 — single source of truth for the runtime-visible Agents.KT version.
+// `BuildInfo.version` reads `Implementation-Version` from this manifest at
+// runtime, falling back to "dev" when the class is loaded from a non-sealed
+// classpath (tests, IDE runs against build/classes). Three separate const
+// vals in McpServer / McpClient / McpRunner were drifting against the real
+// project.version — this stamps the truth into the jar.
+tasks.jar {
+    manifest {
+        attributes(
+            "Implementation-Title" to "agents-kt",
+            "Implementation-Version" to project.version.toString(),
+        )
+    }
+}
+
 tasks.test {
     useJUnitPlatform {
         // `live-cloud-api` tests (DeepSeek / Anthropic / OpenAI direct against

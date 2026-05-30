@@ -12,6 +12,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
+import java.util.logging.Logger
 
 /**
  * `agents_engine/runtime/events/AgentSessionExtension.kt` — the
@@ -58,27 +59,37 @@ fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
     scope.launch {
         withAgentRuntimeContext(runtimeContext) {
-            // #1739: emitter forwards AgentEvents from inside the agentic loop
-            // (Token, ToolCallStarted, ToolCallArgumentsDelta, ToolCallFinished)
-            // into the same channel as the bracket events. trySend is non-
-            // suspending — appropriate for a BUFFERED channel; if the buffer
-            // ever fills (it has high capacity), excess events would be
-            // dropped silently.
+            // #1739 / #2806: emitter forwards AgentEvents from inside the
+            // agentic loop (Token, ToolCallStarted, ToolCallArgumentsDelta,
+            // ToolCallFinished). The emitter is a non-suspending lambda type
+            // (AgentEventEmitter = (AgentEvent<*>) -> Unit), so the inner
+            // path uses trySend; #2806 added warn-level logging on failure
+            // so silent drops become visible instead of staying invisible.
+            // Bracket events (Completed / Failed) below use suspending
+            // `send` — they MUST be delivered to terminate the session.
             @Suppress("UNCHECKED_CAST")
             val emitter: AgentEventEmitter = { event ->
-                channel.trySend(event as AgentEvent<OUT>)
+                val typed = event as AgentEvent<OUT>
+                val result = channel.trySend(typed)
+                if (result.isFailure) {
+                    SESSION_LOGGER.warning(
+                        "channel.trySend dropped a ${typed::class.simpleName} " +
+                            "(agent='${agent.name}', sessionId='${runtimeContext.sessionId}') — " +
+                            "consumer is slower than the agent loop"
+                    )
+                }
             }
             try {
                 val (output, usage) = runAgentInSession(agent, input, emitter)
                 val completed = AgentEvent.Completed(agent.name, output, usage, runtimeContext)
                 agent.fireAgentEvent(completed)
-                channel.trySend(completed)
+                channel.send(completed)
                 channel.close()
                 result.complete(output)
             } catch (t: Throwable) {
                 val failed = AgentEvent.Failed(agent.name, t, runtimeContext)
                 agent.fireAgentEvent(failed)
-                channel.trySend(failed)
+                channel.send(failed)
                 channel.close()
                 result.completeExceptionally(t)
             }
@@ -90,6 +101,11 @@ fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
         resultDeferred = result,
     )
 }
+
+// #2806 — JUL logger for visible drops on the inner non-suspending emitter
+// path. Sized for low volume — only fires when the buffer fills, which is
+// rare on Channel.BUFFERED (64 cap) but worth surfacing when it happens.
+private val SESSION_LOGGER: Logger = Logger.getLogger("agents_engine.runtime.events.AgentSession")
 
 /**
  * #1745 — shared "run an agent and surface its bracket + inner events

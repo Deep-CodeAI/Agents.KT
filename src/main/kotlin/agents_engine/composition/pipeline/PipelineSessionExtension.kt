@@ -13,6 +13,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
+import java.util.logging.Logger
 
 /**
  * `agents_engine/composition/pipeline/PipelineSessionExtension.kt` — the
@@ -61,15 +62,22 @@ fun <IN, OUT> Pipeline<IN, OUT>.session(input: IN): AgentSession<OUT> {
         withAgentRuntimeContext(runtimeContext) {
             @Suppress("UNCHECKED_CAST")
             val emitter: AgentEventEmitter = { event ->
-                channel.trySend(event.withRuntimeContext(runtimeContext) as AgentEvent<OUT>)
+                val typed = event.withRuntimeContext(runtimeContext) as AgentEvent<OUT>
+                val sendResult = channel.trySend(typed)
+                if (sendResult.isFailure) {
+                    PIPELINE_LOGGER.warning(
+                        "channel.trySend dropped a ${typed::class.simpleName} from pipeline session " +
+                            "(terminalAgent='$terminalAgentId', sessionId='${runtimeContext.sessionId}')"
+                    )
+                }
             }
             try {
                 val output = pipeline.effectiveSessionExec(input, emitter)
-                channel.trySend(AgentEvent.Completed(terminalAgentId, output, null))
+                channel.send(AgentEvent.Completed(terminalAgentId, output, null))
                 channel.close()
                 result.complete(output)
             } catch (t: Throwable) {
-                channel.trySend(AgentEvent.Failed(terminalAgentId, t))
+                channel.send(AgentEvent.Failed(terminalAgentId, t))
                 channel.close()
                 result.completeExceptionally(t)
             }
@@ -81,3 +89,6 @@ fun <IN, OUT> Pipeline<IN, OUT>.session(input: IN): AgentSession<OUT> {
         resultDeferred = result,
     )
 }
+
+// #2806 — visible drops on the non-suspending emitter path.
+private val PIPELINE_LOGGER: Logger = Logger.getLogger("agents_engine.composition.pipeline.PipelineSession")

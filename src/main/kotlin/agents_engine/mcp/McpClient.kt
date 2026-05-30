@@ -406,7 +406,9 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
 
     companion object {
         private const val CLIENT_NAME = "agents-kt"
-        private const val CLIENT_VERSION = "0.1.3"
+        // #2806 — was a hardcoded "0.1.3"; now sourced from BuildInfo for
+        // alignment with McpServer.SERVER_VERSION and the published JAR.
+        private val CLIENT_VERSION: String = agents_engine.internal.BuildInfo.version
 
         fun connect(url: String, auth: McpAuth = McpAuth.None): McpClient =
             McpClient(HttpMcpTransport(url, auth)).apply {
