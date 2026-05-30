@@ -95,15 +95,16 @@ Case-insensitive (`Foo.PDF` and `foo.pdf` both produce `DocMime.Pdf`). Detection
 **Variants:**
 
 ```kotlin
-Files.load(path, store): Content              // throws UnknownExtensionException on unknown
-Files.loadOrNull(path, store): Content?       // null on unknown
-Files.loadAll(paths, store): List<Content>    // throws on first unknown
-Files.loadAllOrSkip(paths, store)             // silently skips unknown — directory ingestion
-Files.canonicalExtensionFor(content): String? // inverse — write Content back to disk
-Files.knownExtensions: Set<String>            // "can I load this?" predicate
+Files.load(path, store, maxBytes = 20.MB): Content       // throws on unknown ext or oversize
+Files.loadOrNull(path, store, maxBytes = 20.MB): Content? // null on unknown; throws on oversize
+Files.loadAll(paths, store, maxBytes = 20.MB): List<Content>
+Files.loadAllOrSkip(paths, store, maxBytes = 20.MB)       // skip unknown ext; oversize still throws
+Files.canonicalExtensionFor(content): String?             // inverse — write Content back to disk
+Files.knownExtensions: Set<String>                        // "can I load this?" predicate
+Files.DEFAULT_MAX_BYTES                                   // 20 MiB
 ```
 
-`UnknownExtensionException` names the offending extension, the path, AND lists every known extension — debuggable on a misconfigured callsite.
+`UnknownExtensionException` names the offending extension, the path, AND lists every known extension — debuggable on a misconfigured callsite. `OversizedFileException` (#2871) names the path, actual size, and configured cap; the size check uses `Files.size(path)` before any bytes are read, so an accidental 4 GiB upload fails-fast without OOMing the JVM. `BlobStore.verify(ref)` re-hashes stored bytes and returns `false` on corruption or absence — opt-in integrity check, not on the hot path of `get`.
 
 ## `ContentRef` + `BlobStore`
 

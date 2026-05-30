@@ -87,6 +87,26 @@ interface BlobStore {
 
     /** Remove the blob for [ref] from the store. Idempotent. */
     fun delete(ref: ContentRef)
+
+    /**
+     * #2871 — integrity check. Returns `true` when [ref] resolves to bytes
+     * whose SHA-256 still equals [ref.hash]. Returns `false` when the
+     * stored bytes don't match (corruption, mid-write crash that wasn't
+     * fully atomic, truncation by an external tool) OR when the blob is
+     * absent.
+     *
+     * Default implementation re-reads via [get] and rehashes. Backends
+     * that can verify cheaper (e.g. an on-disk checksum sidecar) override.
+     *
+     * Use case: audit-time spot check on the snapshot/blob directory
+     * before resuming, or as a periodic integrity scan in long-running
+     * deployments. Not on the hot path of [get] — `verify` is opt-in by
+     * the caller.
+     */
+    fun verify(ref: ContentRef): Boolean {
+        val bytes = get(ref) ?: return false
+        return computeContentHash(bytes) == ref.hash
+    }
 }
 
 /**
@@ -148,7 +168,14 @@ class FileBlobStore(private val dir: Path) : BlobStore {
         val hash = computeContentHash(bytes)
         val target = dir.resolve(hash)
         if (!Files.exists(target)) {
-            val tmp = dir.resolve("$hash.tmp")
+            // #2871 — unique tmp filename so two threads writing the SAME
+            // hash (rare but valid — same bytes hashed independently) can
+            // never collide on the tmp file. Pre-#2871 used `$hash.tmp`
+            // deterministically, which would race: thread A writes, thread
+            // B truncates A's tmp mid-write, B renames its partial file.
+            // The atomic rename still works — target is keyed on hash, so
+            // the second rename is a same-bytes overwrite.
+            val tmp = dir.resolve("$hash.${java.util.UUID.randomUUID()}.tmp")
             Files.write(tmp, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)
             Files.move(tmp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
         }
