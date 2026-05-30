@@ -206,6 +206,83 @@ class PermissionManifestTest {
     }
 
     @Test
+    fun `declarative policy is recorded in manifest and changes the hash (#2490c)`() {
+        // Two agents identical except for the policy block. Hashes must differ.
+        val withoutPolicy = agent<String, String>("PolicyAgent") {
+            tools {
+                tool("send_email", "Send email") { _: Map<String, Any?> -> "ok" }
+                tool("read_status", "Read") { _: Map<String, Any?> -> "ok" }
+            }
+            skills {
+                skill<String, String>("s", "") {
+                    @Suppress("DEPRECATION")
+                    tools("send_email", "read_status")
+                    implementedBy { "ok" }
+                }
+            }
+        }
+
+        val withPolicy = agent<String, String>("PolicyAgent") {
+            tools {
+                tool("send_email", "Send email") { _: Map<String, Any?> -> "ok" }
+                tool("read_status", "Read") { _: Map<String, Any?> -> "ok" }
+            }
+            skills {
+                skill<String, String>("s", "") {
+                    @Suppress("DEPRECATION")
+                    tools("send_email", "read_status")
+                    implementedBy { "ok" }
+                }
+            }
+            policy {
+                requireHumanApprovalFor("send_email")
+                redact("apiKey", "password")
+            }
+        }
+
+        val noPolicyManifest = withoutPolicy.permissionManifest()
+        val withPolicyManifest = withPolicy.permissionManifest()
+        val noPolicyJson = noPolicyManifest.toJson()
+        val withPolicyJson = withPolicyManifest.toJson()
+
+        // Policy block present in both (empty fields when no DSL set)
+        assertContains(noPolicyJson, "\"policy\":{\"approvalRequiredTools\":[],\"redactionFields\":[]}")
+        // The DSL fields are sorted in the manifest for determinism
+        assertContains(withPolicyJson, "\"approvalRequiredTools\":[\"send_email\"]")
+        assertContains(withPolicyJson, "\"redactionFields\":[\"apiKey\",\"password\"]")
+
+        // Hash covers the policy section — adding a policy changes the hash
+        assertTrue(noPolicyManifest.sha256 != withPolicyManifest.sha256, "policy change must alter manifestHash")
+    }
+
+    @Test
+    fun `policy manifest is byte-deterministic regardless of declaration order`() {
+        // Set iteration order is undefined; the manifest must sort for stable
+        // hashes across runs / JVMs.
+        val a = agent<String, String>("OrderAgent") {
+            tools {
+                tool("a", "") { _: Map<String, Any?> -> "" }
+                tool("b", "") { _: Map<String, Any?> -> "" }
+                tool("c", "") { _: Map<String, Any?> -> "" }
+            }
+            skills {
+                skill<String, String>("s", "") {
+                    @Suppress("DEPRECATION")
+                    tools("a", "b", "c")
+                    implementedBy { "" }
+                }
+            }
+            policy {
+                requireHumanApprovalFor("c", "a", "b")
+                redact("zeta", "alpha", "gamma")
+            }
+        }
+        val json = a.permissionManifest().toJson()
+        assertContains(json, "\"approvalRequiredTools\":[\"a\",\"b\",\"c\"]")
+        assertContains(json, "\"redactionFields\":[\"alpha\",\"gamma\",\"zeta\"]")
+    }
+
+    @Test
     fun `mcp server manifest records exposed server capabilities`() {
         val echo = agent<String, String>("echo") {
             skills {

@@ -247,6 +247,11 @@ private fun Agent<*, *>.toManifestMap(options: PermissionManifestOptions): Map<S
         "mcp" to if (options.includeMcp) mcpManifest(this) else null,
         "guardrails" to guardrailManifest(),
         "humanOversight" to humanOversightManifest(),
+        // #2490c — declarative policy block. Both fields sort their sets so
+        // the manifest is byte-deterministic across runs (Set iteration
+        // order is undefined). Hash coverage falls out automatically since
+        // the manifest hash is computed over the full root map.
+        "policy" to policyManifest(),
     ).filterValues { it != null }
 }
 
@@ -422,6 +427,22 @@ private fun Agent<*, *>.humanOversightManifest(): Map<String, Any?> =
     linkedMapOf(
         "escalationToolAvailable" to ("escalate" in toolMap),
         "toolCallPolicyInterceptors" to beforeToolCallInterceptorCount,
+    )
+
+/**
+ * #2490c — emit the declarative `policy { }` block (#2490a + #2490b) into
+ * the permission manifest. Lists are sorted so the manifest is
+ * byte-deterministic across runs — Set iteration order is undefined,
+ * which would otherwise let the same policy produce different manifest
+ * hashes on different JVMs. With sorted output, the hash covers the
+ * policy contents and any deviation between signed-off and running
+ * policy will surface as a different `manifestHash` in audit events
+ * (per the #2754 restore guard).
+ */
+private fun Agent<*, *>.policyManifest(): Map<String, Any?> =
+    linkedMapOf(
+        "approvalRequiredTools" to policy.approvalRequiredTools.sorted(),
+        "redactionFields" to policy.redactionFields.sorted(),
     )
 
 private fun agentComposition(agent: Agent<*, *>): Map<String, Any?> =
