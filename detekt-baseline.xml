@@ -649,6 +649,7 @@
     <ID>PackageNaming:SkillSelectionTest.kt$package agents_engine.core</ID>
     <ID>PackageNaming:SkillsEncapsulationTest.kt$package agents_engine.core</ID>
     <ID>PackageNaming:Snapshot.kt$package agents_engine.core</ID>
+    <ID>PackageNaming:SnapshotImagesRoundTripTest.kt$package agents_engine.core</ID>
     <ID>PackageNaming:SnapshotManifestGuardTest.kt$package agents_engine.core</ID>
     <ID>PackageNaming:SnapshotResumeTest.kt$package agents_engine.model</ID>
     <ID>PackageNaming:StdioMcpTransport.kt$package agents_engine.mcp</ID>
