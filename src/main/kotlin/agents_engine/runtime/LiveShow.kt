@@ -359,6 +359,25 @@ class LiveShow internal constructor(
         // Identity sentinel — distinguishable from any user value.
         private val SENTINEL_FAILURE: Any = Any()
 
+        /**
+         * #2801 — primary `from` entry point. Every operator type
+         * (`Agent` / `Pipeline` / `Forum` / `Parallel` / `Loop` / `Branch`)
+         * ultimately exposes a `suspend (String) -> Any?` callable; pass
+         * it directly via a method reference to avoid the per-operator
+         * overload fan-out:
+         *
+         * ```kotlin
+         * LiveShow.from(myAgent::invokeSuspend) { theme = LiveShowTheme.NONE }
+         * ```
+         *
+         * The six typed overloads below remain for source-compat and
+         * IDE-completion ergonomics; they all delegate here. Future
+         * operator types (Swarm, Stage, …) just call this overload
+         * directly — no edit to `LiveShow` required.
+         */
+        fun from(invoke: suspend (String) -> Any?, block: LiveShowBuilder.() -> Unit = {}): LiveShow =
+            buildShow(invoke, block)
+
         fun from(agent: Agent<String, *>, block: LiveShowBuilder.() -> Unit = {}): LiveShow =
             buildShow({ agent.invokeSuspend(it) }, block)
 
