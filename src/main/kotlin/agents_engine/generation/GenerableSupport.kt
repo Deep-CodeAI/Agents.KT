@@ -1,6 +1,8 @@
 package agents_engine.generation
 
 import java.util.concurrent.ConcurrentHashMap
+import java.util.logging.Level
+import java.util.logging.Logger
 import kotlin.reflect.KClass
 import kotlin.reflect.KParameter
 import kotlin.reflect.KType
@@ -28,6 +30,24 @@ private fun String.escapeJson(): String =
         .replace("\n", "\\n")
         .replace("\r", "\\r")
         .replace("\t", "\\t")
+
+// #2805 — broad `catch (e: Exception)` / `catch (_: Throwable)` blocks in
+// fromLlmOutput, constructFromMapReflective, and GeneratedMetaCache.tryLoad
+// used to swallow the cause without diagnostic. They funnel through this
+// helper now, logging at FINE so the cause is recoverable for debug but
+// stays out of the warn/error band (these paths are tried opportunistically
+// and a failure is the documented fallback signal).
+private val GENERABLE_LOGGER: Logger =
+    Logger.getLogger("agents_engine.generation.Generable")
+
+private inline fun <T> tryGenerable(diagnostic: String, block: () -> T?): T? = try {
+    block()
+} catch (e: Exception) {
+    if (GENERABLE_LOGGER.isLoggable(Level.FINE)) {
+        GENERABLE_LOGGER.log(Level.FINE, "$diagnostic — returning null", e)
+    }
+    null
+}
 
 // ─── KSP-generated metadata lookup (#1701 / #1702 / #1703) ────────────────────
 //
@@ -104,10 +124,38 @@ private object GeneratedMetaCache {
             else Entry(constants, constructor)
         } catch (_: ClassNotFoundException) {
             null   // expected when KSP isn't applied to this class
-        } catch (_: Throwable) {
-            // Defensive — never let lookup errors poison the reflection
-            // fallback. The generated metadata must be a clean win or it
-            // doesn't apply.
+        } catch (e: LinkageError) {
+            // #2805 — narrowed from `catch (_: Throwable)`. The realistic
+            // failures here are: LinkageError / ExceptionInInitializerError
+            // (generated class loads but its static init throws),
+            // SecurityException (sandboxed loader), and IllegalAccessException
+            // (locked-down reflection on a non-public field). Anything else
+            // is a real bug and should propagate.
+            if (GENERABLE_LOGGER.isLoggable(Level.FINE)) {
+                GENERABLE_LOGGER.log(
+                    Level.FINE,
+                    "tryLoad: generated-metadata link failed for ${kClass.qualifiedName}",
+                    e,
+                )
+            }
+            null
+        } catch (e: ReflectiveOperationException) {
+            if (GENERABLE_LOGGER.isLoggable(Level.FINE)) {
+                GENERABLE_LOGGER.log(
+                    Level.FINE,
+                    "tryLoad: reflective access failed for ${kClass.qualifiedName}",
+                    e,
+                )
+            }
+            null
+        } catch (e: SecurityException) {
+            if (GENERABLE_LOGGER.isLoggable(Level.FINE)) {
+                GENERABLE_LOGGER.log(
+                    Level.FINE,
+                    "tryLoad: security manager blocked generated-metadata access for ${kClass.qualifiedName}",
+                    e,
+                )
+            }
             null
         }
     }
@@ -477,11 +525,9 @@ inline fun <reified T : Any> fromLlmOutput(json: String): T? = T::class.fromLlmO
  * See [fromLlmOutput] for the inline reified variant.
  */
 fun <T : Any> KClass<T>.fromLlmOutput(json: String): T? {
-    val parsed = try {
+    val parsed = tryGenerable("fromLlmOutput: lenient JSON parse failed for ${this.qualifiedName}") {
         LenientJsonParser.parse(json)
-    } catch (e: Exception) {
-        return null
-    }
+    } ?: return null
 
     // #1718: `isSealed` is itself a kotlin-reflect call. Wrap it so
     // consumers without reflect fall through to the data-class path
@@ -574,6 +620,22 @@ private fun <T : Any> KClass<T>.constructFromMapReflective(fields: Map<*, Any?>)
         }
         ctor.callBy(args)
     } catch (e: Exception) {
+        // #2805 — the broad catch stays because callBy surfaces several
+        // distinct failure modes (IllegalArgumentException for missing-
+        // required-param / type-mismatch, InvocationTargetException
+        // unwrapping a constructor-thrown NullPointerException for
+        // non-null Kotlin param + null arg, KotlinNullPointerException
+        // directly from the constructor's intrinsic check). Each is
+        // documented behaviour of the data-class deserialisation path;
+        // the diagnostic now flows through a FINE-level log instead of
+        // being swallowed in silence.
+        if (GENERABLE_LOGGER.isLoggable(Level.FINE)) {
+            GENERABLE_LOGGER.log(
+                Level.FINE,
+                "constructFromMapReflective: callBy rejected the argument set for ${this.qualifiedName}",
+                e,
+            )
+        }
         null
     }
 }

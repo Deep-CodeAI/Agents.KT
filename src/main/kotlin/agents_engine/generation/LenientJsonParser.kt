@@ -17,6 +17,11 @@ package agents_engine.generation
  * - Trailing commas before } or ]
  * - Extra explanation text before or after the JSON block
  */
+// #2805 — FINE-level logger so swallowed malformed-input causes are
+// recoverable in debug runs but stay out of the warn/error band.
+private val LENIENT_LOGGER: java.util.logging.Logger =
+    java.util.logging.Logger.getLogger("agents_engine.generation.LenientJsonParser")
+
 internal object LenientJsonParser {
 
     /**
@@ -36,6 +41,15 @@ internal object LenientJsonParser {
         return try {
             Parser(json).parseValue()
         } catch (e: Exception) {
+            // #2805 — broad catch stays (the Parser throws several distinct
+            // types: IllegalStateException on depth-cap, IllegalArgumentException
+            // / NumberFormatException on malformed token, etc — all documented
+            // "null on malformed input" outcomes). The improvement is the FINE
+            // log: the cause is now recoverable for debug runs instead of
+            // silently swallowed.
+            if (LENIENT_LOGGER.isLoggable(java.util.logging.Level.FINE)) {
+                LENIENT_LOGGER.log(java.util.logging.Level.FINE, "parse rejected malformed input", e)
+            }
             null
         }
     }
