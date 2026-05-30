@@ -42,11 +42,23 @@ class EvalCase<IN, OUT>(
     val name: String,
     internal val input: IN,
     internal val expectations: List<EvalExpectation<OUT>>,
+    /**
+     * #2494 — optional LLM judges. Run after the agent succeeds; their
+     * verdicts surface on [EvalResult.judgeVerdicts] for the report but
+     * NEVER gate [EvalResult.passed]. Empty by default.
+     */
+    internal val judges: List<JudgeBinding> = emptyList(),
 ) {
     /**
      * Run this case against [agent], collecting expectation results.
      * Captures exceptions from the agent invocation as a hard failure
      * (the eval can't proceed without the output).
+     *
+     * After the deterministic expectations resolve, any registered LLM
+     * judges (#2494) score the output advisory. Their verdicts attach
+     * to [EvalResult.judgeVerdicts] but never affect [EvalResult.passed].
+     * A judge that itself throws (model returned garbage, etc.) records
+     * a failure detail on the result without gating pass/fail.
      */
     fun run(agent: Agent<IN, OUT>): EvalResult<OUT> {
         val output = try {
@@ -67,9 +79,31 @@ class EvalCase<IN, OUT>(
                 EvalOutcome(expectation.label, false, failureDetail = "expectation threw: ${t.message}")
             }
         }
-        return EvalResult(caseName = name, output = output, outcomes = outcomes, invocationError = null)
+        // #2494 — advisory judge pass. Errors from the judge itself
+        // (parse failures, out-of-range scores) are captured on the
+        // verdict map but never gate pass/fail.
+        val judgeVerdicts = LinkedHashMap<String, JudgeOutcome>()
+        for (binding in judges) {
+            val outcome = try {
+                val verdict = LlmJudge(binding.rubric).score(input, output)
+                JudgeOutcome.Scored(verdict)
+            } catch (t: Throwable) {
+                JudgeOutcome.Errored(t.message ?: t::class.simpleName ?: "judge threw")
+            }
+            judgeVerdicts[binding.label] = outcome
+        }
+        return EvalResult(
+            caseName = name,
+            output = output,
+            outcomes = outcomes,
+            invocationError = null,
+            judgeVerdicts = judgeVerdicts,
+        )
     }
 }
+
+/** Binding of a judge label to its rubric — set via [EvalCaseBuilder.judge]. */
+data class JudgeBinding(val label: String, val rubric: JudgeRubric)
 
 /** A typed expectation over an agent's `OUT`. */
 class EvalExpectation<OUT>(
@@ -86,6 +120,7 @@ class EvalCaseBuilder<IN, OUT> {
     private var input: IN? = null
     private var inputProvided: Boolean = false
     private val expectations: MutableList<EvalExpectation<OUT>> = mutableListOf()
+    private val judges: MutableList<JudgeBinding> = mutableListOf()
 
     /** Set the agent input. Required — calling [build] without it throws. */
     fun input(value: IN) {
@@ -145,11 +180,26 @@ class EvalCaseBuilder<IN, OUT> {
         )
     }
 
+    /**
+     * #2494 — register an advisory LLM-as-judge scorer. The judge runs
+     * AFTER the agent succeeds and produces a typed [JudgeVerdict]. The
+     * verdict surfaces on [EvalResult.judgeVerdicts] for the test
+     * report but does NOT gate the case's pass/fail — judges are
+     * advisory by design, distinct from the deterministic `expect`
+     * blocks. Multiple judges per case are allowed; each is keyed by
+     * its [label] in the result map.
+     */
+    fun judge(label: String, rubric: JudgeRubric) {
+        require(label.isNotBlank()) { "judge label must not be blank" }
+        require(judges.none { it.label == label }) { "duplicate judge label: $label" }
+        judges += JudgeBinding(label, rubric)
+    }
+
     internal fun build(name: String): EvalCase<IN, OUT> {
         check(inputProvided) { "eval(\"$name\") { } requires an input(...) call." }
         check(expectations.isNotEmpty()) { "eval(\"$name\") { } requires at least one expect(...) block." }
         @Suppress("UNCHECKED_CAST")
-        return EvalCase(name, input as IN, expectations.toList())
+        return EvalCase(name, input as IN, expectations.toList(), judges.toList())
     }
 
     private fun renderForFailure(out: OUT): String =
@@ -179,6 +229,13 @@ data class EvalResult<OUT>(
     val output: OUT?,
     val outcomes: List<EvalOutcome>,
     val invocationError: Throwable?,
+    /**
+     * #2494 — advisory LLM judge verdicts keyed by the label passed to
+     * `judge(label, rubric)`. Empty when no judges are registered.
+     * NOT considered by [passed] or [failureMessage] — judges are
+     * advisory; deterministic expectations are the gating contract.
+     */
+    val judgeVerdicts: Map<String, JudgeOutcome> = emptyMap(),
 ) {
     val passed: Boolean get() = invocationError == null && outcomes.all { it.passed }
 
@@ -192,6 +249,32 @@ data class EvalResult<OUT>(
                 "eval case \"$caseName\" failed: ${fails.joinToString("\n") { "  - ${it.label}: ${it.failureDetail}" }}"
             }
         }
+
+    /**
+     * #2494 — multi-line summary of advisory judge verdicts. Format is
+     * one line per judge: `[advisory] <label>: <score>/<max> — <rationale>`.
+     * Empty string when no judges ran. Marked clearly as advisory so
+     * report consumers don't confuse judges with the deterministic
+     * pass/fail contract.
+     */
+    val judgeSummary: String
+        get() = judgeVerdicts.entries.joinToString("\n") { (label, outcome) ->
+            when (outcome) {
+                is JudgeOutcome.Scored -> "[advisory] $label: ${outcome.verdict.score} — ${outcome.verdict.rationale}"
+                is JudgeOutcome.Errored -> "[advisory] $label: <judge error: ${outcome.errorDetail}>"
+            }
+        }
+}
+
+/**
+ * #2494 — sealed outcome of a single judge invocation. `Scored` carries
+ * the typed verdict; `Errored` captures parse failures or
+ * out-of-range scores from the judge model. Errors here NEVER gate the
+ * case's pass/fail — they just surface in the report.
+ */
+sealed interface JudgeOutcome {
+    data class Scored(val verdict: JudgeVerdict) : JudgeOutcome
+    data class Errored(val errorDetail: String) : JudgeOutcome
 }
 
 /** A bag of [EvalCase]s runnable together. */
