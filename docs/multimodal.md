@@ -252,10 +252,75 @@ Mirrors the existing `invokeSuspend` / `invoke` split.
 
 The slice-b live tests complement the slice-a tests: the slice-a `VisionLiveTest` exercises the raw `ModelClient`; slice-b's `AgentVisionLiveTest` exercises the full agent loop including BlobStore deref.
 
+## Document attachments — Claude PDF / text / markdown (#2470 slice c)
+
+Slice c extends the agent attachment surface from images to documents. The same `agent.invokeWithAttachments(...)` API; `Content.Document(ref, mime)` instead of `Content.Image`.
+
+```kotlin
+val store = FileBlobStore(Path.of("snapshots/blobs"))
+val ref = store.put(specPdfBytes, DocMime.Pdf.wireMime)
+
+val agent = agent<String, String>("doc-reader") {
+    model { claude("claude-haiku-4-5") }
+    blobStore(store)
+    skills { skill<String, String>("read", "") { tools() } }
+}
+
+agent.invokeWithAttachments(
+    "What does this spec recommend?",
+    attachments = listOf(Content.Document(ref, DocMime.Pdf)),
+)
+```
+
+### Per-provider support
+
+Document input is uneven across providers — only Anthropic has a native document content block on `/v1/messages` today. The others are documented gaps:
+
+| Provider | Behavior |
+|---|---|
+| **Anthropic Claude** | Native `document` content block. PDF rides as `source: {type: "base64", media_type: "application/pdf", data: ...}`; plain text + markdown ride as `source: {type: "text", media_type: "text/plain", data: <decoded text>}` (Anthropic's `base64` source only accepts PDFs). Works on all current Claude vision-capable models (Haiku 4.5+ / Sonnet 4.6+ / Opus 4.7). |
+| **OpenAI Chat Completions** | No document content type on `/v1/chat/completions` — the Files API + Assistants API has one but this adapter doesn't. Documents are DROPPED on the wire. A one-shot JUL warning fires on the first call that contains a document, naming the workaround. |
+| **Ollama** | No document field on the chat API. Same drop-with-warning behavior. |
+| **DeepSeek** | Inherits OpenAI's drop-with-warning. |
+
+### Closed mime mapping
+
+`DocMime` → `DocumentPart.WireMime`:
+
+| `DocMime` variant | `DocumentPart.WireMime` variant | Claude wire shape |
+|---|---|---|
+| `Pdf` | `Pdf` | `source.type = "base64"`, `media_type = "application/pdf"` |
+| `PlainText` | `PlainText` | `source.type = "text"`, `media_type = "text/plain"` |
+| `Markdown` | `Markdown` | `source.type = "text"`, `media_type = "text/plain"` (no markdown media_type on Anthropic) |
+| `Docx` | dropped at agent deref | no provider wire path |
+| `Html` | dropped at agent deref | no provider wire path |
+
+`Docx` / `Html` get silently dropped at the agent deref layer — converting them is a deployer-side toolchain concern (LibreOffice headless, etc.), not the runtime's.
+
+### Workarounds for OpenAI / Ollama
+
+When you need a PDF to reach a non-Claude model, the JUL warning names the three paths:
+
+1. **Extract text client-side** and embed in `message.content` — works everywhere. Use Apache PDFBox or similar before the agent call.
+2. **Render to images** and use `images` (#2470 slice b) — works for vision-capable models on every provider.
+3. **Switch to Claude** for the doc-bearing turn — native PDF support, no conversion.
+
+The framework deliberately doesn't ship a built-in PDF→text or PDF→image conversion path. Tool choice (which library, what quality, OCR or no OCR) is application-specific.
+
+### Live tests
+
+`ClaudeDocumentLiveTest.kt` (tagged `live-cloud-api`):
+
+| Case | Fixture | Assertion |
+|---|---|---|
+| Plain text → codename extraction | `"Project codename: PINEAPPLE. Internal use only."` | reply contains "PINEAPPLE" |
+| Markdown → bullet count | 3 bullet markdown release-notes | reply mentions "3" / "three" |
+
+`./gradlew test --tests "*ClaudeDocumentLiveTest*"` — skips without `ANTHROPIC_API_KEY` / `.secrets/anthropic-key`.
+
 ## What's still coming (rest of #2465)
 
 - **#2468** Compile-time modality routing — `Agent<Image, X>` becomes a real type; cross-modality miswiring is a compile error. Multi-part `@Generable` inputs via KSP.
-- **#2470 slice c** Document/Audio/Video provider-input adapters — currently only images flow through the wire; Document/Audio/Video Content variants are skipped on the attachment path.
 - **#2471** Manifest-anchored modality capability — declared per-agent modalities recorded in the permission manifest, validated against provider capabilities at build time.
 - **#2472** Multimodal memory — `MemoryBank` entries carry `ContentRef` for image/audio/video state.
 - **#2473** Testing fixtures + snapshot + mutation coverage.

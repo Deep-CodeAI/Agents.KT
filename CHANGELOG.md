@@ -4,6 +4,17 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — Document attachments (#2470 slice c)
+
+- **`LlmMessage.documents: List<DocumentPart>? = null`** — new optional field paralleling `images`. Closed `DocumentPart(base64, wireMime)` with `WireMime` sealed type (`Pdf`, `PlainText`, `Markdown`) — `String` mime not accepted in the public ctor. Back-compat default leaves wire shape byte-identical; role-gated to `user` like images.
+- **Anthropic Claude — native document content block.** Two source shapes depending on type:
+  * `Pdf` → `source: {type: "base64", media_type: "application/pdf", data: "<b64>"}`. Anthropic's `base64` source only accepts PDFs.
+  * `PlainText` + `Markdown` → `source: {type: "text", media_type: "text/plain", data: "<decoded raw text>"}`. The adapter base64-decodes the `DocumentPart` payload because Anthropic's text-source block wants raw UTF-8, not base64. Markdown rides as `text/plain` on the wire (no separate markdown media_type at Anthropic); the typed `DocumentPart.WireMime.Markdown` tracks caller intent.
+- **OpenAI Chat Completions** — no document-input format on `/v1/chat/completions` (the Files API + Assistants API has one; this Chat Completions adapter doesn't). Documents are silently dropped on the wire. A one-shot JUL `warning` fires the first time a caller passes a document, naming the workaround: extract text client-side and embed in `message.content`, render to image via `LlmMessage.images`, or switch to Anthropic Claude.
+- **Ollama** — same; no document field on `/api/chat`. Same drop-with-warning behavior. DeepSeek inherits OpenAI's behavior.
+- **`Content.Document` flows through the agent attachment path.** `agent.invokeWithAttachments("read", attachments = listOf(Content.Document(ref, DocMime.Pdf)))` dereferences the ref against the agent's `BlobStore`, base64-encodes once, and rides on `LlmMessage.documents` of the first user message. `DocMime → DocumentPart.WireMime` mapping handles Pdf / PlainText / Markdown; `Docx` and `Html` `DocMime` variants drop at the agent deref (no provider wire path — converting them is a deployer-side toolchain concern).
+- 8 wire-format unit tests + 8 agent-surface tests + 2 live Claude tests (plain-text codename extraction + markdown bullet count, tagged `live-cloud-api`, ~50-byte payloads with `temperature=0, maxTokens=80, claude-haiku-4-5`). See [docs/multimodal.md](docs/multimodal.md#document-attachments--claude-pdf--text--markdown-2470-slice-c).
+
 ### Added — Typed agent attachments (#2470 slice b)
 
 - **`agent.invokeWithAttachments(input, attachments)`** + suspending sibling `invokeSuspendWithAttachments` — user-facing API for vision input via typed `Content.Image`. The runtime dereferences each ref against the agent's injected `BlobStore`, base64-encodes once, and attaches `ImagePart` to the first user `LlmMessage`. Per-provider wire translation is the slice-a work — this commit routes the typed surface into it.
