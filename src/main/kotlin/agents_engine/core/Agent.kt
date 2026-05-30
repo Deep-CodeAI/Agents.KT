@@ -168,6 +168,24 @@ class Agent<IN, OUT>(
      */
     var toolHallucinatedListener: ((name: String, args: Map<String, Any?>, allowedTools: List<String>) -> Unit)? = null
         private set
+    /**
+     * #2489 — fires when a tool inside the agentic loop calls `humanApproval
+     * { }` and the runtime is about to pause for human input. Pure
+     * observability: the runtime still throws [AgentInterruptException].
+     * Receives the rendered `title`, whether a `body` is attached, and the
+     * advisory `timeoutMs`. Body content is omitted by design — see
+     * [PipelineEvent.ApprovalRequested].
+     */
+    var approvalRequestedListener: ((title: String, hasBody: Boolean, timeoutMs: Long?) -> Unit)? = null
+        private set
+    /**
+     * #2489 — fires on the resume path when `resumeWith` is a [HumanDecision].
+     * Receives the variant name and whether the variant carried a payload
+     * (Edited/Responded). Body content omitted by design — see
+     * [PipelineEvent.ApprovalDecided].
+     */
+    var approvalDecidedListener: ((decision: String, hasPayload: Boolean) -> Unit)? = null
+        private set
     private val tokenUsageListeners = mutableListOf<(TokenUsage) -> Unit>()
     var knowledgeUsedListener: ((name: String, content: String) -> Unit)? = null
         private set
@@ -328,6 +346,23 @@ class Agent<IN, OUT>(
      */
     fun onToolHallucinated(block: (name: String, args: Map<String, Any?>, allowedTools: List<String>) -> Unit) {
         toolHallucinatedListener = block
+    }
+
+    /**
+     * #2489 — Observe `humanApproval { }` requests on this agent's loop.
+     * Settable post-construction. See [PipelineEvent.ApprovalRequested].
+     */
+    fun onApprovalRequested(block: (title: String, hasBody: Boolean, timeoutMs: Long?) -> Unit) {
+        approvalRequestedListener = block
+    }
+
+    /**
+     * #2489 — Observe the [HumanDecision] when the resume path synthesises
+     * a tool result from a `resumeWith` of that type. Settable
+     * post-construction. See [PipelineEvent.ApprovalDecided].
+     */
+    fun onApprovalDecided(block: (decision: String, hasPayload: Boolean) -> Unit) {
+        approvalDecidedListener = block
     }
 
     /**

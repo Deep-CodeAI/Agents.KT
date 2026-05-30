@@ -173,6 +173,35 @@ class LangfuseBridge internal constructor(
                     )
                 }
             }
+            is PipelineEvent.ApprovalRequested -> {
+                // #2489 — human approval pause. Field-only (no body / PII).
+                mostRecentTrace()?.let { state ->
+                    enqueueEventObservation(
+                        trace = state,
+                        name = "agent.approval.requested",
+                        input = mapOf(
+                            "title" to event.title,
+                            "has_body" to event.hasBody,
+                            "timeout_ms" to event.timeoutMs,
+                        ),
+                        metadata = metadata(event.runtimeContext),
+                    )
+                }
+            }
+            is PipelineEvent.ApprovalDecided -> {
+                // #2489 — pairs with ApprovalRequested via timestamp ordering.
+                mostRecentTrace()?.let { state ->
+                    enqueueEventObservation(
+                        trace = state,
+                        name = "agent.approval.decided",
+                        input = mapOf(
+                            "decision" to event.decision,
+                            "has_payload" to event.hasPayload,
+                        ),
+                        metadata = metadata(event.runtimeContext),
+                    )
+                }
+            }
         }
     }
 

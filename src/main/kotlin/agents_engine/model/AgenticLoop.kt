@@ -254,6 +254,20 @@ internal suspend fun <IN> executeAgentic(
                 "Snapshot has pendingInterruptCallId=$pendingCallId but resumeWith was not provided. " +
                     "Pass resumeWith = <the human's reply> to invokeSuspendResuming / executeAgentic."
             }
+            // #2489 — if resumeWith is a HumanDecision, emit the audit
+            // event before synthesising the tool result. Renders the
+            // decision verbatim into the LLM context via toLlmInput.
+            if (resumeWith is agents_engine.core.HumanDecision) {
+                val (decisionName, hasPayload) = when (resumeWith) {
+                    agents_engine.core.HumanDecision.Approved -> "Approved" to false
+                    agents_engine.core.HumanDecision.Rejected -> "Rejected" to false
+                    is agents_engine.core.HumanDecision.Edited -> "Edited" to (resumeWith.payload != null)
+                    is agents_engine.core.HumanDecision.Responded -> "Responded" to (resumeWith.payload != null)
+                }
+                withAgentRuntimeContext(runtimeContext) {
+                    agent.approvalDecidedListener?.invoke(decisionName, hasPayload)
+                }
+            }
             // toLlmInput renders @Generable typed replies as JSON; strings stay
             // strings; primitives stay primitives. Matches the existing
             // tool-result rendering path. The OpenAI adapter pairs tool
@@ -693,6 +707,18 @@ internal suspend fun <IN> executeAgentic(
                         // onTurnCheckpoint with the snapshot before throwing
                         // so the caller can persist via the same wire path
                         // as a budget Checkpoint.
+                        // #2489 — if the payload is an ApprovalRequest (from
+                        // humanApproval { }), fire the dedicated audit event.
+                        val payload = signal.payload
+                        if (payload is agents_engine.core.ApprovalRequest) {
+                            withAgentRuntimeContext(runtimeContext) {
+                                agent.approvalRequestedListener?.invoke(
+                                    payload.title,
+                                    payload.body != null,
+                                    payload.timeout?.inWholeMilliseconds,
+                                )
+                            }
+                        }
                         val snapshot = agents_engine.core.SessionSnapshot(
                             messages = messages.toList(),
                             turns = turns,

@@ -161,6 +161,33 @@ class LangSmithBridge internal constructor(
                     )
                 }
             }
+            is PipelineEvent.ApprovalRequested -> {
+                // #2489 — field-only (no body) per the audit-row PII discipline.
+                mostRecentAgentRun()?.let { state ->
+                    enqueueEvent(
+                        state,
+                        "agent.approval.requested",
+                        mapOf(
+                            "title" to event.title,
+                            "has_body" to event.hasBody,
+                            "timeout_ms" to event.timeoutMs,
+                        ),
+                    )
+                }
+            }
+            is PipelineEvent.ApprovalDecided -> {
+                // #2489 — pairs with ApprovalRequested.
+                mostRecentAgentRun()?.let { state ->
+                    enqueueEvent(
+                        state,
+                        "agent.approval.decided",
+                        mapOf(
+                            "decision" to event.decision,
+                            "has_payload" to event.hasPayload,
+                        ),
+                    )
+                }
+            }
         }
     }
 
