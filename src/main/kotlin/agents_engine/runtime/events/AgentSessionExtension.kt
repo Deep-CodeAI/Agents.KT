@@ -5,10 +5,12 @@ import agents_engine.core.AgentRuntimeContext
 import agents_engine.core.withAgentRuntimeContext
 import agents_engine.model.AgentEventEmitter
 import agents_engine.model.TokenUsage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
@@ -87,6 +89,19 @@ fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
                 channel.close()
                 result.complete(output)
             } catch (t: Throwable) {
+                // #2863 — distinguish cancellation from failure. A bare
+                // CancellationException means the collector / surrounding
+                // scope was cancelled; propagate per structured-concurrency
+                // contract and close the channel WITH the cancel so the
+                // consumer's flow surfaces a CancellationException, not a
+                // synthetic Failed event. TimeoutCancellationException is
+                // still a real failure (budget / per-op timeout) and rides
+                // the Failed path so consumers and audit logs see it.
+                if (t is CancellationException && t !is TimeoutCancellationException) {
+                    result.completeExceptionally(t)
+                    channel.close(t)
+                    throw t
+                }
                 val failed = AgentEvent.Failed(agent.name, t, runtimeContext)
                 agent.fireAgentEvent(failed)
                 channel.send(failed)
