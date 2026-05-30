@@ -430,35 +430,19 @@ private fun KType.promptTypeName(): String = when (val cls = classifier) {
  *
  * See #937.
  */
-fun toLlmInput(value: Any?): String = when (value) {
-    null -> "null"
-    is String -> value
-    is Boolean -> value.toString()
-    is Number -> value.toString()
-    is List<*> -> value.joinToString(",", "[", "]") { jsonSerialize(it) }
-    is Map<*, *> -> value.entries.joinToString(",", "{", "}") { (k, v) ->
-        "\"${k.toString().escapeJson()}\":${jsonSerialize(v)}"
-    }
-    else -> {
-        val cls = value::class
-        // #1718: cache-first @Generable detection. Reflection-free for
-        // KSP-applied consumers; wrapped reflection fallback otherwise.
-        if (cls.hasGenerableAnnotation()) {
-            generableToJson(value, cls)
-        } else {
-            value.toString()
-        }
-    }
-}
+fun toLlmInput(value: Any?): String = serializeForLlm(value, quoteTopLevelStrings = false)
 
 /**
  * Internal recursive serializer — used by collections and Generable field
- * walking. Differs from [toLlmInput] in that strings get JSON-quoted (since
- * they're nested inside a JSON value).
+ * walking. Differs from [toLlmInput] only in that strings get JSON-quoted
+ * (since they're nested inside a JSON value). Both flow through the same
+ * parameterised walker since #2794.
  */
-private fun jsonSerialize(value: Any?): String = when (value) {
+private fun jsonSerialize(value: Any?): String = serializeForLlm(value, quoteTopLevelStrings = true)
+
+private fun serializeForLlm(value: Any?, quoteTopLevelStrings: Boolean): String = when (value) {
     null -> "null"
-    is String -> "\"${value.escapeJson()}\""
+    is String -> if (quoteTopLevelStrings) "\"${value.escapeJson()}\"" else value
     is Boolean -> value.toString()
     is Number -> value.toString()
     is List<*> -> value.joinToString(",", "[", "]") { jsonSerialize(it) }
@@ -471,11 +455,13 @@ private fun jsonSerialize(value: Any?): String = when (value) {
         // KSP-applied consumers; wrapped reflection fallback otherwise.
         if (cls.hasGenerableAnnotation()) {
             generableToJson(value, cls)
-        } else {
+        } else if (quoteTopLevelStrings) {
             // Non-Generable, non-primitive nested value — render via toString
             // and JSON-quote it. Lossy but consistent with falling back to
             // toString at the top level.
             "\"${value.toString().escapeJson()}\""
+        } else {
+            value.toString()
         }
     }
 }
