@@ -1,6 +1,7 @@
 package agents_engine.core
 
 import agents_engine.generation.LenientJsonParser
+import agents_engine.internal.toJsonString
 import java.util.logging.Logger
 
 /**
@@ -415,26 +416,9 @@ private object ManifestJson {
         is Iterable<*> -> value.joinToString(",", "[", "]") { encode(it) }
         else -> quote(value.toString())
     }
-
-    private fun quote(value: String): String =
-        buildString(value.length + 2) {
-            append('"')
-            value.forEach { ch ->
-                when (ch) {
-                    '"' -> append("\\\"")
-                    '\\' -> append("\\\\")
-                    '\b' -> append("\\b")
-                    '\u000C' -> append("\\f")
-                    '\n' -> append("\\n")
-                    '\r' -> append("\\r")
-                    '\t' -> append("\\t")
-                    else -> {
-                        if (ch < ' ') append("\\u${ch.code.toString(16).padStart(4, '0')}") else append(ch)
-                    }
-                }
-            }
-            append('"')
-        }
+    // #2799 — routes through the central [toJsonString] escaper. The local
+    // body was byte-identical to JsonEscape — parallel impls are drift hazard.
+    private fun quote(value: String): String = value.toJsonString()
 }
 
 /**

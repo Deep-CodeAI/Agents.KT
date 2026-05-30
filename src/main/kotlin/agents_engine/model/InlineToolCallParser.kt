@@ -1,5 +1,7 @@
 package agents_engine.model
 
+import agents_engine.internal.toJsonString
+
 import agents_engine.generation.LenientJsonParser
 
 /**

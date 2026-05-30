@@ -125,4 +125,46 @@ class UntrustedToolOutputTest {
         val def = ToolDef(name = "x", description = "", executor = { _ -> "ok" })
         assertEquals(false, def.untrustedOutput)
     }
+
+    // #2799 — wrapUntrustedToolResult routes through the central JsonEscape.
+    // The pre-#2756 local 5-char replace chain produced invalid JSON when the
+    // tool output contained U+0000-U+001F control chars (NUL / `\b` / `\f` /
+    // ESC). This test feeds every control char + DEL into an untrusted
+    // executor and asserts the wrap is still valid JSON (lenient-parseable
+    // back into a Map).
+    @Test
+    fun `untrusted tool result wraps control characters as valid JSON`() {
+        val captured = mutableListOf<List<LlmMessage>>()
+        val responses = ArrayDeque<LlmResponse>()
+        responses.add(LlmResponse.ToolCalls(listOf(ToolCall(name = "scary", arguments = emptyMap()))))
+        responses.add(LlmResponse.Text("done"))
+        val mock = ModelClient { msgs -> captured.add(msgs.toList()); responses.removeFirst() }
+
+        // Every U+0000-U+001F codepoint plus DEL — exactly the byte band the
+        // pre-fix escaper missed.
+        val payload = (0..0x1F).joinToString("") { it.toChar().toString() } + ""
+
+        val a = agent<String, String>("a") {
+            lateinit var scary: Tool<Map<String, Any?>, Any?>
+            model { ollama("llama3"); client = mock }
+            tools {
+                scary = tool("scary") {
+                    description("returns binary-ish text")
+                    untrustedOutput()
+                    executor { _ -> payload }
+                }
+            }
+            skills { skill<String, String>("s", "") { tools(scary) } }
+        }
+        a("input")
+
+        val toolMsg = captured[1].first { it.role == "tool" }
+        // The wire content must be parseable JSON — if the local escape chain
+        // ever returns (or someone slips a partial escape into the wrap path),
+        // LenientJsonParser will return null and this assert fires.
+        val parsed = agents_engine.generation.LenientJsonParser.parse(toolMsg.content) as? Map<*, *>
+        assertTrue(parsed != null, "wrapped envelope must round-trip through LenientJsonParser: ${toolMsg.content}")
+        assertEquals(false, parsed["trusted"])
+        assertEquals(payload, parsed["value"], "value field must round-trip the original payload byte-for-byte")
+    }
 }

@@ -1,5 +1,8 @@
 package agents_engine.model
 
+import agents_engine.internal.OPEN_EMPTY_OBJECT_SCHEMA_JSON
+import agents_engine.internal.toJsonString
+
 import agents_engine.generation.LenientJsonParser
 import agents_engine.generation.jsonSchema
 import java.io.BufferedReader
@@ -419,7 +422,7 @@ open class OllamaClient(
             val defs = tools.joinToString(",") { t ->
                 val parametersJson = t.argsType?.jsonSchema()
                     ?: t.parametersSchemaJson
-                    ?: """{"type":"object","properties":{},"additionalProperties":true}"""
+                    ?: OPEN_EMPTY_OBJECT_SCHEMA_JSON
                 """{"type":"function","function":{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"parameters":$parametersJson}}"""
             }
             ""","tools":[$defs]"""

@@ -5,7 +5,7 @@ import agents_engine.model.InlineToolCallParser
 import agents_engine.model.LlmMessage
 import agents_engine.model.TokenUsage
 import agents_engine.model.ToolCall
-import agents_engine.model.toJsonString
+import agents_engine.internal.toJsonString
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
