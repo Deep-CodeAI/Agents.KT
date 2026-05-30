@@ -46,7 +46,45 @@ cd Agents.KT
 ./gradlew detekt
 ```
 
-Then build one typed pipeline:
+### Building an agent
+
+An **`Agent<IN, OUT>`** has one input type, one output type, one or more **skills**, and an optional **model** for the agentic path. Skills come in two shapes:
+
+- **`implementedBy { input -> output }`** — deterministic Kotlin lambda. No LLM. Fastest and fully testable.
+- **`tools(...)`** with a `model { }` block — agentic. The framework runs a multi-turn loop where the LLM picks tools from the skill's allowlist; the runtime refuses anything outside it (authorization, not just prompting).
+
+```kotlin
+val coder = agent<Spec, Code>("coder") {
+    model { claude("claude-opus-4-7"); apiKey = System.getenv("ANTHROPIC_API_KEY") }
+    lateinit var writeFile: Tool<Map<String, Any?>, Any?>
+    lateinit var compile:   Tool<Map<String, Any?>, Any?>
+    tools {
+        writeFile = tool("write_file", "Write a source file") { args -> writeFile(args) }
+        compile   = tool("compile",    "Compile the bundle")  { args -> compile(args)   }
+    }
+    skills {
+        skill<Spec, Code>("write-code", "Implement endpoints") { tools(writeFile, compile) }
+    }
+}
+```
+
+When multiple skills can take the same input type, the LLM (or a manual `skillSelection { }`) routes between them.
+
+### Composing agents
+
+Composition is purely type-driven — the compiler enforces that boundaries line up. Five primitives ship today:
+
+| Primitive | Shape | What it does |
+|---|---|---|
+| `a then b` | `Pipeline<IN, OUT>` | Sequential. `a.OUT` must equal `b.IN`, enforced at compile time. |
+| `a / b` | `Parallel<IN, List<OUT>>` | Run both branches concurrently against the same input; collect results. |
+| `agent.branch { … }` | `Branch<IN, OUT>` | Route per source-output shape (`onClass<X> then …`, `onElse then …`); sealed sources are exhaustiveness-checked. |
+| `teacher wrap student` | `Pipeline<IN, OUT>` | Teacher-student: `teacher.OUT` (a `String`) becomes `student`'s per-call system prompt. |
+| `forum { members(…); captain = … }` | `Forum<IN, OUT>` | Council of members with a captain that emits the verdict. |
+
+A single agent instance can only be placed in one composition — wiring it into two spots fails fast at construction. See [`docs/composition.md`](docs/composition.md) for the operator reference and [`docs/comparison.md`](docs/comparison.md) for the release narrative.
+
+### One typed pipeline
 
 ```kotlin
 val parse = agent<RawText, Specification>("parse") {
