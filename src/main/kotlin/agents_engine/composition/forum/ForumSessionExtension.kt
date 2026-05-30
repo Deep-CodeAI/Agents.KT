@@ -11,7 +11,9 @@ import agents_engine.runtime.events.withRuntimeContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
@@ -106,6 +108,12 @@ fun <IN, OUT> Forum<IN, OUT>.session(input: IN): AgentSession<OUT> {
                 channel.close()
                 result.complete(verdict)
             } catch (t: Throwable) {
+                // #2863 — propagate bare cancellation; keep timeout on Failed.
+                if (t is CancellationException && t !is TimeoutCancellationException) {
+                    result.completeExceptionally(t)
+                    channel.close(t)
+                    throw t
+                }
                 channel.trySend(AgentEvent.Failed(captain.name, t))
                 channel.close()
                 result.completeExceptionally(t)

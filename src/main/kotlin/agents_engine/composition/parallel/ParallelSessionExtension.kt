@@ -12,6 +12,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.consumeAsFlow
@@ -92,6 +94,14 @@ fun <IN, OUT> Parallel<IN, OUT>.session(input: IN): AgentSession<List<OUT>> {
                 channel.close()
                 result.complete(outputs)
             } catch (t: Throwable) {
+                // #2863 — bare cancellation propagates per structured-concurrency
+                // contract. TimeoutCancellationException is a real failure
+                // and stays on the Failed path.
+                if (t is CancellationException && t !is TimeoutCancellationException) {
+                    result.completeExceptionally(t)
+                    channel.close(t)
+                    throw t
+                }
                 channel.send(AgentEvent.Failed("parallel", t))
                 channel.close()
                 result.completeExceptionally(t)

@@ -11,6 +11,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
@@ -94,6 +96,13 @@ fun <IN, OUT> Branch<IN, OUT>.session(input: IN): AgentSession<OUT> {
                 channel.close()
                 result.complete(output)
             } catch (t: Throwable) {
+                // #2863 — propagate bare cancellation; keep timeout on the
+                // Failed path (real budget/timeout failures are user-visible).
+                if (t is CancellationException && t !is TimeoutCancellationException) {
+                    result.completeExceptionally(t)
+                    channel.close(t)
+                    throw t
+                }
                 channel.send(AgentEvent.Failed(terminalAgentId, t))
                 channel.close()
                 result.completeExceptionally(t)
