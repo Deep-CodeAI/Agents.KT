@@ -2,12 +2,13 @@
 
 # Eval harness
 
-Two pieces ship today, layered:
+Three pieces ship today, layered:
 
 - **`DeterministicModelClient`** (#2492) — a `ModelClient` that scripts responses, no network. Pairs with any agent so you can run the full agentic loop deterministically.
 - **`eval { }` DSL** (#2493) — declarative cases with typed assertions over the agent's `OUT`. Supports per-field checks, full structural snapshots, and grouped suites.
+- **LLM-as-judge** (#2494) — opt-in advisory scorer for criteria that resist deterministic assertion (tone, relevance, completeness). Typed rubric, structured `JudgeVerdict`, explicitly separate from the deterministic pass/fail contract.
 
-Both live in package `agents_engine.testing` and ship in the main module — usable from any consumer's test source set without an extra artifact.
+All three live in package `agents_engine.testing` and ship in the main module — usable from any consumer's test source set without an extra artifact.
 
 ---
 
@@ -45,6 +46,64 @@ mock.requests           // List<List<LlmMessage>> — every `chat` call's input
 
 - **Record-from-live.** The #2492 ticket mentions "record-once/replay-many." That needs an HTTP-fixture story we'll write when there's demand. For now: hand-script the responses or compose with a recording-decorator pattern in your own test code.
 - **Per-token streaming chunks.** `chatStream` uses the default chunk-from-chat wrap — good enough for asserting on the streaming `AgentEvent` shape, not useful for testing provider-specific mid-stream edge cases.
+
+---
+
+## LLM-as-judge (advisory)
+
+For criteria that resist deterministic assertion — tone, relevance, completeness — opt into a `judge`. The judge runs after the agent succeeds, scores the (input, output) pair with a typed `@Generable` verdict, and surfaces on `EvalResult.judgeVerdicts`. **Judges never gate the case's pass/fail** — only deterministic `expect { }` blocks do.
+
+```kotlin
+import agents_engine.testing.JudgeRubric
+
+val toneRubric = JudgeRubric(
+    criteria = "Tone: warm, professional, no jargon.",
+    judgeModel = DeterministicModelClient(
+        LlmResponse.Text("""{"score":8,"rationale":"clear and warm"}"""),
+    ),
+)
+
+val case = eval<String, Review>("repo-review") {
+    input(spec)
+    expect("approved") { it.approved }       // ← gates pass/fail
+    judge("tone", toneRubric)                // ← advisory only
+}
+
+val result = case.run(reviewAgent)
+result.passed                                // depends ONLY on `expect` blocks
+result.judgeVerdicts["tone"]                 // JudgeOutcome.Scored(JudgeVerdict)
+println(result.judgeSummary)
+// [advisory] tone: 8 — clear and warm
+```
+
+### Why opt-in and advisory
+
+LLM judges are themselves nondeterministic and prompt-sensitive. Treating them as gating regression checks would import the same flakiness the deterministic harness is designed to eliminate. The split is intentional:
+
+- **Deterministic `expect`** ⇒ pass/fail contract. Reproducible across runs.
+- **`judge`** ⇒ qualitative score for the report. Useful as a quality trend over time; never as a fail signal.
+
+### Pinning the judge model
+
+The `judgeModel` in `JudgeRubric` is a regular `ModelClient`:
+
+- **Unit tests:** use `DeterministicModelClient` with a scripted verdict JSON. The judge call itself becomes reproducible.
+- **Live eval:** use a pinned cloud model — explicit version + low temperature. Even then, drift between runs is expected; that's why the judge is advisory.
+
+### Failure modes
+
+`EvalResult.judgeVerdicts` carries `JudgeOutcome` for each registered judge — a sealed type:
+
+| Variant | When |
+|---|---|
+| `JudgeOutcome.Scored(verdict: JudgeVerdict)` | Judge model returned valid JSON; score in range. |
+| `JudgeOutcome.Errored(errorDetail: String)` | Judge model returned non-JSON, or returned a score outside `rubric.scoreRange`. |
+
+Both surface in the report. Neither affects `EvalResult.passed`.
+
+### Judges and agent failures
+
+If the agent invocation itself throws (`EvalResult.invocationError` is set), no judges run — there's no output to score. The `judgeVerdicts` map is empty in that case.
 
 ---
 

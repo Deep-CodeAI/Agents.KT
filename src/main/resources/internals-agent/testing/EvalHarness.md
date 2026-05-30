@@ -1,10 +1,10 @@
 ---
-description: Source-file knowledge for agents_engine/testing/DeterministicModelClient.kt and agents_engine/testing/EvalDsl.kt — eval harness (#2491 / #2492 / #2493). DeterministicModelClient is a ModelClient that scripts LlmResponses in order, fails fast on exhaustion (DeterministicScriptExhausted), records every requests list for assertions, byte-deterministic. eval<IN,OUT>(name) { input + expect + expectSnapshot + expectFieldEquals } DSL produces a typed EvalCase whose .run(agent) returns EvalResult(output, outcomes, invocationError). evalSuite(name) { + case + case } bundles cases. Composes for no-network eval — DeterministicModelClient + eval together give reproducible end-to-end assertions over Agent<IN,OUT>. Out of scope v1: record-from-live HTTP capture, per-token streaming chunk replay. Call when reasoning about deterministic test patterns or typed-assertion eval cases.
+description: Source-file knowledge for the eval harness in agents_engine/testing/ — #2491 epic (#2492 + #2493 + #2494). Three cooperating pieces in one package. DeterministicModelClient (#2492): scripts LlmResponses in order, fails fast on exhaustion, records requests for assertions, byte-deterministic, default chatStream wrap. eval<IN,OUT>(name) { input + expect + expectSnapshot + expectFieldEquals + judge } DSL (#2493 + #2494): typed predicates, snapshot diff, single-field check; judge(label, rubric) adds an opt-in advisory LLM scorer that does NOT gate pass/fail. EvalResult carries outcomes + invocationError + judgeVerdicts: Map<String, JudgeOutcome> with sealed Scored/Errored variants. evalSuite(name) { + case } bundles cases. JudgeRubric is typed config + a pinnable ModelClient; JudgeVerdict is @Generable so the judge model returns structured JSON. Pass/fail gating is structurally restricted to deterministic expect blocks — judges never gate. Out of scope v1: record-from-live HTTP capture, per-token chunk replay. Call when reasoning about deterministic test patterns, typed-assertion eval cases, or advisory LLM scoring.
 ---
 
 # `agents_engine/testing/*` — eval harness
 
-Two cooperating pieces in package `agents_engine.testing`:
+Three cooperating pieces in package `agents_engine.testing`:
 
 ## `DeterministicModelClient`
 
@@ -32,16 +32,28 @@ class EvalCaseBuilder<IN, OUT> {
     fun expect(label: String = "expect", predicate: (OUT) -> Boolean)
     fun expectSnapshot(label: String = "snapshot", snapshot: String)
     fun expectFieldEquals(fieldPath: String, expected: Any?)
+    fun judge(label: String, rubric: JudgeRubric)    // #2494 — advisory only
 }
 
 class EvalCase<IN, OUT> {
     fun run(agent: Agent<IN, OUT>): EvalResult<OUT>
 }
 
-data class EvalResult<OUT>(val caseName, val output, val outcomes, val invocationError) {
-    val passed: Boolean
+data class EvalResult<OUT>(val caseName, val output, val outcomes, val invocationError,
+                            val judgeVerdicts: Map<String, JudgeOutcome>) {
+    val passed: Boolean              // gated ONLY by outcomes + invocationError; judges excluded
     val failureMessage: String?
+    val judgeSummary: String         // multi-line "[advisory] label: score — rationale"
 }
+
+sealed interface JudgeOutcome {
+    data class Scored(val verdict: JudgeVerdict)
+    data class Errored(val errorDetail: String)
+}
+
+data class JudgeRubric(val criteria: String, val scoreRange: IntRange = 0..10, val judgeModel: ModelClient)
+
+@Generable data class JudgeVerdict(val score: Int, val rationale: String)
 
 fun evalSuite(name: String, block: EvalSuite.() -> Unit): EvalSuite
 
@@ -67,9 +79,10 @@ All compose — multiple expects in one case must all pass. Failure messages nam
 
 ## Failure modes
 
-- Agent threw mid-invocation: `EvalResult.invocationError` is non-null; `outcomes` is empty. `failureMessage` names the exception class + message + case name.
+- Agent threw mid-invocation: `EvalResult.invocationError` is non-null; `outcomes` is empty; `judgeVerdicts` empty (no judges run without an output). `failureMessage` names the exception class + message + case name.
 - Expectation predicate returned false: per-outcome entry with `failureDetail` set.
 - Predicate itself threw: per-outcome entry with `failureDetail = "expectation threw: ..."`.
+- Judge model returned non-JSON or out-of-range score: `JudgeOutcome.Errored(errorDetail)` in `judgeVerdicts[label]`. Does NOT gate `passed`. The judge model is responsible for the structured JSON shape — typically a `DeterministicModelClient` in unit tests or a pinned cloud model in live eval.
 
 ## Out of scope (v1)
 
