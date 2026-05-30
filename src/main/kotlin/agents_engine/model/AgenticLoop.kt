@@ -121,6 +121,15 @@ internal suspend fun <IN> executeAgentic(
      * 0.6.4 snapshots.
      */
     allowManifestMismatch: Boolean = false,
+    /**
+     * #2488 — typed resume input for the HITL interrupt primitive. When
+     * [resumeFrom] is non-null and carries `pendingInterruptCallId`, this
+     * value is rendered via [toLlmInput] (so typed `@Generable` replies
+     * become JSON) and synthesised as the interrupted tool's result message
+     * before the loop resumes. Required when resuming an interrupted
+     * snapshot; ignored otherwise.
+     */
+    resumeWith: Any? = null,
 ): AgenticResult {
     val config = requireNotNull(agent.modelConfig) {
         "Agent '${agent.name}' has no model configured. Add a model { } block."
@@ -229,6 +238,33 @@ internal suspend fun <IN> executeAgentic(
         agent.memoryBank?.let { bank ->
             val mine = resumeFrom.memory[agent.name]
             bank.restoreForAgent(agent.name, mine)
+        }
+        // #2488 — HITL interrupt resume. If the snapshot carries a pending
+        // interrupt call id, synthesise the tool result message from
+        // `resumeWith` and append it. The next model turn will see this as
+        // the result of the call it issued before the pause, so the model's
+        // view of the conversation is continuous. v1 constraint:
+        // single-tool-per-interrupting-turn — multi-tool turns where the
+        // first call interrupts will leave subsequent calls unanswered at
+        // the wire, which the provider may reject. Documented in
+        // Interrupt.kt.
+        val pendingCallId = resumeFrom.pendingInterruptCallId
+        if (pendingCallId != null) {
+            require(resumeWith != null) {
+                "Snapshot has pendingInterruptCallId=$pendingCallId but resumeWith was not provided. " +
+                    "Pass resumeWith = <the human's reply> to invokeSuspendResuming / executeAgentic."
+            }
+            // toLlmInput renders @Generable typed replies as JSON; strings stay
+            // strings; primitives stay primitives. Matches the existing
+            // tool-result rendering path. The OpenAI adapter pairs tool
+            // results to preceding assistant tool_calls positionally, so the
+            // call_id only needs to live on the snapshot — not on
+            // LlmMessage itself.
+            val synthesised = LlmMessage(
+                role = "tool",
+                content = toLlmInput(resumeWith),
+            )
+            messages.add(synthesised)
         }
     } else {
         // #2656 — vendor-neutral cache hints derived from agent.cacheConfig.
@@ -628,24 +664,55 @@ internal suspend fun <IN> executeAgentic(
                     var effectiveCall = call
                     var denied = false
                     var deniedReason: String? = null
-                    val result = when (val decision = agent.decideBeforeToolCall(call.name, call.arguments)) {
-                        Decision.Proceed -> executeToolWithBudgetHandlingEvents(
-                            agent, tool, effectiveCall, budget, emitter
-                        )
-                        is Decision.ProceedWith -> {
-                            effectiveCall = call.copy(
-                                arguments = decision.replacement,
-                                rawArguments = null,
-                                invalidArgumentsError = null,
+                    val result = try {
+                        when (val decision = agent.decideBeforeToolCall(call.name, call.arguments)) {
+                            Decision.Proceed -> executeToolWithBudgetHandlingEvents(
+                                agent, tool, effectiveCall, budget, emitter
                             )
-                            executeToolWithBudgetHandlingEvents(agent, tool, effectiveCall, budget, emitter)
+                            is Decision.ProceedWith -> {
+                                effectiveCall = call.copy(
+                                    arguments = decision.replacement,
+                                    rawArguments = null,
+                                    invalidArgumentsError = null,
+                                )
+                                executeToolWithBudgetHandlingEvents(agent, tool, effectiveCall, budget, emitter)
+                            }
+                            is Decision.Deny -> {
+                                denied = true
+                                deniedReason = decision.reason
+                                formatDeniedToolError(call.name, decision.reason)
+                            }
+                            is Decision.Substitute<*> -> decision.result
                         }
-                        is Decision.Deny -> {
-                            denied = true
-                            deniedReason = decision.reason
-                            formatDeniedToolError(call.name, decision.reason)
-                        }
-                        is Decision.Substitute<*> -> decision.result
+                    } catch (signal: agents_engine.core.PendingInterruptSignal) {
+                        // #2488 — HITL interrupt. Build the snapshot at the
+                        // pre-tool-result boundary (messages contain the
+                        // assistant tool-calls turn that emitted this call but
+                        // NOT a tool result for it yet — the result will be
+                        // synthesised on resume from `resumeWith`). Fire
+                        // onTurnCheckpoint with the snapshot before throwing
+                        // so the caller can persist via the same wire path
+                        // as a budget Checkpoint.
+                        val snapshot = agents_engine.core.SessionSnapshot(
+                            messages = messages.toList(),
+                            turns = turns,
+                            toolCalls = toolCalls,
+                            toolCallLimit = toolCallLimit,
+                            tokensUsed = cumulativeUsage,
+                            memory = agent.memoryBank?.let { b ->
+                                b.snapshotForAgent(agent.name)?.let { v -> mapOf(agent.name to v) }
+                            } ?: emptyMap(),
+                            requestId = runtimeContext.requestId,
+                            sessionId = runtimeContext.sessionId,
+                            manifestHash = agent.manifestHash,
+                            pendingInterruptCallId = effectiveCall.callId ?: "interrupt-${turns}-${toolCalls}",
+                        )
+                        onTurnCheckpoint?.invoke(snapshot)
+                        throw agents_engine.core.AgentInterruptException(
+                            snapshot = snapshot,
+                            payload = signal.payload,
+                            pendingToolCallId = snapshot.pendingInterruptCallId,
+                        )
                     }
 
                     if (denied) {
@@ -756,6 +823,13 @@ private suspend fun <IN> executeToolWithBudgetHandlingEvents(
     emitter: AgentEventEmitter?,
 ): Any? = try {
     executeToolWithBudget(agent, tool, call, budget, emitter)
+} catch (signal: agents_engine.core.PendingInterruptSignal) {
+    // #2488 — HITL interrupt is NOT an error. Rethrow without emitting
+    // ToolCallFinished(isError=true); the outer try/catch in
+    // executeAgentic owns the snapshot capture + AgentInterruptException
+    // throw. Emitting an error event here would misleadingly mark a
+    // legitimate pause as a failure in streaming consumers and audit logs.
+    throw signal
 } catch (t: Throwable) {
     // #1739: tool executor threw and onError didn't recover.
     // Surface a ToolCallFinished event with isError=true so consumers see
