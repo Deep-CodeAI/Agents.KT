@@ -268,7 +268,7 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
     override fun close() { transport.close() }
 
     private fun handshake() {
-        val initEnvelope = buildEnvelope(
+        val initEnvelope = JsonRpc.encodeRequest(
             id = 1,
             method = "initialize",
             params = mapOf(
@@ -278,7 +278,9 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
             ),
         )
         val initResp = parseResponse(transport.rpc(initEnvelope))
-        require(initResp["error"] == null) { "MCP initialize failed: ${initResp["error"]}" }
+        require(initResp[JsonRpcWire.KEY_ERROR] == null) {
+            "MCP initialize failed: ${initResp[JsonRpcWire.KEY_ERROR]}"
+        }
 
         val result = initResp["result"] as? Map<*, *>
         if (result != null) {
@@ -293,7 +295,7 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
             serverInstructions = result["instructions"] as? String
         }
 
-        transport.notify("""{"jsonrpc":"2.0","method":"notifications/initialized"}""")
+        transport.notify(JsonRpc.encodeRequest(id = null, method = "notifications/initialized", params = null))
     }
 
     private fun loadTools() {
@@ -376,28 +378,17 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
     }
 
     private fun post(method: String, params: Any?): Any? {
-        val envelope = buildEnvelope(nextId.getAndIncrement(), method, params)
+        val envelope = JsonRpc.encodeRequest(nextId.getAndIncrement(), method, params)
         val response = parseResponse(transport.rpc(envelope))
-        response["error"]?.let { error("MCP $method failed: $it") }
-        return response["result"]
-    }
-
-    private fun buildEnvelope(id: Long, method: String, params: Any?): String = buildString {
-        append("""{"jsonrpc":"2.0","id":""")
-        append(id)
-        append(""","method":""")
-        append(McpJson.encode(method))
-        if (params != null) {
-            append(""","params":""")
-            append(McpJson.encode(params))
+        response[JsonRpcWire.KEY_ERROR]?.let {
+            throw McpException.Protocol("MCP $method failed: $it")
         }
-        append("}")
+        return response[JsonRpcWire.KEY_RESULT]
     }
 
-    @Suppress("UNCHECKED_CAST")
     private fun parseResponse(payload: String): Map<String, Any?> =
-        LenientJsonParser.parse(payload) as? Map<String, Any?>
-            ?: error("MCP response was not a JSON object: $payload")
+        JsonRpc.parseEnvelope(payload)
+            ?: throw McpException.Protocol("MCP response was not a JSON object: $payload")
 
     private fun describeForLlm(t: McpToolDescriptor): String {
         if (t.inputSchema == null) return t.description

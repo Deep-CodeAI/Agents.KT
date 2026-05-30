@@ -215,19 +215,20 @@ class McpServer private constructor(
     }
 
     internal fun dispatchJsonRpc(bodyText: String): String? = try {
-        val request = LenientJsonParser.parse(bodyText) as? Map<*, *>
-            ?: return jsonRpcError(null, -32700, "Parse error")
-        val method = request["method"] as? String
-            ?: return jsonRpcError(null, -32600, "Missing method")
-        if (!request.containsKey("id") || method.startsWith("notifications/")) return null
+        val request = JsonRpc.parseEnvelope(bodyText)
+            ?: return JsonRpc.encodeError(null, JsonRpcErrorCode.PARSE_ERROR, "Parse error")
+        if (request[JsonRpcWire.KEY_METHOD] !is String) {
+            return JsonRpc.encodeError(null, JsonRpcErrorCode.INVALID_REQUEST, "Missing method")
+        }
+        if (JsonRpc.isNotification(request)) return null
         dispatchJsonRpcRequest(request, ClientPrincipal.TrustedLocal)
     } catch (e: Exception) {
-        jsonRpcError(null, -32603, e.message ?: e.toString())
+        JsonRpc.encodeError(null, JsonRpcErrorCode.INTERNAL_ERROR, e.message ?: e.toString())
     }
 
     private fun dispatchJsonRpcRequest(request: Map<*, *>, principal: ClientPrincipal): String {
         val method = request["method"] as? String
-            ?: return jsonRpcError(request["id"], -32600, "Missing method")
+            ?: return jsonRpcError(request["id"], JsonRpcErrorCode.INVALID_REQUEST, "Missing method")
         val id = request["id"]
         return when (method) {
             "initialize" -> handleInitialize(id, request, principal)
@@ -249,7 +250,7 @@ class McpServer private constructor(
                 "nextCursor" to null,
             ))
             "resources/read" -> handleResourceRead(id, request)
-            else -> jsonRpcError(id, -32601, "Method not found: $method")
+            else -> jsonRpcError(id, JsonRpcErrorCode.METHOD_NOT_FOUND, "Method not found: $method")
         }
     }
 
@@ -259,7 +260,7 @@ class McpServer private constructor(
         if (requested != null && requested != MCP_PROTOCOL_VERSION) {
             return jsonRpcError(
                 id,
-                -32602,
+                JsonRpcErrorCode.INVALID_PARAMS,
                 "Unsupported protocolVersion: \"$requested\". Server speaks: \"$MCP_PROTOCOL_VERSION\".",
             )
         }
@@ -274,9 +275,9 @@ class McpServer private constructor(
     private fun handlePromptGet(id: Any?, request: Map<*, *>): String {
         val params = request["params"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
         val name = params["name"] as? String
-            ?: return jsonRpcError(id, -32602, "Missing prompt name")
+            ?: return jsonRpcError(id, JsonRpcErrorCode.INVALID_PARAMS, "Missing prompt name")
         val prompt = registeredPrompts.firstOrNull { it.name == name }
-            ?: return jsonRpcError(id, -32601, "Unknown prompt: $name")
+            ?: return jsonRpcError(id, JsonRpcErrorCode.METHOD_NOT_FOUND, "Unknown prompt: $name")
         @Suppress("UNCHECKED_CAST")
         val args = (params["arguments"] as? Map<String, Any?>) ?: emptyMap()
         return try {
@@ -291,7 +292,7 @@ class McpServer private constructor(
                 ),
             ))
         } catch (e: Exception) {
-            jsonRpcError(id, -32603, "Prompt '$name' rendering failed: ${e.message ?: e.toString()}")
+            jsonRpcError(id, JsonRpcErrorCode.INTERNAL_ERROR, "Prompt '$name' rendering failed: ${e.message ?: e.toString()}")
         }
     }
 
@@ -315,9 +316,9 @@ class McpServer private constructor(
     private fun handleResourceRead(id: Any?, request: Map<*, *>): String {
         val params = request["params"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
         val uri = params["uri"] as? String
-            ?: return jsonRpcError(id, -32602, "Missing resource uri")
+            ?: return jsonRpcError(id, JsonRpcErrorCode.INVALID_PARAMS, "Missing resource uri")
         val resource = registeredResources.firstOrNull { it.uri == uri }
-            ?: return jsonRpcError(id, -32601, "Unknown resource uri: $uri")
+            ?: return jsonRpcError(id, JsonRpcErrorCode.METHOD_NOT_FOUND, "Unknown resource uri: $uri")
         return try {
             val content = resource.read()
             jsonRpcResult(id, mapOf(
@@ -330,7 +331,7 @@ class McpServer private constructor(
                 ),
             ))
         } catch (e: Exception) {
-            jsonRpcError(id, -32603, "Resource '$uri' read failed: ${e.message ?: e.toString()}")
+            jsonRpcError(id, JsonRpcErrorCode.INTERNAL_ERROR, "Resource '$uri' read failed: ${e.message ?: e.toString()}")
         }
     }
 
@@ -347,12 +348,12 @@ class McpServer private constructor(
     private fun handleToolCall(id: Any?, request: Map<*, *>, principal: ClientPrincipal): String {
         val params = request["params"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
         val name = params["name"] as? String
-            ?: return jsonRpcError(id, -32602, "Missing tool name")
+            ?: return jsonRpcError(id, JsonRpcErrorCode.INVALID_PARAMS, "Missing tool name")
         if (!isToolAllowed(principal, name)) {
-            return jsonRpcError(id, -32601, "Method not found")
+            return jsonRpcError(id, JsonRpcErrorCode.METHOD_NOT_FOUND, "Method not found")
         }
         val exposed = exposedSkills.firstOrNull { it.skill.name == name }
-            ?: return jsonRpcError(id, -32601, "Unknown tool: $name")
+            ?: return jsonRpcError(id, JsonRpcErrorCode.METHOD_NOT_FOUND, "Unknown tool: $name")
         @Suppress("UNCHECKED_CAST")
         val args = (params["arguments"] as? Map<String, Any?>) ?: emptyMap()
         return try {
@@ -389,11 +390,14 @@ class McpServer private constructor(
             "isError" to isError,
         )
 
+    // #2796 — thin instance-level wrappers around the shared envelope builders
+    // in [JsonRpc]. Keep the method names so the dispatcher body reads as
+    // before; the wire shape now flows through one source of truth.
     private fun jsonRpcResult(id: Any?, result: Any?): String =
-        """{"jsonrpc":"2.0","id":${McpJson.encode(id)},"result":${McpJson.encode(result)}}"""
+        JsonRpc.encodeResult(id, result)
 
     private fun jsonRpcError(id: Any?, code: Int, message: String): String =
-        """{"jsonrpc":"2.0","id":${McpJson.encode(id)},"error":${McpJson.encode(mapOf("code" to code, "message" to message))}}"""
+        JsonRpc.encodeError(id, code, message)
 
     private fun respond(exchange: HttpExchange, status: Int, body: String) {
         val bytes = body.toByteArray(Charsets.UTF_8)
