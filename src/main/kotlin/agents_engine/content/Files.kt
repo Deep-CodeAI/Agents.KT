@@ -45,28 +45,51 @@ import java.nio.file.Path
 object Files {
 
     /**
+     * #2871 — default size cap for [load] / [loadOrNull]. 20 MiB is large
+     * enough for typical document / image attachments (a high-res PNG, a
+     * 200-page PDF) but small enough to fail-fast on an accidental
+     * upload of a 4 GB video or log dump before the JVM tries to slurp
+     * the bytes into memory. Override per-call with the `maxBytes` arg.
+     */
+    const val DEFAULT_MAX_BYTES: Long = 20L * 1024 * 1024
+
+    /**
      * Read [path], detect modality + mime from the filename extension,
      * put the bytes into [store], and return the corresponding typed
      * [Content].
      *
+     * @param maxBytes hard cap on the file size in bytes (#2871). Default
+     *   [DEFAULT_MAX_BYTES] = 20 MiB. Files larger than the cap throw
+     *   [OversizedFileException] without reading the bytes into memory.
+     *
      * @throws UnknownExtensionException when the extension isn't
      *   recognised. Use [loadOrNull] if you want a null-on-unknown path.
+     * @throws OversizedFileException when the file exceeds [maxBytes].
      * @throws java.nio.file.NoSuchFileException when the file doesn't
      *   exist (propagated from [NioFiles.readAllBytes]).
      */
-    fun load(path: Path, store: BlobStore): Content =
-        loadOrNull(path, store)
+    fun load(path: Path, store: BlobStore, maxBytes: Long = DEFAULT_MAX_BYTES): Content =
+        loadOrNull(path, store, maxBytes)
             ?: throw UnknownExtensionException(path)
 
     /**
      * Same as [load] but returns `null` when the extension isn't
      * recognised, instead of throwing. Useful when iterating over a
      * directory and silently skipping unsupported files.
+     *
+     * @param maxBytes hard cap on the file size in bytes (#2871). Default
+     *   [DEFAULT_MAX_BYTES] = 20 MiB. An oversized file still throws
+     *   [OversizedFileException] — [maxBytes] is a fail-fast safety
+     *   check, not a soft predicate.
      */
-    fun loadOrNull(path: Path, store: BlobStore): Content? {
+    fun loadOrNull(path: Path, store: BlobStore, maxBytes: Long = DEFAULT_MAX_BYTES): Content? {
         val ext = path.fileName?.toString()?.substringAfterLast('.', "")?.lowercase()
             ?.takeIf { it.isNotEmpty() }
             ?: return null
+        // #2871 — size-check via syscall before reading. NoSuchFileException
+        // propagates from Files.size like it did from readAllBytes.
+        val size = NioFiles.size(path)
+        if (size > maxBytes) throw OversizedFileException(path, size, maxBytes)
         val bytes = NioFiles.readAllBytes(path)
         return extensionToContent(ext, bytes, store)
     }
@@ -75,16 +98,18 @@ object Files {
      * Convenience: load multiple files. Unknown extensions throw via
      * [load]; use [loadAllOrSkip] to silently skip them.
      */
-    fun loadAll(paths: List<Path>, store: BlobStore): List<Content> =
-        paths.map { load(it, store) }
+    fun loadAll(paths: List<Path>, store: BlobStore, maxBytes: Long = DEFAULT_MAX_BYTES): List<Content> =
+        paths.map { load(it, store, maxBytes) }
 
     /**
      * Convenience: load multiple files, silently skipping any with an
      * unknown extension. Useful for directory ingestion where the set
-     * of file types isn't fully known up front.
+     * of file types isn't fully known up front. Oversize is NOT silently
+     * skipped — it still throws [OversizedFileException] (use a smaller
+     * [maxBytes] or pre-filter `paths` if you need lenient behaviour).
      */
-    fun loadAllOrSkip(paths: List<Path>, store: BlobStore): List<Content> =
-        paths.mapNotNull { loadOrNull(it, store) }
+    fun loadAllOrSkip(paths: List<Path>, store: BlobStore, maxBytes: Long = DEFAULT_MAX_BYTES): List<Content> =
+        paths.mapNotNull { loadOrNull(it, store, maxBytes) }
 
     /**
      * The set of file extensions [load] recognises. Stable enough for
@@ -175,4 +200,23 @@ class UnknownExtensionException(val path: Path) : IllegalArgumentException(
         "\"${path.fileName?.toString()?.substringAfterLast('.', "")?.takeIf { it.isNotEmpty() } ?: "<none>"}\"). " +
         "Construct the Content variant explicitly when the extension is ambiguous or missing, " +
         "or use Files.loadOrNull to skip silently. Known extensions: ${Files.knownExtensions.sorted()}.",
+)
+
+/**
+ * #2871 — thrown by [Files.load] / [Files.loadOrNull] / [Files.loadAll] /
+ * [Files.loadAllOrSkip] when a file exceeds the per-call `maxBytes` cap.
+ * Names the path, the actual size, AND the cap so the diagnostic points
+ * at both the input and the configured guardrail.
+ *
+ * The check is performed via `Files.size(path)` *before* the bytes are
+ * read into memory — an oversized 4 GiB upload throws cleanly instead
+ * of OOMing the JVM.
+ */
+class OversizedFileException(
+    val path: Path,
+    val sizeBytes: Long,
+    val maxBytes: Long,
+) : IllegalArgumentException(
+    "Files.load: \"$path\" is $sizeBytes bytes; max allowed is $maxBytes bytes. " +
+        "Pass a higher `maxBytes` if this is intentional, or pre-filter the path list.",
 )
