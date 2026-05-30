@@ -116,6 +116,47 @@ class JsonlAuditExporterTest {
     }
 
     @Test
+    fun `multimodal ToolResult writes outputParts with modality plus hash plus size — no bytes`() {
+        // #2469 — audit-row support for typed multimodal tool returns.
+        val store = agents_engine.content.InMemoryBlobStore()
+        val pngBytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 1, 2, 3)
+        val imgRef = store.put(pngBytes, agents_engine.content.ImageMime.Png.wireMime)
+
+        val dir = Files.createTempDirectory("agents-jsonl-audit-multimodal")
+        val auditFile = dir.resolve("audit.jsonl")
+        val exporter = JsonlAuditExporter(auditFile, clock = fixedClock)
+        exporter.write(
+            PipelineEvent.ToolCalled(
+                agentName = "agent",
+                timestamp = Instant.EPOCH,
+                toolName = "screenshot",
+                arguments = mapOf("url" to "https://example.com"),
+                result = agents_engine.content.ToolResult(
+                    agents_engine.content.Content.Text("captured"),
+                    agents_engine.content.Content.Image(imgRef, agents_engine.content.ImageMime.Png),
+                ),
+                runtimeContext = AgentRuntimeContext(requestId = "req-multimodal"),
+            ),
+        )
+        exporter.close()
+
+        val line = Files.readAllLines(auditFile).single()
+        // No bytes anywhere — neither the URL arg nor the image bytes
+        assertFalse(line.contains("example.com"), "argument values must not be serialized: $line")
+        // No PNG magic — image bytes definitely never enter the audit row
+        assertFalse(line.contains("0x89"), "image bytes must not be serialized: $line")
+
+        // Substring assertions on the rendered JSON (the test parser doesn't
+        // model arrays, and the column contents are stable enough to grep).
+        assertTrue("\"outputParts\":[" in line, "outputParts is emitted as an array: $line")
+        assertTrue("\"text:inline:8:text/plain\"" in line, "text-part shape in array: $line")
+        assertTrue("\"image:${imgRef.hash.take(12)}:${pngBytes.size}:image/png\"" in line,
+            "image-part shape modality:hashPrefix:size:mime — $line")
+        assertTrue("\"agents_engine.content.ToolResult\"" in line,
+            "outputType still names the wrapper type: $line")
+    }
+
+    @Test
     fun `denied tool calls are recorded as ToolDenied rows without leaking the reason text`() {
         // #2395 — blocked calls must appear in the audit log. The PII-safe
         // default means only the decision type is written; the reason (which
@@ -309,6 +350,10 @@ class JsonlAuditExporterTest {
             "timestamp",
             "inputType",
             "outputType",
+            // #2469 — per-part summary for multimodal ToolResult returns.
+            // Null on non-multimodal rows; field is always present so
+            // schema-pinning consumers see a stable column set.
+            "outputParts",
             "budgetState",
             "guardrailDecision",
             "mcpClientId",
