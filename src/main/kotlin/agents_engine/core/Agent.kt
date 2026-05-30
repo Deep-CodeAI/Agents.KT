@@ -443,12 +443,30 @@ class Agent<IN, OUT>(
     }
 
     /**
-     * Register a hard-cap decision hook (#2412). When a budget cap would throw
+     * Register a hard-cap decision hook. When a budget cap would throw
      * [agents_engine.model.BudgetExceededException], [block] is called with the
      * [BudgetReason] and the current limit; return
      * [agents_engine.model.BudgetDecision.Extend] (with a larger limit) to raise
      * the cap and continue, or [agents_engine.model.BudgetDecision.Stop] to throw.
-     * Currently consulted for the tool-call cap.
+     *
+     * **Reasons the handler is consulted for** (#2412 + #2750):
+     * - [BudgetReason.TOOL_CALLS] — `Extend(newLimit)` raises `maxToolCalls`.
+     * - [BudgetReason.TURNS] — `Extend(newLimit)` raises `maxTurns`.
+     * - [BudgetReason.DURATION] — `Extend(newLimit)` raises `maxDuration` (units:
+     *   milliseconds — clock budget, not turn count).
+     * - [BudgetReason.TOKENS] — `Extend(newLimit)` raises `maxTokens`.
+     * - [BudgetReason.CONSECUTIVE_TOOL] — `Extend(newLimit)` raises
+     *   `maxConsecutiveSameTool`.
+     *
+     * **Reasons the handler is NOT consulted for** — only [BudgetReason.PER_TOOL_TIMEOUT].
+     * It's per-call (not cumulative), so extending mid-tool would require
+     * interrupting an in-flight executor, which is a different problem; that
+     * cap always throws unconditionally.
+     *
+     * Pre-#2750 (the 0.6.4 line) the handler was wired for `TOOL_CALLS` only;
+     * the other reasons threw without consulting it. Existing handlers stay
+     * correct — they just see more `BudgetReason` values now and can choose
+     * which to extend vs which to stop.
      */
     fun onBudgetExceeded(block: (reason: BudgetReason, currentLimit: Int) -> agents_engine.model.BudgetDecision) {
         budgetExceededListener = block
