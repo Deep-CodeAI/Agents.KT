@@ -100,6 +100,27 @@ class OtelBridge(
                         .build(),
                 )
             }
+            is PipelineEvent.ApprovalRequested -> {
+                // #2489 — human approval requested; field-only (no body / PII).
+                mostRecentAgentSpan()?.addEvent(
+                    "agent.approval.requested",
+                    Attributes.builder()
+                        .put("approval.title", event.title)
+                        .put("approval.has_body", event.hasBody)
+                        .also { b -> event.timeoutMs?.let { b.put("approval.timeout_ms", it) } }
+                        .build(),
+                )
+            }
+            is PipelineEvent.ApprovalDecided -> {
+                // #2489 — the resumed HumanDecision; pairs with ApprovalRequested.
+                mostRecentAgentSpan()?.addEvent(
+                    "agent.approval.decided",
+                    Attributes.builder()
+                        .put("approval.decision", event.decision)
+                        .put("approval.has_payload", event.hasPayload)
+                        .build(),
+                )
+            }
         }
     }
 

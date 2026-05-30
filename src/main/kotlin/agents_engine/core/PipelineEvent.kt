@@ -114,6 +114,43 @@ sealed interface PipelineEvent {
         val allowedTools: List<String>,
         override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : PipelineEvent
+
+    /**
+     * #2489 — a tool inside the agentic loop called `humanApproval { }` and
+     * the runtime is about to pause for human input. Emitted before the
+     * [AgentInterruptException] is thrown, so audit consumers see the request
+     * on the same wall-clock ordering as the snapshot capture. Field-only
+     * — `title` is the rendered prompt; `hasBody` indicates whether
+     * additional context (typed plan, artefact) accompanied the request,
+     * without copying the body into the audit row (which may be high-volume
+     * or PII-sensitive). `timeoutMs` is the advisory wall-clock cap the
+     * caller should honour.
+     */
+    data class ApprovalRequested(
+        override val agentName: String,
+        override val timestamp: Instant,
+        val title: String,
+        val hasBody: Boolean,
+        val timeoutMs: Long?,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
+    ) : PipelineEvent
+
+    /**
+     * #2489 — the resume path observed a [HumanDecision] in `resumeWith`,
+     * synthesised the tool result, and is about to continue the loop.
+     * `decision` is the simple class name of the [HumanDecision] variant
+     * (Approved / Rejected / Edited / Responded) — `hasPayload` indicates
+     * whether the Edited/Responded variant carried a non-null payload.
+     * The payload itself stays off the audit row (same PII discipline as
+     * [ApprovalRequested.hasBody]).
+     */
+    data class ApprovalDecided(
+        override val agentName: String,
+        override val timestamp: Instant,
+        val decision: String,
+        val hasPayload: Boolean,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
+    ) : PipelineEvent
 }
 
 /**
@@ -133,6 +170,8 @@ sealed interface PipelineEvent {
  * - [PipelineEvent.ErrorOccurred] — when an exception is about to propagate out (see [Agent.onError])
  * - [PipelineEvent.BudgetThreshold] — when a budget crosses [Agent.onBudgetThreshold]'s threshold
  * - [PipelineEvent.ToolHallucinated] — when the model emits a tool name not in the skill's allowlist (#2757)
+ * - [PipelineEvent.ApprovalRequested] — when a tool calls `humanApproval { }` (#2489)
+ * - [PipelineEvent.ApprovalDecided] — when resume synthesises a result from a [HumanDecision] (#2489)
  */
 fun Agent<*, *>.observe(handler: (PipelineEvent) -> Unit) {
     val agentName = this.name
@@ -205,6 +244,33 @@ fun Agent<*, *>.observe(handler: (PipelineEvent) -> Unit) {
                 requestedName = name,
                 arguments = args,
                 allowedTools = allowed,
+            ),
+        )
+    }
+
+    val priorApprovalRequested = this.approvalRequestedListener
+    onApprovalRequested { title, hasBody, timeoutMs ->
+        priorApprovalRequested?.invoke(title, hasBody, timeoutMs)
+        handler(
+            PipelineEvent.ApprovalRequested(
+                agentName = agentName,
+                timestamp = Instant.now(),
+                title = title,
+                hasBody = hasBody,
+                timeoutMs = timeoutMs,
+            ),
+        )
+    }
+
+    val priorApprovalDecided = this.approvalDecidedListener
+    onApprovalDecided { decision, hasPayload ->
+        priorApprovalDecided?.invoke(decision, hasPayload)
+        handler(
+            PipelineEvent.ApprovalDecided(
+                agentName = agentName,
+                timestamp = Instant.now(),
+                decision = decision,
+                hasPayload = hasPayload,
             ),
         )
     }
