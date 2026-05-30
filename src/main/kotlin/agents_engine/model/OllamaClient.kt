@@ -289,16 +289,8 @@ open class OllamaClient(
             .timeout(requestTimeout.toJavaDuration())
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build()
-        // #853 — bounded read so a malicious or buggy upstream can't OOM us.
-        val response = http.send(request, HttpResponse.BodyHandlers.ofInputStream())
-        val cap = maxResponseBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        val bytes = response.body().use { it.readNBytes(cap + 1) }
-        if (bytes.size > cap) {
-            throw LlmProviderException(
-                "Ollama response exceeded $maxResponseBytes bytes; aborting to prevent OOM",
-            )
-        }
-        return String(bytes, Charsets.UTF_8)
+        // #853 / #2792 — bounded read + OOM guard via HttpModelClientSupport.
+        return HttpModelClientSupport.sendBounded(http, request, "Ollama", maxResponseBytes)
     }
 
     companion object {

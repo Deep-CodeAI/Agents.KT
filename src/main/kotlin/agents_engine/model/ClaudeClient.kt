@@ -296,16 +296,8 @@ open class ClaudeClient(
             .timeout(requestTimeout.toJavaDuration())
             .POST(HttpRequest.BodyPublishers.ofString(body))
         headers.forEach { (k, v) -> builder.header(k, v) }
-        val request = builder.build()
-        val response = http.send(request, HttpResponse.BodyHandlers.ofInputStream())
-        val cap = maxResponseBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        val bytes = response.body().use { it.readNBytes(cap + 1) }
-        if (bytes.size > cap) {
-            throw LlmProviderException(
-                "Claude response exceeded $maxResponseBytes bytes; aborting to prevent OOM",
-            )
-        }
-        return String(bytes, Charsets.UTF_8)
+        // #2792 — bounded read + OOM guard moved to HttpModelClientSupport.
+        return HttpModelClientSupport.sendBounded(http, builder.build(), "Claude", maxResponseBytes)
     }
 
     /**

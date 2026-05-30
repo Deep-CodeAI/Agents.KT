@@ -207,8 +207,21 @@ fun interface ModelClient {
      * the granularity differs (one big chunk vs. many).
      */
     suspend fun chatStream(messages: List<LlmMessage>): kotlinx.coroutines.flow.Flow<LlmChunk> =
+        // #2792 — one-arg delegates to two-arg with no schema so the chunk-
+        // emission body lives in one place. Pre-fix the two were byte-
+        // identical except the inner chat() call.
+        chatStream(messages, jsonSchema = null)
+
+    /**
+     * Optional schema-aware streaming path. Defaults to the existing streaming
+     * behavior so providers can opt in independently from non-streaming chat.
+     */
+    suspend fun chatStream(
+        messages: List<LlmMessage>,
+        jsonSchema: JsonSchema?,
+    ): kotlinx.coroutines.flow.Flow<LlmChunk> =
         kotlinx.coroutines.flow.flow {
-            val response = chat(messages)
+            val response = chat(messages, jsonSchema)
             // #2406 — surface reasoning (when the non-streaming response carried it)
             // before the answer, so the chunk order matches a native stream.
             response.reasoning?.let { emit(LlmChunk.ReasoningDelta(it)) }
@@ -224,34 +237,6 @@ fun interface ModelClient {
                         // without one. This keeps explicit ids stable end-to-end so
                         // AgentEvent.ToolCallStarted and ToolCallFinished can be
                         // matched by consumers.
-                        val callId = call.callId ?: java.util.UUID.randomUUID().toString()
-                        emit(LlmChunk.ToolCallStarted(callId, call.name))
-                        emit(LlmChunk.ToolCallArgumentsDelta(callId, call.rawArguments ?: ""))
-                        emit(LlmChunk.ToolCallFinished(callId, call.arguments))
-                    }
-                    emit(LlmChunk.End(response.tokenUsage))
-                }
-            }
-        }
-
-    /**
-     * Optional schema-aware streaming path. Defaults to the existing streaming
-     * behavior so providers can opt in independently from non-streaming chat.
-     */
-    suspend fun chatStream(
-        messages: List<LlmMessage>,
-        jsonSchema: JsonSchema?,
-    ): kotlinx.coroutines.flow.Flow<LlmChunk> =
-        kotlinx.coroutines.flow.flow {
-            val response = chat(messages, jsonSchema)
-            response.reasoning?.let { emit(LlmChunk.ReasoningDelta(it)) } // #2406
-            when (response) {
-                is LlmResponse.Text -> {
-                    emit(LlmChunk.TextDelta(response.content))
-                    emit(LlmChunk.End(response.tokenUsage))
-                }
-                is LlmResponse.ToolCalls -> {
-                    response.calls.forEach { call ->
                         val callId = call.callId ?: java.util.UUID.randomUUID().toString()
                         emit(LlmChunk.ToolCallStarted(callId, call.name))
                         emit(LlmChunk.ToolCallArgumentsDelta(callId, call.rawArguments ?: ""))
