@@ -597,23 +597,10 @@ internal suspend fun <IN> executeAgentic(
         responseUsage?.let { usage ->
             agent.fireTokenUsage(usage)
             totalTokens += usage.total
-            // #1740: build cumulative TokenUsage for the event surface.
-            cumulativeUsage = cumulativeUsage?.let { prev ->
-                TokenUsage(
-                    promptTokens = prev.promptTokens + usage.promptTokens,
-                    completionTokens = prev.completionTokens + usage.completionTokens,
-                    cachedInputTokens = when {
-                        prev.cachedInputTokens == null && usage.cachedInputTokens == null -> null
-                        else -> (prev.cachedInputTokens ?: 0) + (usage.cachedInputTokens ?: 0)
-                    },
-                    provider = usage.provider,
-                    model = usage.model,
-                    cacheWriteTokens = when {
-                        prev.cacheWriteTokens == null && usage.cacheWriteTokens == null -> null
-                        else -> (prev.cacheWriteTokens ?: 0) + (usage.cacheWriteTokens ?: 0)
-                    },
-                )
-            } ?: usage
+            // #1740 / #2867: build cumulative TokenUsage for the event surface.
+            // Routes through TokenUsage.plus so reasoningTokens (audited drop)
+            // and any future field are picked up automatically.
+            cumulativeUsage = cumulativeUsage?.plus(usage) ?: usage
             val cap = tokenLimit
             if (cap != null) {
                 maybeFireThreshold(BudgetReason.TOKENS, totalTokens.toDouble() / cap)

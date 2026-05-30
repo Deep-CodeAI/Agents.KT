@@ -666,6 +666,7 @@
     <ID>PackageNaming:TcpMcpTransport.kt$package agents_engine.mcp</ID>
     <ID>PackageNaming:TcpTransportTest.kt$package agents_engine.mcp</ID>
     <ID>PackageNaming:ThrowExceptionIntegrationTest.kt$package agents_engine.model</ID>
+    <ID>PackageNaming:TokenUsageAccumulatorTest.kt$package agents_engine.model</ID>
     <ID>PackageNaming:Tool.kt$package agents_engine.core</ID>
     <ID>PackageNaming:ToolAuthorizationTest.kt$package agents_engine.model</ID>
     <ID>PackageNaming:ToolBlockOnErrorTest.kt$package agents_engine.model</ID>

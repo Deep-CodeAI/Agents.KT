@@ -154,6 +154,35 @@ data class TokenUsage(
             if (promptTokens <= 0) return null
             return cached.toDouble() / promptTokens.toDouble()
         }
+
+    /**
+     * #2867 — cumulative accumulator. Sum every field; nullable fields
+     * collapse to `null` only when BOTH operands are null (so a turn that
+     * happens to report `cacheWriteTokens = null` doesn't erase the
+     * running total from earlier turns that did report it). Provider /
+     * model come from [other] — the latest turn wins, matching how the
+     * AgenticLoop wrote cumulative usage pre-#2867.
+     *
+     * Before this helper landed, the AgenticLoop's inline merge dropped
+     * `reasoningTokens` entirely (audited at 0.6.5 by the 8.0/10 review),
+     * and the snapshot encoder dropped `cacheWriteTokens`. Routing both
+     * paths through `+` makes a missed field a compile-time error, not
+     * a silent loss.
+     */
+    operator fun plus(other: TokenUsage): TokenUsage = TokenUsage(
+        promptTokens = promptTokens + other.promptTokens,
+        completionTokens = completionTokens + other.completionTokens,
+        cachedInputTokens = sumNullable(cachedInputTokens, other.cachedInputTokens),
+        cacheWriteTokens = sumNullable(cacheWriteTokens, other.cacheWriteTokens),
+        reasoningTokens = sumNullable(reasoningTokens, other.reasoningTokens),
+        provider = other.provider,
+        model = other.model,
+    )
+
+    private fun sumNullable(a: Int?, b: Int?): Int? = when {
+        a == null && b == null -> null
+        else -> (a ?: 0) + (b ?: 0)
+    }
 }
 
 sealed interface LlmResponse {
