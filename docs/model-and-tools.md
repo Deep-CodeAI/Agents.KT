@@ -4,6 +4,8 @@
 
 Attach a model to an agent and mark a skill as agentic with `tools(...)`. The framework runs a multi-turn loop — model calls tools, results flow back, model produces the final answer.
 
+> See [providers.md](providers.md) for the per-provider capability matrix (modality input, reasoning, caching, tool-choice, constrained decoding, streaming). What follows is the DSL surface.
+
 ```kotlin
 val calculator = agent<String, String>("calculator") {
     prompt("You are a calculator. Use the provided tools to evaluate expressions step by step.")
