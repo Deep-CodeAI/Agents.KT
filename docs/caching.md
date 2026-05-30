@@ -2,7 +2,7 @@
 
 ## Prompt Caching
 
-Vendor-neutral, agent-controllable prompt caching across all built-in providers. The agent author declares *what* is cacheable; adapters translate to each vendor's mechanism — Anthropic explicit `cache_control` breakpoints, OpenAI / DeepSeek / OpenRouter / Kimi automatic prefix caching, Ollama / vLLM / SGLang engine-level KV-cache reuse. No provider cache types appear in the public API.
+Vendor-neutral, agent-controllable prompt caching across all built-in providers. The agent author declares *what* is cacheable; adapters translate to each vendor's mechanism — Anthropic explicit `cache_control` breakpoints, OpenAI / DeepSeek automatic prefix caching, Ollama engine-level KV-cache reuse. No provider cache types appear in the public API. (See [Under evaluation](#under-evaluation) below for OpenAI-compatible upstreams like Kimi / OpenRouter and engine-level backends like vLLM / SGLang — they inherit the OpenAI wire shape but ship as fourth-party deployments, not first-party adapters in `ModelProvider`.)
 
 The win: an agentic tool-calling loop resends a large identical prefix (system + tool defs + history) every turn. Caching turns that prefix into ~10% read cost (Anthropic) or zero-latency reuse (engine-level). For multi-step agents, this is the single biggest lever on per-run cost and latency.
 
@@ -34,8 +34,9 @@ val agent = agent<String, String>("ResearchBot") {
 | **Anthropic** (Claude) | Explicit `cache_control` breakpoints; up to 4 per request; TTL 5 min (default) or 1 h | Emit `cache_control:{type:"ephemeral"}` on system block, last tool def, rolling conversation breakpoints, and each custom segment. TTL ≤ 5 min → default form; > 5 min → `"ttl":"1h"`. Coalesce at 4. |
 | **OpenAI** | Automatic prefix caching above ~1024 tokens; `prompt_cache_key` for routing | Emit a `prompt_cache_key` derived from the agent identity (+ manifestHash prefix when present) so same-shape requests land on the same cache shard. Cached-input tokens surface on `TokenUsage`. |
 | **DeepSeek** | Automatic disk-based caching | Inherits the OpenAI-compatible request shape; no extra wiring needed. Cached-input tokens surface on `TokenUsage`. |
-| **Kimi** (Moonshot) / **OpenRouter** | OpenAI-compatible, upstream behavior varies | Inherits the OpenAI shape; routing key not currently passed (Moonshot and OpenRouter's upstreams handle routing themselves). |
-| **Ollama** / **vLLM** / **SGLang** | Engine-level KV-cache reuse (no wire-level control) | Hints degrade to no-op. Prefix stability (see below) is what makes the engine cache hit. vLLM APC + SGLang RadixAttention via OpenAI-compatible endpoints also benefit. |
+| **Ollama** | Engine-level KV-cache reuse (no wire-level control) | Hints degrade to no-op. Prefix stability (see below) is what makes the engine cache hit. |
+
+The four rows above match `ModelProvider.entries` (Ollama / Anthropic / OpenAI / DeepSeek) — the only providers wired as first-party adapters today. Fourth-party deployments that ride on top of one of these wire shapes are documented under [Under evaluation](#under-evaluation) below.
 
 ### `CacheHint` model
 
@@ -64,7 +65,7 @@ agent.onTokenUsage { usage ->
 }
 ```
 
-- `cachedInputTokens` — cache **reads** (Anthropic / OpenAI / DeepSeek / Kimi).
+- `cachedInputTokens` — cache **reads** (Anthropic / OpenAI / DeepSeek).
 - `cacheWriteTokens` — Anthropic's premium-billed cache **writes** (25% surcharge); null elsewhere.
 - `cacheHitRate` — derived: `cachedInputTokens / promptTokens` when both available, else null.
 
@@ -102,3 +103,15 @@ These are the silent killers — `System.currentTimeMillis()` interpolated into 
 - Gemini explicit cached-content handles — no Gemini adapter exists in this codebase yet (tracked alongside the Gemini provider work).
 - A cache-cost calculator (per-provider rates × tokens). Token counts are surfaced; deployers price them.
 - A pluggable hit/miss event surface beyond `onTokenUsage`. Token usage events fire per turn already; richer observability lands when there's a concrete consumer ask.
+
+### Under evaluation
+
+These backends are **not** first-party `ModelProvider` adapters — `ModelProvider.entries` is `{ OLLAMA, ANTHROPIC, OPENAI, DEEPSEEK }`. Consumers who point the OpenAI adapter at one of these endpoints (via `openAiBaseUrl`) get OpenAI-compatible behavior, but the caching characteristics differ:
+
+| Backend | Wire-shape compatibility | Caching note |
+|---|---|---|
+| **Kimi** (Moonshot) | OpenAI-compatible | Inherits OpenAI shape; `prompt_cache_key` not currently passed (Moonshot routes upstream itself). |
+| **OpenRouter** | OpenAI-compatible | Inherits OpenAI shape; OpenRouter's own routing layer handles per-target cache semantics. |
+| **vLLM APC** / **SGLang RadixAttention** | OpenAI-compatible endpoints | Engine-level KV-cache reuse; wire hints degrade to no-op. Prefix stability is what makes the engine cache hit. |
+
+These are documented for completeness — a first-party `ModelProvider` entry (with its own adapter wiring, caching tests, and live integration coverage) would land in a separate ticket and bump the enum.
