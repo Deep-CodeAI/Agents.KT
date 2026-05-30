@@ -1000,25 +1000,11 @@ class Agent<IN, OUT>(
         return "${cfg.provider.name.lowercase()} (${cfg.host}:${cfg.port}, ${cfg.name}, T=${cfg.temperature})"
     }
 
-    private fun describeBudget(): String {
-        val b = budgetConfig
-        // Show only fields that diverge from BudgetConfig() defaults so the
-        // user sees what they actually overrode. Empty list means "all defaults."
-        // (Iterates the data class component fields generically so future
-        // additions to BudgetConfig pick up automatically — keeps describe() in
-        // sync with new caps without a manual list update each time.)
-        val defaults = BudgetConfig()
-        val defaultValues = defaults::class.members
-            .filterIsInstance<kotlin.reflect.KProperty1<BudgetConfig, *>>()
-            .associate { it.name to it.get(defaults) }
-        val overrides = b::class.members
-            .filterIsInstance<kotlin.reflect.KProperty1<BudgetConfig, *>>()
-            .mapNotNull { prop ->
-                val current = prop.get(b)
-                if (current != defaultValues[prop.name]) "${prop.name}=$current" else null
-            }
-        return if (overrides.isEmpty()) "(defaults)" else overrides.joinToString(", ")
-    }
+    // #2805 — was `BudgetConfig::class.members` reflection (kotlin-reflect)
+    // which broke the module-wide reflect-optional contract (#1718). Routes
+    // through BudgetConfig.describeOverrides() now; adding a new cap is a
+    // compile-time reminder to extend the describe string.
+    private fun describeBudget(): String = budgetConfig.describeOverrides()
 
     fun validate() {
         require(skills.isNotEmpty()) {

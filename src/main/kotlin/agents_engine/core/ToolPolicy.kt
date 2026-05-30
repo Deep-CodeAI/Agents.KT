@@ -437,7 +437,26 @@ private object ManifestJson {
         }
 }
 
+/**
+ * #2805 — bespoke YAML round-trip used ONLY for the policy snapshot
+ * embedded in the permission manifest. NOT a general-purpose YAML parser:
+ * it knows only the closed shape `parsePolicyMap` ↔ `toManifestYaml`
+ * produces. Adopting SnakeYAML would be heavier and would re-open a
+ * supply-chain surface (#1916 sister concern) for one internal use.
+ *
+ * Depth constants name the legal indent levels for that closed shape:
+ * top-level keys, sub-sections, leaf scalars/list-headers, and (only on
+ * `filesystem`) the leaf level under `read:` / `write:`.
+ */
 private object ManifestYaml {
+    // #2805 — named depth constants replace the literal `0/2/4/6` in
+    // `when (indent)` so the shape is documented inline instead of mined
+    // from the `+2 per level` indent convention by the next reader.
+    private const val DEPTH_TOPLEVEL = 0
+    private const val DEPTH_SECTION = 2
+    private const val DEPTH_LEAF = 4
+    private const val DEPTH_FILESYSTEM_LEAF = 6
+
     fun quote(value: String): String =
         "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
@@ -458,7 +477,7 @@ private object ManifestYaml {
             }
 
             when (indent) {
-                0 -> {
+                DEPTH_TOPLEVEL -> {
                     listTarget = null
                     if (text.startsWith("risk:")) {
                         root["risk"] = text.substringAfter(':').trim()
@@ -467,7 +486,7 @@ private object ManifestYaml {
                         root[section] = linkedMapOf<String, Any?>()
                     }
                 }
-                2 -> {
+                DEPTH_SECTION -> {
                     listTarget = null
                     val sectionMap = root.getOrPutMap(section)
                     if (section == "filesystem" && text.endsWith(":")) {
@@ -477,7 +496,7 @@ private object ManifestYaml {
                         readScalarOrListHeader(sectionMap, text)?.let { listTarget = it }
                     }
                 }
-                4 -> {
+                DEPTH_LEAF -> {
                     val target = if (section == "filesystem") {
                         root.getOrPutMap(section).getOrPutMap(filesystemSide)
                     } else {
@@ -485,7 +504,7 @@ private object ManifestYaml {
                     }
                     readScalarOrListHeader(target, text)?.let { listTarget = it }
                 }
-                6 -> {
+                DEPTH_FILESYSTEM_LEAF -> {
                     val target = root.getOrPutMap(section).getOrPutMap(filesystemSide)
                     readScalarOrListHeader(target, text)?.let { listTarget = it }
                 }

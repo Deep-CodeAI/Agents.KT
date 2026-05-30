@@ -45,7 +45,36 @@ data class BudgetConfig(
     val perToolTimeout: Duration? = null,
     val maxTokens: Int? = null,
     val maxConsecutiveSameTool: Int? = null,
-)
+) {
+    /**
+     * #2805 — render a short, deterministic "what differs from defaults"
+     * string for `Agent.describe()`. The previous implementation reflected
+     * over `BudgetConfig::class.members` via `kotlin-reflect`, which
+     * silently broke the module-wide reflect-optional contract (#1718)
+     * — agents in a consumer that didn't pull `kotlin-reflect` would
+     * blow up on `describe()`.
+     *
+     * Hand-listed properties here so adding a new budget cap is a
+     * compile-time reminder to also surface it in the describe string;
+     * no auto-discovery is worth the reflect dependency.
+     */
+    fun describeOverrides(): String {
+        val d = DEFAULTS
+        val overrides = buildList {
+            if (maxTurns != d.maxTurns) add("maxTurns=$maxTurns")
+            if (maxToolCalls != d.maxToolCalls) add("maxToolCalls=$maxToolCalls")
+            if (maxDuration != d.maxDuration) add("maxDuration=$maxDuration")
+            if (perToolTimeout != d.perToolTimeout) add("perToolTimeout=$perToolTimeout")
+            if (maxTokens != d.maxTokens) add("maxTokens=$maxTokens")
+            if (maxConsecutiveSameTool != d.maxConsecutiveSameTool) add("maxConsecutiveSameTool=$maxConsecutiveSameTool")
+        }
+        return if (overrides.isEmpty()) "(defaults)" else overrides.joinToString(", ")
+    }
+
+    companion object {
+        private val DEFAULTS = BudgetConfig()
+    }
+}
 
 class BudgetBuilder {
     var maxTurns: Int = 8
