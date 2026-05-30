@@ -8,6 +8,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 class ModelConfigTest {
 
@@ -97,5 +99,45 @@ class ModelConfigTest {
         val cfg = ModelConfig(name = "x", provider = ModelProvider.OLLAMA)
         val s = cfg.toString()
         assertTrue(s.contains("apiKey=null"), "unset apiKey should render as null: $s")
+    }
+
+    // #2850 — timeout overrides flow from the DSL into ModelConfig. The default
+    // is null (= adapter falls back to its DEFAULT_REQUEST_TIMEOUT of 300s).
+    @Test
+    fun `requestTimeout and connectTimeout default to null on the DSL`() {
+        val a = agent<String, String>("a") {
+            model { ollama("llama3") }
+            skills { skill<String, String>("s", "s") { implementedBy { it } } }
+        }
+        assertNull(a.modelConfig!!.requestTimeout)
+        assertNull(a.modelConfig!!.connectTimeout)
+    }
+
+    @Test
+    fun `requestTimeout and connectTimeout flow from DSL to ModelConfig`() {
+        val a = agent<String, String>("a") {
+            model {
+                ollama("llama3")
+                requestTimeout = 10.minutes
+                connectTimeout = 5.seconds
+            }
+            skills { skill<String, String>("s", "s") { implementedBy { it } } }
+        }
+        assertEquals(10.minutes, a.modelConfig!!.requestTimeout)
+        assertEquals(5.seconds, a.modelConfig!!.connectTimeout)
+    }
+
+    @Test
+    fun `built-in adapter DEFAULT_REQUEST_TIMEOUT is 5 minutes on every adapter`() {
+        // Hotfix floor — 0.6.4 shipped a hardcoded 60s on Claude that killed
+        // long Sonnet turns in production (#2850). Every built-in adapter now
+        // ships with a 300s default so the out-of-the-box experience covers
+        // long agentic turns; users tune via the DSL when needed.
+        assertEquals(300.seconds, ClaudeClient.DEFAULT_REQUEST_TIMEOUT)
+        assertEquals(300.seconds, OpenAiClient.DEFAULT_REQUEST_TIMEOUT)
+        assertEquals(300.seconds, OllamaClient.DEFAULT_REQUEST_TIMEOUT)
+        assertEquals(10.seconds, ClaudeClient.DEFAULT_CONNECT_TIMEOUT)
+        assertEquals(10.seconds, OpenAiClient.DEFAULT_CONNECT_TIMEOUT)
+        assertEquals(10.seconds, OllamaClient.DEFAULT_CONNECT_TIMEOUT)
     }
 }

@@ -1271,6 +1271,11 @@ private fun defaultClientFor(
             model = config.name,
             temperature = config.temperature,
             tools = tools,
+            // #2850 — null falls back to the adapter's DEFAULT_REQUEST_TIMEOUT
+            // (300s on every built-in adapter since the hotfix bump). The
+            // DSL field defaults to null so existing callers are unaffected.
+            requestTimeout = config.requestTimeout ?: OllamaClient.DEFAULT_REQUEST_TIMEOUT,
+            connectTimeout = config.connectTimeout ?: OllamaClient.DEFAULT_CONNECT_TIMEOUT,
             reasoning = config.reasoning,
             toolChoice = toolChoice,
         )
@@ -1282,6 +1287,8 @@ private fun defaultClientFor(
             maxTokens = config.maxTokens,
             tools = tools,
             baseUrl = config.anthropicBaseUrl,
+            requestTimeout = config.requestTimeout ?: ClaudeClient.DEFAULT_REQUEST_TIMEOUT,
+            connectTimeout = config.connectTimeout ?: ClaudeClient.DEFAULT_CONNECT_TIMEOUT,
             reasoning = config.reasoning,
             toolChoice = toolChoice,
         )
@@ -1293,6 +1300,8 @@ private fun defaultClientFor(
             maxTokens = config.maxTokens,
             tools = tools,
             baseUrl = config.openAiBaseUrl,
+            requestTimeout = config.requestTimeout ?: OpenAiClient.DEFAULT_REQUEST_TIMEOUT,
+            connectTimeout = config.connectTimeout ?: OpenAiClient.DEFAULT_CONNECT_TIMEOUT,
             reasoning = config.reasoning,
             // #2659 — OpenAI automatic prefix caching: pass routing key when
             // the agent has caching enabled (computed at the call site).
@@ -1307,6 +1316,8 @@ private fun defaultClientFor(
             maxTokens = config.maxTokens,
             tools = tools,
             baseUrl = config.deepSeekBaseUrl,
+            requestTimeout = config.requestTimeout ?: OpenAiClient.DEFAULT_REQUEST_TIMEOUT,
+            connectTimeout = config.connectTimeout ?: OpenAiClient.DEFAULT_CONNECT_TIMEOUT,
             reasoning = config.reasoning,
             toolChoice = toolChoice,
         )

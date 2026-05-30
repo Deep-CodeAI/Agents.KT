@@ -1,5 +1,7 @@
 package agents_engine.model
 
+import kotlin.time.Duration
+
 /**
  * `agents_engine/model/ModelConfig.kt` — the `model { }` DSL slot:
  * provider enum, immutable config record, and the builder that maps
@@ -50,6 +52,27 @@ data class ModelConfig(
     val maxTokens: Int = 4096,
     /** Opt-in reasoning/thinking config (#2406); null = off (default, no behavior change). */
     val reasoning: ReasoningConfig? = null,
+    /**
+     * #2850 — wall-clock cap on a single LLM HTTP request. Null = use the
+     * adapter's [DEFAULT_REQUEST_TIMEOUT] (300s on every built-in adapter
+     * since the hotfix). Set this when long Sonnet turns, big Ollama
+     * generations, or extended-thinking calls regularly exceed the
+     * default — overshooting forces the JDK HttpClient to abort the call
+     * mid-flight, which surfaces as `HttpTimeoutException: request timed
+     * out` and tears down the streaming Flow.
+     *
+     * Wired via `model { requestTimeout = 10.minutes }` on the DSL.
+     */
+    val requestTimeout: Duration? = null,
+    /**
+     * #2850 — TCP connect timeout. Null = use the adapter's
+     * [DEFAULT_CONNECT_TIMEOUT] (10s on every built-in adapter). Almost
+     * never needs tuning — a healthy network never spends 10s on
+     * connect. Exposed for symmetry with [requestTimeout] and for
+     * exotic deployments (cross-region traffic, slow proxies) where
+     * the connect leg itself is the bottleneck.
+     */
+    val connectTimeout: Duration? = null,
 ) {
     val baseUrl: String get() = "http://$host:$port"
 
@@ -63,7 +86,8 @@ data class ModelConfig(
             "host=$host, port=$port, client=$client, apiKey=${maskApiKey(apiKey)}, " +
             "anthropicBaseUrl=$anthropicBaseUrl, openAiBaseUrl=$openAiBaseUrl, " +
             "deepSeekBaseUrl=$deepSeekBaseUrl, " +
-            "maxTokens=$maxTokens, reasoning=$reasoning)"
+            "maxTokens=$maxTokens, reasoning=$reasoning, " +
+            "requestTimeout=$requestTimeout, connectTimeout=$connectTimeout)"
 
     private fun maskApiKey(key: String?): String = when {
         key == null -> "null"
@@ -86,6 +110,22 @@ class ModelBuilder {
     var openAiBaseUrl: String = "https://api.openai.com"
     var deepSeekBaseUrl: String = DeepSeekClient.DEFAULT_BASE_URL
     var maxTokens: Int = ClaudeClient.DEFAULT_MAX_TOKENS
+    /**
+     * #2850 — override the adapter's [DEFAULT_REQUEST_TIMEOUT]. Null
+     * (default) → use the adapter's 300s floor. Bump this when long
+     * Sonnet turns / big Ollama generations / extended-thinking calls
+     * regularly exceed the default; the JDK HttpClient aborts the call
+     * at this cap and the framework surfaces it as
+     * `HttpTimeoutException`.
+     */
+    var requestTimeout: Duration? = null
+    /**
+     * #2850 — override the adapter's [DEFAULT_CONNECT_TIMEOUT]. Null
+     * (default) → 10s, which is right for every healthy network. Tune
+     * for cross-region or slow-proxy deployments where TCP connect
+     * itself is the bottleneck.
+     */
+    var connectTimeout: Duration? = null
 
     fun ollama(modelName: String) {
         name = modelName
@@ -158,6 +198,8 @@ class ModelBuilder {
             deepSeekBaseUrl = deepSeekBaseUrl,
             maxTokens = maxTokens,
             reasoning = reasoningConfig,
+            requestTimeout = requestTimeout,
+            connectTimeout = connectTimeout,
         )
     }
 }
