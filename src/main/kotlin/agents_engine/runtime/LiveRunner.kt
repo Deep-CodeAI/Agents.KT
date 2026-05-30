@@ -42,6 +42,20 @@ object LiveRunner {
 
     private const val VERSION = "0.3.0"
 
+    /**
+     * #2801 — primary `serve` entry point parameterised on a
+     * `suspend (String) -> Any?` callable. Every operator type already
+     * exposes one (`agent::invokeSuspend`, `pipeline::invokeSuspend`, …);
+     * the six typed overloads below stay for source-compat but they all
+     * delegate to this one + the matching [LiveShow.from] lambda overload.
+     * Future operator types just call this without an edit to LiveRunner.
+     */
+    fun serve(
+        invoke: suspend (String) -> Any?,
+        args: Array<String>,
+        configure: LiveShowBuilder.() -> Unit = {},
+    ): Int = run(args, configure, invoke) { LiveShow.from(invoke, it) }
+
     fun serve(
         agent: Agent<String, *>,
         args: Array<String>,
