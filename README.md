@@ -31,7 +31,7 @@ The 0.6 line turns those boundaries into audit-ready evidence: deterministic per
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("ai.deep-code:agents-kt:0.6.4")
+    implementation("ai.deep-code:agents-kt:0.6.5")
 }
 ```
 
@@ -268,7 +268,9 @@ Topical guides:
 
 ## Current Release
 
-`main` is currently `0.6.4` — a trust patch on top of 0.6.3, prioritising release hygiene and runtime safety per outside-audit feedback. The tagline: *0.6.4 makes Agents.KT more tolerant of real model behavior without weakening runtime boundaries.* Boring on features, deliberate on boundary closure.
+`main` is currently `0.6.5` — a focused hotfix on top of 0.6.4 addressing a production field report: long Sonnet turns hit the hardcoded 60s request timeout on the JDK HttpClient and tore down the streaming `Flow` mid-call. 0.6.5 raises every built-in adapter's default to 5 minutes and exposes `model { requestTimeout = …; connectTimeout = … }` so callers can tune per-agent.
+
+**0.6.5 — Request-timeout hotfix (#2850).** Bumped `DEFAULT_REQUEST_TIMEOUT` from 60s → 300s on `ClaudeClient`, `OpenAiClient`, `DeepSeekClient`, and `OllamaClient` so long Sonnet turns, big Ollama generations, and extended-thinking calls don't get aborted mid-stream. Added `requestTimeout: Duration?` and `connectTimeout: Duration?` to `ModelConfig` + `ModelBuilder` — null falls back to the adapter's `DEFAULT_REQUEST_TIMEOUT` / `DEFAULT_CONNECT_TIMEOUT`; non-null overrides on every provider through `defaultClientFor()`. Additive only — every 0.6.4 caller compiles and runs unchanged.
 
 **0.6.4 — Trust patch (#2752).** **Snapshot path traversal closed**: `FileSnapshotStore` now hashes session ids (SHA-256 hex) before forming filenames — a hostile `../../../etc/poisoned` session id stays inside its configured directory (#2753). **Manifest-hash restore guard**: `SessionSnapshot.manifestHash` is enforced; resume fails closed with `SnapshotManifestMismatchException` when the snapshot's manifest disagrees with the current agent's, unless the caller passes `allowManifestMismatch = true` to own the migration semantics (#2754). **Namespaced memory restore**: shared `MemoryBank` is no longer wiped on resume; new `snapshotForAgent` / `restoreForAgent` touch only the resuming agent's slot, so the documented shared-workspace topology stops destroying unrelated agents' state (#2755). **Tool-result JSON escaping**: `wrapUntrustedToolResult` now routes through the central `toJsonString` escaper, fixing missing U+0000–U+001F handling and producing valid JSON for binary / OCR / captured-terminal tool output (#2756). **`PipelineEvent.ToolHallucinated`**: first-class audit event when the model emits a tool name not in the skill's allowlist — distinct from policy-denied or executor errors; observable via `onToolHallucinated { name, args, allowedTools -> }` and through `observe()` (#2757). **`onBudgetExceeded` broadened**: the handler now fires consistently on TURNS / DURATION / TOKENS / CONSECUTIVE_TOOL too, not just TOOL_CALLS; `BudgetDecision.Extend(newLimit)` raises the cap (units: integer count except DURATION = milliseconds) and the loop continues (#2750). Plus docs and release-notes refresh: README dep coordinate, RELEASE_NOTES.md body, provider-count consistency, unknown-tool documentation, MCP server output description.
 

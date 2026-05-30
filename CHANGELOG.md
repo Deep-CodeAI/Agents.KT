@@ -4,6 +4,12 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Fixed — Hardcoded 60s LLM request timeout killed long Sonnet turns (#2850)
+
+- **`ClaudeClient` / `OpenAiClient` / `DeepSeekClient` / `OllamaClient`** — bumped `DEFAULT_REQUEST_TIMEOUT` from `60.seconds` to `300.seconds`. Field report against 0.6.4 showed long Sonnet turns (multi-step agentic loops with extended thinking) consistently breached the 60s cap on the JDK HttpClient, surfacing as `HttpTimeoutException: request timed out` and tearing down the streaming `Flow`. New floor matches what production agents actually need; 0.6.5 callers see no behavior change unless they were silently relying on the truncation. `DEFAULT_CONNECT_TIMEOUT` stays at `10.seconds` — healthy networks never spend that long on TCP connect.
+- **`model { requestTimeout = …; connectTimeout = … }`** — tunable from the DSL on every built-in provider (Ollama, Claude, OpenAI, DeepSeek). Both fields default to `null`, which falls back to the adapter's `DEFAULT_REQUEST_TIMEOUT` / `DEFAULT_CONNECT_TIMEOUT`. Set the override when long-context calls, big Ollama generations, or extended-thinking turns regularly approach 5 minutes. Wired through `ModelConfig.requestTimeout` / `connectTimeout` → `defaultClientFor()` → each adapter ctor — no shared global; per-agent, per-config, per-test.
+- **No public API removals** — additive only. Existing `ModelBuilder` callers compile and run unchanged.
+
 ### Added — Files convenience surface
 
 - **`agents_engine.content.Files`** — one-line file loading for the typed `Content` hierarchy. `Files.load(path, store): Content` reads the file, detects modality + mime from filename extension (case-insensitive, no magic-byte sniffing), puts bytes via the `BlobStore`, returns the right `Content` variant. Same `ContentRef.hash` as a manual `store.put`. Throws `UnknownExtensionException` (names the extension + path + full list of known extensions) on unrecognised.

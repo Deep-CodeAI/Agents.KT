@@ -603,7 +603,12 @@ open class ClaudeClient(
     companion object {
         private const val STRUCTURED_OUTPUT_TOOL_NAME = "structured_output"
 
-        val DEFAULT_REQUEST_TIMEOUT: Duration = 60.seconds
+        // Hotfix from #2850 field report — 60s killed long Sonnet turns
+        // (extended thinking, large outputs, tool-heavy loops, loaded API).
+        // 5 minutes is the new floor; deployers can override via the
+        // `model { requestTimeout = ... }` DSL when their tail is even
+        // longer.
+        val DEFAULT_REQUEST_TIMEOUT: Duration = 300.seconds
         val DEFAULT_CONNECT_TIMEOUT: Duration = 10.seconds
         const val DEFAULT_MAX_RESPONSE_BYTES: Long = 16L * 1024 * 1024
 

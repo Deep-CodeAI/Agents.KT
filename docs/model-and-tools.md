@@ -74,6 +74,25 @@ agent.session(input).events.collect { event ->
 
 Reasoning rides the live session stream (`AgentEvent`), not the post-hoc audit `PipelineEvent`. The tracing bridges (OTel / LangSmith / Langfuse) record reasoning *length* only, and the JSONL audit exporter omits it entirely — reasoning is high-volume and potentially sensitive, so it stays a live-stream signal.
 
+#### Request timeouts (#2850)
+
+Every built-in adapter ships with a 5-minute request timeout (and 10-second connect timeout) so long Sonnet turns, big Ollama generations, and extended-thinking calls don't get cut off mid-stream by the JDK HttpClient. Earlier 0.6.x lines hardcoded 60s on Claude/OpenAI/DeepSeek — that floor turned out to be too tight in production and was bumped to 300s in 0.6.5.
+
+Override per-agent when needed via the `model { }` DSL:
+
+```kotlin
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
+
+model {
+    claude("claude-opus-4-7"); apiKey = System.getenv("ANTHROPIC_API_KEY")
+    requestTimeout = 10.minutes      // wall-clock cap on a single LLM request
+    connectTimeout = 5.seconds       // TCP connect timeout — almost never needs tuning
+}
+```
+
+Both fields default to `null`, meaning the adapter falls back to its own `DEFAULT_REQUEST_TIMEOUT` / `DEFAULT_CONNECT_TIMEOUT` constants (`ClaudeClient.DEFAULT_REQUEST_TIMEOUT`, `OpenAiClient.DEFAULT_REQUEST_TIMEOUT`, `OllamaClient.DEFAULT_REQUEST_TIMEOUT`). The DSL setters work on every provider — Ollama, Claude, OpenAI, and DeepSeek — through `ModelConfig.requestTimeout` / `connectTimeout`, which `defaultClientFor()` threads into each adapter ctor. When the cap is hit the JDK HttpClient surfaces a `HttpTimeoutException: request timed out` and the streaming `Flow` is torn down — tune up rather than fight the symptom.
+
 **`tools { tool(name, description) { args -> } }`** — registers callable tools. Each tool receives a `Map<String, Any?>` of arguments and returns any value.
 
 **`tools { tool<Args, Result>(name, description) { args -> } }`** — typed variant. `Args` must be `@Generable`; the framework deserializes the model's arguments into a typed instance via reflection (`KClass.constructFromMap`) before invoking the executor. The provider envelope advertises a real JSON Schema generated from `Args::class.jsonSchema()` (proper `properties`, `required`, `@Guide` descriptions per field) instead of the legacy `properties: {}, additionalProperties: true`. Deserialization failures (missing required field, wrong type) route through `onError { invalidArgs { ... } }` like JSON-parse failures, not `executionError`. The returned handle implements provider-neutral `Tool<Args, Result>`, the same boundary shape used by MCP-discovered tools.

@@ -305,10 +305,12 @@ open class OllamaClient(
         // #2479 part 2 — JUL logger for the one-shot ToolChoice warning.
         private val OLLAMA_LOGGER: Logger = Logger.getLogger(OllamaClient::class.java.name)
 
-        // 60s — chat completions can be slow; large enough not to false-trip on
-        // legitimate long responses, small enough to bound a hung Ollama instance.
-        // See #852.
-        val DEFAULT_REQUEST_TIMEOUT: Duration = 60.seconds
+        // 5 minutes — chat completions can be slow on large local models or
+        // cloud-tier Ollama under load; the original 60s killed long
+        // agentic turns. Sibling bump to ClaudeClient / OpenAiClient
+        // (hotfix #2850). Override via `model { requestTimeout = ... }`.
+        // See #852 for the original rationale + #2850 for the bump.
+        val DEFAULT_REQUEST_TIMEOUT: Duration = 300.seconds
 
         // 10s — TCP connect should never take this long on a healthy network.
         val DEFAULT_CONNECT_TIMEOUT: Duration = 10.seconds

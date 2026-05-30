@@ -23,6 +23,9 @@ data class ModelConfig(
     val openAiBaseUrl: String = "https://api.openai.com",
     val deepSeekBaseUrl: String = "https://api.deepseek.com",
     val maxTokens: Int = 4096,
+    val reasoning: ReasoningConfig? = null,
+    val requestTimeout: Duration? = null,    // #2850 — null → adapter's 300s default
+    val connectTimeout: Duration? = null,    // #2850 — null → adapter's 10s default
 )
 ```
 
@@ -42,6 +45,22 @@ agent<X, Y>("...") {
 ```
 
 The builder's factory calls (`ollama`, `claude`, `openai`, `deepseek`) set both `name` and `provider`. The Anthropic / OpenAI / DeepSeek paths require `apiKey` — `build()` fails with a precise error message naming the call shape (e.g. `model { claude("...") } requires apiKey to be set`).
+
+## Request / connect timeouts (#2850)
+
+Both are `Duration?` and default to `null`. When null, `defaultClientFor()` falls back to the adapter's own constants — every shipped adapter uses `DEFAULT_REQUEST_TIMEOUT = 300.seconds` and `DEFAULT_CONNECT_TIMEOUT = 10.seconds`. When set, the value flows through `ModelConfig.requestTimeout` / `connectTimeout` → adapter ctor → JDK `HttpRequest.timeout()` / `HttpClient.connectTimeout()`.
+
+Set the override from the DSL:
+
+```kotlin
+model {
+    claude("claude-opus-4-7"); apiKey = System.getenv("ANTHROPIC_API_KEY")
+    requestTimeout = 10.minutes
+    connectTimeout = 5.seconds
+}
+```
+
+History: 0.6.4 and earlier hardcoded 60s on Claude/OpenAI/DeepSeek. A field report showed long Sonnet turns regularly hitting the cap and surfacing as `HttpTimeoutException`. 0.6.5 bumped every default to 300s and exposed the override.
 
 ## Lazy client construction
 

@@ -437,7 +437,11 @@ open class OpenAiClient(
     }
 
     companion object {
-        val DEFAULT_REQUEST_TIMEOUT: Duration = 60.seconds
+        // Hotfix from #2850 — matched Claude's 5-minute floor. Long
+        // agentic Sonnet turns (extended thinking, large outputs,
+        // tool-heavy loops) were dying at 60s in production. Override
+        // via `model { requestTimeout = ... }` when the tail is longer.
+        val DEFAULT_REQUEST_TIMEOUT: Duration = 300.seconds
         val DEFAULT_CONNECT_TIMEOUT: Duration = 10.seconds
         const val DEFAULT_MAX_RESPONSE_BYTES: Long = 16L * 1024 * 1024
         const val DEFAULT_MAX_TOKENS: Int = 4096
