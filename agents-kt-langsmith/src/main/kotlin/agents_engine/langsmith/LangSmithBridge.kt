@@ -29,6 +29,13 @@ class LangSmithBridge internal constructor(
     private val logger: (message: String, cause: Throwable?) -> Unit,
     private val clock: Clock,
     private val idGenerator: () -> String,
+    /**
+     * #2490b — field names whose values are replaced with `"[REDACTED]"`
+     * before tool args are serialised into the LangSmith run inputs.
+     * Typically wired from `agent.policy.redactionFields`. Empty = no
+     * redaction (back-compat default).
+     */
+    private val redactionFields: Set<String> = emptySet(),
 ) : ObservabilityBridge, AutoCloseable {
 
     constructor(
@@ -39,6 +46,7 @@ class LangSmithBridge internal constructor(
         maxQueuedOperations: Int = DEFAULT_MAX_QUEUED_OPERATIONS,
         batchSize: Int = DEFAULT_BATCH_SIZE,
         logger: (message: String, cause: Throwable?) -> Unit = DEFAULT_LOGGER,
+        redactionFields: Set<String> = emptySet(),
     ) : this(
         project = project,
         sink = LangSmithHttpRunSink(
@@ -51,6 +59,7 @@ class LangSmithBridge internal constructor(
         logger = logger,
         clock = Clock.systemUTC(),
         idGenerator = { UUID.randomUUID().toString() },
+        redactionFields = redactionFields,
     )
 
     private val agentRuns = linkedMapOf<String, RunState>()
@@ -328,7 +337,9 @@ class LangSmithBridge internal constructor(
                         "is_error" to event.isError,
                     ),
                     inputs = linkedMapOf(
-                        "args" to jsonValue(event.arguments),
+                        // #2490b — policy { redact(...) } scrubs named fields
+                        // before the args map enters the LangSmith run inputs.
+                        "args" to jsonValue(agents_engine.core.redactArguments(event.arguments, redactionFields)),
                         "call_id" to event.callId,
                         "tool_name" to event.toolName,
                     ),

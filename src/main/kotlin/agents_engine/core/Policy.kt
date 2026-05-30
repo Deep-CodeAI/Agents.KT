@@ -105,3 +105,33 @@ class PolicyBuilder {
         redactionFields = redactFields.toSet(),
     )
 }
+
+/**
+ * #2490b — replace matching field values with `"[REDACTED]"` for audit-row
+ * writeout. Public so observability bridges can call it directly when
+ * serialising event arguments.
+ *
+ * Matches case-sensitively on the top-level keys of [args]. Recurses
+ * into nested `Map<String, Any?>` values so a `headers: { authorization
+ * }` shape is also covered. Does NOT recurse into `List` entries —
+ * per-list-element redaction is out of scope for v1; field-level
+ * targeting is enough for typical secret-bearing API arg shapes.
+ *
+ * Returns the original map unchanged when [fields] is empty, so no
+ * allocation cost on the default (empty policy) path.
+ */
+fun redactArguments(args: Map<String, Any?>, fields: Set<String>): Map<String, Any?> {
+    if (fields.isEmpty()) return args
+    val redacted = mutableMapOf<String, Any?>()
+    for ((key, value) in args) {
+        redacted[key] = when {
+            key in fields -> "[REDACTED]"
+            value is Map<*, *> -> {
+                @Suppress("UNCHECKED_CAST")
+                redactArguments(value as Map<String, Any?>, fields)
+            }
+            else -> value
+        }
+    }
+    return redacted
+}

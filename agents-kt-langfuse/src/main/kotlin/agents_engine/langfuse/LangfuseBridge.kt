@@ -28,6 +28,13 @@ class LangfuseBridge internal constructor(
     private val logger: (message: String, cause: Throwable?) -> Unit,
     private val clock: Clock,
     private val idGenerator: () -> String,
+    /**
+     * #2490b — field names whose values are replaced with `"[REDACTED]"`
+     * before tool args are serialised into the Langfuse observation
+     * inputs. Typically wired from `agent.policy.redactionFields`.
+     * Empty = no redaction (back-compat default).
+     */
+    private val redactionFields: Set<String> = emptySet(),
 ) : ObservabilityBridge, AutoCloseable {
 
     constructor(
@@ -37,6 +44,7 @@ class LangfuseBridge internal constructor(
         maxQueuedOperations: Int = DEFAULT_MAX_QUEUED_OPERATIONS,
         batchSize: Int = DEFAULT_BATCH_SIZE,
         logger: (message: String, cause: Throwable?) -> Unit = DEFAULT_LOGGER,
+        redactionFields: Set<String> = emptySet(),
     ) : this(
         sink = LangfuseHttpIngestionSink(
             publicKey = publicKey,
@@ -48,6 +56,7 @@ class LangfuseBridge internal constructor(
         logger = logger,
         clock = Clock.systemUTC(),
         idGenerator = { UUID.randomUUID().toString() },
+        redactionFields = redactionFields,
     )
 
     private val traces = linkedMapOf<String, TraceState>()
@@ -367,7 +376,9 @@ class LangfuseBridge internal constructor(
                     name = "tool.${event.toolName}",
                     endTime = clock.instant(),
                     input = mapOf(
-                        "args" to jsonValue(event.arguments),
+                        // #2490b — policy { redact(...) } scrubs named fields
+                        // before args enter the Langfuse observation input.
+                        "args" to jsonValue(agents_engine.core.redactArguments(event.arguments, redactionFields)),
                         "call_id" to event.callId,
                         "tool_name" to event.toolName,
                     ),

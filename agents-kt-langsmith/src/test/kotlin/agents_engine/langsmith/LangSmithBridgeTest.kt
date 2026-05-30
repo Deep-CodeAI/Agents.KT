@@ -245,12 +245,56 @@ class LangSmithBridgeTest {
         )
     }
 
+    @Test
+    fun `redactionFields scrubs named fields from tool args before LangSmith inputs`() = runTest {
+        // #2490b — wire agent.policy.redactionFields through the LangSmith
+        // bridge so secret-bearing argument fields don't enter the trace.
+        val sink = RecordingSink()
+        val bridge = bridge(sink, redactionFields = setOf("apiKey", "password"))
+        val responses = ArrayDeque<LlmResponse>().apply {
+            add(LlmResponse.ToolCalls(listOf(ToolCall(
+                name = "lookup",
+                arguments = mapOf("id" to "42", "apiKey" to "sk-secret"),
+                rawArguments = """{"id":"42","apiKey":"sk-secret"}""",
+                callId = "call-r",
+            ))))
+            add(LlmResponse.Text("ok"))
+        }
+        val stub = ModelClient { responses.removeFirst() }
+        val a = agent<String, String>("redact-agent") {
+            model { ollama("llama-test"); client = stub }
+            tools { tool("lookup", "lookup") { args: Map<String, Any?> -> "value-${args["id"]}" } }
+            skills {
+                skill<String, String>("respond", "respond") {
+                    @Suppress("DEPRECATION")
+                    tools("lookup")
+                }
+            }
+        }.observe(bridge)
+
+        try {
+            val session = a.session("go")
+            session.events.toList()
+            assertEquals("ok", session.await())
+            assertTrue(bridge.flush(), "bridge did not flush")
+        } finally {
+            bridge.close()
+        }
+
+        val tool = sink.create("tool")
+        val toolUpdate = sink.updateFor(tool["id"] as String)
+        val args = toolUpdate.patch.mapAt("inputs").mapAt("args")
+        assertEquals("42", args["id"], "non-redacted fields pass through")
+        assertEquals("[REDACTED]", args["apiKey"], "matching field is scrubbed before LangSmith writeout")
+    }
+
     private fun bridge(
         sink: LangSmithRunSink,
         ids: List<String> = List(100) { "run-$it" },
         maxQueuedOperations: Int = 128,
         batchSize: Int = 64,
         logger: (String, Throwable?) -> Unit = { _, _ -> },
+        redactionFields: Set<String> = emptySet(),
     ): LangSmithBridge {
         val iterator = ids.iterator()
         return LangSmithBridge(
@@ -264,6 +308,7 @@ class LangSmithBridgeTest {
                 check(iterator.hasNext()) { "test id generator exhausted" }
                 iterator.next()
             },
+            redactionFields = redactionFields,
         )
     }
 
