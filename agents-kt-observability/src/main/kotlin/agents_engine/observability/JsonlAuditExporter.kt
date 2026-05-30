@@ -1,5 +1,6 @@
 package agents_engine.observability
 
+import agents_engine.content.modality
 import agents_engine.core.Agent
 import agents_engine.core.AgentRuntimeContext
 import agents_engine.core.PipelineEvent
@@ -214,6 +215,14 @@ class JsonlAuditExporter(
                 is PipelineEvent.ToolCalled -> typeName(event.result)
                 else -> null
             },
+            // #2469 — multimodal tool results record one summary per part:
+            // "<modality>:<hash-prefix>:<size>:<mime>". No bytes; the
+            // ContentRef + modality is the auditable surface. Null on
+            // non-ToolResult returns so legacy audit rows are unchanged.
+            outputParts = when (event) {
+                is PipelineEvent.ToolCalled -> partsSummary(event.result)
+                else -> null
+            },
             // #2395 — record blocked tool calls in the audit log via the
             // guardrailDecision column. Only the decision *type* is written:
             // the free-text reason can embed offending arg values (e.g. a
@@ -265,6 +274,11 @@ class JsonlAuditExporter(
                 is AgentEvent.ToolCallFinished -> typeName(event.result)
                 else -> null
             },
+            outputParts = when (event) {
+                is AgentEvent.Completed<*> -> partsSummary(event.output)
+                is AgentEvent.ToolCallFinished -> partsSummary(event.result)
+                else -> null
+            },
             toolPolicyRisk = null,
             usedDeclaredCapability = null,
             usage = usage,
@@ -291,6 +305,7 @@ class JsonlAuditExporter(
         usedDeclaredCapability: Boolean?,
         usage: TokenUsage?,
         guardrailDecision: String? = null,
+        outputParts: List<String>? = null,
     ): Map<String, Any?> =
         linkedMapOf(
             "requestId" to context.requestId,
@@ -303,6 +318,7 @@ class JsonlAuditExporter(
             "timestamp" to timestamp,
             "inputType" to inputType,
             "outputType" to outputType,
+            "outputParts" to outputParts,
             "budgetState" to null,
             "guardrailDecision" to guardrailDecision,
             "mcpClientId" to null,
@@ -316,6 +332,35 @@ class JsonlAuditExporter(
 
     private fun typeName(value: Any?): String? =
         value?.javaClass?.name
+
+    /**
+     * #2469 — for [agents_engine.content.ToolResult] return values,
+     * render one summary string per part: `"<modality>:<hash-prefix>:
+     * <sizeBytes>:<wireMime>"`. Hash prefix is the first 12 hex chars
+     * (enough to disambiguate in audit grep, short enough to read).
+     * Returns `null` when [value] is not a `ToolResult` — keeps legacy
+     * audit rows byte-identical for non-multimodal returns.
+     *
+     * Crucially: no blob bytes enter the audit row. Modality + ref is
+     * the auditable surface.
+     */
+    private fun partsSummary(value: Any?): List<String>? {
+        val toolResult = value as? agents_engine.content.ToolResult ?: return null
+        return toolResult.parts.map { part ->
+            when (part) {
+                is agents_engine.content.Content.Text ->
+                    "${part.modality}:inline:${part.text.length}:text/plain"
+                is agents_engine.content.Content.Image ->
+                    "${part.modality}:${part.ref.hash.take(12)}:${part.ref.sizeBytes}:${part.mime.wireMime}"
+                is agents_engine.content.Content.Audio ->
+                    "${part.modality}:${part.ref.hash.take(12)}:${part.ref.sizeBytes}:${part.mime.wireMime}"
+                is agents_engine.content.Content.Video ->
+                    "${part.modality}:${part.ref.hash.take(12)}:${part.ref.sizeBytes}:${part.mime.wireMime}"
+                is agents_engine.content.Content.Document ->
+                    "${part.modality}:${part.ref.hash.take(12)}:${part.ref.sizeBytes}:${part.mime.wireMime}"
+            }
+        }
+    }
 
     private fun encodeJson(value: Any?): String =
         when (value) {

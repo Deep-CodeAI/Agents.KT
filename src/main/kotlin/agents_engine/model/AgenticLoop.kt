@@ -795,9 +795,9 @@ internal suspend fun <IN> executeAgentic(
                         }
                     }
                     val toolMessage = if (!denied && tool.untrustedOutput) {
-                        wrapUntrustedToolResult(tool.name, result)
+                        wrapUntrustedToolResult(tool.name, renderToolResultForLlm(result))
                     } else {
-                        result?.toString() ?: "null"
+                        renderToolResultForLlm(result)
                     }
                     messages.add(LlmMessage("tool", toolMessage))
                 }
@@ -1160,6 +1160,20 @@ private fun formatDeniedToolError(toolName: String, reason: String): String =
 private fun wrapUntrustedToolResult(toolName: String, result: Any?): String {
     val value = result?.toString() ?: "null"
     return """{"tool":${toolName.toJsonString()},"trusted":false,"value":${value.toJsonString()}}"""
+}
+
+/**
+ * #2469 — render a tool's return value into the text the LLM sees as
+ * the tool-result message. For a [agents_engine.content.ToolResult]
+ * (multimodal), non-text parts surface as `[modality: <mime>]`
+ * placeholders — the actual provider-specific multipart rendering is
+ * the sibling #2470 ticket, deferred. For non-multimodal returns,
+ * `toString()` (or `"null"`) — byte-for-byte the pre-#2469 behaviour.
+ */
+private fun renderToolResultForLlm(result: Any?): String = when (result) {
+    is agents_engine.content.ToolResult -> agents_engine.content.renderToolResultPlaceholder(result)
+    null -> "null"
+    else -> result.toString()
 }
 
 private fun parseOutput(text: String, outType: KClass<*>): Any? = when {
