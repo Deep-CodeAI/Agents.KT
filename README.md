@@ -31,7 +31,7 @@ The 0.6 line turns those boundaries into audit-ready evidence: deterministic per
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("ai.deep-code:agents-kt:0.6.5")
+    implementation("ai.deep-code:agents-kt:0.6.6")
 }
 ```
 
@@ -271,7 +271,9 @@ Topical guides:
 
 ## Current Release
 
-`main` is currently `0.6.5` — a focused hotfix on top of 0.6.4 addressing a production field report: long Sonnet turns hit the hardcoded 60s request timeout on the JDK HttpClient and tore down the streaming `Flow` mid-call. 0.6.5 raises every built-in adapter's default to 5 minutes and exposes `model { requestTimeout = …; connectTimeout = … }` so callers can tune per-agent.
+`main` is currently `0.6.6` — a maintainability pass on top of 0.6.5: the 10-ticket code-smell epic (#2790) plus a field-reported correctness fix for session cancellation (#2863). The tagline: *0.6.6 keeps the surface stable while shrinking what a future audit can flag.* Boring on features, focused on internal hygiene + one user-visible cancellation bug.
+
+**0.6.6 — Maintainability + cancellation (#2863 + epic #2790).** Session catch now distinguishes `CancellationException` (propagate per structured concurrency — no synthetic `Failed` event) from `TimeoutCancellationException` (real failure — keeps surfacing as `Failed`). Field report from a downstream SSE bridge that rendered cancelled subscriptions as "FlowSubscription was cancelled" failures, clobbering already-streamed output. Plus 10 internal refactors landing today: `Ansi` consolidation + suspending session send (#2806), `ToolRisk` dedup + `BudgetConfig.describeOverrides()` (#2805), `RESERVED_MEMORY_TOOL_NAMES` reuse + named magic constants + `reserveName` guard (#2804), `JsonEscape` consolidation across model/core/generation (#2799), shared `JsonRpc` helper + `McpException` hierarchy (#2796), `HttpModelClientSupport.sendBounded` (#2792), MCP client list/text-block dedup + `makeMcpSkill` factory (#2800), `toLlmInput`/`jsonSerialize` collapse (#2794), primary `(String) -> Any?` overload on `LiveShow.from` + `LiveRunner.serve` (#2801), detekt static analysis with baseline (#2807). Additive only — every 0.6.5 caller compiles and runs unchanged.
 
 **0.6.5 — Request-timeout hotfix (#2850).** Bumped `DEFAULT_REQUEST_TIMEOUT` from 60s → 300s on `ClaudeClient`, `OpenAiClient`, `DeepSeekClient`, and `OllamaClient` so long Sonnet turns, big Ollama generations, and extended-thinking calls don't get aborted mid-stream. Added `requestTimeout: Duration?` and `connectTimeout: Duration?` to `ModelConfig` + `ModelBuilder` — null falls back to the adapter's `DEFAULT_REQUEST_TIMEOUT` / `DEFAULT_CONNECT_TIMEOUT`; non-null overrides on every provider through `defaultClientFor()`. Additive only — every 0.6.4 caller compiles and runs unchanged.
 
