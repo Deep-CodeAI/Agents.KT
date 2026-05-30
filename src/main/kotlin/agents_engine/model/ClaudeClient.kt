@@ -390,16 +390,52 @@ open class ClaudeClient(
             when (msg.role) {
                 "user" -> {
                     val images = msg.images
-                    if (!images.isNullOrEmpty()) {
-                        // #2470 — vision input. Anthropic accepts a content
-                        // array of typed blocks; one text block + N image
-                        // blocks. Each image block is base64-source with a
-                        // typed media_type.
+                    val documents = msg.documents
+                    if (!images.isNullOrEmpty() || !documents.isNullOrEmpty()) {
+                        // #2470 — vision + document input. Anthropic accepts a
+                        // content array of typed blocks; one text block + N
+                        // image blocks + N document blocks. Image blocks are
+                        // base64-source with a typed media_type; document
+                        // blocks are slice c — same source shape, but with
+                        // `type:"document"` and media_type drawn from the
+                        // DocumentPart's WireMime.
                         val textBlock = """{"type":"text","text":${msg.content.toJsonString()}}"""
-                        val imageBlocks = images.joinToString(",") { part ->
+                        val imageBlocks = images.orEmpty().joinToString(",") { part ->
                             """{"type":"image","source":{"type":"base64","media_type":${part.wireMime.value.toJsonString()},"data":${part.base64.toJsonString()}}}"""
                         }
-                        val allBlocks = "$textBlock,$imageBlocks"
+                        val docBlocks = documents.orEmpty().joinToString(",") { part ->
+                            // Anthropic accepts two source shapes on the
+                            // `document` block:
+                            //   - source.type="base64", media_type=application/pdf
+                            //     → for PDFs ONLY (the only base64-accepted type).
+                            //   - source.type="text", media_type=text/plain,
+                            //     data=<raw text>
+                            //     → for plain text and markdown (both come in
+                            //     as text/plain; Anthropic has no markdown type).
+                            when (part.wireMime) {
+                                DocumentPart.WireMime.Pdf ->
+                                    """{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":${part.base64.toJsonString()}}}"""
+                                DocumentPart.WireMime.PlainText, DocumentPart.WireMime.Markdown -> {
+                                    // Decode the base64 payload back to its raw
+                                    // text form for the `source.type="text"`
+                                    // shape. `DocumentPart` keeps the caller-
+                                    // facing contract base64-only — the
+                                    // adapter handles the text-vs-base64
+                                    // distinction at the wire boundary.
+                                    val rawText = String(
+                                        java.util.Base64.getDecoder().decode(part.base64),
+                                        Charsets.UTF_8,
+                                    )
+                                    """{"type":"document","source":{"type":"text","media_type":"text/plain","data":${rawText.toJsonString()}}}"""
+                                }
+                            }
+                        }
+                        val parts = buildList {
+                            add(textBlock)
+                            if (imageBlocks.isNotEmpty()) add(imageBlocks)
+                            if (docBlocks.isNotEmpty()) add(docBlocks)
+                        }
+                        val allBlocks = parts.joinToString(",")
                         val withCache = if (cacheControl != null) {
                             // Attach cache_control to the LAST block.
                             val splitAt = allBlocks.lastIndexOf("}")

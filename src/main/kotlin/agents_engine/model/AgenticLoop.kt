@@ -333,20 +333,21 @@ internal suspend fun <IN> executeAgentic(
         // #2470 slice b — when the caller passes `attachments`, dereference
         // each `Content.Image` against the agent's BlobStore, base64-encode
         // once, and ride along on this first user message as `images: List<
-        // ImagePart>`. The slice-a per-provider adapters translate that to
-        // the right wire shape (Ollama `images: [...]`, Claude image blocks,
-        // OpenAI image_url blocks). Non-image content variants (Document /
-        // Audio / Video) skipped — provider doc/audio/video paths land in
-        // later slices. Image-less attachments lists are a fast-path no-op.
-        val attachedImages: List<ImagePart>? = if (attachments.isNullOrEmpty()) {
-            null
-        } else {
+        // ImagePart>` and `documents: List<DocumentPart>`. The per-provider
+        // adapters translate to the right wire shape (Ollama `images: [...]`,
+        // Claude image + document content blocks, OpenAI image_url blocks).
+        // Audio / Video skipped — Stage 2.
+        var attachedImages: List<ImagePart>? = null
+        var attachedDocuments: List<DocumentPart>? = null
+        if (!attachments.isNullOrEmpty()) {
             val store = agent.blobStore
             require(store != null) {
                 "Agent '${agent.name}' has attachments but no blobStore — call `blobStore(store)` " +
-                    "inside the agent { } block so Content.Image refs can be dereferenced."
+                    "inside the agent { } block so Content.Image / Content.Document refs can be dereferenced."
             }
-            attachments.mapNotNull { content ->
+            val images = mutableListOf<ImagePart>()
+            val documents = mutableListOf<DocumentPart>()
+            for (content in attachments) {
                 when (content) {
                     is agents_engine.content.Content.Image -> {
                         val bytes = store.get(content.ref)
@@ -355,7 +356,7 @@ internal suspend fun <IN> executeAgentic(
                                     "hash=${content.ref.hash.take(12)}…, size=${content.ref.sizeBytes}); " +
                                     "did the store get rewired or the blob purged?",
                             )
-                        ImagePart(
+                        images += ImagePart(
                             base64 = java.util.Base64.getEncoder().encodeToString(bytes),
                             wireMime = when (content.mime) {
                                 agents_engine.content.ImageMime.Png -> ImagePart.WireMime.Png
@@ -365,18 +366,50 @@ internal suspend fun <IN> executeAgentic(
                             },
                         )
                     }
+                    is agents_engine.content.Content.Document -> {
+                        // #2470 slice c — only Pdf / PlainText / Markdown
+                        // have a wire-format match (Claude). Docx + Html
+                        // are skipped — no provider accepts them today; a
+                        // future ticket converts via deployer-side toolchain.
+                        val wireMime: DocumentPart.WireMime? = when (content.mime) {
+                            agents_engine.content.DocMime.Pdf -> DocumentPart.WireMime.Pdf
+                            agents_engine.content.DocMime.PlainText -> DocumentPart.WireMime.PlainText
+                            agents_engine.content.DocMime.Markdown -> DocumentPart.WireMime.Markdown
+                            agents_engine.content.DocMime.Docx -> null
+                            agents_engine.content.DocMime.Html -> null
+                        }
+                        if (wireMime != null) {
+                            val bytes = store.get(content.ref)
+                                ?: error(
+                                    "BlobStore on agent '${agent.name}' has no entry for ContentRef(" +
+                                        "hash=${content.ref.hash.take(12)}…, size=${content.ref.sizeBytes}); " +
+                                        "did the store get rewired or the blob purged?",
+                                )
+                            documents += DocumentPart(
+                                base64 = java.util.Base64.getEncoder().encodeToString(bytes),
+                                wireMime = wireMime,
+                            )
+                        }
+                        // Docx / Html: drop silently in v1 — see WireMime KDoc.
+                    }
                     is agents_engine.content.Content.Text,
                     is agents_engine.content.Content.Audio,
-                    is agents_engine.content.Content.Video,
-                    is agents_engine.content.Content.Document -> {
-                        // Not an image — skip in v1. Slice c (provider doc/
-                        // audio/video paths) covers the rest.
-                        null
+                    is agents_engine.content.Content.Video -> {
+                        // Stage 2 (Audio + Video); Text is inlined elsewhere.
                     }
                 }
-            }.takeIf { it.isNotEmpty() }
+            }
+            attachedImages = images.takeIf { it.isNotEmpty() }
+            attachedDocuments = documents.takeIf { it.isNotEmpty() }
         }
-        messages.add(LlmMessage("user", toLlmInput(input), images = attachedImages))
+        messages.add(
+            LlmMessage(
+                role = "user",
+                content = toLlmInput(input),
+                images = attachedImages,
+                documents = attachedDocuments,
+            ),
+        )
     }
 
     var turns = resumeFrom?.turns ?: 0

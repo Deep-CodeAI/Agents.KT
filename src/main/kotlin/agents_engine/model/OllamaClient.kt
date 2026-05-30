@@ -115,6 +115,13 @@ open class OllamaClient(
     // enforced by dropping the tools array, so it doesn't warn.
     @Volatile private var toolChoiceWarningEmitted: Boolean = false
 
+    // #2470 slice c — one-shot warning latch when the caller passes
+    // documents on an LlmMessage. Ollama's chat API has no document-
+    // input format; documents are silently dropped from the wire here.
+    // The single warning surfaces in pipeline logs so the deployer knows
+    // their PDF didn't reach the model.
+    @Volatile private var documentDropWarningEmitted: Boolean = false
+
     private fun maybeWarnOllamaToolChoice() {
         if (toolChoiceWarningEmitted) return
         val needsWarning = when (toolChoice) {
@@ -127,6 +134,20 @@ open class OllamaClient(
             "ToolChoice=$toolChoice requested for Ollama, which has no native tool_choice " +
                 "field. Falling back to Auto for this call. Switch providers (Anthropic / OpenAI " +
                 "/ DeepSeek) for hard enforcement.",
+        )
+    }
+
+    private fun maybeWarnOllamaDocumentDrop(messages: List<LlmMessage>) {
+        if (documentDropWarningEmitted) return
+        val hasDocs = messages.any { !it.documents.isNullOrEmpty() }
+        if (!hasDocs) return
+        documentDropWarningEmitted = true
+        OLLAMA_LOGGER.warning(
+            "Ollama has no native document-input format on the chat API; " +
+                "documents on LlmMessage are being DROPPED on the wire. Either extract " +
+                "text client-side and embed it in the message content, render the document " +
+                "to images via LlmMessage.images, or switch to Anthropic Claude which has " +
+                "a native document content block.",
         )
     }
 
@@ -420,6 +441,11 @@ open class OllamaClient(
         // functionally as Auto. The latch keeps the log channel quiet under
         // the per-turn loop.
         maybeWarnOllamaToolChoice()
+        // #2470 slice c — documents are not on the Ollama chat-API wire;
+        // warn once per agent the first time a caller passes one, then
+        // silently drop on subsequent calls (the per-turn loop would
+        // otherwise spam the log channel).
+        maybeWarnOllamaDocumentDrop(messages)
         val effectiveIncludeTools = includeTools && toolChoice != ToolChoice.None
         val toolsJson = if (effectiveIncludeTools && tools.isNotEmpty()) {
             val defs = tools.joinToString(",") { t ->

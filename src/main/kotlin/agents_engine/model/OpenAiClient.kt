@@ -9,6 +9,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.util.logging.Logger
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
@@ -89,6 +90,28 @@ open class OpenAiClient(
     private val http: HttpClient = HttpClient.newBuilder()
         .connectTimeout(connectTimeout.toJavaDuration())
         .build()
+
+    // #2470 slice c — one-shot warning latch when a caller passes
+    // documents on an LlmMessage. OpenAI Chat Completions has no
+    // document-input format (the Files API + Assistants API has one;
+    // this Chat Completions adapter does not). Documents are silently
+    // dropped from the wire; the single warning surfaces in pipeline
+    // logs so the deployer knows their PDF didn't reach the model.
+    @Volatile private var documentDropWarningEmitted: Boolean = false
+
+    protected fun maybeWarnOpenAiDocumentDrop(messages: List<LlmMessage>) {
+        if (documentDropWarningEmitted) return
+        val hasDocs = messages.any { !it.documents.isNullOrEmpty() }
+        if (!hasDocs) return
+        documentDropWarningEmitted = true
+        OPENAI_LOGGER.warning(
+            "$providerLabel Chat Completions has no native document-input format; " +
+                "documents on LlmMessage are being DROPPED on the wire. Either extract " +
+                "text client-side and embed it in the message content, render the document " +
+                "to images via LlmMessage.images, or switch to Anthropic Claude which has " +
+                "a native document content block.",
+        )
+    }
 
     override fun supportsConstrainedDecoding(): Boolean = true
 
@@ -264,6 +287,9 @@ open class OpenAiClient(
         stream: Boolean = false,
         jsonSchema: JsonSchema? = null,
     ): String {
+        // #2470 slice c — documents are not on the OpenAI Chat Completions
+        // wire; warn once per client the first time a caller passes one.
+        maybeWarnOpenAiDocumentDrop(messages)
         val pendingToolCallIds: ArrayDeque<String> = ArrayDeque()
         var toolCallCounter = 0
 
@@ -441,6 +467,11 @@ open class OpenAiClient(
         val DEFAULT_CONNECT_TIMEOUT: Duration = 10.seconds
         const val DEFAULT_MAX_RESPONSE_BYTES: Long = 16L * 1024 * 1024
         const val DEFAULT_MAX_TOKENS: Int = 4096
+
+        // #2470 slice c — JUL logger for the one-shot document-drop warning.
+        // Shared across OpenAiClient and its DeepSeek subclass.
+        @JvmStatic
+        protected val OPENAI_LOGGER: Logger = Logger.getLogger(OpenAiClient::class.java.name)
     }
 }
 

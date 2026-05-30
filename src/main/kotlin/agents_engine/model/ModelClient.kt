@@ -49,6 +49,33 @@ data class LlmMessage(
      * messages don't carry images in any provider's API.
      */
     val images: List<ImagePart>? = null,
+    /**
+     * #2470 slice c — optional document input. Same role-gated semantics
+     * as [images]: only `role = "user"` messages emit on the wire.
+     *
+     *   - Anthropic Claude — typed document content block:
+     *     `{type:"document", source:{type:"base64",
+     *     media_type:"application/pdf"|"text/plain", data:"<base64>"}}`.
+     *     Native PDF + plain-text input across Haiku 4.5 / Sonnet 4.6 /
+     *     Opus 4.7. Markdown is sent as `text/plain` (Claude's document
+     *     block doesn't have a separate markdown media_type).
+     *   - OpenAI Chat Completions — NO native document input on this
+     *     endpoint (the Files API + Assistants API has it; Chat
+     *     Completions doesn't). Documents are silently dropped from the
+     *     wire here. Callers needing PDF input through OpenAI should
+     *     either extract text client-side and embed in [content], or
+     *     render the document to images and use [images]. The adapter
+     *     emits a one-shot WARNING via JUL on the first call that
+     *     drops a document.
+     *   - Ollama — no document input today; same drop-with-warning
+     *     behaviour as OpenAI.
+     *
+     * Null = no document parts; wire shape unchanged. `Docx` and `Html`
+     * variants are skipped on every adapter — Claude only accepts
+     * `application/pdf` and `text/plain`, and these formats aren't worth
+     * a client-side conversion path in v1.
+     */
+    val documents: List<DocumentPart>? = null,
 )
 
 /**
@@ -75,6 +102,45 @@ data class ImagePart(
         object Jpeg : WireMime { override val value: String = "image/jpeg" }
         object Gif : WireMime { override val value: String = "image/gif" }
         object Webp : WireMime { override val value: String = "image/webp" }
+    }
+}
+
+/**
+ * #2470 slice c — base64-encoded document payload for non-image attachment
+ * input (PDFs, text, markdown). Mirrors [ImagePart] one-for-one:
+ * caller-encoded base64 + closed `WireMime` sealed type. Reuses the
+ * existing closed `DocMime` family from [agents_engine.content.DocMime]
+ * for the typed mime, but the on-wire payload is the same shape
+ * (`text/plain` for Markdown and PlainText; Docx/Html unsupported on
+ * the wire in v1).
+ *
+ * Provider support is uneven — only Anthropic's `document` content
+ * block reads non-image attachments directly today. OpenAI Chat
+ * Completions and Ollama have no document-input format on the
+ * /chat endpoint; their adapters drop documents with a one-shot
+ * warning. See [LlmMessage.documents].
+ */
+data class DocumentPart(
+    /** Base64-encoded document bytes; no `data:` URL prefix. */
+    val base64: String,
+    /** Closed wire MIME — see [WireMime]. */
+    val wireMime: WireMime,
+) {
+    sealed interface WireMime {
+        /** RFC media-type form used on the wire by adapters that support documents. */
+        val value: String
+
+        object Pdf : WireMime { override val value: String = "application/pdf" }
+        object PlainText : WireMime { override val value: String = "text/plain" }
+        /**
+         * Markdown content. Anthropic doesn't have a separate
+         * `text/markdown` document type — the adapter sends Markdown
+         * documents as `text/plain` on the wire. The wire value here
+         * stays "text/markdown" so the typed type is honest about
+         * what the caller intended; adapter translation lives in
+         * `ClaudeClient`.
+         */
+        object Markdown : WireMime { override val value: String = "text/markdown" }
     }
 }
 
