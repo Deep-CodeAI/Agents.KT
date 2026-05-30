@@ -67,6 +67,16 @@ open class ClaudeClient(
      * and surfaces thinking blocks as reasoning. Off when null.
      */
     private val reasoning: ReasoningConfig? = null,
+    /**
+     * #2479 part 2 — vendor-neutral tool-choice control. The agentic loop
+     * passes this through from `agent.toolChoice`. Wire mapping:
+     *   - [ToolChoice.Auto] → `{"type":"auto"}` (or field omitted)
+     *   - [ToolChoice.Required] → `{"type":"any"}` (Anthropic spelling)
+     *   - [ToolChoice.None] → drop `tools` from request (Anthropic has no
+     *     "none" enum; the model can't call what it doesn't see)
+     *   - [ToolChoice.Specific] → `{"type":"tool","name":...}`
+     */
+    private val toolChoice: ToolChoice = ToolChoice.Auto,
 ) : ModelClient {
 
     private val http: HttpClient = HttpClient.newBuilder()
@@ -467,10 +477,27 @@ open class ClaudeClient(
         } else {
             toolDefs
         }
-        val toolsField = if (toolsWithCacheMarker.isNotEmpty()) ""","tools":[${toolsWithCacheMarker.joinToString(",")}]""" else ""
+        // #2479 part 2 — when toolChoice = None, drop the tools field
+        // entirely. Anthropic has no "none" enum; not exposing tools is the
+        // equivalent (the model can't call what it doesn't see). Structured-
+        // output decoding overrides this — the forced-tool path needs tools.
+        val toolsField = when {
+            toolChoice == ToolChoice.None && structuredSchema == null -> ""
+            toolsWithCacheMarker.isNotEmpty() -> ""","tools":[${toolsWithCacheMarker.joinToString(",")}]"""
+            else -> ""
+        }
+        // tool_choice precedence:
+        //   1. structured-output decoding wins (forced internal tool — the
+        //      typed-output contract depends on this)
+        //   2. else map user-set ToolChoice through to Anthropic's vocabulary
         val toolChoiceField = if (structuredSchema != null) {
             ""","tool_choice":{"type":"tool","name":${STRUCTURED_OUTPUT_TOOL_NAME.toJsonString()}}"""
-        } else ""
+        } else when (val tc = toolChoice) {
+            ToolChoice.Auto, ToolChoice.None -> ""
+            ToolChoice.Required -> ""","tool_choice":{"type":"any"}"""
+            is ToolChoice.Specific ->
+                ""","tool_choice":{"type":"tool","name":${tc.name.toJsonString()}}"""
+        }
 
         val streamField = if (stream) ""","stream":true""" else ""
         // #2408 — extended thinking. Anthropic requires temperature=1 when on;

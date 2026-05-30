@@ -19,6 +19,10 @@ open class DeepSeekClient(
     connectTimeout: Duration = OpenAiClient.DEFAULT_CONNECT_TIMEOUT,
     maxResponseBytes: Long = OpenAiClient.DEFAULT_MAX_RESPONSE_BYTES,
     reasoning: ReasoningConfig? = null,
+    // #2479 part 2 — DeepSeek inherits the OpenAI-compatible `tool_choice`
+    // wire shape verbatim. Pass-through ctor param so the agentic loop can
+    // wire `agent.toolChoice` the same way for both providers.
+    toolChoice: ToolChoice = ToolChoice.Auto,
 ) : OpenAiClient(
     apiKey = apiKey,
     model = model,
@@ -32,6 +36,7 @@ open class DeepSeekClient(
     providerName = "deepseek",
     providerLabel = "DeepSeek",
     reasoning = reasoning,
+    toolChoice = toolChoice,
 ) {
     /**
      * #2409 — by default DeepSeek thinking is disabled (preserves prior

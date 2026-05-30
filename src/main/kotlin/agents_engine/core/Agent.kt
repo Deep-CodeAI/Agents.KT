@@ -5,6 +5,7 @@ import agents_engine.model.BudgetConfig
 import agents_engine.model.BudgetReason
 import agents_engine.model.CacheBuilder
 import agents_engine.model.CacheConfig
+import agents_engine.model.ToolChoice
 import agents_engine.model.ModelBuilder
 import agents_engine.model.ModelConfig
 import agents_engine.model.OnErrorBuilder
@@ -88,6 +89,16 @@ class Agent<IN, OUT>(
      * defs cached, conversation rolling off. Override via `caching { }`.
      */
     var cacheConfig: CacheConfig = CacheConfig()
+        private set
+
+    /**
+     * #2479 part 2 — provider-neutral tool-choice control. Default
+     * [ToolChoice.Auto] preserves pre-#2479-pt2 behaviour (the field is
+     * omitted from the request body). Set via `agent { toolChoice =
+     * ToolChoice.Required }` or `toolChoice = ToolChoice.Specific("write")`.
+     * Adapters translate per provider; see [ToolChoice] for the wire table.
+     */
+    var toolChoice: ToolChoice = ToolChoice.Auto
         private set
     private val _toolMap: MutableMap<String, ToolDef> = mutableMapOf()
     private val _toolMapView: Map<String, ToolDef> = java.util.Collections.unmodifiableMap(_toolMap)
@@ -277,6 +288,20 @@ class Agent<IN, OUT>(
         val builder = CacheBuilder()
         builder.block()
         cacheConfig = builder.build()
+    }
+
+    /**
+     * #2479 part 2 — DSL slot for vendor-neutral [ToolChoice]. Used as
+     * `agent { toolChoice(ToolChoice.Required) }` or `toolChoice(ToolChoice
+     * .Specific("write_file"))`. Default is [ToolChoice.Auto] which preserves
+     * pre-#2479-pt2 wire behaviour (field omitted from the request body).
+     *
+     * [ToolChoice.Specific.name] validation is deferred to `validate()` so
+     * the tool registry is fully populated before we check membership.
+     */
+    fun toolChoice(choice: ToolChoice) {
+        checkNotFrozen()
+        toolChoice = choice
     }
 
     fun onToolUse(block: (name: String, args: Map<String, Any?>, result: Any?) -> Unit) {
@@ -858,6 +883,17 @@ class Agent<IN, OUT>(
         require(unknownAuto.isEmpty()) {
             "Agent \"$name\" auto-tools reference unknown tools: $unknownAuto. " +
                 "Available: ${toolMap.keys}"
+        }
+        // #2479 part 2 — fail-fast on ToolChoice.Specific naming a tool that
+        // isn't registered on the agent. Same philosophy as the skill / auto
+        // tool name checks above: typos surface at construction, not as a
+        // runtime API error from the provider after the first turn.
+        val specific = (toolChoice as? ToolChoice.Specific)?.name
+        if (specific != null) {
+            require(specific in toolMap) {
+                "Agent \"$name\" toolChoice is Specific(\"$specific\") but that tool is not registered. " +
+                    "Available: ${toolMap.keys}"
+            }
         }
         // Freeze skills so the agent's contract (allowlist composition, dispatch)
         // can't drift after construction via a held Skill reference. See #668.

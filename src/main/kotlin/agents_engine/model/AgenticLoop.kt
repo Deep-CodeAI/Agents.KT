@@ -176,7 +176,7 @@ internal suspend fun <IN> executeAgentic(
         agent.manifestHash?.let { "agents-kt:${agent.name}:${it.take(12)}" }
             ?: "agents-kt:${agent.name}"
     } else null
-    val client = config.client ?: defaultClientFor(config, allToolDefs, cacheRoutingKey)
+    val client = config.client ?: defaultClientFor(config, allToolDefs, cacheRoutingKey, agent.toolChoice)
     val constrainedOutputSchema = constrainedOutputSchemaFor(agent.outType, skill, client)
 
     val hasUntrustedTools = allToolDefs.any { it.untrustedOutput }
@@ -320,6 +320,48 @@ internal suspend fun <IN> executeAgentic(
         listener(reason, usedPercent)
     }
 
+    // #2764 — extracted Checkpoint capture-and-throw helper. Mirrors the
+    // existing TOOL_CALLS Checkpoint behavior (#2749) at every cap site
+    // touched by #2750's broadened Extend coverage. Captures the in-flight
+    // SessionSnapshot at the turn boundary BEFORE the would-be breach,
+    // delivers it via `onTurnCheckpoint` (if registered), and throws
+    // [BudgetCheckpointException] so the caller can resume later via
+    // `invokeSuspendResuming(input, resumeFrom = exception.snapshot)`.
+    //
+    // #2755 — the memory slice in the snapshot is per-agent (not the whole
+    // bank), so a shared-workspace topology resume doesn't disturb other
+    // agents' slots. Same contract as the turn-boundary checkpoint at the
+    // end of each loop iteration.
+    fun checkpointAndThrow(reason: BudgetReason, currentLimit: Int): Nothing {
+        if (onTurnCheckpoint == null) {
+            // No place to deliver the snapshot — Stop semantics. Matches the
+            // pre-#2764 TOOL_CALLS Checkpoint fallback.
+            throw BudgetExceededException(
+                "Agent '${agent.name}' exceeded $reason cap ($currentLimit)",
+                reason,
+            )
+        }
+        val snapshot = agents_engine.core.SessionSnapshot(
+            messages = messages.toList(),
+            turns = turns,
+            toolCalls = toolCalls,
+            toolCallLimit = toolCallLimit,
+            tokensUsed = cumulativeUsage,
+            memory = agent.memoryBank?.let { b ->
+                b.snapshotForAgent(agent.name)?.let { v -> mapOf(agent.name to v) }
+            } ?: emptyMap(),
+            requestId = runtimeContext.requestId,
+            sessionId = runtimeContext.sessionId,
+            manifestHash = agent.manifestHash,
+        )
+        onTurnCheckpoint.invoke(snapshot)
+        throw BudgetCheckpointException(
+            snapshot = snapshot,
+            reason = reason,
+            currentLimit = currentLimit,
+        )
+    }
+
     while (true) {
         val elapsedNanos = System.nanoTime() - invocationStartNanos
         if (elapsedNanos >= durationLimitNanos) {
@@ -333,6 +375,9 @@ internal suspend fun <IN> executeAgentic(
             if (newMillis != null && newMillis > currentMillis) {
                 durationLimitNanos = newMillis.toLong() * 1_000_000L
                 firedThresholds.remove(BudgetReason.DURATION)
+            } else if (decision == BudgetDecision.Checkpoint) {
+                // #2764 — DURATION Checkpoint mirrors TOOL_CALLS Checkpoint.
+                checkpointAndThrow(BudgetReason.DURATION, currentMillis)
             } else {
                 throw BudgetExceededException(
                     "Agent '${agent.name}' exceeded duration budget of ${budget.maxDuration}",
@@ -347,6 +392,9 @@ internal suspend fun <IN> executeAgentic(
             if (newLimit != null && newLimit > turnLimit) {
                 turnLimit = newLimit
                 firedThresholds.remove(BudgetReason.TURNS)
+            } else if (decision == BudgetDecision.Checkpoint) {
+                // #2764 — TURNS Checkpoint mirrors TOOL_CALLS Checkpoint.
+                checkpointAndThrow(BudgetReason.TURNS, turnLimit)
             } else {
                 throw BudgetExceededException(
                     "Agent '${agent.name}' exceeded budget of $turnLimit turns",
@@ -450,6 +498,9 @@ internal suspend fun <IN> executeAgentic(
                     if (newLimit != null && newLimit > cap) {
                         tokenLimit = newLimit
                         firedThresholds.remove(BudgetReason.TOKENS)
+                    } else if (decision == BudgetDecision.Checkpoint) {
+                        // #2764 — TOKENS Checkpoint mirrors TOOL_CALLS Checkpoint.
+                        checkpointAndThrow(BudgetReason.TOKENS, cap)
                     } else {
                         throw BudgetExceededException(
                             "Agent '${agent.name}' exceeded token budget of $cap (used $totalTokens)",
@@ -494,37 +545,13 @@ internal suspend fun <IN> executeAgentic(
                             toolCallLimit = newLimit
                             // Re-arm the pre-cap warning so it fires again toward the new cap.
                             firedThresholds.remove(BudgetReason.TOOL_CALLS)
-                        } else if (
-                            decision == agents_engine.model.BudgetDecision.Checkpoint &&
-                            onTurnCheckpoint != null
-                        ) {
-                            // Build a checkpoint of the in-flight state at the
-                            // turn boundary BEFORE the would-be cap breach.
-                            // messages here include the assistant tool-calls turn
-                            // that triggered the breach but NONE of its tool results
-                            // have run yet — resume re-enters at that same turn.
-                            val snapshot = agents_engine.core.SessionSnapshot(
-                                messages = messages.toList(),
-                                turns = turns,
-                                toolCalls = toolCalls,
-                                toolCallLimit = toolCallLimit,
-                                tokensUsed = cumulativeUsage,
-                                memory = agent.memoryBank?.entries() ?: emptyMap(),
-                                requestId = runtimeContext.requestId,
-                                sessionId = runtimeContext.sessionId,
-                                manifestHash = agent.manifestHash,
-                            )
-                            onTurnCheckpoint.invoke(snapshot)
-                            throw BudgetCheckpointException(
-                                snapshot = snapshot,
-                                reason = BudgetReason.TOOL_CALLS,
-                                currentLimit = toolCallLimit,
-                            )
+                        } else if (decision == agents_engine.model.BudgetDecision.Checkpoint) {
+                            // #2749 / #2764 — capture and throw via the shared
+                            // helper. Falls back to BudgetExceededException
+                            // when onTurnCheckpoint is null (Stop semantics).
+                            checkpointAndThrow(BudgetReason.TOOL_CALLS, toolCallLimit)
                         } else {
-                            // Either no handler, Stop, an Extend that didn't raise
-                            // the limit, or Checkpoint without an onTurnCheckpoint
-                            // hook to deliver the snapshot to. All map to Stop
-                            // semantics — throw the regular breach exception.
+                            // No handler, Stop, or Extend that didn't raise the limit.
                             throw BudgetExceededException(
                                 "Agent '${agent.name}' exceeded tool-call budget of $toolCallLimit",
                                 BudgetReason.TOOL_CALLS,
@@ -548,6 +575,9 @@ internal suspend fun <IN> executeAgentic(
                             val newLimit = (decision as? BudgetDecision.Extend)?.newLimit
                             if (newLimit != null && newLimit > cap) {
                                 consecutiveSameToolLimit = newLimit
+                            } else if (decision == BudgetDecision.Checkpoint) {
+                                // #2764 — CONSECUTIVE_TOOL Checkpoint mirrors TOOL_CALLS.
+                                checkpointAndThrow(BudgetReason.CONSECUTIVE_TOOL, cap)
                             } else {
                                 throw BudgetExceededException(
                                     "Agent '${agent.name}' invoked tool '${call.name}' $consecutiveSameTool times in a row (cap: $cap)",
@@ -1057,6 +1087,10 @@ private fun defaultClientFor(
     config: ModelConfig,
     tools: List<ToolDef>,
     promptCacheKey: String? = null,
+    // #2479 part 2 — agent.toolChoice flows through each adapter ctor. The
+    // adapters translate to their provider's wire shape (or no-op + warn on
+    // Ollama, which has no native tool_choice).
+    toolChoice: ToolChoice = ToolChoice.Auto,
 ): ModelClient =
     when (config.provider) {
         ModelProvider.OLLAMA -> OllamaClient(
@@ -1066,6 +1100,7 @@ private fun defaultClientFor(
             temperature = config.temperature,
             tools = tools,
             reasoning = config.reasoning,
+            toolChoice = toolChoice,
         )
         ModelProvider.ANTHROPIC -> ClaudeClient(
             apiKey = config.apiKey
@@ -1076,6 +1111,7 @@ private fun defaultClientFor(
             tools = tools,
             baseUrl = config.anthropicBaseUrl,
             reasoning = config.reasoning,
+            toolChoice = toolChoice,
         )
         ModelProvider.OPENAI -> OpenAiClient(
             apiKey = config.apiKey
@@ -1089,6 +1125,7 @@ private fun defaultClientFor(
             // #2659 — OpenAI automatic prefix caching: pass routing key when
             // the agent has caching enabled (computed at the call site).
             promptCacheKey = promptCacheKey,
+            toolChoice = toolChoice,
         )
         ModelProvider.DEEPSEEK -> DeepSeekClient(
             apiKey = config.apiKey
@@ -1099,5 +1136,6 @@ private fun defaultClientFor(
             tools = tools,
             baseUrl = config.deepSeekBaseUrl,
             reasoning = config.reasoning,
+            toolChoice = toolChoice,
         )
     }
