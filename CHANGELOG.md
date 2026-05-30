@@ -4,6 +4,8 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.6.5] — 2026-05-30
+
 ### Fixed — Hardcoded 60s LLM request timeout killed long Sonnet turns (#2850)
 
 - **`ClaudeClient` / `OpenAiClient` / `DeepSeekClient` / `OllamaClient`** — bumped `DEFAULT_REQUEST_TIMEOUT` from `60.seconds` to `300.seconds`. Field report against 0.6.4 showed long Sonnet turns (multi-step agentic loops with extended thinking) consistently breached the 60s cap on the JDK HttpClient, surfacing as `HttpTimeoutException: request timed out` and tearing down the streaming `Flow`. New floor matches what production agents actually need; 0.6.5 callers see no behavior change unless they were silently relying on the truncation. `DEFAULT_CONNECT_TIMEOUT` stays at `10.seconds` — healthy networks never spend that long on TCP connect.
