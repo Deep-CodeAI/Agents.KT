@@ -19,6 +19,35 @@ import java.util.concurrent.atomic.AtomicLong
  * See `src/main/resources/internals-agent/mcp/McpClient.md`
  * (#1837 / #1880).
  */
+// #2800 — small dedup helpers used by every MCP RPC endpoint that follows
+// the same "result.<key> is a List<Map>" shape (listPrompts, listResources,
+// loadTools) or the same "join all text blocks with \n" shape (getPrompt,
+// readResource, call).
+private fun resultArray(result: Any?, key: String): List<*> {
+    val map = result as? Map<*, *> ?: return emptyList<Any?>()
+    return map[key] as? List<*> ?: emptyList<Any?>()
+}
+
+private fun joinTextContent(blocks: List<*>, contentKey: String = "text"): String =
+    blocks.mapNotNull { block ->
+        (block as? Map<*, *>)?.let { it[contentKey] as? String }
+    }.joinToString("\n")
+
+private fun prefixed(prefix: String?, name: String): String =
+    if (prefix != null) "$prefix.$name" else name
+
+private fun makeMcpSkill(
+    name: String,
+    description: String,
+    impl: (Map<String, Any?>) -> String,
+): agents_engine.core.Skill<Map<String, Any?>, String> =
+    agents_engine.core.Skill<Map<String, Any?>, String>(
+        name = name,
+        description = description,
+        inType = Map::class,
+        outType = String::class,
+    ).also { skill -> skill.implementedBy(impl) }
+
 class McpClient internal constructor(private val transport: McpTransport) : AutoCloseable {
 
     private var toolDescriptors: List<McpToolDescriptor> = emptyList()
@@ -108,31 +137,22 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
      * Both surfaces ship; consumers pick the shape that matches their
      * agent design.
      */
-    fun toolSkills(prefix: String? = null): List<agents_engine.core.Skill<Map<String, Any?>, String>> = toolDescriptors.map { t ->
-        val displayName = if (prefix != null) "$prefix.${t.name}" else t.name
-        agents_engine.core.Skill<Map<String, Any?>, String>(
-            name = displayName,
-            description = describeForLlm(t),
-            inType = Map::class,
-            outType = String::class,
-        ).also { skill ->
-            skill.implementedBy { args -> call(t.name, args)?.toString() ?: "" }
+    fun toolSkills(prefix: String? = null): List<agents_engine.core.Skill<Map<String, Any?>, String>> =
+        toolDescriptors.map { t ->
+            makeMcpSkill(prefixed(prefix, t.name), describeForLlm(t)) { args ->
+                call(t.name, args)?.toString() ?: ""
+            }
         }
-    }
 
     /**
      * #1796 — fetch prompt listings from the server (`prompts/list`).
      * Returns the raw `McpPromptInfo` records; for the Skill view use
      * [promptSkills].
      */
-    fun listPrompts(): List<McpPromptInfo> {
-        val result = post("prompts/list", emptyMap<String, Any?>())
-        val resultMap = result as? Map<*, *> ?: return emptyList()
-        val promptsList = resultMap["prompts"] as? List<*> ?: return emptyList()
-        return promptsList.mapNotNull { raw ->
+    fun listPrompts(): List<McpPromptInfo> =
+        resultArray(post("prompts/list", emptyMap<String, Any?>()), "prompts").mapNotNull { raw ->
             val m = raw as? Map<*, *> ?: return@mapNotNull null
             val name = m["name"] as? String ?: return@mapNotNull null
-            val description = m["description"] as? String
             val args = (m["arguments"] as? List<*>)?.mapNotNull { a ->
                 val argMap = a as? Map<*, *> ?: return@mapNotNull null
                 val argName = argMap["name"] as? String ?: return@mapNotNull null
@@ -145,11 +165,10 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
             McpPromptInfo(
                 name = name,
                 title = m["title"] as? String,
-                description = description,
+                description = m["description"] as? String,
                 arguments = args,
             )
         }
-    }
 
     /**
      * #1796 — render a server-side prompt template (`prompts/get`).
@@ -161,12 +180,13 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
         val result = post("prompts/get", mapOf("name" to name, "arguments" to arguments))
         val resultMap = result as? Map<*, *>
             ?: error("prompts/get returned non-object: $result")
-        val messages = resultMap["messages"] as? List<*> ?: emptyList<Any?>()
-        return messages.mapNotNull { msg ->
-            val m = msg as? Map<*, *> ?: return@mapNotNull null
-            val content = m["content"] as? Map<*, *> ?: return@mapNotNull null
-            content["text"] as? String
-        }.joinToString("\n")
+        // #2800 — prompts/get nests `text` one level deeper than tools/call:
+        // messages[].content.text instead of messages[].text. Pull the
+        // content map per message, then reuse joinTextContent.
+        val texts = resultArray(resultMap, "messages").mapNotNull { msg ->
+            (msg as? Map<*, *>)?.get("content") as? Map<*, *>
+        }
+        return joinTextContent(texts)
     }
 
     /**
@@ -175,30 +195,21 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
      * `implementedBy` invokes [getPrompt] with the call-time args and
      * returns the rendered text.
      */
-    fun promptSkills(prefix: String? = null): List<agents_engine.core.Skill<Map<String, Any?>, String>> {
-        return listPrompts().map { info ->
-            val displayName = if (prefix != null) "$prefix.${info.name}" else info.name
-            agents_engine.core.Skill<Map<String, Any?>, String>(
-                name = displayName,
+    fun promptSkills(prefix: String? = null): List<agents_engine.core.Skill<Map<String, Any?>, String>> =
+        listPrompts().map { info ->
+            makeMcpSkill(
+                name = prefixed(prefix, info.name),
                 description = info.description ?: "MCP prompt ${info.name}",
-                inType = Map::class,
-                outType = String::class,
-            ).also { skill ->
-                skill.implementedBy { args -> getPrompt(info.name, args) }
-            }
+            ) { args -> getPrompt(info.name, args) }
         }
-    }
 
     /**
      * #1810 — fetch resource listings from the server (`resources/list`).
      * Returns the raw `McpResourceInfo` records. For the Skill view, use
      * [resourceSkills].
      */
-    fun listResources(): List<McpResourceInfo> {
-        val result = post("resources/list", emptyMap<String, Any?>())
-        val resultMap = result as? Map<*, *> ?: return emptyList()
-        val resourcesList = resultMap["resources"] as? List<*> ?: return emptyList()
-        return resourcesList.mapNotNull { raw ->
+    fun listResources(): List<McpResourceInfo> =
+        resultArray(post("resources/list", emptyMap<String, Any?>()), "resources").mapNotNull { raw ->
             val m = raw as? Map<*, *> ?: return@mapNotNull null
             val uri = m["uri"] as? String ?: return@mapNotNull null
             val name = m["name"] as? String ?: return@mapNotNull null
@@ -211,7 +222,6 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
                 size = (m["size"] as? Number)?.toLong(),
             )
         }
-    }
 
     /**
      * #1810 — read a resource's content (`resources/read`). Joins all
@@ -223,11 +233,7 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
         val result = post("resources/read", mapOf("uri" to uri))
         val resultMap = result as? Map<*, *>
             ?: error("resources/read returned non-object: $result")
-        val contents = resultMap["contents"] as? List<*> ?: emptyList<Any?>()
-        return contents.mapNotNull { c ->
-            val m = c as? Map<*, *> ?: return@mapNotNull null
-            m["text"] as? String
-        }.joinToString("\n")
+        return joinTextContent(resultArray(resultMap, "contents"))
     }
 
     /**
@@ -237,30 +243,20 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
      * captured URI. Skill args are ignored — resources are addressed
      * by URI, not by call-time parameters.
      */
-    fun resourceSkills(prefix: String? = null): List<agents_engine.core.Skill<Map<String, Any?>, String>> {
-        return listResources().map { info ->
-            val displayName = if (prefix != null) "$prefix.${info.name}" else info.name
-            agents_engine.core.Skill<Map<String, Any?>, String>(
-                name = displayName,
+    fun resourceSkills(prefix: String? = null): List<agents_engine.core.Skill<Map<String, Any?>, String>> =
+        listResources().map { info ->
+            makeMcpSkill(
+                name = prefixed(prefix, info.name),
                 description = info.description ?: "MCP resource ${info.uri}",
-                inType = Map::class,
-                outType = String::class,
-            ).also { skill ->
-                skill.implementedBy { _ -> readResource(info.uri) }
-            }
+            ) { _ -> readResource(info.uri) }
         }
-    }
 
     fun call(toolName: String, args: Map<String, Any?>): Any? {
         val result = post("tools/call", mapOf("name" to toolName, "arguments" to args))
         val resultMap = result as? Map<*, *>
             ?: error("tools/call returned non-object: $result")
-        val content = resultMap["content"] as? List<*>
-            ?: error("tools/call result missing 'content' array: $resultMap")
         val isError = resultMap["isError"] as? Boolean ?: false
-        val text = content.mapNotNull { block ->
-            (block as? Map<*, *>)?.let { it["text"] as? String }
-        }.joinToString("\n")
+        val text = joinTextContent(resultArray(result, "content"))
         if (isError) error("MCP tool '$toolName' failed: $text")
         return text
     }
