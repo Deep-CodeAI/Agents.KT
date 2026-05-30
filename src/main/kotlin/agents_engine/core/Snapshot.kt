@@ -152,7 +152,11 @@ internal object SnapshotJson {
     private fun encodeTokens(t: TokenUsage?): String =
         if (t == null) "null"
         else """{"prompt":${t.promptTokens},"completion":${t.completionTokens},""" +
-            """"cached":${t.cachedInputTokens ?: "null"},"reasoning":${t.reasoningTokens ?: "null"},""" +
+            """"cached":${t.cachedInputTokens ?: "null"},""" +
+            // #2867 — cacheWriteTokens was missing from snapshot encode pre-#2867;
+            // cost audits and cumulative billing drifted across resume.
+            """"cacheWrite":${t.cacheWriteTokens ?: "null"},""" +
+            """"reasoning":${t.reasoningTokens ?: "null"},""" +
             """"provider":${t.provider.toJsonString()},"model":${t.model.toJsonString()}}"""
 
     private fun encodeMessage(m: LlmMessage): String = buildString {
@@ -209,6 +213,9 @@ internal object SnapshotJson {
             promptTokens = prompt,
             completionTokens = completion,
             cachedInputTokens = (t["cached"] as? Number)?.toInt(),
+            // #2867 — cacheWrite added to the wire shape; back-compat with
+            // pre-#2867 snapshots is `null` (key absent → cast returns null).
+            cacheWriteTokens = (t["cacheWrite"] as? Number)?.toInt(),
             provider = t["provider"]?.toString() ?: "unknown",
             model = t["model"]?.toString() ?: "unknown",
             reasoningTokens = (t["reasoning"] as? Number)?.toInt(),
