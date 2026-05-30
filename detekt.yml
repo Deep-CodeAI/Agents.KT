@@ -1,0 +1,118 @@
+# #2807 — Agents.KT detekt configuration. Tuned for this codebase.
+# Built on detekt's default config (buildUponDefaultConfig=true in
+# build.gradle.kts); only the deltas live here. Existing violations
+# are frozen in detekt-baseline.xml — new code is held to the rules.
+#
+# Rule categories enabled for the maintainability audit (#2790):
+# - complexity (LongMethod, LargeClass, CyclomaticComplexMethod,
+#   NestedBlockDepth, TooGenericExceptionCaught)
+# - exceptions (SwallowedException, TooGenericExceptionCaught)
+# - style (MagicNumber, UnusedPrivateMember, ForbiddenComment)
+#
+# Many built-in defaults are intentionally OFF for this codebase
+# (e.g. NoUnusedImports / ImportOrdering — we don't fight these in
+# review). The list below documents the active opinionated tuning.
+
+build:
+  maxIssues: 0
+
+console-reports:
+  active: true
+  exclude:
+    - ProjectStatisticsReport
+    - FileBasedFindingsReport
+    - LiteFindingsReport
+
+complexity:
+  active: true
+  LongMethod:
+    active: true
+    threshold: 80
+  LargeClass:
+    active: true
+    threshold: 800
+  CyclomaticComplexMethod:
+    active: true
+    threshold: 20
+    ignoreSingleWhenExpression: true
+    ignoreSimpleWhenEntries: true
+  NestedBlockDepth:
+    active: true
+    threshold: 6
+  TooManyFunctions:
+    active: false
+  LongParameterList:
+    active: false
+
+exceptions:
+  active: true
+  SwallowedException:
+    active: true
+    ignoredExceptionTypes:
+      - InterruptedException
+      - NumberFormatException
+      - ParseException
+      - MalformedURLException
+  TooGenericExceptionCaught:
+    active: true
+    exceptionNames:
+      - Error
+      - Throwable
+  TooGenericExceptionThrown:
+    active: true
+    exceptionNames:
+      - Error
+      - Throwable
+      - RuntimeException
+
+style:
+  active: true
+  MagicNumber:
+    active: true
+    ignoreNumbers:
+      - "-1"
+      - "0"
+      - "1"
+      - "2"
+      - "10"
+      - "100"
+      - "1000"
+    ignoreHashCodeFunction: true
+    ignoreAnnotation: true
+    ignoreEnums: true
+    ignoreCompanionObjectPropertyDeclaration: true
+    ignoreNamedArgument: true
+    ignoreConstantDeclaration: true
+    ignoreRanges: true
+  UnusedPrivateMember:
+    active: true
+  ForbiddenComment:
+    active: false  # detekt 1.23 schema for `comments` is fiddly; revisit on next bump.
+  WildcardImport:
+    active: false
+  ReturnCount:
+    active: false
+  NewLineAtEndOfFile:
+    active: false
+
+naming:
+  active: true
+  FunctionNaming:
+    active: true
+  TopLevelPropertyNaming:
+    active: false
+  EnumNaming:
+    active: false
+
+empty-blocks:
+  active: true
+  EmptyFunctionBlock:
+    active: true
+    ignoreOverridden: true
+
+potential-bugs:
+  active: true
+  UnreachableCode:
+    active: true
+  AvoidReferentialEquality:
+    active: true

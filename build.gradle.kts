@@ -3,6 +3,12 @@ plugins {
     `maven-publish`
     signing
     id("info.solidsoft.pitest") version "1.19.0"
+    // #2807 — detekt static analysis. Catches the categories the manual
+    // audit under epic #2790 surfaced (magic numbers, dead code, over-
+    // broad catch, long methods, high complexity, nested blocks). The
+    // detekt-baseline.xml freezes the current violation count so the
+    // build stays green on existing code; new violations fail.
+    id("io.gitlab.arturbosch.detekt") version "1.23.7"
 }
 
 group = "ai.deep-code"
@@ -77,6 +83,33 @@ dependencies {
 
 kotlin {
     jvmToolchain(21)
+}
+
+// #2807 — detekt config. The baseline freezes existing violations so
+// the build stays green on this PR; new code must pass clean. The
+// rule set is intentionally narrow at first — the audit (#2790)
+// flagged exactly these categories; broader rules can be enabled in
+// follow-up tickets as the codebase converges.
+detekt {
+    toolVersion = "1.23.7"
+    config.setFrom(rootProject.file("detekt.yml"))
+    buildUponDefaultConfig = true
+    baseline = rootProject.file("detekt-baseline.xml")
+    autoCorrect = false
+}
+
+tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+    jvmTarget = "21"
+    reports {
+        html.required.set(true)
+        xml.required.set(true)
+        sarif.required.set(false)
+        md.required.set(false)
+    }
+}
+
+tasks.withType<io.gitlab.arturbosch.detekt.DetektCreateBaselineTask>().configureEach {
+    jvmTarget = "21"
 }
 
 // #2806 — single source of truth for the runtime-visible Agents.KT version.
