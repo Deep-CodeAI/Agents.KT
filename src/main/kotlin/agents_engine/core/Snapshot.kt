@@ -51,6 +51,15 @@ data class SessionSnapshot(
     val requestId: String,
     val sessionId: String?,
     val manifestHash: String?,
+    /**
+     * #2488 — when an interrupted tool call is pending resume, this carries
+     * the call_id whose result the runtime will synthesise from
+     * `invokeSuspendResuming(..., resumeWith = ...)`. Null on a normal
+     * turn-boundary snapshot. Serialised through [SnapshotJson] so a
+     * snapshot persisted via [FileSnapshotStore] across a process restart
+     * still resumes deterministically.
+     */
+    val pendingInterruptCallId: String? = null,
 )
 
 /**
@@ -127,6 +136,9 @@ internal object SnapshotJson {
         append(""""requestId":${s.requestId.toJsonString()},""")
         append(""""sessionId":${s.sessionId?.toJsonString() ?: "null"},""")
         append(""""manifestHash":${s.manifestHash?.toJsonString() ?: "null"},""")
+        // #2488 — pendingInterruptCallId rides on the wire so a process-
+        // restart resume still knows which call to synthesise the result for.
+        append(""""pendingInterruptCallId":${s.pendingInterruptCallId?.toJsonString() ?: "null"},""")
         append(""""turns":${s.turns},"toolCalls":${s.toolCalls},"toolCallLimit":${s.toolCallLimit},""")
         append(""""tokens":${encodeTokens(s.tokensUsed)},""")
         append(""""memory":{""")
@@ -168,6 +180,7 @@ internal object SnapshotJson {
             requestId = root["requestId"]?.toString() ?: "",
             sessionId = root["sessionId"] as? String,
             manifestHash = root["manifestHash"] as? String,
+            pendingInterruptCallId = root["pendingInterruptCallId"] as? String,
         )
     }
 

@@ -601,6 +601,22 @@ class Agent<IN, OUT>(
         input: IN,
         resumeFrom: agents_engine.core.SessionSnapshot? = null,
         onTurnCheckpoint: ((agents_engine.core.SessionSnapshot) -> Unit)? = null,
+        /**
+         * #2488 — typed resume input for the HITL interrupt primitive. When
+         * [resumeFrom] carries `pendingInterruptCallId`, the runtime synthesises
+         * a tool result message from this value (rendered via
+         * `toLlmInput` so typed `@Generable` replies become JSON) before the
+         * loop resumes. Required when the snapshot has a pending interrupt;
+         * ignored otherwise.
+         */
+        resumeWith: Any? = null,
+        /**
+         * #2754 / #2488 — opt out of the manifest-hash restore guard. False
+         * (default) refuses to resume a snapshot whose manifest differs from
+         * the current agent's. True lets the resume proceed (caller owns
+         * migration semantics).
+         */
+        allowManifestMismatch: Boolean = false,
     ): OUT =
         withAgentRuntimeContext(newRuntimeContext()) {
             invokeSuspendForSession(
@@ -608,6 +624,8 @@ class Agent<IN, OUT>(
                 emitter = null,
                 resumeFrom = resumeFrom,
                 onTurnCheckpoint = onTurnCheckpoint,
+                resumeWith = resumeWith,
+                allowManifestMismatch = allowManifestMismatch,
             ) { /* no-op onSkillStarted */ }
         }
 
@@ -650,9 +668,19 @@ class Agent<IN, OUT>(
          * call) with the current resumable state. Also fires when an
          * `onBudgetExceeded` handler returns [agents_engine.model.BudgetDecision.Checkpoint]
          * — that path then throws [agents_engine.model.BudgetCheckpointException]
-         * carrying the same snapshot.
+         * carrying the same snapshot. #2488 — fires once more at the
+         * interrupt site before throwing [agents_engine.core.AgentInterruptException].
          */
         onTurnCheckpoint: ((agents_engine.core.SessionSnapshot) -> Unit)? = null,
+        /**
+         * #2488 — typed resume input for HITL interrupt. See
+         * [invokeSuspendResuming.resumeWith].
+         */
+        resumeWith: Any? = null,
+        /**
+         * #2754 — opt out of the snapshot manifest-hash restore guard.
+         */
+        allowManifestMismatch: Boolean = false,
         onSkillCompleted: (agents_engine.model.TokenUsage?) -> Unit = { /* no-op */ },
         onSkillStarted: (String) -> Unit,
     ): OUT {
@@ -679,6 +707,8 @@ class Agent<IN, OUT>(
                     runtimeContext = runtimeContext,
                     resumeFrom = resumeFrom,
                     onTurnCheckpoint = onTurnCheckpoint,
+                    resumeWith = resumeWith,
+                    allowManifestMismatch = allowManifestMismatch,
                 )
                 // #1740: surface cumulative usage on the way out. Non-agentic
                 // skills don't go through executeAgentic, so onSkillCompleted
