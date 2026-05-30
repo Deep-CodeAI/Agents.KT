@@ -107,13 +107,17 @@ fun <IN, OUT> Forum<IN, OUT>.session(input: IN): AgentSession<OUT> {
                 channel.trySend(AgentEvent.Completed(captain.name, verdict, null))
                 channel.close()
                 result.complete(verdict)
+            } catch (timeout: TimeoutCancellationException) {
+                // #2863 — caught BEFORE CancellationException (subtype).
+                channel.trySend(AgentEvent.Failed(captain.name, timeout))
+                channel.close()
+                result.completeExceptionally(timeout)
+            } catch (cancel: CancellationException) {
+                // #2863 — bare cancellation propagates per structured concurrency.
+                result.completeExceptionally(cancel)
+                channel.close(cancel)
+                throw cancel
             } catch (t: Throwable) {
-                // #2863 — propagate bare cancellation; keep timeout on Failed.
-                if (t is CancellationException && t !is TimeoutCancellationException) {
-                    result.completeExceptionally(t)
-                    channel.close(t)
-                    throw t
-                }
                 channel.trySend(AgentEvent.Failed(captain.name, t))
                 channel.close()
                 result.completeExceptionally(t)

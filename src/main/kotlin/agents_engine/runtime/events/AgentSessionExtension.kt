@@ -88,20 +88,25 @@ fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
                 channel.send(completed)
                 channel.close()
                 result.complete(output)
+            } catch (timeout: TimeoutCancellationException) {
+                // #2863 — TimeoutCancellationException must be caught BEFORE
+                // CancellationException (it extends it). A budget / withTimeout
+                // breach is a real failure consumers must hear about, so it
+                // rides the Failed path.
+                val failed = AgentEvent.Failed(agent.name, timeout, runtimeContext)
+                agent.fireAgentEvent(failed)
+                channel.send(failed)
+                channel.close()
+                result.completeExceptionally(timeout)
+            } catch (cancel: CancellationException) {
+                // #2863 — bare CancellationException means the collector / scope
+                // was cancelled. Propagate per structured-concurrency contract
+                // and close the channel WITH the cancel; do NOT emit a
+                // synthetic Failed event.
+                result.completeExceptionally(cancel)
+                channel.close(cancel)
+                throw cancel
             } catch (t: Throwable) {
-                // #2863 — distinguish cancellation from failure. A bare
-                // CancellationException means the collector / surrounding
-                // scope was cancelled; propagate per structured-concurrency
-                // contract and close the channel WITH the cancel so the
-                // consumer's flow surfaces a CancellationException, not a
-                // synthetic Failed event. TimeoutCancellationException is
-                // still a real failure (budget / per-op timeout) and rides
-                // the Failed path so consumers and audit logs see it.
-                if (t is CancellationException && t !is TimeoutCancellationException) {
-                    result.completeExceptionally(t)
-                    channel.close(t)
-                    throw t
-                }
                 val failed = AgentEvent.Failed(agent.name, t, runtimeContext)
                 agent.fireAgentEvent(failed)
                 channel.send(failed)
