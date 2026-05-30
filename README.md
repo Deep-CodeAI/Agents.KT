@@ -289,6 +289,7 @@ Topical guides:
 - [**Wiki**](https://github.com/Deep-CodeAI/Agents.KT/wiki) — expanded learning path and operational guides.
 - [**Skills**](docs/skills.md) — agent skills, knowledge entries, shared catalogs, the lazy-vs-eager context model.
 - [**Model & Tool Calling**](docs/model-and-tools.md) — agentic loop, typed tools via `@Generable`, inline-tool fallback, authorization, skill selection, budget caps.
+- [**Provider Capability Matrix**](docs/providers.md) — what every `ModelProvider` supports: modality input, reasoning, caching, tool-choice, constrained decoding, streaming.
 - [**MCP Integration**](docs/mcp.md) — `mcp { server() }` client, `McpServer.from(agent)`, `McpRunner` standalone.
 - [**MCP Server Hardening**](docs/mcp-server.md) — inbound auth, Host/Origin allowlists, per-client tool policy, and gateway deployment recipes.
 - [**Tool Error Recovery**](docs/error-recovery.md) — `onError { invalidArgs / deserializationError / executionError }`, `RepairResult.Fixed/Retry/Escalated/Unrecoverable`, default vs per-tool handlers.
