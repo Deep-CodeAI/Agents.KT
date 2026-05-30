@@ -4,6 +4,12 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Errata — v0.6.5 release notes overstated document-attachment shipping (#2868)
+
+- The v0.6.5 tagged `RELEASE_NOTES.md` carried an "Added — Document attachments (#2470 slice c)" section claiming PDF / text / markdown routing through Anthropic, OpenAI, Ollama, and DeepSeek. **That section was incorrect.** The shipped code in 0.6.5 (and 0.6.6) routes only `Content.Image` through `agent.invokeWithAttachments(...)`; `Content.Document` is explicitly skipped in `AgenticLoop` (`executeAgentic` filters non-Image variants with a `// Not an image — skip in v1` comment).
+- What 0.6.5 actually shipped on the multimodal axis: `Content` hierarchy (#2466), `ContentRef` + `BlobStore` (#2467), `ToolResult` with audit placeholder rendering for every modality (#2469), **vision input wire path only** (#2470 slice a — Image), typed agent attachments for Image (#2470 slice b), `Files.load` extension-based modality detection across all content types (#Files).
+- What's still deferred: `#2470 slice c` (Document/Audio/Video provider-input adapters). `docs/multimodal.md` has always said this — the drift was only in the tagged release-notes prose. The 0.6.6 `RELEASE_NOTES.md` does not repeat the false claim.
+
 ## [0.6.6] — 2026-05-30
 
 ### Fixed — Session catch swallowed CancellationException as AgentEvent.Failed (#2863)

@@ -53,7 +53,7 @@ sealed interface Content {
 val Content.modality: String   // "text" | "image" | "audio" | "video" | "document"
 ```
 
-Stage 1 (this release): **Image + Document** wired end-to-end through the audit pipeline and the agentic loop's tool-result rendering. **Audio + Video** modelled now and exercised through provider adapters in Stage 2.
+Stage 1 (this release): **Image** wire path (provider input + audit + tool-result rendering) is live. **Document** flows through the audit/`ToolResult` placeholder path but the provider-input adapter (#2470 slice c) is deferred — `agent.invokeWithAttachments(...)` silently skips `Content.Document` today. **Audio + Video** are modelled now and exercised through provider adapters in Stage 2.
 
 ### Closed mime types
 
