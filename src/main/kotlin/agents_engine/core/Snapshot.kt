@@ -60,6 +60,17 @@ data class SessionSnapshot(
      * still resumes deterministically.
      */
     val pendingInterruptCallId: String? = null,
+    /**
+     * #2490 — when `true`, the pending interrupt was triggered by a
+     * `policy { requireHumanApprovalFor(...) }` gate (not by a user
+     * `interrupt()` from inside a tool). On resume, the agentic loop
+     * dispatches by [HumanDecision] type: Approved/Edited run the
+     * underlying tool with original/edited args; Rejected/Responded
+     * synthesise a rejection / response message and skip execution.
+     * Falsey on regular `interrupt()` snapshots, where the runtime
+     * always synthesises the tool result from `resumeWith` directly.
+     */
+    val pendingApprovalGate: Boolean = false,
 )
 
 /**
@@ -139,6 +150,9 @@ internal object SnapshotJson {
         // #2488 — pendingInterruptCallId rides on the wire so a process-
         // restart resume still knows which call to synthesise the result for.
         append(""""pendingInterruptCallId":${s.pendingInterruptCallId?.toJsonString() ?: "null"},""")
+        // #2490 — distinguishes a policy-gate interrupt from a user interrupt
+        // on resume.
+        append(""""pendingApprovalGate":${s.pendingApprovalGate},""")
         append(""""turns":${s.turns},"toolCalls":${s.toolCalls},"toolCallLimit":${s.toolCallLimit},""")
         append(""""tokens":${encodeTokens(s.tokensUsed)},""")
         append(""""memory":{""")
@@ -181,6 +195,7 @@ internal object SnapshotJson {
             sessionId = root["sessionId"] as? String,
             manifestHash = root["manifestHash"] as? String,
             pendingInterruptCallId = root["pendingInterruptCallId"] as? String,
+            pendingApprovalGate = (root["pendingApprovalGate"] as? Boolean) ?: false,
         )
     }
 

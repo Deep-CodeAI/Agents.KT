@@ -249,7 +249,64 @@ internal suspend fun <IN> executeAgentic(
         // the wire, which the provider may reject. Documented in
         // Interrupt.kt.
         val pendingCallId = resumeFrom.pendingInterruptCallId
-        if (pendingCallId != null) {
+        if (pendingCallId != null && resumeFrom.pendingApprovalGate) {
+            // #2490 — policy-gated approval resume. The model isn't going
+            // to re-emit the gated call; we have to execute it ourselves
+            // (or synthesise a rejection result) here, before re-entering
+            // the while loop.
+            require(resumeWith is agents_engine.core.HumanDecision) {
+                "Resume from a policy approval-gate snapshot requires resumeWith to be a HumanDecision; " +
+                    "got ${resumeWith?.javaClass?.name ?: "null"}"
+            }
+            val decision = resumeWith as agents_engine.core.HumanDecision
+            // Find the pending tool call. Prefer matching by callId; for
+            // synthetic ids ("interrupt-N-M") fall back to the last
+            // tool_call in the last assistant turn.
+            val lastAssistantWithCalls = messages.lastOrNull {
+                it.role == "assistant" && !it.toolCalls.isNullOrEmpty()
+            } ?: error("Policy-gate snapshot has no assistant turn with tool_calls to resume from")
+            val pendingCall = lastAssistantWithCalls.toolCalls!!.find { it.callId == pendingCallId }
+                ?: lastAssistantWithCalls.toolCalls.last()
+            val gateTool = allowedToolMap[pendingCall.name]
+                ?: error("Policy-gate snapshot references tool '${pendingCall.name}' which is not in the active skill's allowlist.")
+            // Fire the ApprovalDecided audit event before we execute (mirrors
+            // the #2489 path for the synthesis branch).
+            val (decisionName, hasPayload) = when (decision) {
+                agents_engine.core.HumanDecision.Approved -> "Approved" to false
+                agents_engine.core.HumanDecision.Rejected -> "Rejected" to false
+                is agents_engine.core.HumanDecision.Edited -> "Edited" to (decision.payload != null)
+                is agents_engine.core.HumanDecision.Responded -> "Responded" to (decision.payload != null)
+            }
+            withAgentRuntimeContext(runtimeContext) {
+                agent.approvalDecidedListener?.invoke(decisionName, hasPayload)
+            }
+            val toolResultText: String = when (decision) {
+                agents_engine.core.HumanDecision.Approved -> {
+                    val r = executeToolWithBudgetHandlingEvents(agent, gateTool, pendingCall, budget, emitter)
+                    if (gateTool.untrustedOutput) wrapUntrustedToolResult(gateTool.name, r)
+                    else r?.toString() ?: "null"
+                }
+                is agents_engine.core.HumanDecision.Edited -> {
+                    @Suppress("UNCHECKED_CAST")
+                    val editedArgs = (decision.payload as? Map<String, Any?>)
+                        ?: error(
+                            "HumanDecision.Edited.payload for tool '${pendingCall.name}' must be Map<String, Any?>; " +
+                                "got ${decision.payload?.javaClass}"
+                        )
+                    val editedCall = pendingCall.copy(arguments = editedArgs)
+                    val r = executeToolWithBudgetHandlingEvents(agent, gateTool, editedCall, budget, emitter)
+                    if (gateTool.untrustedOutput) wrapUntrustedToolResult(gateTool.name, r)
+                    else r?.toString() ?: "null"
+                }
+                agents_engine.core.HumanDecision.Rejected ->
+                    "Approval rejected by human; tool '${pendingCall.name}' was not executed."
+                is agents_engine.core.HumanDecision.Responded -> toLlmInput(decision.payload)
+            }
+            messages.add(LlmMessage("tool", toolResultText))
+            // No counter increment — `toolCalls` in the snapshot already
+            // counted this call (the budget-counter increment happens before
+            // the gate fires).
+        } else if (pendingCallId != null && !resumeFrom.pendingApprovalGate) {
             require(resumeWith != null) {
                 "Snapshot has pendingInterruptCallId=$pendingCallId but resumeWith was not provided. " +
                     "Pass resumeWith = <the human's reply> to invokeSuspendResuming / executeAgentic."
@@ -636,6 +693,39 @@ internal suspend fun <IN> executeAgentic(
                             }
                         }
                     }
+                    // #2490 — policy { requireHumanApprovalFor(...) }. If this
+                    // call's name is in the policy's approval set AND we're
+                    // NOT being resumed from a snapshot that already crossed
+                    // the gate for this exact call, trigger humanApproval{}.
+                    // The resulting PendingInterruptSignal is caught by the
+                    // existing try/catch site below; we mark the snapshot
+                    // with pendingApprovalGate = true so the resume path
+                    // knows to dispatch by HumanDecision (vs the standard
+                    // synthesise-from-resumeWith path of plain interrupts).
+                    val gateAlreadyPassed = resumeFrom?.pendingApprovalGate == true &&
+                        resumeFrom.pendingInterruptCallId == call.callId
+                    if (gateAlreadyPassed) {
+                        require(resumeWith is agents_engine.core.HumanDecision) {
+                            "Resume from a policy approval-gate snapshot requires resumeWith to be a HumanDecision; " +
+                                "got ${resumeWith?.javaClass?.name ?: "null"}"
+                        }
+                    }
+                    val gateDecision: agents_engine.core.HumanDecision? =
+                        if (gateAlreadyPassed) resumeWith as agents_engine.core.HumanDecision else null
+                    // Rejected / Responded short-circuit: the underlying tool
+                    // does NOT run; synthesise a result message and continue.
+                    when (gateDecision) {
+                        agents_engine.core.HumanDecision.Rejected -> {
+                            messages.add(LlmMessage("tool", "Approval rejected by human; tool '${call.name}' was not executed."))
+                            continue
+                        }
+                        is agents_engine.core.HumanDecision.Responded -> {
+                            messages.add(LlmMessage("tool", toLlmInput(gateDecision.payload)))
+                            continue
+                        }
+                        else -> { /* Approved / Edited / null fall through */ }
+                    }
+                    var triggeredByPolicyGate = false
                     val isKnowledge = call.name in knowledgeToolMap
                     val tool = allowedToolMap[call.name]
                     if (tool == null) {
@@ -675,11 +765,41 @@ internal suspend fun <IN> executeAgentic(
                         messages.add(LlmMessage("tool", unknownToolMessage))
                         continue
                     }
-                    var effectiveCall = call
+                    // #2490 — gate-passed Edited: substitute args before the
+                    // executor runs. Approved keeps original args; Edited
+                    // replaces them with the human's modified payload.
+                    val argsAfterGate: Map<String, Any?>? = when (gateDecision) {
+                        is agents_engine.core.HumanDecision.Edited -> {
+                            @Suppress("UNCHECKED_CAST")
+                            (gateDecision.payload as? Map<String, Any?>)
+                                ?: error(
+                                    "HumanDecision.Edited.payload for tool '${call.name}' must be Map<String, Any?>; " +
+                                        "got ${gateDecision.payload?.javaClass}"
+                                )
+                        }
+                        else -> null
+                    }
+                    var effectiveCall = if (argsAfterGate != null) call.copy(arguments = argsAfterGate) else call
                     var denied = false
                     var deniedReason: String? = null
                     val result = try {
-                        when (val decision = agent.decideBeforeToolCall(call.name, call.arguments)) {
+                        // #2490 — fire the policy approval gate INSIDE the
+                        // try so the resulting PendingInterruptSignal is
+                        // caught by the existing #2488 catch (which builds
+                        // the snapshot + throws AgentInterruptException).
+                        // `triggeredByPolicyGate = true` tags this throw so
+                        // the snapshot is marked pendingApprovalGate=true
+                        // (vs a regular user `interrupt()` from inside the
+                        // tool executor, which leaves it false).
+                        if (!gateAlreadyPassed && call.name in agent.policy.approvalRequiredTools) {
+                            triggeredByPolicyGate = true
+                            agents_engine.core.humanApproval {
+                                title = "Approve tool call: ${call.name}"
+                                body = call.arguments
+                            }
+                            // throws — never reaches the when below for this call
+                        }
+                        when (val decision = agent.decideBeforeToolCall(effectiveCall.name, effectiveCall.arguments)) {
                             Decision.Proceed -> executeToolWithBudgetHandlingEvents(
                                 agent, tool, effectiveCall, budget, emitter
                             )
@@ -732,6 +852,12 @@ internal suspend fun <IN> executeAgentic(
                             sessionId = runtimeContext.sessionId,
                             manifestHash = agent.manifestHash,
                             pendingInterruptCallId = effectiveCall.callId ?: "interrupt-${turns}-${toolCalls}",
+                            // #2490 — true when this throw came from the
+                            // policy-driven gate call above (not from a user
+                            // `interrupt()` inside the tool executor). On
+                            // resume the loop dispatches by HumanDecision
+                            // instead of synthesising the result.
+                            pendingApprovalGate = triggeredByPolicyGate,
                         )
                         onTurnCheckpoint?.invoke(snapshot)
                         throw agents_engine.core.AgentInterruptException(

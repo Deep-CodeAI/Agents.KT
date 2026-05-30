@@ -100,6 +100,13 @@ class Agent<IN, OUT>(
      */
     var toolChoice: ToolChoice = ToolChoice.Auto
         private set
+
+    /**
+     * #2490 — declarative policy. Defaults to [Policy.EMPTY] (no
+     * approval gates, no redaction). Override via `policy { }`.
+     */
+    var policy: Policy = Policy.EMPTY
+        private set
     private val _toolMap: MutableMap<String, ToolDef> = mutableMapOf()
     private val _toolMapView: Map<String, ToolDef> = java.util.Collections.unmodifiableMap(_toolMap)
     /**
@@ -320,6 +327,22 @@ class Agent<IN, OUT>(
     fun toolChoice(choice: ToolChoice) {
         checkNotFrozen()
         toolChoice = choice
+    }
+
+    /**
+     * #2490 — declarative `policy { }` DSL. Compiles to existing
+     * enforcement surfaces (humanApproval gate, audit redaction,
+     * manifest entries). See [Policy] for the available knobs.
+     *
+     * Name validation (e.g. `requireHumanApprovalFor` referencing a
+     * tool that's not registered) is deferred to `validate()` so the
+     * tool registry is fully populated before we check membership.
+     */
+    fun policy(block: PolicyBuilder.() -> Unit) {
+        checkNotFrozen()
+        val builder = PolicyBuilder()
+        builder.block()
+        policy = builder.build()
     }
 
     fun onToolUse(block: (name: String, args: Map<String, Any?>, result: Any?) -> Unit) {
@@ -959,6 +982,15 @@ class Agent<IN, OUT>(
                 "Agent \"$name\" toolChoice is Specific(\"$specific\") but that tool is not registered. " +
                     "Available: ${toolMap.keys}"
             }
+        }
+        // #2490 — fail-fast on policy.requireHumanApprovalFor naming a tool
+        // that isn't registered. Same philosophy: typos surface at agent
+        // construction, not as a silent no-op at runtime where the gate
+        // never fires and the dangerous tool runs without approval.
+        val unknownPolicyApproval = policy.approvalRequiredTools.filterNot { it in toolMap }
+        require(unknownPolicyApproval.isEmpty()) {
+            "Agent \"$name\" policy.requireHumanApprovalFor references unknown tools: $unknownPolicyApproval. " +
+                "Available: ${toolMap.keys}"
         }
         // Freeze skills so the agent's contract (allowlist composition, dispatch)
         // can't drift after construction via a held Skill reference. See #668.
