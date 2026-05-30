@@ -26,7 +26,57 @@ data class LlmMessage(
      * unchanged on the wire.
      */
     val cacheHint: CacheHint? = null,
+    /**
+     * #2470 — optional vision input. When non-null and the role is
+     * `"user"`, adapters translate each [ImagePart] into the provider's
+     * native image payload alongside [content]:
+     *
+     *   - Ollama (e.g. qwen3-vl:8b) — `images: [<base64>, ...]` array
+     *     on the user message; [content] stays the text prompt.
+     *   - Anthropic Claude — `content: [{type:"text",...},
+     *     {type:"image", source:{type:"base64", media_type:"image/png",
+     *     data:"<base64>"}}, ...]`.
+     *   - OpenAI — `content: [{type:"text",...},
+     *     {type:"image_url", image_url:{url:"data:image/png;base64,
+     *     <base64>"}}, ...]`.
+     *
+     * Null = no vision parts; wire shape is byte-identical to pre-#2470.
+     * Vision works on the FIRST user turn (most common case for "describe
+     * this image" prompts); subsequent user-turn images compose naturally
+     * if the model supports multi-turn vision.
+     *
+     * Non-user roles ignore this field — system / assistant / tool
+     * messages don't carry images in any provider's API.
+     */
+    val images: List<ImagePart>? = null,
 )
+
+/**
+ * #2470 — base64-encoded image payload for vision input. The caller is
+ * responsible for the encoding so the adapter can splat the bytes onto
+ * the wire without re-encoding per provider. Wire MIME is closed via
+ * the [ImagePart.WireMime] sealed type — `String` mime is intentionally
+ * not accepted in the public ctor.
+ *
+ * Small, allocation-cheap. Equatability: `base64` is a `String`, so
+ * structural equals/hashCode work — unlike `ByteArray`, which uses
+ * identity equals (the trap we avoid by base64-encoding upfront).
+ */
+data class ImagePart(
+    /** Base64-encoded image bytes, no `data:` URL prefix. Adapter formats per-provider. */
+    val base64: String,
+    /** Closed wire MIME — `image/png`, `image/jpeg`, `image/gif`, `image/webp`. */
+    val wireMime: WireMime,
+) {
+    sealed interface WireMime {
+        val value: String
+
+        object Png : WireMime { override val value: String = "image/png" }
+        object Jpeg : WireMime { override val value: String = "image/jpeg" }
+        object Gif : WireMime { override val value: String = "image/gif" }
+        object Webp : WireMime { override val value: String = "image/webp" }
+    }
+}
 
 data class ToolCall(
     val name: String,

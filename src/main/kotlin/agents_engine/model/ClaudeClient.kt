@@ -389,7 +389,26 @@ open class ClaudeClient(
             val cacheControl = if (msg.cacheHint != null && consumeBreakpoint()) cacheControlJson(msg.cacheHint) else null
             when (msg.role) {
                 "user" -> {
-                    if (cacheControl == null) {
+                    val images = msg.images
+                    if (!images.isNullOrEmpty()) {
+                        // #2470 — vision input. Anthropic accepts a content
+                        // array of typed blocks; one text block + N image
+                        // blocks. Each image block is base64-source with a
+                        // typed media_type.
+                        val textBlock = """{"type":"text","text":${msg.content.toJsonString()}}"""
+                        val imageBlocks = images.joinToString(",") { part ->
+                            """{"type":"image","source":{"type":"base64","media_type":${part.wireMime.value.toJsonString()},"data":${part.base64.toJsonString()}}}"""
+                        }
+                        val allBlocks = "$textBlock,$imageBlocks"
+                        val withCache = if (cacheControl != null) {
+                            // Attach cache_control to the LAST block.
+                            val splitAt = allBlocks.lastIndexOf("}")
+                            allBlocks.substring(0, splitAt) + ",$cacheControl" + allBlocks.substring(splitAt)
+                        } else {
+                            allBlocks
+                        }
+                        """{"role":"user","content":[$withCache]}"""
+                    } else if (cacheControl == null) {
                         """{"role":"user","content":${msg.content.toJsonString()}}"""
                     } else {
                         // Single text content block with cache_control attached.

@@ -398,6 +398,19 @@ open class OllamaClient(
                     })
                     append("]")
                 }
+                // #2470 — vision input. Ollama's chat API accepts an `images`
+                // array of base64-encoded payloads (no data: prefix) on user
+                // messages. Vision-capable models (qwen3-vl, llama3.2-vision,
+                // llava) consume it; non-vision models ignore it without
+                // error. Mime is not on the wire — Ollama infers from the
+                // bytes; we keep the typed wireMime on ImagePart for audit
+                // + caller debugging only.
+                val images = msg.images
+                if (msg.role == "user" && !images.isNullOrEmpty()) {
+                    append(""","images":[""")
+                    append(images.joinToString(",") { it.base64.toJsonString() })
+                    append("]")
+                }
                 append("}")
             }
         }
