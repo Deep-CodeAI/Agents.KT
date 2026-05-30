@@ -1,5 +1,8 @@
 package agents_engine.model
 
+import agents_engine.internal.OPEN_EMPTY_OBJECT_SCHEMA_JSON
+import agents_engine.internal.toJsonString
+
 import agents_engine.generation.LenientJsonParser
 import agents_engine.generation.jsonSchema
 import java.io.BufferedReader
@@ -308,6 +311,26 @@ open class ClaudeClient(
         return String(bytes, Charsets.UTF_8)
     }
 
+    // #2799 — central helper for the cache_control attachment surgery
+    // previously hand-rolled in two places (vision/text user block, assistant
+    // block). The Anthropic Messages content shape is `{...}` per block, and
+    // cache_control rides as another top-level field on the LAST block. Both
+    // helpers handle the null hint (return the block unchanged) so the call
+    // sites don't repeat the null check.
+    private fun appendCacheControlToBlock(blockJson: String, cacheControl: String?): String {
+        if (cacheControl == null) return blockJson
+        return blockJson.removeSuffix("}") + ",$cacheControl}"
+    }
+
+    /** Same surgery against a list-shaped `"...},{...},{...}"` string. Inserts
+     *  the comma-prefixed [cacheControl] before the closing brace of the LAST
+     *  block, leaving prior blocks untouched. No-op when [cacheControl] is null. */
+    private fun appendCacheControlToLastBlock(blocksCsv: String, cacheControl: String?): String {
+        if (cacheControl == null) return blocksCsv
+        val splitAt = blocksCsv.lastIndexOf("}")
+        return blocksCsv.substring(0, splitAt) + ",$cacheControl" + blocksCsv.substring(splitAt)
+    }
+
     /**
      * #2658 — Anthropic `cache_control` JSON for a [CacheHint]. Anthropic
      * supports two TTL values: ephemeral default (~5 min, no explicit
@@ -400,13 +423,7 @@ open class ClaudeClient(
                             """{"type":"image","source":{"type":"base64","media_type":${part.wireMime.value.toJsonString()},"data":${part.base64.toJsonString()}}}"""
                         }
                         val allBlocks = "$textBlock,$imageBlocks"
-                        val withCache = if (cacheControl != null) {
-                            // Attach cache_control to the LAST block.
-                            val splitAt = allBlocks.lastIndexOf("}")
-                            allBlocks.substring(0, splitAt) + ",$cacheControl" + allBlocks.substring(splitAt)
-                        } else {
-                            allBlocks
-                        }
+                        val withCache = appendCacheControlToLastBlock(allBlocks, cacheControl)
                         """{"role":"user","content":[$withCache]}"""
                     } else if (cacheControl == null) {
                         """{"role":"user","content":${msg.content.toJsonString()}}"""
@@ -436,8 +453,7 @@ open class ClaudeClient(
                     // message carries a hint (rolling conversation breakpoint).
                     if (cacheControl != null) {
                         val last = blocks.removeAt(blocks.size - 1)
-                        // Strip the closing brace and append cache_control.
-                        blocks += last.removeSuffix("}") + ",$cacheControl}"
+                        blocks += appendCacheControlToBlock(last, cacheControl)
                     }
                     """{"role":"assistant","content":[${blocks.joinToString(",")}]}"""
                 }
@@ -469,7 +485,7 @@ open class ClaudeClient(
             tools.forEach { t ->
                 val schema = t.argsType?.jsonSchema()
                     ?: t.parametersSchemaJson
-                    ?: """{"type":"object","properties":{},"additionalProperties":true}"""
+                    ?: OPEN_EMPTY_OBJECT_SCHEMA_JSON
                 add("""{"name":${t.name.toJsonString()},"description":${t.description.toJsonString()},"input_schema":$schema}""")
             }
             structuredSchema?.let { schema ->

@@ -1,5 +1,6 @@
 package agents_engine.generation
 
+import agents_engine.internal.toJsonString
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.KClass
 import kotlin.reflect.KParameter
@@ -22,12 +23,16 @@ import kotlin.reflect.full.*
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-private fun String.escapeJson(): String =
-    replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t")
+// #2799 — was a local 5-char `\ " \n \r \t` replace chain that produced
+// invalid JSON for U+0000-U+001F control chars (`\b`, `\f`, NUL, ESC). Now
+// delegates to the central [toJsonString] (RFC 8259 §7-conformant) and
+// strips the surrounding quotes that [toJsonString] adds — every call site
+// in this file wraps the result in its own `"..."`, so the central
+// quote-adding contract would over-quote.
+private fun String.escapeJson(): String {
+    val quoted = this.toJsonString()
+    return quoted.substring(1, quoted.length - 1)
+}
 
 // ─── KSP-generated metadata lookup (#1701 / #1702 / #1703) ────────────────────
 //

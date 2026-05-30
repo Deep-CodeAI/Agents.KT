@@ -1,5 +1,7 @@
 package agents_engine.model
 
+import agents_engine.internal.toJsonString
+
 import agents_engine.core.Agent
 import agents_engine.core.AgentRuntimeContext
 import agents_engine.core.Decision
