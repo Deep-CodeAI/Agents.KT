@@ -4,6 +4,13 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — Files convenience surface
+
+- **`agents_engine.content.Files`** — one-line file loading for the typed `Content` hierarchy. `Files.load(path, store): Content` reads the file, detects modality + mime from filename extension (case-insensitive, no magic-byte sniffing), puts bytes via the `BlobStore`, returns the right `Content` variant. Same `ContentRef.hash` as a manual `store.put`. Throws `UnknownExtensionException` (names the extension + path + full list of known extensions) on unrecognised.
+- **Variants:** `loadOrNull` (null-on-unknown), `loadAll` (throws on first unknown), `loadAllOrSkip` (silently skips — directory ingestion), `canonicalExtensionFor(content)` (inverse mapping), `knownExtensions: Set<String>` (predicate for callers).
+- Extension coverage: every `wireMime` on every modality variant has at least one canonical extension. Image: `png`, `jpg`/`jpeg`, `gif`, `webp`. Audio: `mp3`, `wav`, `flac`, `ogg`. Video: `mp4`, `webm`, `mov`. Document: `pdf`, `docx`, `md`/`markdown`, `html`/`htm`, `txt`.
+- 13 unit tests pin per-extension mapping, hash round-trip, case-insensitivity, unknown-extension behavior on every entry point, and the canonical-extension inverse for all 17 variants.
+
 ### Added — Typed agent attachments (#2470 slice b)
 
 - **`agent.invokeWithAttachments(input, attachments)`** + suspending sibling `invokeSuspendWithAttachments` — user-facing API for vision input via typed `Content.Image`. The runtime dereferences each ref against the agent's injected `BlobStore`, base64-encodes once, and attaches `ImagePart` to the first user `LlmMessage`. Per-provider wire translation is the slice-a work — this commit routes the typed surface into it.

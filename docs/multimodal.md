@@ -66,6 +66,45 @@ sealed interface DocMime   { Pdf, Docx, Markdown, Html, PlainText }
 
 Each variant exposes `wireMime: String` for adapter serialisation. The public API never accepts `String` mime — extending is adding a variant.
 
+## `Files` — load from disk in one line
+
+The boilerplate "read file, put bytes, build Content variant" pattern compresses to one call:
+
+```kotlin
+import agents_engine.content.Files
+
+agent.invokeWithAttachments(
+    "Review this spec",
+    attachments = listOf(Files.load(Path.of("spec.pdf"), store)),
+)
+```
+
+`Files.load(path, store)` reads the file, detects modality + mime from the filename extension, puts the bytes into the `BlobStore`, and returns the right typed `Content` variant. Same `ContentRef.hash` as calling `store.put(bytes, mime)` directly.
+
+**Extension coverage:**
+
+| Modality | Extensions |
+|---|---|
+| Image | `png`, `jpg`, `jpeg`, `gif`, `webp` |
+| Audio | `mp3`, `wav`, `flac`, `ogg` |
+| Video | `mp4`, `webm`, `mov` |
+| Document | `pdf`, `docx`, `md`, `markdown`, `html`, `htm`, `txt` |
+
+Case-insensitive (`Foo.PDF` and `foo.pdf` both produce `DocMime.Pdf`). Detection is by **extension only** — no magic-byte sniffing. Fast, predictable; if the extension lies, build `Content.X(ref, mime)` explicitly.
+
+**Variants:**
+
+```kotlin
+Files.load(path, store): Content              // throws UnknownExtensionException on unknown
+Files.loadOrNull(path, store): Content?       // null on unknown
+Files.loadAll(paths, store): List<Content>    // throws on first unknown
+Files.loadAllOrSkip(paths, store)             // silently skips unknown — directory ingestion
+Files.canonicalExtensionFor(content): String? // inverse — write Content back to disk
+Files.knownExtensions: Set<String>            // "can I load this?" predicate
+```
+
+`UnknownExtensionException` names the offending extension, the path, AND lists every known extension — debuggable on a misconfigured callsite.
+
 ## `ContentRef` + `BlobStore`
 
 ```kotlin
