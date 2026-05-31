@@ -863,6 +863,7 @@ private fun semconvProviderName(provider: ModelProvider): String =
         ModelProvider.DEEPSEEK -> "deepseek"
         ModelProvider.OPENAI -> "openai"
         ModelProvider.OLLAMA -> "ollama"
+        ModelProvider.OPENROUTER -> "openrouter"
     }
 
 private fun coerceSubstituteOutput(result: Any?, outType: KClass<*>): Any {
@@ -1281,6 +1282,21 @@ private fun defaultClientFor(
             connectTimeout = config.connectTimeout ?: OpenAiClient.DEFAULT_CONNECT_TIMEOUT,
             reasoning = config.reasoning,
             toolChoice = toolChoice,
+        )
+        // #2701 — OpenRouter is a thin OpenAI-compatible aggregator. Same
+        // wiring as DeepSeek/Kimi but with the two optional attribution
+        // headers carried through ModelConfig.
+        ModelProvider.OPENROUTER -> OpenRouterClient(
+            apiKey = config.apiKey
+                ?: error("Agent uses OpenRouter but ModelConfig.apiKey is null — load it from .secrets/open-router-key"),
+            model = config.name,
+            temperature = config.temperature,
+            maxTokens = config.maxTokens,
+            tools = tools,
+            baseUrl = config.openRouterBaseUrl,
+            reasoning = config.reasoning,
+            httpReferer = config.openRouterHttpReferer,
+            xTitle = config.openRouterXTitle,
         )
     }
 
