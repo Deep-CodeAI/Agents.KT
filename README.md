@@ -31,7 +31,7 @@ The 0.6 line turns those boundaries into audit-ready evidence: deterministic per
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("ai.deep-code:agents-kt:0.6.6")
+    implementation("ai.deep-code:agents-kt:0.7.0")
 }
 ```
 
@@ -310,9 +310,9 @@ Topical guides:
 
 ## Current Release
 
-`main` is currently `0.6.6` — a maintainability pass on top of 0.6.5: the 10-ticket code-smell epic (#2790) plus a field-reported correctness fix for session cancellation (#2863). The tagline: *0.6.6 keeps the surface stable while shrinking what a future audit can flag.* Boring on features, focused on internal hygiene + one user-visible cancellation bug.
+`main` is currently `0.7.0` — **Boundaries you can enforce externally.** The 0.6 line made tool policies declarative and auditable; 0.7.0 makes them **enforced**. A tool's declared `ToolPolicy` now constrains it at runtime: Layer 1 (in-JVM filesystem-argument gate, #2890) plus Layer 2 OS sandboxing (#1916) — macOS Seatbelt, Linux bubblewrap, a firejail setuid fallback, and a plain-`ProcessBuilder` + loud `UNCONFINED` warning where no tool is present — confine subprocess-shaped tools to their declared write roots, an environment allow-list, a working directory, and a default-deny network. And the deterministic permission manifest is reachable **outside Gradle** via the standalone [`agents-kt` CLI](docs/cli.md) (`generate` / `inspect` / `verify`, #1923) — a drop-in CI gate that fails when a change widens a capability boundary. *Deferred to 0.8: `WasmSandbox` (#2894), `DockerSandbox` (#2895), the network hostname-allowlist proxy (#2893), and the `grants { }` structure DSL.*
 
-**0.6.6 — Maintainability + cancellation (#2863 + epic #2790).** Session catch now distinguishes `CancellationException` (propagate per structured concurrency — no synthetic `Failed` event) from `TimeoutCancellationException` (real failure — keeps surfacing as `Failed`). Field report from a downstream SSE bridge that rendered cancelled subscriptions as "FlowSubscription was cancelled" failures, clobbering already-streamed output. Plus 10 internal refactors landing today: `Ansi` consolidation + suspending session send (#2806), `ToolRisk` dedup + `BudgetConfig.describeOverrides()` (#2805), `RESERVED_MEMORY_TOOL_NAMES` reuse + named magic constants + `reserveName` guard (#2804), `JsonEscape` consolidation across model/core/generation (#2799), shared `JsonRpc` helper + `McpException` hierarchy (#2796), `HttpModelClientSupport.sendBounded` (#2792), MCP client list/text-block dedup + `makeMcpSkill` factory (#2800), `toLlmInput`/`jsonSerialize` collapse (#2794), primary `(String) -> Any?` overload on `LiveShow.from` + `LiveRunner.serve` (#2801), detekt static analysis with baseline (#2807). Additive only — every 0.6.5 caller compiles and runs unchanged.
+**0.6.6 — Maintainability + cancellation (#2863 + epic #2790).** Session catch now distinguishes `CancellationException` (propagate per structured concurrency — no synthetic `Failed` event) from `TimeoutCancellationException` (real failure — keeps surfacing as `Failed`), plus 10 internal refactors (detekt baseline, `JsonEscape`/`JsonRpc` consolidation, `HttpModelClientSupport.sendBounded`, …). Additive only — every 0.6.5 caller compiles and runs unchanged.
 
 **0.6.5 — Request-timeout hotfix (#2850).** Bumped `DEFAULT_REQUEST_TIMEOUT` from 60s → 300s on `ClaudeClient`, `OpenAiClient`, `DeepSeekClient`, and `OllamaClient` so long Sonnet turns, big Ollama generations, and extended-thinking calls don't get aborted mid-stream. Added `requestTimeout: Duration?` and `connectTimeout: Duration?` to `ModelConfig` + `ModelBuilder` — null falls back to the adapter's `DEFAULT_REQUEST_TIMEOUT` / `DEFAULT_CONNECT_TIMEOUT`; non-null overrides on every provider through `defaultClientFor()`. Additive only — every 0.6.4 caller compiles and runs unchanged.
 
