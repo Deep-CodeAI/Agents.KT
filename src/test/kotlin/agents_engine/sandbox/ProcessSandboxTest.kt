@@ -310,9 +310,34 @@ class BwrapArgsTest {
 }
 
 /**
- * OS-gated integration: spawns `bwrap` and asserts kernel-level write confinement
- * on Linux. Tagged `linux_only`; on macOS run via `scripts/lima-test.sh`.
- * `assumeTrue` skips cleanly on a Linux box without bubblewrap installed.
+ * #2892 — pure tests for the firejail argv (the setuid fallback). Run anywhere.
+ */
+class FirejailArgsTest {
+
+    @Test fun `mounts root read-only, write roots read-write, drops net by default`() {
+        val args = ProcessSandbox.firejailArgs(listOf(Path.of("/data/a"), Path.of("/data/b")))
+        assertTrue("--read-only=/" in args, "whole fs read-only: $args")
+        assertTrue("--read-write=/data/a" in args, "root A read-write: $args")
+        assertTrue("--read-write=/data/b" in args, "root B read-write: $args")
+        assertTrue("--net=none" in args, "network dropped by default: $args")
+        assertTrue("--noprofile" in args, "no default firejail profile: $args")
+    }
+
+    @Test fun `allowNetwork keeps networking`() {
+        assertFalse("--net=none" in ProcessSandbox.firejailArgs(listOf(Path.of("/data")), allowNetwork = true))
+    }
+
+    @Test fun `no write roots means no read-write carve-out`() {
+        assertFalse(ProcessSandbox.firejailArgs(emptyList()).any { it.startsWith("--read-write=") })
+    }
+}
+
+/**
+ * OS-gated integration: spawns the real Linux backend (`bwrap`, and `firejail` via
+ * the forced-backend seam) and asserts kernel-level write confinement. Tagged
+ * `linux_only` + `@EnabledOnOs(OS.LINUX)`, so it auto-skips on macOS; CI runs it on
+ * a native Ubuntu runner. The `assume*Usable` probes skip cleanly when the tool is
+ * absent or can't build a sandbox on the host.
  */
 @EnabledOnOs(OS.LINUX)
 @Tag("linux_only")
@@ -380,5 +405,83 @@ class ProcessSandboxLinuxTest {
             root.deleteRecursively()
             outside.deleteRecursively()
         }
+    }
+
+    // --- firejail (the setuid fallback), forced via the internal backend seam so
+    // it is exercised even on CI where bwrap is also installed and would win. ---
+
+    private fun assumeFirejailUsable() {
+        val probeRoot = createTempDirectory("fj-probe").toRealPath()
+        try {
+            val probe = runCatching {
+                ProcessSandbox(probeRoot).runWithBackend(ProcessSandbox.Backend.FIREJAIL, listOf("/bin/true"))
+            }.getOrNull()
+            Assumptions.assumeTrue(
+                probe != null && probe.ok,
+                "firejail not installed or cannot sandbox here: " +
+                    (probe?.let { "exit=${it.exitCode} stderr=${it.stderr.trim()}" } ?: "firejail binary not found"),
+            )
+        } finally {
+            probeRoot.deleteRecursively()
+        }
+    }
+
+    @Test fun `firejail confines a write inside the folder`() {
+        assumeFirejailUsable()
+        val root = createTempDirectory("fj-in").toRealPath()
+        try {
+            val target = root.resolve("note.txt")
+            val res = ProcessSandbox(root)
+                .runWithBackend(ProcessSandbox.Backend.FIREJAIL, shWrite("hello firejail", target))
+            assertTrue(res.ok, "expected success, got exit=${res.exitCode} stderr=${res.stderr}")
+            assertTrue(target.exists() && target.readText() == "hello firejail")
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun `firejail blocks a write outside the folder`() {
+        assumeFirejailUsable()
+        val root = createTempDirectory("fj-root").toRealPath()
+        val outside = createTempDirectory("fj-out").toRealPath()
+        try {
+            val target = outside.resolve("escape.txt")
+            val res = ProcessSandbox(root)
+                .runWithBackend(ProcessSandbox.Backend.FIREJAIL, shWrite("nope", target))
+            assertFalse(res.ok, "out-of-folder write must fail; exit=${res.exitCode} stderr=${res.stderr}")
+            assertFalse(target.exists(), "no file may be created outside the sandboxed folder")
+        } finally {
+            root.deleteRecursively()
+            outside.deleteRecursively()
+        }
+    }
+}
+
+/**
+ * #2892 — the no-backend fallback. When no OS sandbox tool is present, [run] runs
+ * the command via a plain `ProcessBuilder` and warns loudly that it is UNCONFINED.
+ * Forced via `Backend.NONE`, so it is testable on any POSIX host regardless of
+ * which sandbox tools are installed.
+ */
+@EnabledOnOs(OS.MAC, OS.LINUX)
+@OptIn(ExperimentalPathApi::class)
+class ProcessSandboxFallbackTest {
+
+    @Test fun `no backend runs the command unconfined and warns loudly`() {
+        val root = createTempDirectory("nofb").toRealPath()
+        val originalErr = System.err
+        val captured = java.io.ByteArrayOutputStream()
+        try {
+            System.setErr(java.io.PrintStream(captured, true, "UTF-8"))
+            val res = ProcessSandbox(root)
+                .runWithBackend(ProcessSandbox.Backend.NONE, listOf("/bin/echo", "hi"))
+            assertTrue(res.ok, "plain ProcessBuilder should run the command: exit=${res.exitCode}")
+            assertEquals("hi", res.stdout.trim())
+        } finally {
+            System.setErr(originalErr)
+            root.deleteRecursively()
+        }
+        val warning = captured.toString("UTF-8")
+        assertTrue("UNCONFINED" in warning, "must warn the process is unconfined: $warning")
     }
 }

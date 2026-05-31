@@ -11,9 +11,9 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Layer 2 (#2891 / #1916): OS-level isolation for a subprocess. Two backends,
- * picked by OS at [run] time: macOS **Seatbelt** (`/usr/bin/sandbox-exec`, #2906)
- * and Linux **bubblewrap** (`bwrap`, #2892).
+ * Layer 2 (#2891 / #1916): OS-level isolation for a subprocess. The backend is
+ * picked at [run] time: macOS **Seatbelt** (`/usr/bin/sandbox-exec`, #2906), then
+ * Linux **bubblewrap** (`bwrap`), then Linux **firejail** (#2892).
  *
  * [run] launches the command confined so that file **writes** are allowed only
  * under the configured roots (#2909 derives them from a tool's [ToolPolicy]); a
@@ -21,9 +21,14 @@ import kotlin.time.Duration.Companion.seconds
  * gate (#2890). Reads + process exec stay allowed so the command (e.g. `/bin/sh`)
  * can load; network is blocked unless opened.
  *
- * [isSupported] is true on macOS-with-sandbox-exec or Linux-with-bwrap; [run]
- * throws elsewhere. The firejail fallback, network hostname filtering (#2893),
- * read-confinement, and the `process { }` DSL remain follow-ups.
+ * bwrap is preferred (unprivileged user namespaces); firejail is the **setuid**
+ * fallback that still confines where unprivileged userns is restricted (e.g.
+ * Ubuntu 24.04's `apparmor_restrict_unprivileged_userns`). When **no** backend is
+ * present, [run] does not throw — it runs the command via a plain `ProcessBuilder`
+ * and prints a loud warning that the process is UNCONFINED ([isSupported] is false
+ * there, so a caller that requires enforcement can detect and refuse). Network
+ * hostname filtering (#2893), read-confinement, and the `process { }` DSL remain
+ * follow-ups.
  */
 class ProcessSandbox private constructor(
     private val realRoots: List<Path>,
@@ -36,22 +41,33 @@ class ProcessSandbox private constructor(
      */
     constructor(writableRoot: Path) : this(listOf(canonicalPath(writableRoot)), allowNetwork = false)
 
-    fun run(command: List<String>, stdin: String? = null, timeout: Duration = 10.seconds): SandboxResult {
+    /** Which OS sandbox wraps the subprocess. [NONE] = no tool found → unconfined plain ProcessBuilder. */
+    internal enum class Backend { SEATBELT, BWRAP, FIREJAIL, NONE }
+
+    fun run(command: List<String>, stdin: String? = null, timeout: Duration = 10.seconds): SandboxResult =
+        runWithBackend(detectBackend(), command, stdin, timeout)
+
+    /**
+     * Run under an explicitly chosen [backend]. Public [run] auto-detects via
+     * [detectBackend]; tests use this to force a specific backend (e.g. exercise
+     * firejail on a host where bwrap is also installed and would otherwise win).
+     */
+    internal fun runWithBackend(
+        backend: Backend,
+        command: List<String>,
+        stdin: String? = null,
+        timeout: Duration = 10.seconds,
+    ): SandboxResult {
         require(command.isNotEmpty()) { "command must not be empty" }
 
-        // Dispatch by OS: Seatbelt on macOS, bwrap on Linux. Both confine the
-        // subprocess to the same write roots; only the wrapping differs.
-        val sandboxExec = macSandboxExec()
-        val bwrap = linuxBwrap()
-        val argv = when {
-            sandboxExec != null ->
-                listOf(sandboxExec.toString(), "-p", seatbeltProfile(realRoots, allowNetwork)) + command
-            bwrap != null ->
-                listOf(bwrap.toString()) + bwrapArgs(realRoots, allowNetwork) + command
-            else -> error(
-                "ProcessSandbox needs macOS+sandbox-exec or Linux+bwrap (Wasm/Docker = #2894/#2895). " +
-                    "os.name='${System.getProperty("os.name")}'",
-            )
+        // Each backend confines the subprocess to the same write roots; only the
+        // wrapping differs. NONE = no sandbox tool on this host: run the command
+        // unconfined (plain ProcessBuilder) after a loud warning.
+        val argv = when (backend) {
+            Backend.SEATBELT -> listOf(SANDBOX_EXEC, "-p", seatbeltProfile(realRoots, allowNetwork)) + command
+            Backend.BWRAP -> listOf(BWRAP) + bwrapArgs(realRoots, allowNetwork) + command
+            Backend.FIREJAIL -> listOf(FIREJAIL) + firejailArgs(realRoots, allowNetwork) + command
+            Backend.NONE -> command.also { warnUnconfined(it) }
         }
         val process = ProcessBuilder(argv).redirectErrorStream(false).start()
 
@@ -95,6 +111,7 @@ class ProcessSandbox private constructor(
     companion object {
         private const val SANDBOX_EXEC = "/usr/bin/sandbox-exec"
         private const val BWRAP = "bwrap"
+        private const val FIREJAIL = "firejail"
 
         // Grace period for the process to exit after destroy() before destroyForcibly().
         private const val GRACEFUL_DESTROY_WAIT_SEC = 2L
@@ -108,17 +125,41 @@ class ProcessSandbox private constructor(
         private fun macSandboxExec(): Path? =
             Path.of(SANDBOX_EXEC).takeIf { osName().contains("Mac", ignoreCase = true) && Files.isExecutable(it) }
 
-        /** Linux `bwrap` (bubblewrap) resolved from PATH when this is Linux; else null. */
-        private fun linuxBwrap(): Path? =
+        /** A Linux binary resolved from PATH (only when this is Linux); else null. */
+        private fun linuxBinary(name: String): Path? =
             if (!osName().contains("Linux", ignoreCase = true)) {
                 null
             } else {
                 (System.getenv("PATH") ?: "").split(File.pathSeparatorChar)
-                    .firstNotNullOfOrNull { dir -> Path.of(dir, BWRAP).takeIf { Files.isExecutable(it) } }
+                    .firstNotNullOfOrNull { dir -> Path.of(dir, name).takeIf { Files.isExecutable(it) } }
             }
 
-        /** True when an OS sandbox backend is available (macOS Seatbelt or Linux bwrap). */
-        fun isSupported(): Boolean = macSandboxExec() != null || linuxBwrap() != null
+        private fun linuxBwrap(): Path? = linuxBinary(BWRAP)
+        private fun linuxFirejail(): Path? = linuxBinary(FIREJAIL)
+
+        /**
+         * Pick the backend: Seatbelt (macOS) → bwrap (unprivileged userns) →
+         * firejail (setuid; confines where userns is restricted) → NONE (unconfined).
+         */
+        internal fun detectBackend(): Backend = when {
+            macSandboxExec() != null -> Backend.SEATBELT
+            linuxBwrap() != null -> Backend.BWRAP
+            linuxFirejail() != null -> Backend.FIREJAIL
+            else -> Backend.NONE
+        }
+
+        /** True when a real OS sandbox backend is available (Seatbelt / bwrap / firejail). */
+        fun isSupported(): Boolean = detectBackend() != Backend.NONE
+
+        /** Loud warning when no sandbox tool is present and the command runs unconfined. */
+        private fun warnUnconfined(command: List<String>) {
+            System.err.println(
+                "[ProcessSandbox] WARNING: no OS sandbox backend found (need macOS sandbox-exec, " +
+                    "or Linux bwrap/firejail). Running '${command.first()}' UNCONFINED — OS-level " +
+                    "filesystem/network policy is NOT enforced. Install bubblewrap or firejail to " +
+                    "enable Layer-2 confinement.",
+            )
+        }
 
         /** Confine writes to the given roots (canonicalized). */
         fun forWritableRoots(roots: List<Path>, allowNetwork: Boolean = false): ProcessSandbox =
@@ -166,6 +207,24 @@ class ProcessSandbox private constructor(
             add("--dev"); add("/dev")
             writeRoots.forEach { add("--bind"); add(it.toString()); add(it.toString()) }
             if (!allowNetwork) add("--unshare-net")
+        }
+
+        /**
+         * Pure: firejail args (#2892 fallback). firejail is **setuid-root**, so it
+         * confines even where unprivileged user namespaces are restricted (Ubuntu
+         * 24.04's `apparmor_restrict_unprivileged_userns`) and bwrap cannot start.
+         * Mount the whole filesystem **read-only**, re-mount each (canonical) write
+         * root **read-write**, and — unless [allowNetwork] — drop networking with a
+         * netless sandbox (`--net=none`). `--noprofile` stops firejail layering its
+         * default profile; `--quiet` keeps its banner off the command's stderr. A
+         * write outside a root hits the read-only mount.
+         */
+        fun firejailArgs(writeRoots: List<Path>, allowNetwork: Boolean = false): List<String> = buildList {
+            add("--quiet")
+            add("--noprofile")
+            add("--read-only=/")
+            writeRoots.forEach { add("--read-write=$it") }
+            if (!allowNetwork) add("--net=none")
         }
 
         // The literal directory prefix of a write glob — the deepest path that

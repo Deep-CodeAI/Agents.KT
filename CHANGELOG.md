@@ -58,15 +58,20 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
   stdout on success (or an `ERROR:` string), carries the policy onto the `ToolDef` so Layer-1
   (#2890) gates path args too, and **fails closed** (refuses to run rather than executing
   unsandboxed) where no OS sandbox is available.
-- **Linux backend (#2892)** — `ProcessSandbox` now dispatches by OS at run time: macOS
-  **Seatbelt** or Linux **bubblewrap** (`bwrap`). The Linux path binds the whole filesystem
-  read-only, re-binds the declared write roots read-write, and unshares the network namespace
-  unless opened — same write-confinement contract as Seatbelt, enforced by the kernel.
-  `isSupported()` is now true on macOS-with-sandbox-exec **or** Linux-with-bwrap, so `processTool`
-  / `forPolicy` work on both. The pure `bwrapArgs(...)` is unit-tested everywhere; the kernel-level
-  integration is `@EnabledOnOs(OS.LINUX)` + `@Tag("linux_only")` (run on macOS via `scripts/lima-test.sh`).
-- Remaining Layer-2 follow-ups: the firejail fallback, network hostname filtering (proxy #2893),
-  read-confinement, and the `process { }` DSL. Wasm/Docker backends are #2894/#2895.
+- **Linux backend (#2892)** — `ProcessSandbox` dispatches by OS at run time: macOS **Seatbelt**,
+  Linux **bubblewrap** (`bwrap`), then Linux **firejail** (the setuid fallback). The Linux paths
+  bind/mount the whole filesystem read-only, re-mount the declared write roots read-write, and drop
+  the network unless opened — same write-confinement contract as Seatbelt, enforced by the kernel.
+  firejail still confines where unprivileged user namespaces are restricted (e.g. Ubuntu 24.04's
+  `apparmor_restrict_unprivileged_userns`) and `bwrap` can't start. On a host with **no** sandbox
+  tool, `run` no longer throws — it runs the command via a plain `ProcessBuilder` and prints a loud
+  `UNCONFINED` warning (`isSupported()` stays false, so a caller that requires enforcement can
+  refuse). `isSupported()` is true when any backend is present, so `processTool` / `forPolicy` work
+  across all three. The pure `bwrapArgs(...)` / `firejailArgs(...)` are unit-tested everywhere; the
+  kernel-level integration (`@EnabledOnOs(OS.LINUX)` + `@Tag("linux_only")`) is verified on CI's
+  native Ubuntu runner.
+- Remaining Layer-2 follow-ups: network hostname filtering (proxy #2893), read-confinement, and the
+  `process { }` DSL. Wasm/Docker backends are #2894/#2895.
 
 ### Errata — v0.6.5 release notes overstated document-attachment shipping (#2868)
 
