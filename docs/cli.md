@@ -73,11 +73,22 @@ agents-kt verify --entrypoint com.acme.MyAgentManifest --classpath app.jar --bas
 agents-kt verify --current permissions.json --baseline permissions.baseline.json
 ```
 
-Fails (exit `1`) when the current manifest **widens** a boundary vs the baseline — a tool's
-risk increased, network scope opened, or filesystem write scope broadened (the same
-`tool.risk.increased` / `tool.network.widened` / `tool.filesystem.write.widened` findings the
-Gradle `verifyAgentManifest` task raises). This is the drop-in CI gate for "no PR may quietly
-relax the agent's capability boundary."
+Fails (exit `1`) when the current manifest **widens** a boundary vs the baseline. Tools are matched
+by `agentName.toolName`, and each policy is compared as an actual **set**, not a coarse score, so a
+widening is caught even when a count is unchanged:
+
+- `tool.risk.increased` — a tool's risk rose to high/critical
+- `tool.network.widened` — network mode escalated (denyAll/unspecified → hosts → allowAll) **or** a
+  host was added that the baseline didn't list
+- `tool.filesystem.write.widened` / `tool.filesystem.read.widened` — a path glob was added that the
+  baseline's set didn't contain (gaining globs from `writeNone`/none counts)
+- `tool.environment.widened` — an environment variable was added to the allow-list
+
+Pure narrowing (only *removing* globs/hosts/vars) is not flagged. The comparison is conservative on
+*added* entries — full semantic glob-**coverage** subset-checking (recognizing that a broader glob
+subsumes a narrower one) is a planned refinement, so an added glob string is treated as added
+authority and flagged for review. The Gradle `verifyAgentManifest` task raises the same findings.
+This is the drop-in CI gate for "no PR may quietly relax the agent's capability boundary."
 
 ## Exit codes
 

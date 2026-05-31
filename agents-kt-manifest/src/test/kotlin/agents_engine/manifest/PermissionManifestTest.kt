@@ -177,7 +177,7 @@ class PermissionManifestTest {
             }
         }.permissionManifest()
 
-        val widened = agent<String, String>("ops-widened") {
+        val widened = agent<String, String>("ops") {
             tools {
                 tool("syncTicket") {
                     policy {
@@ -203,6 +203,85 @@ class PermissionManifestTest {
         assertTrue(result.findings.any { it.code == "tool.risk.increased" })
         assertTrue(result.findings.any { it.code == "tool.network.widened" })
         assertTrue(result.findings.any { it.code == "tool.filesystem.write.widened" })
+    }
+
+    // --- verifier hardening: set comparison, not coarse scoring (0.7.1) ---
+
+    private fun opsManifest(policy: agents_engine.core.ToolPolicyBuilder.() -> Unit) =
+        agent<String, String>("ops") {
+            tools {
+                tool("syncTicket") {
+                    policy(policy)
+                    executor { "ok" }
+                }
+            }
+            skills {
+                skill<String, String>("sync") {
+                    @Suppress("DEPRECATION")
+                    tools("syncTicket")
+                    implementedBy { it }
+                }
+            }
+        }.permissionManifest()
+
+    @Test fun `verify catches a host added within the same hosts mode (set, not score)`() {
+        val baseline = opsManifest { network { allow("api.internal") } }
+        val current = opsManifest { network { allow("api.internal"); allow("evil.example") } }
+        val result = current.verifyAgainst(baseline)
+        assertFalse(result.ok, "adding a host must be a widening")
+        assertTrue(result.findings.any { it.code == "tool.network.widened" }, result.findings.toString())
+    }
+
+    @Test fun `verify catches a broader write glob even when the glob count is unchanged`() {
+        val baseline = opsManifest { filesystem { write("/srv/uploads/**") } }
+        val current = opsManifest { filesystem { write("/**") } }
+        val result = current.verifyAgainst(baseline)
+        assertFalse(result.ok, "replacing a narrow glob with /** must be a widening")
+        assertTrue(result.findings.any { it.code == "tool.filesystem.write.widened" }, result.findings.toString())
+    }
+
+    @Test fun `verify does not flag a pure narrowing of write globs`() {
+        val baseline = opsManifest { filesystem { write("/a/**"); write("/b/**") } }
+        val current = opsManifest { filesystem { write("/a/**") } }
+        val result = current.verifyAgainst(baseline)
+        assertTrue(result.ok, "removing a glob is a narrowing, not a widening: ${result.findings}")
+    }
+
+    @Test fun `verify catches an env var added to the allow-list`() {
+        val baseline = opsManifest { environment { allow("HOME") } }
+        val current = opsManifest { environment { allow("HOME"); allow("AWS_SECRET_ACCESS_KEY") } }
+        val result = current.verifyAgainst(baseline)
+        assertFalse(result.ok, "exposing another env var must be a widening")
+        assertTrue(result.findings.any { it.code == "tool.environment.widened" }, result.findings.toString())
+    }
+
+    @Test fun `verify keys tools by agent so a widening is not hidden by a same-named tool elsewhere`() {
+        fun netAgent(name: String, net: agents_engine.core.ToolNetworkPolicyBuilder.() -> Unit) =
+            agent<String, String>(name) {
+                tools {
+                    tool("syncTicket") {
+                        policy { network(net) }
+                        executor { "ok" }
+                    }
+                }
+                skills {
+                    skill<String, String>("s") {
+                        @Suppress("DEPRECATION")
+                        tools("syncTicket")
+                        implementedBy { it }
+                    }
+                }
+            }
+        // Both agents have a tool named "syncTicket"; only "writer"'s widens. The old
+        // name-only keying kept "reader"'s tool and hid the writer's widening.
+        val baseline = (netAgent("reader") { denyAll() } then netAgent("writer") { denyAll() }).permissionManifest()
+        val current = (netAgent("reader") { denyAll() } then netAgent("writer") { allowAll() }).permissionManifest()
+        val result = current.verifyAgainst(baseline)
+        assertFalse(result.ok, "the writer's widening must not be hidden by reader's same-named tool")
+        assertTrue(
+            result.findings.any { it.code == "tool.network.widened" && "writer" in it.path },
+            result.findings.toString(),
+        )
     }
 
     @Test
