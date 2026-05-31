@@ -132,7 +132,7 @@ Agents.KT owns the runtime boundary model:
 - JSONL audit export plus OTel, LangSmith, and Langfuse adapters through `ObservabilityBridge`.
 - Local-first JVM execution with Ollama by default and cloud providers when you choose them.
 
-These are the pieces the framework can make deterministic, testable, and reviewable in code. Start with [permission manifests](docs/permission-manifest.md), the [threat model](docs/threat-model.md), the [regulated deployment guide](docs/regulated-deployment.md), and the [comparison page](docs/comparison.md) for the release narrative.
+These are the pieces the framework can make deterministic, testable, and reviewable in code. Start with [permission manifests](docs/permission-manifest.md), the [threat model](docs/threat-model.md), the [regulated deployment guide](docs/regulated-deployment.md), and the [comparison page](docs/comparison.md) for the release narrative. The manifest is also reachable **outside Gradle** via the standalone [`agents-kt` CLI](docs/cli.md) (`generate` / `inspect` / `verify`) — a drop-in CI gate that fails when a change widens a capability boundary (#1923).
 
 ## What Agents.KT Does Not Own
 

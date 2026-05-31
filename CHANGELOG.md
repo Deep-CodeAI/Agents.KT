@@ -4,6 +4,24 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — standalone `agents-kt` CLI: permission manifest from a binary (#1923)
+
+- New `:agents-kt-cli` module (Gradle `application` plugin) — the **"externally"** half of
+  the 0.7.0 arc. The deterministic permission manifest, previously reachable only through a
+  Gradle task, is now generatable / inspectable / verifiable from a binary, so non-Gradle
+  consumers (CI gates, ops, regulators) can enforce capability boundaries:
+  - `agents-kt generate --entrypoint <FQN> [--classpath a:b] [--format json|yaml] [--out file]`
+  - `agents-kt inspect <manifest.json> [--format json|yaml]`
+  - `agents-kt verify (--entrypoint <FQN> [--classpath a:b] | --current <file>) --baseline <file>`
+  - Exit codes: `0` ok · `1` verify findings (policy widened) · `2` usage · `3` runtime.
+- The reflective entrypoint→manifest loader was extracted from the Gradle plugin into a
+  Gradle-free `agents_engine.manifest.ManifestEntrypointLoader`, **shared** by the plugin and
+  the CLI — a build and the CLI produce byte-identical manifests (same `manifestSha256`).
+  `verify` raises the same `tool.risk.increased` / `tool.network.widened` /
+  `tool.filesystem.write.widened` findings as the `verifyAgentManifest` Gradle task. See
+  `docs/cli.md`. (A jlink/native single-file image is a packaging follow-up; the
+  entrypoint-loading commands reflect into arbitrary user classes and need a real JVM.)
+
 ### Added — injectable `HttpClient` on every provider client (#2385)
 
 - `model { httpClient = … }` lets multiple agents **share one networking surface** —

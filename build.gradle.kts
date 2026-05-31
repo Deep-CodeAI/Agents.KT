@@ -326,6 +326,7 @@ tasks.register("testAll") {
         ":agents-kt-ksp:test",
         ":agents-kt-no-reflect-test:test",
         ":agents-kt-manifest:test",
+        ":agents-kt-cli:test",
         ":agents-kt-observability:test",
         ":agents-kt-otel:test",
         ":agents-kt-langsmith:test",
