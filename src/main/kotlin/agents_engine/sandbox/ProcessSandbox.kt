@@ -59,17 +59,17 @@ class ProcessSandbox private constructor(
         val finished = process.waitFor(timeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
         if (!finished) {
             process.destroy()
-            if (!process.waitFor(2, TimeUnit.SECONDS)) process.destroyForcibly()
-            outDrain.join(1_000)
-            errDrain.join(1_000)
+            if (!process.waitFor(GRACEFUL_DESTROY_WAIT_SEC, TimeUnit.SECONDS)) process.destroyForcibly()
+            outDrain.join(DRAIN_JOIN_AFTER_KILL_MS)
+            errDrain.join(DRAIN_JOIN_AFTER_KILL_MS)
             return SandboxResult(
                 exitCode = -1,
                 stdout = out.toString(),
                 stderr = (err.toString() + "\n[sandbox] command timed out after $timeout").trim(),
             )
         }
-        outDrain.join(2_000)
-        errDrain.join(2_000)
+        outDrain.join(DRAIN_JOIN_TIMEOUT_MS)
+        errDrain.join(DRAIN_JOIN_TIMEOUT_MS)
         return SandboxResult(process.exitValue(), out.toString(), err.toString())
     }
 
@@ -84,6 +84,12 @@ class ProcessSandbox private constructor(
 
     companion object {
         private const val SANDBOX_EXEC = "/usr/bin/sandbox-exec"
+
+        // Grace period for the process to exit after destroy() before destroyForcibly().
+        private const val GRACEFUL_DESTROY_WAIT_SEC = 2L
+        // How long to wait for the stdout/stderr drain threads to finish.
+        private const val DRAIN_JOIN_TIMEOUT_MS = 2_000L
+        private const val DRAIN_JOIN_AFTER_KILL_MS = 1_000L
 
         fun isSupported(): Boolean =
             System.getProperty("os.name", "").contains("Mac", ignoreCase = true) &&

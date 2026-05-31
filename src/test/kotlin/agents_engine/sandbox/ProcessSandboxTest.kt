@@ -1,9 +1,12 @@
 package agents_engine.sandbox
 
 import agents_engine.core.toolPolicy
+import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.condition.EnabledOnOs
 import org.junit.jupiter.api.condition.OS
+import java.io.File
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.createTempDirectory
@@ -169,6 +172,46 @@ class ProcessSandboxMacTest {
             assertFalse(outside.resolve("f.txt").exists())
         } finally {
             a.deleteRecursively(); b.deleteRecursively(); outside.deleteRecursively()
+        }
+    }
+
+    @Test fun `network is blocked by default and opened by allowNetwork`() {
+        val python3 = (System.getenv("PATH") ?: "").split(File.pathSeparatorChar)
+            .filter { it.isNotBlank() }
+            .map { Path.of(it).resolve("python3") }
+            .firstOrNull { Files.isExecutable(it) }
+        Assumptions.assumeTrue(python3 != null, "python3 not on PATH — skipping live network probe")
+
+        // A sandbox denial surfaces as PermissionError ([Errno 1] Operation not
+        // permitted); a normal connect to a closed port is a different OSError. That
+        // distinction is what proves the *sandbox* (not the network) did the blocking.
+        val probe = """
+            import socket
+            s = socket.socket(); s.settimeout(2)
+            try:
+                s.connect(('127.0.0.1', 1)); print('CONNECTED')
+            except PermissionError:
+                print('BLOCKED')
+            except OSError:
+                print('ALLOWED')
+        """.trimIndent()
+
+        fun diag(r: SandboxResult) = "stdout='${r.stdout.trim()}' stderr='${r.stderr.trim()}'"
+
+        val root = createTempDirectory("sbx-net").toRealPath()
+        try {
+            val blocked = ProcessSandbox.forWritableRoots(listOf(root), allowNetwork = false)
+                .run(listOf(python3!!.toString(), "-c", probe))
+            assertTrue("BLOCKED" in blocked.stdout, "deny-default must block the socket; ${diag(blocked)}")
+
+            val allowed = ProcessSandbox.forWritableRoots(listOf(root), allowNetwork = true)
+                .run(listOf(python3.toString(), "-c", probe))
+            assertTrue(
+                "ALLOWED" in allowed.stdout || "CONNECTED" in allowed.stdout,
+                "allowNetwork must permit the socket; ${diag(allowed)}",
+            )
+        } finally {
+            root.deleteRecursively()
         }
     }
 }
