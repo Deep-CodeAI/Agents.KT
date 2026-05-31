@@ -24,6 +24,21 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 - This flips the `ToolPolicyEnforcementTest` 0.6.0-gap tripwire (#2395) from "restricted
   write still happens" to "restricted write is blocked."
 
+### Added — Layer 2 OS sandbox, first slice: macOS write-confinement (#2906, under #2891)
+
+- New `agents_engine.sandbox.ProcessSandbox` — runs a command under macOS **Seatbelt**
+  (`sandbox-exec`) with a generated profile that denies by default and allows file
+  **writes only under a single canonical folder**. A write to any path outside that
+  folder is blocked by the **kernel**, not just the in-JVM Layer-1 gate — so it holds
+  even for paths the tool constructs itself. `seatbeltProfile(root)` is a pure,
+  unit-testable function; `isSupported()` is false off macOS and `run` throws there.
+- New `sandboxedEchoToFileTool(folder)` — the simplest demonstration: a tool that echoes
+  text into a given path, OS-confined to `folder`. In-folder writes succeed; out-of-folder
+  writes return an `ERROR` and create no file.
+- macOS-only for now (the Linux bwrap/firejail backend is #2892, the general
+  `ToolPolicy`→profile mapping and `process { }` DSL remain in #2891). OS-gated tests are
+  annotated `@EnabledOnOs(OS.MAC)` + `@Tag("mac_os_only")` so CI can filter them on Linux.
+
 ### Errata — v0.6.5 release notes overstated document-attachment shipping (#2868)
 
 - The v0.6.5 tagged `RELEASE_NOTES.md` carried an "Added — Document attachments (#2470 slice c)" section claiming PDF / text / markdown routing through Anthropic, OpenAI, Ollama, and DeepSeek. **That section was incorrect.** The shipped code in 0.6.5 (and 0.6.6) routes only `Content.Image` through `agent.invokeWithAttachments(...)`; `Content.Document` is explicitly skipped in `AgenticLoop` (`executeAgentic` filters non-Image variants with a `// Not an image — skip in v1` comment).
