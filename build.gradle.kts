@@ -345,6 +345,20 @@ tasks.register<Test>("mcpIntegrationTest") {
     testClassesDirs = sourceSets.test.get().output.classesDirs
 }
 
+// #2892 — the Linux ProcessSandbox backend (bwrap / firejail) needs a real Linux
+// kernel, so its integration tests are tagged `linux_only` (+ @EnabledOnOs(OS.LINUX)).
+// On Linux / CI they run directly. On macOS there is no Linux kernel, so run this
+// task inside a Lima VM:  `scripts/lima-test.sh`  (see docs/testing.md).
+tasks.register<Test>("linuxSandboxTest") {
+    description = "Runs @Tag(\"linux_only\") sandbox tests (Linux kernel required; on macOS use scripts/lima-test.sh)."
+    group = "verification"
+    useJUnitPlatform {
+        includeTags("linux_only")
+    }
+    classpath = sourceSets.test.get().runtimeClasspath
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+}
+
 // #981 — manually drive a LiveShow REPL from your terminal. The Gradle Test
 // task does not forward stdin, so we use JavaExec pointing at a main() under
 // the test sourceset. The demo class never ships in the published JAR.
