@@ -1,5 +1,6 @@
 package agents_engine.sandbox
 
+import agents_engine.core.toolPolicy
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.condition.EnabledOnOs
 import org.junit.jupiter.api.condition.OS
@@ -33,6 +34,40 @@ class SeatbeltProfileTest {
     @Test fun `profile quotes a root containing a space`() {
         val profile = ProcessSandbox.seatbeltProfile(Path.of("/private/tmp/a b"))
         assertTrue("(subpath \"/private/tmp/a b\")" in profile, "spaced path stays a single quoted literal: $profile")
+    }
+
+    @Test fun `globToWriteRoot strips the wildcard tail back to the containing directory`() {
+        assertEquals("/uploads", ProcessSandbox.globToWriteRoot("/uploads/**"))
+        assertEquals("/a/b", ProcessSandbox.globToWriteRoot("/a/b/*.txt"))
+        assertEquals("/a", ProcessSandbox.globToWriteRoot("/a/foo*bar")) // mid-segment wildcard -> parent dir
+        assertEquals("/exact/file.txt", ProcessSandbox.globToWriteRoot("/exact/file.txt")) // no wildcard
+        assertEquals("/data", ProcessSandbox.globToWriteRoot("/data/{x,y}/**"))
+    }
+
+    @Test fun `profile emits one write rule per root and toggles network`() {
+        val p = ProcessSandbox.seatbeltProfile(
+            listOf(Path.of("/private/tmp/a"), Path.of("/private/tmp/b")),
+            allowNetwork = true,
+        )
+        assertTrue("(subpath \"/private/tmp/a\")" in p, p)
+        assertTrue("(subpath \"/private/tmp/b\")" in p, p)
+        assertTrue("(allow network*)" in p, "allowNetwork must open network: $p")
+
+        val noNet = ProcessSandbox.seatbeltProfile(listOf(Path.of("/private/tmp/a")))
+        assertFalse("network" in noNet, "deny-default leaves network blocked unless opened: $noNet")
+    }
+
+    @Test fun `empty write roots produce a deny-all-writes profile`() {
+        val p = ProcessSandbox.seatbeltProfile(emptyList())
+        assertTrue("(deny default)" in p)
+        assertFalse("file-write*" in p, "no declared write root -> no write allowance: $p")
+    }
+
+    @Test fun `single-root profile delegates to the list form`() {
+        assertEquals(
+            ProcessSandbox.seatbeltProfile(listOf(Path.of("/private/tmp/x"))),
+            ProcessSandbox.seatbeltProfile(Path.of("/private/tmp/x")),
+        )
     }
 }
 
@@ -102,6 +137,38 @@ class ProcessSandboxMacTest {
         } finally {
             root.deleteRecursively()
             outside.deleteRecursively()
+        }
+    }
+
+    @Test fun `forWritableRoots confines writes to any of the given roots`() {
+        val a = createTempDirectory("sbx-a").toRealPath()
+        val b = createTempDirectory("sbx-b").toRealPath()
+        val c = createTempDirectory("sbx-c").toRealPath()
+        try {
+            val sandbox = ProcessSandbox.forWritableRoots(listOf(a, b))
+            assertTrue(sandbox.run(shWrite("x", a.resolve("f.txt"))).ok, "write to root A allowed")
+            assertTrue(sandbox.run(shWrite("y", b.resolve("f.txt"))).ok, "write to root B allowed")
+            val denied = sandbox.run(shWrite("z", c.resolve("f.txt")))
+            assertFalse(denied.ok, "write to un-declared root C blocked")
+            assertFalse(c.resolve("f.txt").exists())
+        } finally {
+            a.deleteRecursively(); b.deleteRecursively(); c.deleteRecursively()
+        }
+    }
+
+    @Test fun `forPolicy derives the write roots from declared globs`() {
+        val a = createTempDirectory("sbx-pa").toRealPath()
+        val b = createTempDirectory("sbx-pb").toRealPath()
+        val outside = createTempDirectory("sbx-pout").toRealPath()
+        try {
+            val policy = toolPolicy { filesystem { write("$a/**"); write("$b/**") } }
+            val sandbox = ProcessSandbox.forPolicy(policy)
+            assertTrue(sandbox.run(shWrite("x", a.resolve("f.txt"))).ok, "declared root A allowed")
+            assertTrue(sandbox.run(shWrite("y", b.resolve("f.txt"))).ok, "declared root B allowed")
+            assertFalse(sandbox.run(shWrite("z", outside.resolve("f.txt"))).ok, "undeclared path blocked")
+            assertFalse(outside.resolve("f.txt").exists())
+        } finally {
+            a.deleteRecursively(); b.deleteRecursively(); outside.deleteRecursively()
         }
     }
 }

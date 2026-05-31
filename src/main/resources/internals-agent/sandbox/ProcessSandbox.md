@@ -11,15 +11,25 @@ to a single folder using macOS Seatbelt, so even a path the tool builds itself c
 ## API
 
 ```kotlin
-class ProcessSandbox(writableRoot: Path) {
+class ProcessSandbox /* private(List<Path>, Boolean) */ {
+    constructor(writableRoot: Path)                              // single-folder (#2906)
     fun run(command: List<String>, stdin: String? = null, timeout: Duration = 10.seconds): SandboxResult
     companion object {
         fun isSupported(): Boolean
-        fun seatbeltProfile(realRoot: Path): String   // pure, unit-testable
+        fun forWritableRoots(roots: List<Path>, allowNetwork: Boolean = false): ProcessSandbox   // #2909
+        fun forPolicy(policy: ToolPolicy): ProcessSandbox                                          // #2909
+        fun seatbeltProfile(writeRoots: List<Path>, allowNetwork: Boolean = false): String        // pure
+        fun seatbeltProfile(realRoot: Path): String              // single-root convenience
+        fun globToWriteRoot(glob: String): String                // pure: glob -> dir prefix
     }
 }
 data class SandboxResult(val exitCode: Int, val stdout: String, val stderr: String) { val ok: Boolean }
 ```
+
+`forPolicy` (#2909) is the Layer-1→Layer-2 bridge: writable roots come from the tool's
+`filesystem.write` globs (`globToWriteRoot` takes each glob's literal directory prefix), and
+network is opened only for `network = AllowAll`. `forWritableRoots` confines writes to several
+folders at once. Empty write roots ⇒ a deny-all-writes profile.
 
 ## How it works
 
@@ -36,9 +46,12 @@ compare a write target against the root must also canonicalize.
 
 ## Scope / limitations (remain in #2891)
 
-- macOS only; write-confinement to **one** folder; no `network`/`environment` mapping.
-- General `ToolPolicy` → profile mapping (read globs, multiple roots) and the `process { }`
-  DSL are later slices. Linux bwrap/firejail = #2892; Wasm/Docker = #2894/#2895.
+- macOS only. Writes confined to one-or-many roots, derived from `ToolPolicy.filesystem.write`
+  via `forPolicy` (#2909). Network opens only for `AllowAll`; `Hosts` filtering needs the proxy
+  (#2893). **Reads stay broad** — read-confinement needs system-path allowlisting (deferred).
+- Not yet auto-wired into the agent executor (a tool with a policy isn't auto-sandboxed; the
+  caller builds `ProcessSandbox.forPolicy`). The `process { }` DSL, plain-`ProcessBuilder`
+  fallback, and the Linux bwrap/firejail backend (#2892) remain in #2891 (Wasm/Docker = #2894/#2895).
 
 ## Related files
 

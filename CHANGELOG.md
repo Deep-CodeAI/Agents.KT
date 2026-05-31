@@ -35,9 +35,15 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 - New `sandboxedEchoToFileTool(folder)` — the simplest demonstration: a tool that echoes
   text into a given path, OS-confined to `folder`. In-folder writes succeed; out-of-folder
   writes return an `ERROR` and create no file.
-- macOS-only for now (the Linux bwrap/firejail backend is #2892, the general
-  `ToolPolicy`→profile mapping and `process { }` DSL remain in #2891). OS-gated tests are
-  annotated `@EnabledOnOs(OS.MAC)` + `@Tag("mac_os_only")` so CI can filter them on Linux.
+- The sandbox now builds its profile from a tool's **declared `ToolPolicy`** (#2909):
+  `ProcessSandbox.forPolicy(policy)` derives the writable roots from the `filesystem.write`
+  globs (each glob's directory prefix via `globToWriteRoot`) and opens network only for
+  `network = AllowAll`; `ProcessSandbox.forWritableRoots(roots)` confines writes to several
+  folders at once. This is the bridge that lets Layer 1's declaration drive Layer 2's OS
+  enforcement.
+- macOS-only for now (the Linux bwrap/firejail backend is #2892, network hostname filtering
+  is the proxy #2893, and read-confinement + the `process { }` DSL remain in #2891). OS-gated
+  tests are annotated `@EnabledOnOs(OS.MAC)` + `@Tag("mac_os_only")` so CI can filter them on Linux.
 
 ### Errata — v0.6.5 release notes overstated document-attachment shipping (#2868)
 

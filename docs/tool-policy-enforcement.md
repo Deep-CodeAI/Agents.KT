@@ -112,9 +112,12 @@ example — a tool that echoes text into a path, OS-confined to `folder`.
 Caveats / status:
 - **macOS only** right now (`ProcessSandbox.isSupported()` is false elsewhere; `run` throws).
   The Linux bwrap/firejail backend is #2892.
-- **Write-confinement to one folder only** so far. The general `ToolPolicy` → profile mapping
-  (read globs, multiple roots), `network`/`environment`, and the `process { }` DSL are the
-  remaining #2891 work.
+- **Write-confinement, derived from policy.** `ProcessSandbox.forPolicy(policy)` builds the
+  profile from a tool's declared `filesystem.write` globs (one-or-many roots) and opens network
+  only for `network = AllowAll` — the bridge from Layer-1 declaration to Layer-2 enforcement.
+  `forWritableRoots(roots)` confines to several folders directly. **Reads stay broad**, and
+  `network { hosts(...) }` filtering needs the proxy (#2893); read-confinement and the
+  `process { }` DSL are the remaining #2891 work.
 - macOS's `/tmp` is a symlink to `/private/tmp`, and Seatbelt matches the **canonical** path —
   `ProcessSandbox` resolves the folder with `toRealPath()` before building the profile.
 - OS-gated tests are annotated `@EnabledOnOs(OS.MAC)` + `@Tag("mac_os_only")` so Linux CI can
