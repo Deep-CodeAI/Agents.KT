@@ -410,16 +410,27 @@ class ProcessSandboxLinuxTest {
     // --- firejail (the setuid fallback), forced via the internal backend seam so
     // it is exercised even on CI where bwrap is also installed and would win. ---
 
-    private fun assumeFirejailUsable() {
+    /**
+     * Skip only when firejail is genuinely **absent** (binary not on PATH → the
+     * launch throws IOException). If firejail *is* installed it must actually
+     * confine: firejail is setuid and doesn't depend on user namespaces, so an
+     * installed-but-non-working firejail is a real failure worth surfacing — not an
+     * environment quirk to skip past. Since CI installs firejail, this guarantees
+     * the firejail path is *verified*, never silently skipped.
+     */
+    private fun assumeFirejailInstalled() {
         val probeRoot = createTempDirectory("fj-probe").toRealPath()
         try {
-            val probe = runCatching {
+            val probe = try {
                 ProcessSandbox(probeRoot).runWithBackend(ProcessSandbox.Backend.FIREJAIL, listOf("/bin/true"))
-            }.getOrNull()
-            Assumptions.assumeTrue(
-                probe != null && probe.ok,
-                "firejail not installed or cannot sandbox here: " +
-                    (probe?.let { "exit=${it.exitCode} stderr=${it.stderr.trim()}" } ?: "firejail binary not found"),
+            } catch (e: java.io.IOException) {
+                Assumptions.assumeTrue(false, "firejail not installed: ${e.message}")
+                return
+            }
+            assertTrue(
+                probe.ok,
+                "firejail is installed but failed to sandbox /bin/true: " +
+                    "exit=${probe.exitCode} stderr=${probe.stderr.trim()}",
             )
         } finally {
             probeRoot.deleteRecursively()
@@ -427,7 +438,7 @@ class ProcessSandboxLinuxTest {
     }
 
     @Test fun `firejail confines a write inside the folder`() {
-        assumeFirejailUsable()
+        assumeFirejailInstalled()
         val root = createTempDirectory("fj-in").toRealPath()
         try {
             val target = root.resolve("note.txt")
@@ -441,7 +452,7 @@ class ProcessSandboxLinuxTest {
     }
 
     @Test fun `firejail blocks a write outside the folder`() {
-        assumeFirejailUsable()
+        assumeFirejailInstalled()
         val root = createTempDirectory("fj-root").toRealPath()
         val outside = createTempDirectory("fj-out").toRealPath()
         try {
