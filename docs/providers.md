@@ -2,9 +2,9 @@
 
 # Provider Capability Matrix
 
-Single source of truth for what each shipped `ModelProvider` supports. The four entries below match `ModelProvider.entries` (`OLLAMA`, `ANTHROPIC`, `OPENAI`, `DEEPSEEK`) — the only first-party adapters with their own wiring, caching tests, and live integration coverage.
+Single source of truth for what each shipped `ModelProvider` supports. `ModelProvider.entries` has **six** values: `OLLAMA`, `ANTHROPIC`, `OPENAI`, `DEEPSEEK`, `KIMI`, `OPENROUTER`. The four columns below are the four distinct **wire shapes** — the adapters with their own wiring, caching tests, and live integration coverage. `KIMI` and `OPENROUTER` are first-party providers that **extend the OpenAI adapter** (`model { kimi(...) }` / `model { openrouter(...) }`), so they share the OpenAI column's behavior.
 
-For fourth-party deployments that ride on one of these wire shapes (Kimi via Moonshot, OpenRouter, vLLM, SGLang, …) see [caching.md → Under evaluation](caching.md#under-evaluation).
+For other deployments that ride on one of these wire shapes (vLLM, SGLang, …) see [caching.md → Under evaluation](caching.md#under-evaluation).
 
 ## Modality input
 

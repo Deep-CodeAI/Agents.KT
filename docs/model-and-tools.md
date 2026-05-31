@@ -42,14 +42,16 @@ calculator("Calculate ((15 + 35) / 2)^2")
 // → "The result is 625."
 ```
 
-**`model { }`** — configures the LLM backend. Four providers ship today:
+**`model { }`** — configures the LLM backend. Six providers ship today:
 
 - `model { ollama("gpt-oss:120b-cloud"); host = "..."; port = 11434; temperature = 0.0 }` — local or cloud Ollama; auto-fallback to inline JSON tool-call format for models without native tool support (#706).
 - `model { claude("claude-opus-4-7"); apiKey = System.getenv("ANTHROPIC_API_KEY"); temperature = 0.0; maxTokens = 4096 }` — Anthropic Messages API; maps `LlmMessage` / `LlmResponse` to Anthropic's structured `tool_use` / `tool_result` content blocks; tools advertise as `input_schema` (Anthropic's spelling) (#1644).
 - `model { openai("gpt-4o"); apiKey = System.getenv("OPENAI_API_KEY"); temperature = 0.0; maxTokens = 4096 }` — OpenAI Chat Completions; assistant `tool_calls` paired with `tool_call_id`-tagged tool messages via synthesized ids per request; `function.arguments` rides the wire as a stringified JSON; tools advertise as `parameters` (OpenAI's spelling) (#1656).
 - `model { deepseek("deepseek-v4-flash"); apiKey = System.getenv("DEEPSEEK_API_KEY") }` — DeepSeek's OpenAI-compatible API; shares the OpenAI adapter's wire shape (#1949 family).
+- `model { kimi("kimi-k2-0905-preview"); apiKey = System.getenv("MOONSHOT_API_KEY") }` — Moonshot's Kimi via its OpenAI-compatible API; extends the OpenAI adapter (#2697).
+- `model { openrouter("anthropic/claude-3.5-sonnet"); apiKey = System.getenv("OPENROUTER_API_KEY") }` — OpenRouter's OpenAI-compatible gateway to many upstream models; extends the OpenAI adapter (#2701).
 
-All four adapters share the `ModelClient` interface — switching providers is a one-line DSL change. The injectable `client = ...` escape hatch is still there for test stubs or custom adapters (e.g., Google/Gemini ahead of native support).
+All six adapters share the `ModelClient` interface — switching providers is a one-line DSL change. The injectable `client = ...` escape hatch is still there for test stubs or custom adapters (e.g., Google/Gemini ahead of native support).
 
 #### Reasoning / thinking (opt-in, #2406)
 
@@ -114,7 +116,7 @@ val agent = agent<String, String>("kyc") {
 ```
 
 - **Opt-in, never automatic.** `httpClient` defaults to `null` → each client builds its own, byte-for-byte unchanged. Existing code is unaffected.
-- **Every provider.** `ModelConfig.httpClient` is threaded by `defaultClientFor()` into all four adapters (Ollama / Claude / OpenAI / DeepSeek); DeepSeek inherits it through its `OpenAiClient` superclass.
+- **Every provider.** `ModelConfig.httpClient` is threaded by `defaultClientFor()` into all six adapters (Ollama / Claude / OpenAI / DeepSeek / Kimi / OpenRouter); DeepSeek, Kimi, and OpenRouter inherit it through their `OpenAiClient` superclass.
 - **You own the policy.** The framework provides the *seam*, not the policy — rate limiting, circuit breaking, and bulkheading live in *your* `HttpClient` (e.g. a `Semaphore`-bounded `executor`). The injected client is used verbatim, so its own `connectTimeout` wins over the DSL `connectTimeout` field (the per-request `requestTimeout` still applies, since it rides on each `HttpRequest`).
 
 **`tools { tool(name, description) { args -> } }`** — registers callable tools. Each tool receives a `Map<String, Any?>` of arguments and returns any value.

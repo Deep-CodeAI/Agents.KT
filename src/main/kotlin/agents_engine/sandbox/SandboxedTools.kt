@@ -16,10 +16,11 @@ import java.nio.file.Path
  * returns an `"ERROR: …"` string (exit code + stderr). The declared filesystem write
  * globs become the sandbox's writable roots, and `network = AllowAll` opens network.
  *
- * **Fail-closed:** if no OS sandbox is available ([ProcessSandbox.isSupported] is
- * false — currently any non-macOS host), the tool refuses to run rather than
- * executing the subprocess unsandboxed. The plain-`ProcessBuilder` fallback and the
- * Linux backend are #2892.
+ * **Fail-closed:** if no OS sandbox backend is available ([ProcessSandbox.isSupported]
+ * is false — no macOS `sandbox-exec` and no Linux `bwrap`/`firejail`), the tool refuses
+ * to run rather than executing the subprocess unsandboxed. (The low-level
+ * [ProcessSandbox.run] itself falls back to a plain `ProcessBuilder` with a loud
+ * `UNCONFINED` warning; `processTool` is the fail-closed public path to prefer.)
  *
  * The tool also *declares* [policy], so when used on an agent the in-JVM Layer-1
  * gate ([agents_engine.core.ToolPolicyEnforcer], #2890) checks path arguments too —
@@ -37,7 +38,7 @@ fun processTool(
     policy = policy,
 ) { args ->
     if (!ProcessSandbox.isSupported()) {
-        "ERROR: OS sandbox unavailable on this platform (macOS only for now; Linux is #2892) — " +
+        "ERROR: no OS sandbox backend available (need macOS sandbox-exec or Linux bwrap/firejail) — " +
             "refusing to run '$name' unsandboxed"
     } else {
         val result = ProcessSandbox.forPolicy(policy).run(commandFor(args))
@@ -62,7 +63,7 @@ fun processTool(
  * (#2890) denies out-of-policy paths in-JVM as well — but the kernel-level block
  * here is what makes the tool safe even for paths it constructs itself.
  *
- * macOS only for now (see [ProcessSandbox.isSupported]); the Linux backend is #2892.
+ * Runs on macOS (Seatbelt) and Linux (bwrap / firejail) — see [ProcessSandbox.isSupported].
  */
 fun sandboxedEchoToFileTool(sandboxedFolder: Path): ToolDef {
     val root = sandboxedFolder.toRealPath()
