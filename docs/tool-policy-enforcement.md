@@ -109,6 +109,21 @@ allows file **writes** only under one canonical folder (reads + process exec sta
 command can load). The convenience `sandboxedEchoToFileTool(folder)` is the simplest end-to-end
 example — a tool that echoes text into a path, OS-confined to `folder`.
 
+The ergonomic way to build a sandboxed subprocess tool is **`processTool`**, which auto-applies
+`ProcessSandbox.forPolicy` from the tool's declared policy — you never wire the sandbox by hand:
+
+```kotlin
+val grep = processTool("grep", policy = toolPolicy {
+    risk = ToolRisk.Medium
+    filesystem { read("/data/**"); write("/out/**") }
+    network { denyAll() }
+}) { args ->
+    listOf("rg", args["pattern"].toString(), "/data")   // the command to run
+}
+// writes confined to /out, network blocked, stdout returned; ERROR (no run) if the
+// platform has no OS sandbox (fail-closed).
+```
+
 Caveats / status:
 - **macOS only** right now (`ProcessSandbox.isSupported()` is false elsewhere; `run` throws).
   The Linux bwrap/firejail backend is #2892.

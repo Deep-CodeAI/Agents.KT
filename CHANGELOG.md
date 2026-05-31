@@ -41,6 +41,11 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
   `network = AllowAll`; `ProcessSandbox.forWritableRoots(roots)` confines writes to several
   folders at once. This is the bridge that lets Layer 1's declaration drive Layer 2's OS
   enforcement.
+- `processTool(name, policy) { args -> command }` (#2914) auto-sandboxes a subprocess tool
+  **from its declared policy** — no hand-wiring of `ProcessSandbox`. It returns the command's
+  stdout on success (or an `ERROR:` string), carries the policy onto the `ToolDef` so Layer-1
+  (#2890) gates path args too, and **fails closed** (refuses to run rather than executing
+  unsandboxed) where no OS sandbox is available.
 - macOS-only for now (the Linux bwrap/firejail backend is #2892, network hostname filtering
   is the proxy #2893, and read-confinement + the `process { }` DSL remain in #2891). OS-gated
   tests are annotated `@EnabledOnOs(OS.MAC)` + `@Tag("mac_os_only")` so CI can filter them on Linux.

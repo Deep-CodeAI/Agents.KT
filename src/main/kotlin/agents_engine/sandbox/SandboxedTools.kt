@@ -1,9 +1,53 @@
 package agents_engine.sandbox
 
+import agents_engine.core.ToolPolicy
 import agents_engine.core.ToolRisk
 import agents_engine.core.toolPolicy
 import agents_engine.model.ToolDef
 import java.nio.file.Path
+
+/**
+ * Build a subprocess tool that is **automatically OS-sandboxed from its declared
+ * [policy]** (#2914, under #2891). You supply the [policy] and a [commandFor] that
+ * turns the call arguments into a command line; the framework launches it via
+ * [ProcessSandbox.forPolicy] — no hand-wiring of the sandbox.
+ *
+ * On success the tool returns the command's trimmed stdout; on a non-zero exit it
+ * returns an `"ERROR: …"` string (exit code + stderr). The declared filesystem write
+ * globs become the sandbox's writable roots, and `network = AllowAll` opens network.
+ *
+ * **Fail-closed:** if no OS sandbox is available ([ProcessSandbox.isSupported] is
+ * false — currently any non-macOS host), the tool refuses to run rather than
+ * executing the subprocess unsandboxed. The plain-`ProcessBuilder` fallback and the
+ * Linux backend are #2892.
+ *
+ * The tool also *declares* [policy], so when used on an agent the in-JVM Layer-1
+ * gate ([agents_engine.core.ToolPolicyEnforcer], #2890) checks path arguments too —
+ * both enforcement layers apply.
+ */
+fun processTool(
+    name: String,
+    description: String = "",
+    policy: ToolPolicy,
+    commandFor: (args: Map<String, Any?>) -> List<String>,
+): ToolDef = ToolDef(
+    name = name,
+    description = description,
+    risk = policy.risk,
+    policy = policy,
+) { args ->
+    if (!ProcessSandbox.isSupported()) {
+        "ERROR: OS sandbox unavailable on this platform (macOS only for now; Linux is #2892) — " +
+            "refusing to run '$name' unsandboxed"
+    } else {
+        val result = ProcessSandbox.forPolicy(policy).run(commandFor(args))
+        if (result.ok) {
+            result.stdout.trimEnd()
+        } else {
+            "ERROR: '$name' failed (exit ${result.exitCode}): ${result.stderr.trim()}"
+        }
+    }
+}
 
 /**
  * The simplest Layer-2 demonstration tool (#2906, under #2891): echo `text` into
