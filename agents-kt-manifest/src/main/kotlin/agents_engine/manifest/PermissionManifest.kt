@@ -295,6 +295,7 @@ private fun ModelConfig.toManifestMap(options: PermissionManifestOptions): Map<S
             ModelProvider.ANTHROPIC -> anthropicBaseUrl
             ModelProvider.OPENAI -> openAiBaseUrl
             ModelProvider.DEEPSEEK -> deepSeekBaseUrl
+            ModelProvider.KIMI -> kimiBaseUrl
             ModelProvider.OPENROUTER -> openRouterBaseUrl
         },
         "host" to host,
@@ -310,6 +311,7 @@ private fun ModelProvider.manifestName(): String = when (this) {
     ModelProvider.ANTHROPIC -> "anthropic"
     ModelProvider.OPENAI -> "openai"
     ModelProvider.DEEPSEEK -> "deepseek"
+    ModelProvider.KIMI -> "kimi"
     ModelProvider.OPENROUTER -> "openrouter"
 }
 

@@ -1,20 +1,32 @@
 ---
-description: Source-file knowledge for agents_engine/sandbox/SandboxedTools.kt — sandboxedEchoToFileTool(folder), the simplest Layer-2 demonstration tool (#2906). Builds a ToolDef that echoes text into a path, OS-confined to one folder via ProcessSandbox (macOS Seatbelt). Call when reasoning about how a sandboxed subprocess tool is constructed, the injection-safe argv shape, or how Layer-1 declaration and Layer-2 OS enforcement combine on one tool.
+description: Source-file knowledge for agents_engine/sandbox/SandboxedTools.kt — processTool(name, policy, commandFor) auto-sandboxes a subprocess tool from its declared ToolPolicy (#2914), and sandboxedEchoToFileTool(folder) is the simplest demo (#2906). Both build a ToolDef whose subprocess runs under ProcessSandbox (macOS Seatbelt). Call when reasoning about how a sandboxed subprocess tool is constructed, the auto-wiring of forPolicy, fail-closed behavior, the injection-safe argv shape, or how Layer-1 declaration and Layer-2 OS enforcement combine.
 ---
 
-# `agents_engine/sandbox/SandboxedTools.kt` — the simplest sandboxed tool
-
-A single factory that demonstrates Layer 2 end-to-end.
+# `agents_engine/sandbox/SandboxedTools.kt` — sandboxed-tool factories
 
 ## API
 
 ```kotlin
-fun sandboxedEchoToFileTool(sandboxedFolder: Path): ToolDef
+fun processTool(                                    // #2914 — the general factory
+    name: String,
+    description: String = "",
+    policy: ToolPolicy,
+    commandFor: (args: Map<String, Any?>) -> List<String>,
+): ToolDef
+fun sandboxedEchoToFileTool(sandboxedFolder: Path): ToolDef   // #2906 — the simplest demo
 ```
 
-Returns a `ToolDef` named `echoToFile` taking `{ "path": String, "text": String }`. It writes
-`text` to `path`, with the OS sandbox confining every write to `sandboxedFolder`. Returns
-`"ok"` on success or an `"ERROR: …"` string when the write is blocked/failed.
+**`processTool`** is the auto-wiring: you declare the tool's `ToolPolicy` + a command-builder,
+and it applies `ProcessSandbox.forPolicy(policy)` for you (the declared `filesystem.write` globs
+become the sandbox's writable roots; `network = AllowAll` opens network). Returns the command's
+trimmed **stdout** on success, an `"ERROR: …"` string (exit + stderr) on failure, and **fails
+closed** — if `ProcessSandbox.isSupported()` is false it refuses to run rather than executing
+unsandboxed. The `policy`/`risk` are carried onto the `ToolDef`, so on an agent the Layer-1 gate
+(#2890) also checks path args — both layers apply.
+
+**`sandboxedEchoToFileTool`** is the original single-folder demo: a `ToolDef` named `echoToFile`
+taking `{ "path", "text" }` that returns `"ok"`/`"ERROR: …"` (note: its `"ok"` contract differs
+from `processTool`'s stdout-returning contract, which is why it is kept separate).
 
 ## What it shows
 

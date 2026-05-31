@@ -863,6 +863,7 @@ private fun semconvProviderName(provider: ModelProvider): String =
         ModelProvider.DEEPSEEK -> "deepseek"
         ModelProvider.OPENAI -> "openai"
         ModelProvider.OLLAMA -> "ollama"
+        ModelProvider.KIMI -> "kimi"
         ModelProvider.OPENROUTER -> "openrouter"
     }
 
@@ -1282,6 +1283,18 @@ private fun defaultClientFor(
             connectTimeout = config.connectTimeout ?: OpenAiClient.DEFAULT_CONNECT_TIMEOUT,
             reasoning = config.reasoning,
             toolChoice = toolChoice,
+        )
+        // #2697 — Kimi (Moonshot AI) Chat Completions; thin OpenAI-compatible
+        // subclass, identical wiring to DeepSeek but with the Moonshot base URL.
+        ModelProvider.KIMI -> KimiClient(
+            apiKey = config.apiKey
+                ?: error("Agent uses Kimi but ModelConfig.apiKey is null — load it from .secrets/kimi-key"),
+            model = config.name,
+            temperature = config.temperature,
+            maxTokens = config.maxTokens,
+            tools = tools,
+            baseUrl = config.kimiBaseUrl,
+            reasoning = config.reasoning,
         )
         // #2701 — OpenRouter is a thin OpenAI-compatible aggregator. Same
         // wiring as DeepSeek/Kimi but with the two optional attribution
