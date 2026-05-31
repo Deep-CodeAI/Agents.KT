@@ -4,6 +4,22 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-05-31
+
+**Boundaries you can enforce externally.** The 0.6 line made tool policies *declarative* and
+*auditable*; 0.7.0 makes them **enforced**. A tool's declared `ToolPolicy` now constrains it at
+runtime — Layer 1 (in-JVM filesystem-argument gate, #2890) plus Layer 2 OS sandboxing (#1916):
+**macOS Seatbelt**, **Linux bubblewrap**, a **firejail setuid fallback**, and a plain
+`ProcessBuilder` + loud `UNCONFINED` warning where no tool is present. Subprocess-shaped tools are
+confined to their declared write roots, a derived environment allow-list, a working directory, and a
+**default-deny network**. And the deterministic permission manifest is now reachable **outside
+Gradle** via the standalone **`agents-kt` CLI** (`generate` / `inspect` / `verify`) — a drop-in CI
+gate that fails when a change widens a capability boundary.
+
+Deferred to 0.8 (tracked, not shipped here): `WasmSandbox` (#2894), `DockerSandbox` (#2895), the
+network **hostname-allowlist proxy** (#2893; default-deny ships, selective allow does not), and the
+`grants { }` hierarchical structure DSL.
+
 ### Added — standalone `agents-kt` CLI: permission manifest from a binary (#1923)
 
 - New `:agents-kt-cli` module (Gradle `application` plugin) — the **"externally"** half of
