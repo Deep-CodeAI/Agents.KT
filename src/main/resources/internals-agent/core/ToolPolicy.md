@@ -1,5 +1,5 @@
 ---
-description: Source-file knowledge for agents_engine/core/ToolPolicy.kt — declarative tool sandbox policy model and DSL (#1915). Defines ToolPolicy risk/filesystem/network/environment sub-policies, toolPolicy { } builder, manifest map/JSON/YAML helpers, and the declarative-only 0.6.0 contract. Call when reasoning about tool risk metadata, policy serialization, audit fields, or future sandbox enforcement inputs.
+description: Source-file knowledge for agents_engine/core/ToolPolicy.kt — declarative tool sandbox policy model and DSL (#1915). Defines ToolPolicy risk/filesystem/network/environment sub-policies, toolPolicy { } builder, manifest map/JSON/YAML helpers, and the declared-then-enforced contract (filesystem enforced in-JVM as of #2890; network/env/subprocess sandbox is Layer 2 / #1916). Call when reasoning about tool risk metadata, policy serialization, audit fields, or runtime policy enforcement inputs.
 ---
 
 # `agents_engine/core/ToolPolicy.kt` — declarative tool policy
@@ -22,7 +22,7 @@ tool("readUploadedDocument") {
 }
 ```
 
-This is **declarative only in 0.6.0**. It feeds manifest/audit evidence; it does not sandbox the executor. Runtime enforcement is the sibling #1916 track.
+It feeds manifest/audit evidence, and as of **#2890 the declared `filesystem` stance is enforced in-JVM** (Layer 1): `ToolPolicyEnforcer` denies a tool call whose absolute path arguments fall outside the declared `read`/`write` globs, before the executor runs. It does **not** OS-sandbox the executor — `network`/`environment` isolation and subprocess sandboxing are the sibling #1916 Layer-2 track. See `ToolPolicyEnforcer.kt` and `docs/tool-policy-enforcement.md`.
 
 ## Model
 
