@@ -1288,7 +1288,7 @@ private fun defaultClientFor(
         // headers carried through ModelConfig.
         ModelProvider.OPENROUTER -> OpenRouterClient(
             apiKey = config.apiKey
-                ?: error("Agent uses OpenRouter but ModelConfig.apiKey is null — load it from .secrets/open-router-key"),
+                ?: error("Agent uses OpenRouter but ModelConfig.apiKey is null"),
             model = config.name,
             temperature = config.temperature,
             maxTokens = config.maxTokens,

@@ -207,7 +207,7 @@ class ModelBuilder {
                 ModelProvider.ANTHROPIC -> error("model { claude(\"$name\") } requires apiKey to be set")
                 ModelProvider.OPENAI -> error("model { openai(\"$name\") } requires apiKey to be set")
                 ModelProvider.DEEPSEEK -> error("model { deepseek(\"$name\") } requires apiKey to be set")
-                ModelProvider.OPENROUTER -> error("model { openrouter(\"$name\") } requires apiKey to be set (load from .secrets/open-router-key)")
+                ModelProvider.OPENROUTER -> error("model { openrouter(\"$name\") } requires apiKey to be set")
                 ModelProvider.OLLAMA -> Unit
             }
         }
