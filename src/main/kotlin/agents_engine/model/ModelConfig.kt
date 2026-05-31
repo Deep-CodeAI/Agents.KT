@@ -13,7 +13,7 @@ import kotlin.time.Duration
  * adjunct surfaced to IDE-side LLM tools (#1837 / #1851).
  */
 
-enum class ModelProvider { OLLAMA, ANTHROPIC, OPENAI, DEEPSEEK, KIMI }
+enum class ModelProvider { OLLAMA, ANTHROPIC, OPENAI, DEEPSEEK, KIMI, OPENROUTER }
 
 /** Reasoning-effort hint for providers that take one (OpenAI `reasoning_effort`, Ollama). */
 enum class ReasoningEffort { LOW, MEDIUM, HIGH }
@@ -51,6 +51,12 @@ data class ModelConfig(
     val deepSeekBaseUrl: String = DeepSeekClient.DEFAULT_BASE_URL,
     /** Override the Kimi (Moonshot) base URL — regional endpoints, proxies (#2697). */
     val kimiBaseUrl: String = KimiClient.DEFAULT_BASE_URL,
+    /** Override the OpenRouter base URL (regional endpoints, proxies) — #2701. */
+    val openRouterBaseUrl: String = OpenRouterClient.DEFAULT_BASE_URL,
+    /** Optional `HTTP-Referer` header sent to OpenRouter — origin URL for attribution UI. */
+    val openRouterHttpReferer: String? = null,
+    /** Optional `X-Title` header sent to OpenRouter — calling app name for attribution UI. */
+    val openRouterXTitle: String? = null,
     /** max_tokens carried on every Anthropic / OpenAI-compatible request. */
     val maxTokens: Int = 4096,
     /** Opt-in reasoning/thinking config (#2406); null = off (default, no behavior change). */
@@ -98,6 +104,9 @@ data class ModelConfig(
             "anthropicBaseUrl=$anthropicBaseUrl, openAiBaseUrl=$openAiBaseUrl, " +
             "deepSeekBaseUrl=$deepSeekBaseUrl, " +
             "kimiBaseUrl=$kimiBaseUrl, " +
+            "openRouterBaseUrl=$openRouterBaseUrl, " +
+            "openRouterHttpReferer=$openRouterHttpReferer, " +
+            "openRouterXTitle=$openRouterXTitle, " +
             "maxTokens=$maxTokens, reasoning=$reasoning, " +
             "requestTimeout=$requestTimeout, connectTimeout=$connectTimeout)"
 
@@ -122,6 +131,9 @@ class ModelBuilder {
     var openAiBaseUrl: String = "https://api.openai.com"
     var deepSeekBaseUrl: String = DeepSeekClient.DEFAULT_BASE_URL
     var kimiBaseUrl: String = KimiClient.DEFAULT_BASE_URL
+    var openRouterBaseUrl: String = OpenRouterClient.DEFAULT_BASE_URL
+    var openRouterHttpReferer: String? = null
+    var openRouterXTitle: String? = null
     var maxTokens: Int = ClaudeClient.DEFAULT_MAX_TOKENS
     /**
      * #2850 — override the adapter's [DEFAULT_REQUEST_TIMEOUT]. Null
@@ -187,6 +199,19 @@ class ModelBuilder {
         provider = ModelProvider.KIMI
     }
 
+    /**
+     * Select OpenRouter — the multi-provider OpenAI-compatible aggregator (#2701).
+     * Model names follow OpenRouter's `provider/model` convention, e.g.
+     * `"anthropic/claude-3.5-sonnet"`, `"openai/gpt-4o-mini"`,
+     * `"meta-llama/llama-3.3-70b-instruct:free"` (free tier).
+     * [OpenRouterClient] is constructed lazily at AgenticLoop time so the
+     * agent's full tool catalog is available.
+     */
+    fun openrouter(modelName: String) {
+        name = modelName
+        provider = ModelProvider.OPENROUTER
+    }
+
     /** Backing field for the [reasoning] DSL (#2406). Off by default. */
     private var reasoningConfig: ReasoningConfig? = null
 
@@ -210,6 +235,7 @@ class ModelBuilder {
                 ModelProvider.OPENAI -> error("model { openai(\"$name\") } requires apiKey to be set")
                 ModelProvider.DEEPSEEK -> error("model { deepseek(\"$name\") } requires apiKey to be set")
                 ModelProvider.KIMI -> error("model { kimi(\"$name\") } requires apiKey to be set")
+                ModelProvider.OPENROUTER -> error("model { openrouter(\"$name\") } requires apiKey to be set")
                 ModelProvider.OLLAMA -> Unit
             }
         }
@@ -225,6 +251,9 @@ class ModelBuilder {
             openAiBaseUrl = openAiBaseUrl,
             deepSeekBaseUrl = deepSeekBaseUrl,
             kimiBaseUrl = kimiBaseUrl,
+            openRouterBaseUrl = openRouterBaseUrl,
+            openRouterHttpReferer = openRouterHttpReferer,
+            openRouterXTitle = openRouterXTitle,
             maxTokens = maxTokens,
             reasoning = reasoningConfig,
             requestTimeout = requestTimeout,
