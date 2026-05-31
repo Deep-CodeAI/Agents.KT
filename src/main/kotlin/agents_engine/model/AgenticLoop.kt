@@ -953,6 +953,11 @@ suspend fun <IN> selectSkillByLlm(
  * lambdas can be interrupted. Session-aware tools are already suspend-shaped, so
  * they use coroutine cancellation via `withTimeout` (#1903).
  */
+// #2888 — byte size of a tool call's arguments: the provider wire form when
+// present, else the serialized argument map (zero-dep, already in this package).
+private fun toolArgsByteSize(call: ToolCall): Long =
+    (call.rawArguments ?: InlineToolCallParser.argsToJson(call.arguments)).toByteArray(Charsets.UTF_8).size.toLong()
+
 private suspend fun <IN> executeToolWithBudget(
     agent: Agent<IN, *>,
     tool: ToolDef,
@@ -960,6 +965,18 @@ private suspend fun <IN> executeToolWithBudget(
     budget: BudgetConfig,
     emitter: AgentEventEmitter? = null,
 ): Any? {
+    // #2888 — single chokepoint, before either executor branch: hard-cap the
+    // argument size so an oversized (often injected) call is rejected before the
+    // executor runs. Unconditional like perToolTimeout — not extendable.
+    budget.maxToolArgsBytes?.let { cap ->
+        val bytes = toolArgsByteSize(call)
+        if (bytes > cap) {
+            throw BudgetExceededException(
+                "Tool '${tool.name}' arguments are $bytes bytes, over the maxToolArgsBytes cap of $cap",
+                BudgetReason.TOOL_ARGS_SIZE,
+            )
+        }
+    }
     if (emitter != null) {
         tool.sessionExecutor?.let { sessionExec ->
             val timeout = budget.perToolTimeout

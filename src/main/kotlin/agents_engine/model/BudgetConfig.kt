@@ -37,6 +37,13 @@ import kotlin.time.Duration.Companion.minutes
  *   confused by a tool's error and retries the same broken call until
  *   `maxToolCalls` runs out. Counter resets whenever a different tool is
  *   called. (#969)
+ * @property maxToolArgsBytes hard cap on the byte size of a single tool call's
+ *   arguments, checked before the executor runs. Null = no cap (default).
+ *   Resource-exhaustion guard (#2888, epic #2882): the model — often via
+ *   prompt-injected input — can emit a tool call with enormous arguments. This
+ *   is an **unconditional** cap (like `perToolTimeout`), not extendable via
+ *   `onBudgetExceeded`. Size is the provider wire form (`ToolCall.rawArguments`)
+ *   when present, else the serialized argument map.
  */
 data class BudgetConfig(
     val maxTurns: Int = 8,
@@ -45,6 +52,7 @@ data class BudgetConfig(
     val perToolTimeout: Duration? = null,
     val maxTokens: Int? = null,
     val maxConsecutiveSameTool: Int? = null,
+    val maxToolArgsBytes: Long? = null,
 ) {
     /**
      * #2805 — render a short, deterministic "what differs from defaults"
@@ -67,6 +75,7 @@ data class BudgetConfig(
             if (perToolTimeout != d.perToolTimeout) add("perToolTimeout=$perToolTimeout")
             if (maxTokens != d.maxTokens) add("maxTokens=$maxTokens")
             if (maxConsecutiveSameTool != d.maxConsecutiveSameTool) add("maxConsecutiveSameTool=$maxConsecutiveSameTool")
+            if (maxToolArgsBytes != d.maxToolArgsBytes) add("maxToolArgsBytes=$maxToolArgsBytes")
         }
         return if (overrides.isEmpty()) "(defaults)" else overrides.joinToString(", ")
     }
@@ -83,6 +92,7 @@ class BudgetBuilder {
     var perToolTimeout: Duration? = null
     var maxTokens: Int? = null
     var maxConsecutiveSameTool: Int? = null
+    var maxToolArgsBytes: Long? = null
 
     internal fun build() = BudgetConfig(
         maxTurns = maxTurns,
@@ -91,6 +101,7 @@ class BudgetBuilder {
         perToolTimeout = perToolTimeout,
         maxTokens = maxTokens,
         maxConsecutiveSameTool = maxConsecutiveSameTool,
+        maxToolArgsBytes = maxToolArgsBytes,
     )
 }
 
@@ -101,6 +112,13 @@ enum class BudgetReason {
     PER_TOOL_TIMEOUT,
     TOKENS,
     CONSECUTIVE_TOOL,
+
+    /**
+     * A single tool call's arguments exceeded `maxToolArgsBytes` (#2888). Like
+     * [PER_TOOL_TIMEOUT], this is an unconditional hard cap — not extendable via
+     * `onBudgetExceeded` (an oversized payload is rejected, not negotiated).
+     */
+    TOOL_ARGS_SIZE,
 }
 
 /**
