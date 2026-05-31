@@ -135,6 +135,8 @@ If you change anything in `ReflectionFallback` or any wrapped `kotlin.reflect.fu
 | `live-llm` | Needs a running Ollama (or another LLM provider in a test that overrides the model). | Excluded | Live integration tests that exercise actual prompt → response. |
 | `live-mcp` | Needs `MCP_REDMINE_URL` to point at a running MCP server. | Excluded | Live MCP client/server interop. |
 | `interactive` | Needs a TTY (a human typing at the REPL). | Excluded | LiveShow / interactive REPL tests. Not runnable in CI. |
+| `mac_os_only` | Spawns `sandbox-exec` (macOS Seatbelt). Paired with `@EnabledOnOs(OS.MAC)`, so they auto-skip elsewhere. | Runs on macOS, skipped on Linux | Layer-2 `ProcessSandbox` integration tests (#2906+). |
+| `linux_only` | Needs a Linux kernel (`bwrap` / `firejail`). Paired with `@EnabledOnOs(OS.LINUX)`. On macOS, run inside Lima (see below). | Runs on Linux/CI, skipped on macOS | The Linux `ProcessSandbox` backend (#2892). |
 
 Apply via JUnit Platform:
 
@@ -144,6 +146,47 @@ class MyLiveTest {
     @Test fun `talks to a real Ollama`() { ... }
 }
 ```
+
+## Linux sandbox tests on macOS — Lima
+
+The Layer-2 Linux sandbox backend (`bwrap` / `firejail`, #2892) needs a **real Linux
+kernel** — user namespaces and seccomp that macOS doesn't have. So its integration
+tests are tagged `linux_only` (+ `@EnabledOnOs(OS.LINUX)`) and **auto-skip on macOS**.
+The pure profile/argv-generation logic is unit-tested on any OS; only the
+"does-the-kernel-actually-block-it" tests need Linux.
+
+There's a dedicated Gradle task for just those tests:
+
+```bash
+./gradlew linuxSandboxTest      # @Tag("linux_only") only; runs directly on Linux/CI
+```
+
+On **macOS** you can't run that natively. Use **[Lima](https://lima-vm.io/)** — a real
+Linux VM (not a container, so `bwrap`'s namespaces and `firejail`'s setuid behave like
+production, no `--privileged` hacks). One-time setup:
+
+```bash
+brew install lima
+```
+
+Then run the Linux sandbox tests inside the VM via the helper script:
+
+```bash
+scripts/lima-test.sh            # first run: creates an Ubuntu VM, installs
+                                # JDK 21 + bubblewrap + firejail, then runs
+                                # ./gradlew linuxSandboxTest inside it
+scripts/lima-test.sh test --tests "agents_engine.sandbox.*"   # run anything in the VM
+```
+
+How it works: Lima mounts your home directory into the VM 1:1, so the repo path is
+identical inside; the script just `cd`s there and runs Gradle. Override the instance
+name with `LIMA_VM=...`. To reset, `limactl delete agents-kt`.
+
+**CI:** the GitHub Actions Linux job runs on a native Ubuntu kernel — it installs
+`bubblewrap` / `firejail` and runs `linuxSandboxTest` (or the default suite, which
+includes `linux_only` there) directly, no Lima needed. Write the `linux_only` tests so
+they `Assumptions.assumeTrue(...)`-skip when the sandbox binary is absent, mirroring the
+python3-gated network test — that keeps them green on a Linux box without `bwrap`.
 
 ## Dependency verification
 
