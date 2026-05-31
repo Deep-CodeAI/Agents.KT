@@ -41,7 +41,9 @@ object StrictEntrypoint : PermissionManifestProvider {
 
 object WidenedEntrypoint : PermissionManifestProvider {
     override fun permissionManifest(): PermissionManifest =
-        agent<String, String>("ops-widened") {
+        // Same agent name as StrictEntrypoint: the verifier keys tools by
+        // agentName.toolName, so widening is detected per same-named agent + tool.
+        agent<String, String>("ops") {
             tools {
                 tool("syncTicket") {
                     policy {

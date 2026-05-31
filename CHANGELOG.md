@@ -4,6 +4,22 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Fixed — manifest `verify` compares policy sets, not coarse scores (#1923 hardening)
+
+- `ManifestVerifier` previously compared coarse per-tool scores (network `allowAll`=2 / `hosts`=1 /
+  none=0; filesystem any-globs=1 / none=0), so real widenings slipped through: adding a host within
+  `hosts` mode (`["api.internal"] → ["api.internal", "evil.example"]`) or broadening a write glob
+  without changing the count (a narrow upload-folder glob → a root-level glob) were **not** flagged.
+  It also keyed tools by name with `putIfAbsent`, so two agents with a same-named tool collided and
+  one agent's widening was hidden.
+- Now it compares the actual policy **sets**, keyed by `agentName.toolName`. Network widening = mode
+  escalation (denyAll/unspecified → hosts → allowAll) or a host the baseline did not list;
+  filesystem / environment widening = a glob / variable the baseline's set did not contain (new
+  `tool.environment.widened` finding). Pure narrowing (removing entries) is not flagged; conservative
+  on added entries — semantic glob-*coverage* subset-checking is a later refinement. Regression tests
+  pin each previously-missed case. Both the CLI `verify` and the Gradle `verifyAgentManifest` inherit
+  the fix. Surfaced by external review of 0.7.0.
+
 ## [0.7.0] — 2026-05-31
 
 **Boundaries you can enforce externally.** The 0.6 line made tool policies *declarative* and

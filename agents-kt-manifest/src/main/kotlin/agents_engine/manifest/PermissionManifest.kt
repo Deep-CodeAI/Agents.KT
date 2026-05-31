@@ -502,58 +502,67 @@ private fun typeName(type: KClass<*>): String =
 private object ManifestVerifier {
     fun verify(current: PermissionManifest, baseline: PermissionManifest): ManifestVerificationResult {
         val findings = mutableListOf<ManifestFinding>()
-        val currentTools = current.toolsByName()
-        val baselineTools = baseline.toolsByName()
+        val currentTools = current.toolsByKey()
+        val baselineTools = baseline.toolsByKey()
 
-        currentTools.forEach { (name, currentTool) ->
-            val baselineTool = baselineTools[name]
+        currentTools.forEach { (key, currentTool) ->
+            val name = currentTool["name"]?.toString() ?: key
+            val baselineTool = baselineTools[key]
             val currentRisk = currentTool.riskValue()
             if (baselineTool == null) {
                 if (currentRisk >= RISK_HIGH) {
                     findings += ManifestFinding(
                         code = "tool.added.high-risk",
                         severity = "high",
-                        path = "tools.$name",
+                        path = "tools.$key",
                         message = "New high-risk tool \"$name\" was added.",
                     )
                 }
                 return@forEach
             }
 
-            val baselineRisk = baselineTool.riskValue()
-            if (currentRisk > baselineRisk && currentRisk >= RISK_HIGH) {
+            if (currentRisk > baselineTool.riskValue() && currentRisk >= RISK_HIGH) {
                 findings += ManifestFinding(
                     code = "tool.risk.increased",
                     severity = "high",
-                    path = "tools.$name.risk",
+                    path = "tools.$key.risk",
                     message = "Tool \"$name\" risk increased from ${baselineTool["risk"]} to ${currentTool["risk"]}.",
                 )
             }
 
-            if (currentTool.networkScore() > baselineTool.networkScore()) {
+            networkWidening(currentTool, baselineTool)?.let { detail ->
                 findings += ManifestFinding(
                     code = "tool.network.widened",
                     severity = "high",
-                    path = "tools.$name.policy.network",
-                    message = "Tool \"$name\" gained wider network access.",
+                    path = "tools.$key.policy.network",
+                    message = "Tool \"$name\" network access widened ($detail).",
                 )
             }
 
-            if (currentTool.filesystemScore("write") > baselineTool.filesystemScore("write")) {
+            filesystemWidening(currentTool, baselineTool, "write")?.let { detail ->
                 findings += ManifestFinding(
                     code = "tool.filesystem.write.widened",
                     severity = "high",
-                    path = "tools.$name.policy.filesystem.write",
-                    message = "Tool \"$name\" gained wider filesystem write access.",
+                    path = "tools.$key.policy.filesystem.write",
+                    message = "Tool \"$name\" filesystem write access widened ($detail).",
                 )
             }
 
-            if (currentTool.filesystemScore("read") > baselineTool.filesystemScore("read")) {
+            filesystemWidening(currentTool, baselineTool, "read")?.let { detail ->
                 findings += ManifestFinding(
                     code = "tool.filesystem.read.widened",
                     severity = "medium",
-                    path = "tools.$name.policy.filesystem.read",
-                    message = "Tool \"$name\" gained wider filesystem read access.",
+                    path = "tools.$key.policy.filesystem.read",
+                    message = "Tool \"$name\" filesystem read access widened ($detail).",
+                )
+            }
+
+            environmentWidening(currentTool, baselineTool)?.let { detail ->
+                findings += ManifestFinding(
+                    code = "tool.environment.widened",
+                    severity = "medium",
+                    path = "tools.$key.policy.environment",
+                    message = "Tool \"$name\" environment access widened ($detail).",
                 )
             }
         }
@@ -563,17 +572,23 @@ private object ManifestVerifier {
 
     private const val RISK_HIGH = 3
 
+    /**
+     * Tools keyed by `agentName.toolName`, so two agents with a same-named tool do
+     * not collide. The old name-only `putIfAbsent` silently dropped the second tool,
+     * hiding per-agent policy differences in a multi-agent manifest.
+     */
     @Suppress("UNCHECKED_CAST")
-    private fun PermissionManifest.toolsByName(): Map<String, Map<String, Any?>> {
+    private fun PermissionManifest.toolsByKey(): Map<String, Map<String, Any?>> {
         val result = linkedMapOf<String, Map<String, Any?>>()
         val agents = toMap()["agents"] as? List<*> ?: return result
-        agents.forEach { rawAgent ->
-            val agent = rawAgent as? Map<*, *> ?: return@forEach
-            val tools = agent["tools"] as? List<*> ?: return@forEach
+        agents.forEachIndexed { index, rawAgent ->
+            val agent = rawAgent as? Map<*, *> ?: return@forEachIndexed
+            val agentName = agent["name"]?.toString() ?: "agent$index"
+            val tools = agent["tools"] as? List<*> ?: return@forEachIndexed
             tools.forEach { rawTool ->
                 val tool = rawTool as? Map<*, *> ?: return@forEach
                 val name = tool["name"]?.toString() ?: return@forEach
-                result.putIfAbsent(name, tool as Map<String, Any?>)
+                result["$agentName.$name"] = tool as Map<String, Any?>
             }
         }
         return result
@@ -588,21 +603,68 @@ private object ManifestVerifier {
             else -> 0
         }
 
-    private fun Map<String, Any?>.networkScore(): Int {
-        val network = policySection("network")
-        return when (network["mode"]?.toString()?.lowercase()) {
+    private fun networkRank(mode: String): Int =
+        when (mode) {
             "allowall" -> 2
-            "hosts" -> if (stringList(network["hosts"]).isNotEmpty()) 1 else 0
+            "hosts" -> 1
             else -> 0
         }
+
+    /**
+     * Network widening = the current policy reaches something the baseline did not: a
+     * stricter→looser mode jump (denyAll/unspecified → hosts → allowAll), or — within
+     * `hosts` mode — a host the baseline did not list. Compares the actual host **set**,
+     * not a coarse score, so `["api.internal"] → ["api.internal", "evil.example"]` is caught.
+     */
+    private fun networkWidening(current: Map<String, Any?>, baseline: Map<String, Any?>): String? {
+        val cm = current.policySection("network")["mode"]?.toString()?.lowercase() ?: "unspecified"
+        val bm = baseline.policySection("network")["mode"]?.toString()?.lowercase() ?: "unspecified"
+        if (networkRank(cm) > networkRank(bm)) return "mode $bm -> $cm"
+        if (cm == "hosts" && bm == "hosts") {
+            val added = stringList(current.policySection("network")["hosts"]) -
+                stringList(baseline.policySection("network")["hosts"]).toSet()
+            if (added.isNotEmpty()) return "added host(s) $added"
+        }
+        return null
     }
 
-    private fun Map<String, Any?>.filesystemScore(side: String): Int {
-        val access = policySection("filesystem").mapValue(side)
-        return when (access["mode"]?.toString()?.lowercase()) {
-            "globs" -> if (stringList(access["globs"]).isNotEmpty()) 1 else 0
-            else -> 0
-        }
+    // Filesystem widening = the current policy grants a path glob the baseline did not:
+    // a non-glob baseline (none / writeNone / unspecified) gaining globs, or a glob the
+    // baseline's set did not contain. Compares the actual glob SET (not a coarse count),
+    // so replacing a narrow upload-folder glob with a root-level glob is caught. Pure
+    // narrowing (only removing globs) is not flagged; semantic glob-coverage subset
+    // checking is a later refinement, so an added glob string is conservatively treated
+    // as added authority (flagged for review). (Slash-star globs avoided here: Kotlin
+    // block comments nest, so a glob like the root wildcard would open a nested comment.)
+    private fun filesystemWidening(current: Map<String, Any?>, baseline: Map<String, Any?>, side: String): String? {
+        val cur = current.policySection("filesystem").mapValue(side)
+        val base = baseline.policySection("filesystem").mapValue(side)
+        val curMode = cur["mode"]?.toString()?.lowercase() ?: "unspecified"
+        val baseMode = base["mode"]?.toString()?.lowercase() ?: "unspecified"
+        val curGlobs = stringList(cur["globs"])
+        val baseGlobs = stringList(base["globs"]).toSet()
+        if (curMode == "globs" && baseMode != "globs" && curGlobs.isNotEmpty()) return "now grants $curGlobs"
+        val added = curGlobs - baseGlobs
+        if (added.isNotEmpty()) return "added glob(s) $added"
+        return null
+    }
+
+    /**
+     * Environment widening = the current policy exposes a variable the baseline did not:
+     * a non-`vars` baseline gaining variables, or a variable name the baseline's set did
+     * not contain. Compares the actual variable **set**.
+     */
+    private fun environmentWidening(current: Map<String, Any?>, baseline: Map<String, Any?>): String? {
+        val cur = current.policySection("environment")
+        val base = baseline.policySection("environment")
+        val curMode = cur["mode"]?.toString()?.lowercase() ?: "unspecified"
+        val baseMode = base["mode"]?.toString()?.lowercase() ?: "unspecified"
+        val curVars = stringList(cur["variables"])
+        val baseVars = stringList(base["variables"]).toSet()
+        if (curMode == "vars" && baseMode != "vars" && curVars.isNotEmpty()) return "now exposes $curVars"
+        val added = curVars - baseVars
+        if (added.isNotEmpty()) return "added variable(s) $added"
+        return null
     }
 
     @Suppress("UNCHECKED_CAST")
