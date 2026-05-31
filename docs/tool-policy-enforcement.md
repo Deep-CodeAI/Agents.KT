@@ -12,7 +12,7 @@ Enforcement is delivered in two layers:
 | Layer | What it protects | Applies to | Status |
 |-------|------------------|------------|--------|
 | **Layer 1 — in-JVM policy gate** | Filesystem-path *arguments* | every tool (in-process lambdas included) | **shipped** (#2890) |
-| **Layer 2 — OS sandbox** | The process itself (fs + network + env) | subprocess-shaped tools | planned (#1916: Seatbelt / bwrap / Wasm / Docker) |
+| **Layer 2 — OS sandbox** | The process itself (fs + network + env) | subprocess-shaped tools | in progress — macOS write-confinement landed (#2906); bwrap/Wasm/Docker planned (#1916) |
 
 ---
 
@@ -90,6 +90,38 @@ Layer 1 inspects **arguments**, not the running process. Two things it intention
 
 These boundaries are the reason for Layer 2: real process/network/env isolation for tools
 whose executor shells out to a subprocess. See the roadmap entry for #1916.
+
+---
+
+## Layer 2 — OS sandbox (macOS, first slice)
+
+Layer 2 isolates the **process**, not just the arguments — so it holds even for paths a tool
+constructs itself. The first slice (#2906) is macOS write-confinement via Seatbelt:
+
+```kotlin
+val sandbox = ProcessSandbox(sandboxedFolder)        // folder is canonicalized (toRealPath)
+val result = sandbox.run(listOf("/bin/sh", "-c", "…")) // runs under sandbox-exec
+// writes outside sandboxedFolder are blocked by the kernel; result.ok == false
+```
+
+`agents_engine.sandbox.ProcessSandbox` generates a Seatbelt profile that denies by default and
+allows file **writes** only under one canonical folder (reads + process exec stay allowed so the
+command can load). The convenience `sandboxedEchoToFileTool(folder)` is the simplest end-to-end
+example — a tool that echoes text into a path, OS-confined to `folder`.
+
+Caveats / status:
+- **macOS only** right now (`ProcessSandbox.isSupported()` is false elsewhere; `run` throws).
+  The Linux bwrap/firejail backend is #2892.
+- **Write-confinement, derived from policy.** `ProcessSandbox.forPolicy(policy)` builds the
+  profile from a tool's declared `filesystem.write` globs (one-or-many roots) and opens network
+  only for `network = AllowAll` — the bridge from Layer-1 declaration to Layer-2 enforcement.
+  `forWritableRoots(roots)` confines to several folders directly. **Reads stay broad**, and
+  `network { hosts(...) }` filtering needs the proxy (#2893); read-confinement and the
+  `process { }` DSL are the remaining #2891 work.
+- macOS's `/tmp` is a symlink to `/private/tmp`, and Seatbelt matches the **canonical** path —
+  `ProcessSandbox` resolves the folder with `toRealPath()` before building the profile.
+- OS-gated tests are annotated `@EnabledOnOs(OS.MAC)` + `@Tag("mac_os_only")` so Linux CI can
+  exclude them.
 
 ---
 
