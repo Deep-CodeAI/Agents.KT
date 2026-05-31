@@ -1218,6 +1218,9 @@ private fun constrainedOutputSchemaFor(
 
 // #1644 / #1656 — provider dispatch for the default client. Mirrors the prior
 // eager `OllamaClient(...)` construction; user-supplied `config.client` still wins.
+// LongMethod-suppressed: this is a flat `when` dispatch table that grows one
+// construction block per provider (six now) — long but low-complexity by design.
+@Suppress("LongMethod")
 private fun defaultClientFor(
     config: ModelConfig,
     tools: List<ToolDef>,
@@ -1299,6 +1302,7 @@ private fun defaultClientFor(
             tools = tools,
             baseUrl = config.kimiBaseUrl,
             reasoning = config.reasoning,
+            httpClient = config.httpClient,
         )
         // #2701 — OpenRouter is a thin OpenAI-compatible aggregator. Same
         // wiring as DeepSeek/Kimi but with the two optional attribution
@@ -1314,6 +1318,7 @@ private fun defaultClientFor(
             reasoning = config.reasoning,
             httpReferer = config.openRouterHttpReferer,
             xTitle = config.openRouterXTitle,
+            httpClient = config.httpClient,
         )
     }
 

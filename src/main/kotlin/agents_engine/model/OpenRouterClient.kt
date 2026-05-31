@@ -39,6 +39,8 @@ open class OpenRouterClient(
      * name of the calling app for OpenRouter's attribution UI.
      */
     private val xTitle: String? = null,
+    /** #2385 — forwarded to the OpenAI-compatible superclass for shared-client injection. */
+    httpClient: java.net.http.HttpClient? = null,
 ) : OpenAiClient(
     apiKey = apiKey,
     model = model,
@@ -52,6 +54,7 @@ open class OpenRouterClient(
     providerName = "openrouter",
     providerLabel = "OpenRouter",
     reasoning = reasoning,
+    httpClient = httpClient,
 ) {
     /**
      * Upstream-model behavior for constrained decoding varies widely

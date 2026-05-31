@@ -48,6 +48,16 @@ class HttpClientInjectionTest {
     }
 
     @Test
+    fun `KimiClient inherits injected HttpClient through OpenAi superclass`() {
+        assertSame(shared, KimiClient(apiKey = "k", model = "test", httpClient = shared).httpClient)
+    }
+
+    @Test
+    fun `OpenRouterClient inherits injected HttpClient through OpenAi superclass`() {
+        assertSame(shared, OpenRouterClient(apiKey = "k", model = "test", httpClient = shared).httpClient)
+    }
+
+    @Test
     fun `same HttpClient instance can serve multiple clients across providers`() {
         val ollama = OllamaClient(model = "m1", httpClient = shared)
         val openai = OpenAiClient(apiKey = "k", model = "m2", httpClient = shared)
@@ -69,6 +79,8 @@ class HttpClientInjectionTest {
             ModelProvider.ANTHROPIC,
             ModelProvider.OPENAI,
             ModelProvider.DEEPSEEK,
+            ModelProvider.KIMI,
+            ModelProvider.OPENROUTER,
         )
         providers.forEach { provider ->
             val config = ModelConfig(
