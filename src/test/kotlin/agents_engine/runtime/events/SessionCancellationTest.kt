@@ -149,6 +149,10 @@ class SessionCancellationTest {
     fun `DeepSeek session — bare cancellation does not emit Failed`() =
         assertNoFailedOnCancel(provider = ModelProvider.DEEPSEEK, modelName = "deepseek-chat", apiKey = "fake")
 
+    @Test
+    fun `Kimi session — bare cancellation does not emit Failed`() =
+        assertNoFailedOnCancel(provider = ModelProvider.KIMI, modelName = "moonshot-v1-8k", apiKey = "fake")
+
     /**
      * Shared per-vendor harness. Builds an agent of the requested
      * provider with a stub [ModelClient] whose `chat()` blocks
@@ -176,6 +180,7 @@ class SessionCancellationTest {
                     ModelProvider.ANTHROPIC -> claude(modelName)
                     ModelProvider.OPENAI -> openai(modelName)
                     ModelProvider.DEEPSEEK -> deepseek(modelName)
+                    ModelProvider.KIMI -> kimi(modelName)
                 }
                 apiKey?.let { this.apiKey = it }
                 client = hangingClient
