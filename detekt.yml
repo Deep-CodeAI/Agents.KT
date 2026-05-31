@@ -97,6 +97,15 @@ style:
 
 naming:
   active: true
+  PackageNaming:
+    active: true
+    # Allow underscores in package segments — the root is `agents_engine`
+    # (snake_case is a project-wide convention since 0.4.x). Without this
+    # widening, every new file in any agents_engine.* package triggers a
+    # baseline regen at CI time — recurring noise that broke #2890's
+    # merge build. Pattern: lowercase start, then alphanumeric or
+    # underscore segments.
+    packagePattern: '[a-z][a-zA-Z0-9_]*(\.[a-z][a-zA-Z0-9_]*)*'
   FunctionNaming:
     active: true
   TopLevelPropertyNaming:
