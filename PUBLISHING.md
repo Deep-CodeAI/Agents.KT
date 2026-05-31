@@ -85,13 +85,13 @@ key generation goes into `signing.password=` verbatim.
 ./gradlew publishMavenCentralPublicationToMavenLocal
 ```
 
-Artifacts land in `~/.m2/repository/ai/deep-code/agents-kt/0.5.0/`.
+Artifacts land in `~/.m2/repository/ai/deep-code/agents-kt/0.7.0/`.
 
 ### 2. Generate checksums and create bundle
 
 ```bash
-SRC=~/.m2/repository/ai/deep-code/agents-kt/0.5.0
-DEST=build/bundle/ai/deep-code/agents-kt/0.5.0
+SRC=~/.m2/repository/ai/deep-code/agents-kt/0.7.0
+DEST=build/bundle/ai/deep-code/agents-kt/0.7.0
 mkdir -p "$DEST"
 
 for f in "$SRC"/agents-kt-*; do
@@ -106,17 +106,17 @@ done
 
 ```bash
 cd build/bundle
-zip -r ../agents-kt-0.5.0-bundle.zip ai/
+zip -r ../agents-kt-0.7.0-bundle.zip ai/
 ```
 
-The ZIP must contain the full path: `ai/deep-code/agents-kt/0.5.0/...`
+The ZIP must contain the full path: `ai/deep-code/agents-kt/0.7.0/...`
 
 ## Upload to Central Portal
 
 1. Go to [central.sonatype.com](https://central.sonatype.com) → **Deployments** → **Publish Component**
-2. **Deployment Name:** `ai.deep-code:agents-kt:0.5.0`
+2. **Deployment Name:** `ai.deep-code:agents-kt:0.7.0`
 3. **Description:** `Typed Kotlin DSL framework for AI agent systems`
-4. Upload `build/agents-kt-0.5.0-bundle.zip`
+4. Upload `build/agents-kt-0.7.0-bundle.zip`
 5. Wait for validation to pass
 6. Click **Publish**
 
@@ -127,27 +127,27 @@ Propagation to Maven Central search takes 10-30 minutes after publishing.
 Each artifact needs: the file itself, `.asc` (GPG signature), `.md5`, and `.sha1`.
 
 ```
-ai/deep-code/agents-kt/0.5.0/
-  agents-kt-0.5.0.jar
-  agents-kt-0.5.0.jar.asc
-  agents-kt-0.5.0.jar.md5
-  agents-kt-0.5.0.jar.sha1
-  agents-kt-0.5.0-sources.jar
-  agents-kt-0.5.0-sources.jar.asc
-  agents-kt-0.5.0-sources.jar.md5
-  agents-kt-0.5.0-sources.jar.sha1
-  agents-kt-0.5.0-javadoc.jar
-  agents-kt-0.5.0-javadoc.jar.asc
-  agents-kt-0.5.0-javadoc.jar.md5
-  agents-kt-0.5.0-javadoc.jar.sha1
-  agents-kt-0.5.0.pom
-  agents-kt-0.5.0.pom.asc
-  agents-kt-0.5.0.pom.md5
-  agents-kt-0.5.0.pom.sha1
-  agents-kt-0.5.0.module
-  agents-kt-0.5.0.module.asc
-  agents-kt-0.5.0.module.md5
-  agents-kt-0.5.0.module.sha1
+ai/deep-code/agents-kt/0.7.0/
+  agents-kt-0.7.0.jar
+  agents-kt-0.7.0.jar.asc
+  agents-kt-0.7.0.jar.md5
+  agents-kt-0.7.0.jar.sha1
+  agents-kt-0.7.0-sources.jar
+  agents-kt-0.7.0-sources.jar.asc
+  agents-kt-0.7.0-sources.jar.md5
+  agents-kt-0.7.0-sources.jar.sha1
+  agents-kt-0.7.0-javadoc.jar
+  agents-kt-0.7.0-javadoc.jar.asc
+  agents-kt-0.7.0-javadoc.jar.md5
+  agents-kt-0.7.0-javadoc.jar.sha1
+  agents-kt-0.7.0.pom
+  agents-kt-0.7.0.pom.asc
+  agents-kt-0.7.0.pom.md5
+  agents-kt-0.7.0.pom.sha1
+  agents-kt-0.7.0.module
+  agents-kt-0.7.0.module.asc
+  agents-kt-0.7.0.module.md5
+  agents-kt-0.7.0.module.sha1
 ```
 
 ## Version Bump
