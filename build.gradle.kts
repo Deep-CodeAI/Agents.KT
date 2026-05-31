@@ -357,10 +357,10 @@ tasks.register<Test>("mcpIntegrationTest") {
 
 // #2892 — the Linux ProcessSandbox backend (bwrap / firejail) needs a real Linux
 // kernel, so its integration tests are tagged `linux_only` (+ @EnabledOnOs(OS.LINUX)).
-// On Linux / CI they run directly. On macOS there is no Linux kernel, so run this
-// task inside a Lima VM:  `scripts/lima-test.sh`  (see docs/testing.md).
+// They run directly on Linux / CI and auto-skip on macOS, where there is no Linux
+// kernel to confine against (CI on a native Ubuntu runner is the verifier).
 tasks.register<Test>("linuxSandboxTest") {
-    description = "Runs @Tag(\"linux_only\") sandbox tests (Linux kernel required; on macOS use scripts/lima-test.sh)."
+    description = "Runs @Tag(\"linux_only\") sandbox tests (Linux kernel required; auto-skips on macOS)."
     group = "verification"
     useJUnitPlatform {
         includeTags("linux_only")

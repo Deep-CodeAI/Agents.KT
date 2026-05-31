@@ -117,7 +117,7 @@ val result = pipeline(RawText("getUsers, createUser, deleteUser"))
 // ReviewResult(approved=true)
 ```
 
-Testing details — task names, integration test setup, mutation testing, and how to write tests with a stub `ModelClient` — are in [**`docs/testing.md`**](docs/testing.md). Build prerequisites are on the [**Building From Source**](https://github.com/Deep-CodeAI/Agents.KT/wiki/Building-From-Source) wiki page. **macOS contributors:** the Linux sandbox tests (`bwrap`/`firejail`) need a Linux kernel — run them via Lima (`brew install lima` → `scripts/lima-test.sh`); see [docs/testing.md → Linux sandbox tests on macOS](docs/testing.md#linux-sandbox-tests-on-macos--lima).
+Testing details — task names, integration test setup, mutation testing, and how to write tests with a stub `ModelClient` — are in [**`docs/testing.md`**](docs/testing.md). Build prerequisites are on the [**Building From Source**](https://github.com/Deep-CodeAI/Agents.KT/wiki/Building-From-Source) wiki page. **macOS contributors:** the Linux sandbox tests (`bwrap`/`firejail`) need a Linux kernel, so they auto-skip on macOS — CI runs them on a native Ubuntu runner; see [docs/testing.md → Linux sandbox tests](docs/testing.md#linux-sandbox-tests-bwrap--firejail).
 
 ---
 

@@ -125,10 +125,14 @@ val grep = processTool("grep", policy = toolPolicy {
 ```
 
 Caveats / status:
-- **Two backends, picked by OS** (#2892): macOS **Seatbelt** (`sandbox-exec`) or Linux
+- **Three backends, picked by OS** (#2892): macOS **Seatbelt** (`sandbox-exec`), Linux
   **bubblewrap** (`bwrap` — binds the root fs read-only, re-binds the write roots read-write,
-  and `--unshare-net` unless network is opened). `isSupported()` is true on either; `run` throws
-  on platforms with neither. The firejail fallback, Wasm (#2894), and Docker (#2895) are follow-ups.
+  `--unshare-net` unless network is opened), then Linux **firejail** (the **setuid** fallback —
+  `--read-only=/` + `--read-write` carve-outs + `--net=none`, so it still confines where
+  unprivileged user namespaces are restricted and `bwrap` can't start). `isSupported()` is true
+  when any is present. On a host with **none**, `run` does **not** throw — it runs the command via a
+  plain `ProcessBuilder` and prints a loud `UNCONFINED` warning (`isSupported()` is false, so a
+  caller that requires enforcement can detect and refuse). Wasm (#2894) and Docker (#2895) are follow-ups.
 - **Write-confinement, derived from policy.** `ProcessSandbox.forPolicy(policy)` builds the
   profile from a tool's declared `filesystem.write` globs (one-or-many roots) and opens network
   only for `network = AllowAll` — the bridge from Layer-1 declaration to Layer-2 enforcement.
@@ -138,8 +142,8 @@ Caveats / status:
 - macOS's `/tmp` is a symlink to `/private/tmp`, and Seatbelt matches the **canonical** path —
   `ProcessSandbox` resolves the folder with `toRealPath()` before building the profile.
 - OS-gated integration tests are tagged `mac_os_only` / `linux_only` (+ `@EnabledOnOs`). The pure
-  arg/profile generation is unit-tested on every platform; for the kernel-level Linux tests on
-  macOS, run `scripts/lima-test.sh` (a Lima VM). See [testing.md](testing.md#linux-sandbox-tests-on-macos--lima).
+  arg/profile generation is unit-tested on every platform; the kernel-level Linux tests auto-skip on
+  macOS and run on CI's native Ubuntu runner. See [testing.md](testing.md#linux-sandbox-tests-bwrap--firejail).
 
 ---
 
