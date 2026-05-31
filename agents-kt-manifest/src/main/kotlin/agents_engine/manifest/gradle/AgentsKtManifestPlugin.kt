@@ -1,16 +1,7 @@
 package agents_engine.manifest.gradle
 
-import agents_engine.composition.branch.Branch
-import agents_engine.composition.forum.Forum
-import agents_engine.composition.loop.Loop
-import agents_engine.composition.parallel.Parallel
-import agents_engine.composition.pipeline.Pipeline
-import agents_engine.core.Agent
-import agents_engine.mcp.McpServer
+import agents_engine.manifest.ManifestEntrypointLoader
 import agents_engine.manifest.PermissionManifest
-import agents_engine.manifest.PermissionManifestProvider
-import agents_engine.manifest.permissionManifest
-import java.net.URLClassLoader
 import javax.inject.Inject
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
@@ -128,56 +119,5 @@ abstract class VerifyAgentManifestTask : DefaultTask() {
     }
 }
 
-private object ManifestEntrypointLoader {
-    fun load(className: String, runtimeClasspath: Set<java.io.File>): PermissionManifest {
-        val urls = runtimeClasspath.map { it.toURI().toURL() }.toTypedArray()
-        URLClassLoader(urls, javaClass.classLoader).use { loader ->
-            val klass = Class.forName(className, true, loader)
-            val kotlinObject = kotlinObjectInstance(klass)
-            if (kotlinObject is PermissionManifestProvider) {
-                return kotlinObject.permissionManifest()
-            }
-
-            val staticMethod = klass.methods.firstOrNull { method ->
-                method.name == "permissionManifest" &&
-                    method.parameterCount == 0 &&
-                    java.lang.reflect.Modifier.isStatic(method.modifiers)
-            }
-            if (staticMethod != null) {
-                return coerceManifest(staticMethod.invoke(null))
-            }
-
-            val instance = kotlinObject ?: noArgInstance(klass)
-            val instanceMethod = klass.methods.firstOrNull { method ->
-                method.name == "permissionManifest" && method.parameterCount == 0
-            } ?: throw GradleException(
-                "Manifest entrypoint $className must implement PermissionManifestProvider " +
-                    "or expose a no-arg permissionManifest() method.",
-            )
-            return coerceManifest(instanceMethod.invoke(instance))
-        }
-    }
-
-    private fun kotlinObjectInstance(klass: Class<*>): Any? =
-        runCatching { klass.getField("INSTANCE").get(null) }.getOrNull()
-
-    private fun noArgInstance(klass: Class<*>): Any =
-        klass.getDeclaredConstructor().also { it.isAccessible = true }.newInstance()
-
-    @Suppress("UNCHECKED_CAST")
-    private fun coerceManifest(value: Any?): PermissionManifest =
-        when (value) {
-            is PermissionManifest -> value
-            is Agent<*, *> -> value.permissionManifest()
-            is Pipeline<*, *> -> value.permissionManifest()
-            is Parallel<*, *> -> value.permissionManifest()
-            is Forum<*, *> -> value.permissionManifest()
-            is Loop<*, *> -> value.permissionManifest()
-            is Branch<*, *> -> value.permissionManifest()
-            is McpServer -> value.permissionManifest()
-            else -> throw GradleException(
-                "permissionManifest() returned ${value?.let { it::class.qualifiedName } ?: "null"}; " +
-                    "expected PermissionManifest, Agent, or an Agents.KT composition.",
-            )
-        }
-}
+// The reflective entrypoint→manifest loader now lives in Gradle-free
+// agents_engine.manifest.ManifestEntrypointLoader, shared with the native CLI (#1923).
