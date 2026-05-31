@@ -1,5 +1,6 @@
 package agents_engine.sandbox
 
+import agents_engine.core.ToolEnvironmentPolicy
 import agents_engine.core.ToolNetworkPolicy
 import agents_engine.core.ToolPolicy
 import java.io.File
@@ -33,6 +34,12 @@ import kotlin.time.Duration.Companion.seconds
 class ProcessSandbox private constructor(
     private val realRoots: List<Path>,
     private val allowNetwork: Boolean,
+    // #2892 — env / cwd honoring. [env] null = inherit the JVM's environment; a map
+    // (possibly empty) = the subprocess sees exactly those vars (set on the
+    // ProcessBuilder, which every backend inherits from). [workingDir] sets the
+    // child's working directory; null = inherit.
+    private val env: Map<String, String>? = null,
+    private val workingDir: Path? = null,
 ) {
 
     /**
@@ -69,7 +76,13 @@ class ProcessSandbox private constructor(
             Backend.FIREJAIL -> listOf(FIREJAIL) + firejailArgs(realRoots, allowNetwork) + command
             Backend.NONE -> command.also { warnUnconfined(it) }
         }
-        val process = ProcessBuilder(argv).redirectErrorStream(false).start()
+        val builder = ProcessBuilder(argv).redirectErrorStream(false)
+        // Confine the child's env (allow-list) and cwd. Setting them on the
+        // ProcessBuilder confines every backend: sandbox-exec / bwrap / firejail all
+        // inherit this env + cwd and pass them to the wrapped command.
+        env?.let { vars -> builder.environment().apply { clear(); putAll(vars) } }
+        workingDir?.let { builder.directory(it.toFile()) }
+        val process = builder.start()
 
         // Drain stdout/stderr on daemon threads to avoid a full-pipe deadlock
         // (same pattern as StdioMcpTransport.forProcess).
@@ -161,9 +174,13 @@ class ProcessSandbox private constructor(
             )
         }
 
-        /** Confine writes to the given roots (canonicalized). */
-        fun forWritableRoots(roots: List<Path>, allowNetwork: Boolean = false): ProcessSandbox =
-            ProcessSandbox(roots.map(::canonicalPath), allowNetwork)
+        /** Confine writes to the given roots (canonicalized), optionally pinning env + cwd. */
+        fun forWritableRoots(
+            roots: List<Path>,
+            allowNetwork: Boolean = false,
+            env: Map<String, String>? = null,
+            workingDir: Path? = null,
+        ): ProcessSandbox = ProcessSandbox(roots.map(::canonicalPath), allowNetwork, env, workingDir)
 
         /**
          * Build a sandbox from a tool's declared [ToolPolicy]: write roots are the
@@ -174,8 +191,24 @@ class ProcessSandbox private constructor(
         fun forPolicy(policy: ToolPolicy): ProcessSandbox {
             val roots = policy.filesystem.write.globs
                 .map { canonicalPath(Path.of(globToWriteRoot(it))) }
-            return ProcessSandbox(roots, allowNetwork = policy.network == ToolNetworkPolicy.AllowAll)
+            return ProcessSandbox(
+                roots,
+                allowNetwork = policy.network == ToolNetworkPolicy.AllowAll,
+                env = envFromPolicy(policy.environment),
+            )
         }
+
+        /**
+         * Translate a declared [ToolEnvironmentPolicy] into the subprocess env:
+         * `Vars` → the JVM env filtered to the allow-listed names; `DenyAll` → an
+         * empty env (the child sees no variables); `Unspecified` → null = inherit.
+         */
+        private fun envFromPolicy(policy: ToolEnvironmentPolicy): Map<String, String>? =
+            when (policy) {
+                is ToolEnvironmentPolicy.Vars -> System.getenv().filterKeys { it in policy.variables }
+                ToolEnvironmentPolicy.DenyAll -> emptyMap()
+                else -> null
+            }
 
         /**
          * Pure: the Seatbelt SBPL profile. Denies by default; allows reads + process

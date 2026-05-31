@@ -215,6 +215,61 @@ class ProcessSandboxMacTest {
             root.deleteRecursively()
         }
     }
+
+    // --- #2892: env / cwd honoring ---
+
+    @Test fun `env allow-list confines the subprocess environment`() {
+        val root = createTempDirectory("sbx-env").toRealPath()
+        try {
+            val res = ProcessSandbox.forWritableRoots(listOf(root), env = mapOf("ALLOWED" to "yes"))
+                .run(listOf("/bin/sh", "-c", "printf 'A=%s H=%s' \"\${ALLOWED-_}\" \"\${HOME-_}\""))
+            assertTrue("A=yes" in res.stdout, "the allow-listed var must be visible: ${res.stdout}")
+            assertTrue("H=_" in res.stdout, "a var outside the map (HOME) must be stripped: ${res.stdout}")
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun `working directory is honored`() {
+        val root = createTempDirectory("sbx-cwd").toRealPath()
+        try {
+            val res = ProcessSandbox.forWritableRoots(listOf(root), workingDir = root).run(listOf("/bin/pwd"))
+            assertEquals(root.toString(), res.stdout.trim(), "cwd should be the configured working dir")
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun `forPolicy environment denyAll strips all env vars`() {
+        val root = createTempDirectory("sbx-env-deny").toRealPath()
+        try {
+            val policy = toolPolicy {
+                filesystem { write("$root/**") }
+                environment { denyAll() }
+            }
+            val res = ProcessSandbox.forPolicy(policy)
+                .run(listOf("/bin/sh", "-c", "printf 'H=%s' \"\${HOME-_}\""))
+            assertTrue("H=_" in res.stdout, "denyAll must strip HOME: ${res.stdout}")
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun `forPolicy environment vars keeps only the allow-listed vars`() {
+        val root = createTempDirectory("sbx-env-vars").toRealPath()
+        try {
+            val policy = toolPolicy {
+                filesystem { write("$root/**") }
+                environment { allow("HOME") }
+            }
+            val res = ProcessSandbox.forPolicy(policy)
+                .run(listOf("/bin/sh", "-c", "printf 'H=%s U=%s' \"\${HOME:+set}\" \"\${USER-_}\""))
+            assertTrue("H=set" in res.stdout, "HOME (allow-listed) must survive: ${res.stdout}")
+            assertTrue("U=_" in res.stdout, "USER (not allow-listed) must be stripped: ${res.stdout}")
+        } finally {
+            root.deleteRecursively()
+        }
+    }
 }
 
 /**

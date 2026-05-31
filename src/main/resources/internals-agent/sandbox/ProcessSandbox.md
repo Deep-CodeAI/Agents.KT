@@ -31,9 +31,12 @@ data class SandboxResult(val exitCode: Int, val stdout: String, val stderr: Stri
 ```
 
 `forPolicy` (#2909) is the Layer-1→Layer-2 bridge: writable roots come from the tool's
-`filesystem.write` globs (`globToWriteRoot` takes each glob's literal directory prefix), and
-network is opened only for `network = AllowAll`. `forWritableRoots` confines writes to several
-folders at once. Empty write roots ⇒ a deny-all-writes profile.
+`filesystem.write` globs (`globToWriteRoot` takes each glob's literal directory prefix);
+network is opened only for `network = AllowAll` (default-deny otherwise); and the child **env**
+is derived from `environment {}` (#2892 — `Vars` filters the JVM env to the allow-list, `DenyAll`
+⇒ empty env, `Unspecified` ⇒ inherit). `forWritableRoots(roots, allowNetwork, env, workingDir)`
+sets roots + env + cwd directly. env/cwd are applied on the `ProcessBuilder`, so every backend
+inherits them. Empty write roots ⇒ a deny-all-writes profile.
 
 ## How it works
 

@@ -133,12 +133,14 @@ Caveats / status:
   when any is present. On a host with **none**, `run` does **not** throw — it runs the command via a
   plain `ProcessBuilder` and prints a loud `UNCONFINED` warning (`isSupported()` is false, so a
   caller that requires enforcement can detect and refuse). Wasm (#2894) and Docker (#2895) are follow-ups.
-- **Write-confinement, derived from policy.** `ProcessSandbox.forPolicy(policy)` builds the
-  profile from a tool's declared `filesystem.write` globs (one-or-many roots) and opens network
-  only for `network = AllowAll` — the bridge from Layer-1 declaration to Layer-2 enforcement.
-  `forWritableRoots(roots)` confines to several folders directly. **Reads stay broad**, and
-  `network { hosts(...) }` filtering needs the proxy (#2893); read-confinement and the
-  `process { }` DSL are the remaining #2891 work.
+- **Write / network / env confinement, derived from policy.** `ProcessSandbox.forPolicy(policy)` is
+  the bridge from Layer-1 declaration to Layer-2 enforcement: write roots come from `filesystem.write`
+  globs (one-or-many); **network is default-deny** and opens only for `network = AllowAll`; and the
+  child **environment** is derived from `environment { }` — `allow("HOME")` passes only those vars,
+  `denyAll()` gives an empty env, unspecified inherits. `forWritableRoots(roots, env, workingDir)`
+  sets roots, env, and working directory directly. **Reads stay broad**, and `network { allow(host) }`
+  selective allow-listing needs the proxy (#2893; default-deny already ships); read-confinement, the
+  `grants { }` structure DSL, and the `process { }` DSL are the remaining #2891 work.
 - macOS's `/tmp` is a symlink to `/private/tmp`, and Seatbelt matches the **canonical** path —
   `ProcessSandbox` resolves the folder with `toRealPath()` before building the profile.
 - OS-gated integration tests are tagged `mac_os_only` / `linux_only` (+ `@EnabledOnOs`). The pure

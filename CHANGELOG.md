@@ -88,8 +88,18 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
   across all three. The pure `bwrapArgs(...)` / `firejailArgs(...)` are unit-tested everywhere; the
   kernel-level integration (`@EnabledOnOs(OS.LINUX)` + `@Tag("linux_only")`) is verified on CI's
   native Ubuntu runner.
-- Remaining Layer-2 follow-ups: network hostname filtering (proxy #2893), read-confinement, and the
-  `process { }` DSL. Wasm/Docker backends are #2894/#2895.
+- **Subprocess env + cwd honored** (#2892): `ProcessSandbox` now confines the child's environment and
+  working directory. `forPolicy` derives the env from the declared `ToolEnvironmentPolicy` —
+  `environment { allow("HOME") }` passes only those vars through, `environment { denyAll() }` gives the
+  child an empty environment, unspecified inherits; `forWritableRoots(..., env, workingDir)` sets them
+  explicitly. Applied on the `ProcessBuilder`, so every backend (Seatbelt / bwrap / firejail) inherits
+  the confinement.
+- **Network default-deny** ships across all backends (#2893 core): only `network { allowAll() }` opens
+  the network; `denyAll` / `Hosts` / unspecified stay blocked (Seatbelt no-network, bwrap
+  `--unshare-net`, firejail `--net=none`). The hostname-allowlist **proxy** (so `Hosts` can selectively
+  allow domains) remains the deferred part of #2893.
+- Remaining Layer-2 follow-ups: the network hostname-allowlist **proxy** (#2893), read-confinement, the
+  `grants { }` structure DSL, and the `process { }` DSL. Wasm/Docker backends are #2894/#2895.
 
 ### Errata — v0.6.5 release notes overstated document-attachment shipping (#2868)
 
