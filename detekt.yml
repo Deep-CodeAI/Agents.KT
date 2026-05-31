@@ -125,3 +125,12 @@ potential-bugs:
     active: true
   AvoidReferentialEquality:
     active: true
+
+# #2885 (epic #2882) — Agents.KT custom rules (agents-kt-detekt module, wired via
+# detektPlugins). Scoped to main source: the rule guards SHIPPED tool definitions;
+# test fixtures legitimately exercise tools and are not the consumer threat surface.
+agents-kt:
+  active: true
+  ToolBodyForbiddenApis:
+    active: true
+    excludes: ['**/test/**', '**/*Test.kt']

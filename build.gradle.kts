@@ -66,6 +66,9 @@ dependencies {
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 
+    // #2885 (epic #2882) — custom detekt rules that gate tool executor bodies.
+    detektPlugins(project(":agents-kt-detekt"))
+
     // #1695 — Dependabot's submitted dependency graph reads requested
     // versions, not resolved. The `force(...)` block above pins to 1.84 (a
     // patched release with no known CVEs per OSV + GHSA), but dependabot
@@ -260,6 +263,11 @@ tasks.register("updateVerificationMetadata") {
                 ":buildEnvironment",
                 ":compileKotlin",
                 ":compileTestKotlin",
+                // #2885 — the agents-kt-detekt module brings new detekt-api /
+                // detekt-test deps not used anywhere else, so its classpaths must
+                // be exercised here or their checksums never get written.
+                ":agents-kt-detekt:compileKotlin",
+                ":agents-kt-detekt:compileTestKotlin",
             )
                 .directory(rootProject.projectDir)
                 .inheritIO()
@@ -327,6 +335,7 @@ tasks.register("testAll") {
         ":agents-kt-no-reflect-test:test",
         ":agents-kt-manifest:test",
         ":agents-kt-cli:test",
+        ":agents-kt-detekt:test",
         ":agents-kt-observability:test",
         ":agents-kt-otel:test",
         ":agents-kt-langsmith:test",
