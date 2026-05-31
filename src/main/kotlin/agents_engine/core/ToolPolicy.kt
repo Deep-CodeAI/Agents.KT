@@ -7,8 +7,12 @@ import java.util.logging.Logger
 /**
  * Declarative sandbox policy for a tool.
  *
- * This is an audit/manifest declaration in 0.6.0, not an enforcement layer.
- * The process/container enforcement backend is tracked separately (#1916).
+ * Originally an audit/manifest-only declaration (0.6.0). As of #2890 the declared
+ * **filesystem** stance is enforced in-JVM at the tool-call boundary (Layer 1): a
+ * call whose absolute path arguments fall outside the declared `read`/`write` globs
+ * is denied before the executor runs — see [ToolPolicyEnforcer] and
+ * `docs/tool-policy-enforcement.md`. OS/container enforcement of the process itself
+ * (network/environment, subprocess isolation) is the Layer-2 sandbox, tracked in #1916.
  */
 data class ToolPolicy(
     val risk: ToolRisk = ToolRisk.LOW,

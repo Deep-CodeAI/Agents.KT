@@ -112,6 +112,18 @@ class Agent<IN, OUT>(
     val toolMap: Map<String, ToolDef> get() = _toolMapView
 
     /**
+     * Layer 1 of #1916 — when `true` (default), a tool's *declared* [ToolPolicy]
+     * is enforced at the tool-call boundary: a call whose absolute filesystem-path
+     * arguments fall outside the declared read/write globs is denied (surfacing as
+     * a `Decision.Deny` → `onToolDenied` / `PipelineEvent.ToolDenied`) before the
+     * executor runs. Tools that declare no filesystem stance are never gated —
+     * enforcement is opt-in by declaration, so existing tools are unaffected.
+     * Set `false` to restore the 0.6.0 declare-only (inert) behavior. OS-level
+     * isolation for subprocess tools is the Layer 2 sandbox (sibling issues).
+     */
+    var enforceToolPolicies: Boolean = true
+
+    /**
      * Internal API for tools that pass through user DSL guards (reservation +
      * uniqueness). MCP DSL, ToolsBuilder result merging, and other code paths
      * that surface tools the user named call this. Freeze-checked: closes the
@@ -510,6 +522,18 @@ class Agent<IN, OUT>(
     }
 
     internal fun decideBeforeToolCall(name: String, args: Map<String, Any?>): Decision<Map<String, Any?>> {
+        // Layer 1 of #1916: built-in declared-policy gate runs *before* user
+        // interceptors. A denial short-circuits the chain (matching "first
+        // non-Proceed wins"); the executed call still flows through any user
+        // `onBeforeToolCall` below.
+        if (enforceToolPolicies) {
+            val gate = ToolPolicyEnforcer.evaluate(toolMap[name]?.policy, args)
+            if (gate is Decision.Deny) {
+                fireInterceptorDecision(InterceptorPoint.BeforeToolCall, gate, hasInterceptors = true)
+                return gate
+            }
+        }
+
         val interceptors = beforeToolCallInterceptors.toList()
         var current = args
         var effective: Decision<Map<String, Any?>> = Decision.Proceed

@@ -107,23 +107,25 @@ class ToolPolicyEnforcementTest {
     }
 
     @Test
-    fun `declarative policy alone does NOT enforce restricted folders (0_6_0 gap tripwire)`() {
-        // No interceptor: the manifest declaration is inert. Both writes run.
+    fun `declared policy is auto-enforced with no interceptor (Layer 1 of #1916, #2890)`() {
+        // No interceptor: the built-in Layer-1 gate enforces the declared write glob.
         policyAgent().invoke("go")
 
-        assertTrue(File(allowedPath).exists(), "in-policy write should happen")
-        // TRIPWIRE: declaring write access to allowed/** does NOT stop a write to
-        // secret/vault/. When runtime enforcement (#1916) lands, this flips to
-        // assertFalse and forces a revisit of this test.
-        assertTrue(
+        assertTrue(File(allowedPath).exists(), "in-policy write must still happen")
+        // TRIPWIRE FLIPPED (#2890): runtime enforcement (Layer 1 of #1916) now blocks
+        // the out-of-policy write with no hand-written interceptor. This previously
+        // asserted the gap (assertTrue) and pinned 0.6.0's declare-only behavior.
+        assertFalse(
             File(restrictedPath).exists(),
-            "0.6.0: declarative policy does not sandbox — restricted write still happens",
+            "Layer 1: the declared write policy now sandboxes the in-process tool — restricted write blocked",
         )
     }
 
     @Test
     fun `onBeforeToolCall interceptor enforces the declared write policy`() {
-        val agent = policyAgent().also { it.enforceDeclaredWritePolicy() }
+        // These two tests target the *manual* onBeforeToolCall enforcement path, so
+        // disable the built-in Layer-1 gate (it would otherwise preempt the interceptor).
+        val agent = policyAgent().also { it.enforceToolPolicies = false; it.enforceDeclaredWritePolicy() }
 
         agent.invoke("go")
 
@@ -133,7 +135,9 @@ class ToolPolicyEnforcementTest {
 
     @Test
     fun `denied calls surface via onToolDenied and PipelineEvent_ToolDenied but never onToolUse`() {
-        val agent = policyAgent().also { it.enforceDeclaredWritePolicy() }
+        // These two tests target the *manual* onBeforeToolCall enforcement path, so
+        // disable the built-in Layer-1 gate (it would otherwise preempt the interceptor).
+        val agent = policyAgent().also { it.enforceToolPolicies = false; it.enforceDeclaredWritePolicy() }
 
         val used = mutableListOf<Pair<String, Map<String, Any?>>>()
         val denied = mutableListOf<Triple<String, Map<String, Any?>, String>>()
@@ -166,5 +170,103 @@ class ToolPolicyEnforcementTest {
         val deniedEvent = events.filterIsInstance<PipelineEvent.ToolDenied>().single()
         assertEquals(ToolRisk.MEDIUM, deniedEvent.toolPolicyRisk)
         assertTrue(deniedEvent.usedDeclaredCapability, "blocked tool declared a capability")
+    }
+
+    @Test
+    fun `auto-enforced denial surfaces the same audit metadata with no interceptor (#2890)`() {
+        // Rely purely on the Layer-1 gate — no enforceDeclaredWritePolicy() here.
+        val agent = policyAgent()
+
+        val used = mutableListOf<Pair<String, Map<String, Any?>>>()
+        val denied = mutableListOf<Triple<String, Map<String, Any?>, String>>()
+        agent.onToolUse { name, args, _ -> used += name to args }
+        agent.onToolDenied { name, args, reason -> denied += Triple(name, args, reason) }
+        val events = mutableListOf<PipelineEvent>()
+        agent.observe { events += it }
+
+        agent.invoke("go")
+
+        assertEquals(1, used.size, "onToolUse fires only for the executed in-policy call")
+        assertEquals(allowedPath, used.single().second["path"])
+
+        assertEquals(1, denied.size, "onToolDenied fires for the auto-blocked call")
+        assertEquals(restrictedPath, denied.single().second["path"])
+        assertTrue("policy" in denied.single().third.lowercase(), "reason explains the policy denial")
+
+        val deniedEvent = events.filterIsInstance<PipelineEvent.ToolDenied>().single()
+        assertEquals(restrictedPath, deniedEvent.arguments["path"])
+        assertEquals(ToolRisk.MEDIUM, deniedEvent.toolPolicyRisk)
+        assertTrue(deniedEvent.usedDeclaredCapability, "blocked tool declared a capability")
+        assertEquals(
+            listOf(allowedPath),
+            events.filterIsInstance<PipelineEvent.ToolCalled>().map { it.arguments["path"] },
+            "ToolCalled only for the executed call",
+        )
+    }
+
+    @Test
+    fun `escape hatch enforceToolPolicies=false restores 0_6_0 inert behavior (#2890)`() {
+        val agent = policyAgent().also { it.enforceToolPolicies = false }
+
+        agent.invoke("go")
+
+        assertTrue(File(allowedPath).exists(), "in-policy write happens")
+        assertTrue(
+            File(restrictedPath).exists(),
+            "with enforcement disabled, the declared policy is inert again (opt-out)",
+        )
+    }
+
+    /**
+     * A tool that declares only `risk` — no filesystem stance — scripted to write
+     * both paths. Enforcement is opt-in by declaration, so neither write is gated.
+     */
+    private fun undeclaredFilesystemAgent(): Agent<String, String> =
+        agent("undeclared-fs-agent") {
+            var turn = 0
+            model {
+                ollama("test")
+                client = ModelClient { _ ->
+                    turn++
+                    if (turn == 1) {
+                        LlmResponse.ToolCalls(
+                            listOf(
+                                ToolCall("writeFile", mapOf("path" to allowedPath)),
+                                ToolCall("writeFile", mapOf("path" to restrictedPath)),
+                            ),
+                        )
+                    } else {
+                        LlmResponse.Text("done")
+                    }
+                }
+            }
+            lateinit var writeFile: Tool<Map<String, Any?>, Any?>
+            tools {
+                writeFile = tool("writeFile") {
+                    description("Write text to a file path")
+                    policy { risk = ToolRisk.MEDIUM } // risk only — no filesystem { } block
+                    executor { args ->
+                        val path = args["path"]?.toString() ?: error("writeFile needs a path")
+                        File(path).apply { parentFile?.mkdirs() }.writeText("data")
+                        "ok"
+                    }
+                }
+            }
+            skills {
+                skill<String, String>("act", "Write files on request") {
+                    tools(writeFile)
+                }
+            }
+        }
+
+    @Test
+    fun `tool with no declared filesystem stance is never gated (backward-compat, #2890)`() {
+        undeclaredFilesystemAgent().invoke("go")
+
+        assertTrue(File(allowedPath).exists(), "in-policy write happens")
+        assertTrue(
+            File(restrictedPath).exists(),
+            "undeclared filesystem stance ⇒ Layer-1 enforcement is inert (opt-in by declaration)",
+        )
     }
 }

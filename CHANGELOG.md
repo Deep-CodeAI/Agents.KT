@@ -4,6 +4,26 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — automatic in-JVM tool-policy enforcement (Layer 1 of #1916, #2890)
+
+- A tool's *declared* `ToolPolicy` is now **enforced at runtime** by default. When a tool
+  call carries an **absolute filesystem-path argument** that falls outside the tool's
+  declared `read`/`write` globs, the call is denied before its executor runs — surfacing
+  through the existing `onToolDenied` / `PipelineEvent.ToolDenied` audit path (with
+  `toolPolicyRisk` + `usedDeclaredCapability`). No hand-written `onBeforeToolCall`
+  interceptor is required anymore. Paths are normalized first, so `..` traversal cannot
+  escape a declared glob.
+- **Opt-in by declaration:** a tool that declares no filesystem stance
+  (`filesystem` left `Unspecified`) is never gated — existing tools are unaffected.
+- **Escape hatch:** `agent { enforceToolPolicies = false }` restores the prior 0.6.0
+  declare-only (inert) behavior.
+- **Scope (this is Layer 1):** in-JVM, filesystem-argument enforcement for in-process
+  tools. Relative-path precision and `network`/`environment` isolation require the
+  Layer 2 OS sandbox (`ProcessSandbox` / `WasmSandbox` / `DockerSandbox`, tracked under
+  #1916). See `docs/tool-policy-enforcement.md`.
+- This flips the `ToolPolicyEnforcementTest` 0.6.0-gap tripwire (#2395) from "restricted
+  write still happens" to "restricted write is blocked."
+
 ### Errata — v0.6.5 release notes overstated document-attachment shipping (#2868)
 
 - The v0.6.5 tagged `RELEASE_NOTES.md` carried an "Added — Document attachments (#2470 slice c)" section claiming PDF / text / markdown routing through Anthropic, OpenAI, Ollama, and DeepSeek. **That section was incorrect.** The shipped code in 0.6.5 (and 0.6.6) routes only `Content.Image` through `agent.invokeWithAttachments(...)`; `Content.Document` is explicitly skipped in `AgenticLoop` (`executeAgentic` filters non-Image variants with a `// Not an image — skip in v1` comment).
