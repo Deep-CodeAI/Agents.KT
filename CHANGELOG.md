@@ -4,6 +4,12 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-05-31
+
+Hardening release driven by external review of 0.7.0. The headline fix makes the manifest
+`verify` gate honest; the rest corrects docs/KDoc that lagged the code. No behavior change beyond
+the verifier (which now flags genuine widenings it previously missed).
+
 ### Fixed — manifest `verify` compares policy sets, not coarse scores (#1923 hardening)
 
 - `ManifestVerifier` previously compared coarse per-tool scores (network `allowAll`=2 / `hosts`=1 /
@@ -19,6 +25,16 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
   on added entries — semantic glob-*coverage* subset-checking is a later refinement. Regression tests
   pin each previously-missed case. Both the CLI `verify` and the Gradle `verifyAgentManifest` inherit
   the fix. Surfaced by external review of 0.7.0.
+
+### Fixed — docs/KDoc drift surfaced by review
+
+- **Provider count:** `docs/model-and-tools.md` / `docs/providers.md` said four providers; six ship
+  (`OLLAMA`, `ANTHROPIC`, `OPENAI`, `DEEPSEEK`, `KIMI`, `OPENROUTER`). Kimi (#2697) + OpenRouter
+  (#2701) are first-party providers extending the OpenAI adapter.
+- **Layer-2 KDoc:** `SandboxedTools.kt` no longer says "macOS only; Linux is #2892" — bwrap + firejail
+  ship in 0.7.0; the runtime error now reads "no OS sandbox backend (need macOS sandbox-exec or Linux
+  bwrap/firejail)", and `processTool` is documented as the fail-closed public path.
+- **PUBLISHING.md** bundle example bumped off stale `0.5.0` paths.
 
 ## [0.7.0] — 2026-05-31
 

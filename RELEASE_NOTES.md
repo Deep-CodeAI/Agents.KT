@@ -1,43 +1,37 @@
-# Agents.KT v0.7.0 — Boundaries you can enforce externally
+# Agents.KT v0.7.1 — Verify-gate hardening
 
 **Release date:** 2026-05-31
 
-The 0.6 line made tool policies **declarative** and **auditable**. 0.7.0 makes them **enforced** — at runtime, by the OS — and reachable **outside the build**.
-
-> A declared `ToolPolicy` is no longer just documentation and a manifest entry. It now constrains what a tool can actually do, and a standalone binary lets a CI gate or auditor verify the capability boundary without Gradle.
+A hardening release on top of 0.7.0, driven by external review. The headline fix makes the manifest **`verify`** gate honest; the rest corrects docs/KDoc that lagged the code. Drop-in for 0.7.0 — no API changes.
 
 ```kotlin
-implementation("ai.deep-code:agents-kt:0.7.0")
-implementation("ai.deep-code:agents-kt-ksp:0.7.0")           // optional but recommended
-implementation("ai.deep-code:agents-kt-manifest:0.7.0")      // permission manifests
-implementation("ai.deep-code:agents-kt-observability:0.7.0") // JSONL audit + ObservabilityBridge
-implementation("ai.deep-code:agents-kt-otel:0.7.0")
-implementation("ai.deep-code:agents-kt-langsmith:0.7.0")
-implementation("ai.deep-code:agents-kt-langfuse:0.7.0")
+implementation("ai.deep-code:agents-kt:0.7.1")
+implementation("ai.deep-code:agents-kt-ksp:0.7.1")
 ```
 
-## What ships in 0.7.0
+## Fixed — manifest `verify` compares policy sets, not coarse scores (#1923)
 
-### Enforcement — declared policies now constrain tools at runtime
+0.7.0's `ManifestVerifier` compared coarse per-tool **scores** (network `allowAll`=2/`hosts`=1/none=0; filesystem any-globs=1/none=0), so genuine widenings with an unchanged score slipped through the CI gate:
 
-- **Layer 1 — in-JVM filesystem gate (#2890).** A tool call whose absolute filesystem-path argument falls outside the declared `read`/`write` globs is denied before the executor runs (paths normalized first, so `..` can't escape), surfacing through `onToolDenied` / `PipelineEvent.ToolDenied`. Opt-in by declaration; `enforceToolPolicies = false` restores 0.6 behavior.
-- **Layer 2 — OS sandbox for subprocess-shaped tools (#1916).** `ProcessSandbox` confines a subprocess at the kernel level:
-  - **macOS Seatbelt** (`sandbox-exec`), **Linux bubblewrap** (`bwrap`), a **firejail setuid fallback** (confines even where unprivileged user namespaces are restricted, e.g. Ubuntu 24.04), and a plain `ProcessBuilder` + loud **`UNCONFINED`** warning where no sandbox tool is present (`isSupported()` is false, so a caller that requires enforcement can refuse).
-  - `forPolicy(policy)` derives **write roots**, an **environment allow-list**, and a **working directory** from the declared `ToolPolicy`; the **network is default-deny** (only `network { allowAll() }` opens it). Auto-wired via `processTool(...)`.
-  - Verified on CI on a native Linux runner (bwrap + firejail kernel-level confinement) and on macOS (Seatbelt).
+- `network.hosts: ["api.internal"] → ["api.internal", "evil.example"]` — **now caught** (set difference)
+- `filesystem.write: a narrow upload glob → a root-level glob` — **now caught** (set difference)
 
-### "Externally" — the manifest from a binary (#1923)
+It also keyed tools by **name** with `putIfAbsent`, so two agents with a same-named tool collided and one agent's widening was hidden.
 
-- New standalone **`agents-kt` CLI** (`:agents-kt-cli`): `generate` / `inspect` / `verify` the deterministic permission manifest with no build tool in the loop. `verify` fails (exit `1`) when a change widens a boundary (risk increased, network opened, write scope broadened) — a drop-in CI gate.
-- The reflective entrypoint→manifest loader is now Gradle-free and **shared** with the `agentManifest` Gradle plugin, so a build and the CLI emit byte-identical manifests. See [`docs/cli.md`](docs/cli.md).
+Now `ManifestVerifier` compares the actual policy **sets**, keyed by `agentName.toolName`:
 
-## Deferred to 0.8 (tracked, not in 0.7.0)
+- **network** widened = mode escalation (`denyAll`/unspecified → `hosts` → `allowAll`) or a host the baseline didn't list
+- **filesystem** write/read widened = a glob the baseline's set didn't contain
+- **environment** widened (new `tool.environment.widened`) = a variable the baseline's allow-list lacked
 
-- `WasmSandbox` (Chicory, #2894) and `DockerSandbox` (opt-in extras, #2895) backends.
-- The network **hostname-allowlist proxy** (#2893) — default-deny ships; selective per-host allow needs the proxy.
-- The `grants { }` hierarchical structure DSL (root/delegates, parent-⊇-child).
-- A jlink / GraalVM single-file CLI image (packaging).
+Pure narrowing (removing entries) is not flagged. The comparison is conservative on *added* entries — semantic glob-**coverage** subset-checking (a broad glob subsuming a narrow one) is a documented later refinement. Regression tests pin every previously-missed case. Both the CLI `verify` and the Gradle `verifyAgentManifest` task inherit the fix.
+
+## Fixed — docs/KDoc drift
+
+- **Provider count:** docs said four providers; six ship (`OLLAMA`, `ANTHROPIC`, `OPENAI`, `DEEPSEEK`, `KIMI`, `OPENROUTER`). Kimi (#2697) and OpenRouter (#2701) are first-party providers extending the OpenAI adapter.
+- **Layer-2 KDoc:** `SandboxedTools.kt` no longer says "macOS only; Linux is #2892" — bwrap + firejail shipped in 0.7.0; `processTool` documented as the fail-closed public path vs. the low-level `ProcessSandbox.run` warn-and-continue primitive.
+- **PUBLISHING.md** bundle example bumped off stale `0.5.0` paths.
 
 ## Compatibility
 
-Additive and opt-in by declaration. A tool that declares no policy is never gated; existing 0.6.x callers compile and run unchanged. `enforceToolPolicies = false` restores the inert 0.6 behavior if needed.
+Drop-in for 0.7.0. The only behavior change is that `verify` now reports widenings it previously missed — if you have a checked-in baseline, re-run `verify` and review any newly-surfaced findings (they were always real; the old gate just didn't see them).
