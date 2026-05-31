@@ -25,6 +25,8 @@ open class KimiClient(
     connectTimeout: Duration = OpenAiClient.DEFAULT_CONNECT_TIMEOUT,
     maxResponseBytes: Long = OpenAiClient.DEFAULT_MAX_RESPONSE_BYTES,
     reasoning: ReasoningConfig? = null,
+    /** #2385 — forwarded to the OpenAI-compatible superclass for shared-client injection. */
+    httpClient: java.net.http.HttpClient? = null,
 ) : OpenAiClient(
     apiKey = apiKey,
     model = model,
@@ -38,6 +40,7 @@ open class KimiClient(
     providerName = "kimi",
     providerLabel = "Kimi",
     reasoning = reasoning,
+    httpClient = httpClient,
 ) {
     /**
      * Kimi's documented `response_format` does not (yet) accept OpenAI's
