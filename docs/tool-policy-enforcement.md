@@ -12,7 +12,7 @@ Enforcement is delivered in two layers:
 | Layer | What it protects | Applies to | Status |
 |-------|------------------|------------|--------|
 | **Layer 1 — in-JVM policy gate** | Filesystem-path *arguments* | every tool (in-process lambdas included) | **shipped** (#2890) |
-| **Layer 2 — OS sandbox** | The process itself (fs + network + env) | subprocess-shaped tools | in progress — macOS write-confinement landed (#2906); bwrap/Wasm/Docker planned (#1916) |
+| **Layer 2 — OS sandbox** | The process itself (fs + network + env) | subprocess-shaped tools | macOS Seatbelt + Linux bwrap (#2906 / #2892); firejail fallback, Wasm/Docker planned (#1916) |
 
 ---
 
@@ -93,7 +93,7 @@ whose executor shells out to a subprocess. See the roadmap entry for #1916.
 
 ---
 
-## Layer 2 — OS sandbox (macOS, first slice)
+## Layer 2 — OS sandbox (macOS Seatbelt + Linux bwrap)
 
 Layer 2 isolates the **process**, not just the arguments — so it holds even for paths a tool
 constructs itself. The first slice (#2906) is macOS write-confinement via Seatbelt:
@@ -125,8 +125,10 @@ val grep = processTool("grep", policy = toolPolicy {
 ```
 
 Caveats / status:
-- **macOS only** right now (`ProcessSandbox.isSupported()` is false elsewhere; `run` throws).
-  The Linux bwrap/firejail backend is #2892.
+- **Two backends, picked by OS** (#2892): macOS **Seatbelt** (`sandbox-exec`) or Linux
+  **bubblewrap** (`bwrap` — binds the root fs read-only, re-binds the write roots read-write,
+  and `--unshare-net` unless network is opened). `isSupported()` is true on either; `run` throws
+  on platforms with neither. The firejail fallback, Wasm (#2894), and Docker (#2895) are follow-ups.
 - **Write-confinement, derived from policy.** `ProcessSandbox.forPolicy(policy)` builds the
   profile from a tool's declared `filesystem.write` globs (one-or-many roots) and opens network
   only for `network = AllowAll` — the bridge from Layer-1 declaration to Layer-2 enforcement.
@@ -135,8 +137,9 @@ Caveats / status:
   `process { }` DSL are the remaining #2891 work.
 - macOS's `/tmp` is a symlink to `/private/tmp`, and Seatbelt matches the **canonical** path —
   `ProcessSandbox` resolves the folder with `toRealPath()` before building the profile.
-- OS-gated tests are annotated `@EnabledOnOs(OS.MAC)` + `@Tag("mac_os_only")` so Linux CI can
-  exclude them.
+- OS-gated integration tests are tagged `mac_os_only` / `linux_only` (+ `@EnabledOnOs`). The pure
+  arg/profile generation is unit-tested on every platform; for the kernel-level Linux tests on
+  macOS, run `scripts/lima-test.sh` (a Lima VM). See [testing.md](testing.md#linux-sandbox-tests-on-macos--lima).
 
 ---
 

@@ -58,9 +58,15 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
   stdout on success (or an `ERROR:` string), carries the policy onto the `ToolDef` so Layer-1
   (#2890) gates path args too, and **fails closed** (refuses to run rather than executing
   unsandboxed) where no OS sandbox is available.
-- macOS-only for now (the Linux bwrap/firejail backend is #2892, network hostname filtering
-  is the proxy #2893, and read-confinement + the `process { }` DSL remain in #2891). OS-gated
-  tests are annotated `@EnabledOnOs(OS.MAC)` + `@Tag("mac_os_only")` so CI can filter them on Linux.
+- **Linux backend (#2892)** — `ProcessSandbox` now dispatches by OS at run time: macOS
+  **Seatbelt** or Linux **bubblewrap** (`bwrap`). The Linux path binds the whole filesystem
+  read-only, re-binds the declared write roots read-write, and unshares the network namespace
+  unless opened — same write-confinement contract as Seatbelt, enforced by the kernel.
+  `isSupported()` is now true on macOS-with-sandbox-exec **or** Linux-with-bwrap, so `processTool`
+  / `forPolicy` work on both. The pure `bwrapArgs(...)` is unit-tested everywhere; the kernel-level
+  integration is `@EnabledOnOs(OS.LINUX)` + `@Tag("linux_only")` (run on macOS via `scripts/lima-test.sh`).
+- Remaining Layer-2 follow-ups: the firejail fallback, network hostname filtering (proxy #2893),
+  read-confinement, and the `process { }` DSL. Wasm/Docker backends are #2894/#2895.
 
 ### Errata — v0.6.5 release notes overstated document-attachment shipping (#2868)
 
