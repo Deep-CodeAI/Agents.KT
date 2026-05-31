@@ -4,6 +4,18 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — injectable `HttpClient` on every provider client (#2385)
+
+- `model { httpClient = … }` lets multiple agents **share one networking surface** —
+  a connection pool, a bounded executor that rate-limits concurrent LLM calls, an
+  outbound proxy, or an `HttpClient` already wired to your telemetry. All four provider
+  clients (`Ollama`/`Claude`/`OpenAI`/`DeepSeek`) take an optional `httpClient: HttpClient?`
+  constructor param; `ModelConfig.httpClient` is threaded into each by `defaultClientFor()`
+  (DeepSeek inherits it via its `OpenAiClient` superclass).
+- **Opt-in, never automatic.** `null` (default) → each client builds its own, byte-for-byte
+  unchanged. The framework provides the seam; the rate-limit/circuit-breaker/bulkhead policy
+  lives in your injected client. See `docs/model-and-tools.md` → "Sharing a networking surface".
+
 ### Added — automatic in-JVM tool-policy enforcement (Layer 1 of #1916, #2890)
 
 - A tool's *declared* `ToolPolicy` is now **enforced at runtime** by default. When a tool

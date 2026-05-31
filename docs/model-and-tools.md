@@ -95,6 +95,28 @@ model {
 
 Both fields default to `null`, meaning the adapter falls back to its own `DEFAULT_REQUEST_TIMEOUT` / `DEFAULT_CONNECT_TIMEOUT` constants (`ClaudeClient.DEFAULT_REQUEST_TIMEOUT`, `OpenAiClient.DEFAULT_REQUEST_TIMEOUT`, `OllamaClient.DEFAULT_REQUEST_TIMEOUT`). The DSL setters work on every provider — Ollama, Claude, OpenAI, and DeepSeek — through `ModelConfig.requestTimeout` / `connectTimeout`, which `defaultClientFor()` threads into each adapter ctor. When the cap is hit the JDK HttpClient surfaces a `HttpTimeoutException: request timed out` and the streaming `Flow` is torn down — tune up rather than fight the symptom.
 
+#### Sharing a networking surface (#2385)
+
+By default every provider client builds its **own** `java.net.http.HttpClient` — fine for one agent, wasteful for a long-lived process running many. Each instance carries its own selector thread, executor, and connection pool. When you need one networking surface across the fleet — a shared connection pool, a bounded executor that rate-limits concurrent LLM calls, an outbound proxy, or an `HttpClient` already wired to your metrics — inject it via `model { httpClient = … }`:
+
+```kotlin
+// One client for the whole JVM: a Semaphore-bounded executor caps concurrent
+// LLM calls across every agent; the connection pool + proxy are shared.
+val shared: HttpClient = HttpClient.newBuilder()
+    .executor(boundedExecutor(maxConcurrent = 8))
+    .proxy(ProxySelector.of(InetSocketAddress("proxy.internal", 3128)))
+    .build()
+
+val agent = agent<String, String>("kyc") {
+    model { claude("claude-opus-4-7"); apiKey = ...; httpClient = shared }
+    // …
+}
+```
+
+- **Opt-in, never automatic.** `httpClient` defaults to `null` → each client builds its own, byte-for-byte unchanged. Existing code is unaffected.
+- **Every provider.** `ModelConfig.httpClient` is threaded by `defaultClientFor()` into all four adapters (Ollama / Claude / OpenAI / DeepSeek); DeepSeek inherits it through its `OpenAiClient` superclass.
+- **You own the policy.** The framework provides the *seam*, not the policy — rate limiting, circuit breaking, and bulkheading live in *your* `HttpClient` (e.g. a `Semaphore`-bounded `executor`). The injected client is used verbatim, so its own `connectTimeout` wins over the DSL `connectTimeout` field (the per-request `requestTimeout` still applies, since it rides on each `HttpRequest`).
+
 **`tools { tool(name, description) { args -> } }`** — registers callable tools. Each tool receives a `Map<String, Any?>` of arguments and returns any value.
 
 **`tools { tool<Args, Result>(name, description) { args -> } }`** — typed variant. `Args` must be `@Generable`; the framework deserializes the model's arguments into a typed instance via reflection (`KClass.constructFromMap`) before invoking the executor. The provider envelope advertises a real JSON Schema generated from `Args::class.jsonSchema()` (proper `properties`, `required`, `@Guide` descriptions per field) instead of the legacy `properties: {}, additionalProperties: true`. Deserialization failures (missing required field, wrong type) route through `onError { invalidArgs { ... } }` like JSON-parse failures, not `executionError`. The returned handle implements provider-neutral `Tool<Args, Result>`, the same boundary shape used by MCP-discovered tools.

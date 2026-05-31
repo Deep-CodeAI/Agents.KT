@@ -1240,6 +1240,7 @@ private fun defaultClientFor(
             connectTimeout = config.connectTimeout ?: OllamaClient.DEFAULT_CONNECT_TIMEOUT,
             reasoning = config.reasoning,
             toolChoice = toolChoice,
+            httpClient = config.httpClient,
         )
         ModelProvider.ANTHROPIC -> ClaudeClient(
             apiKey = config.apiKey
@@ -1253,6 +1254,7 @@ private fun defaultClientFor(
             connectTimeout = config.connectTimeout ?: ClaudeClient.DEFAULT_CONNECT_TIMEOUT,
             reasoning = config.reasoning,
             toolChoice = toolChoice,
+            httpClient = config.httpClient,
         )
         ModelProvider.OPENAI -> OpenAiClient(
             apiKey = config.apiKey
@@ -1269,6 +1271,7 @@ private fun defaultClientFor(
             // the agent has caching enabled (computed at the call site).
             promptCacheKey = promptCacheKey,
             toolChoice = toolChoice,
+            httpClient = config.httpClient,
         )
         ModelProvider.DEEPSEEK -> DeepSeekClient(
             apiKey = config.apiKey
@@ -1282,6 +1285,7 @@ private fun defaultClientFor(
             connectTimeout = config.connectTimeout ?: OpenAiClient.DEFAULT_CONNECT_TIMEOUT,
             reasoning = config.reasoning,
             toolChoice = toolChoice,
+            httpClient = config.httpClient,
         )
         // #2697 — Kimi (Moonshot AI) Chat Completions; thin OpenAI-compatible
         // subclass, identical wiring to DeepSeek but with the Moonshot base URL.
@@ -1296,6 +1300,11 @@ private fun defaultClientFor(
             reasoning = config.reasoning,
         )
     }
+
+// #2385 — internal seam exposing the otherwise-private defaultClientFor dispatch
+// so tests can assert ModelConfig.httpClient forwarding without reflection.
+internal fun defaultClientForTesting(config: ModelConfig, tools: List<ToolDef>): ModelClient =
+    defaultClientFor(config, tools)
 
 // #2804 — central emit helper for `AgentEvent.ToolCallFinished`. Replaces
 // four near-identical emit blocks (unknown-tool, denied, success, exception)

@@ -23,6 +23,8 @@ open class DeepSeekClient(
     // wire shape verbatim. Pass-through ctor param so the agentic loop can
     // wire `agent.toolChoice` the same way for both providers.
     toolChoice: ToolChoice = ToolChoice.Auto,
+    /** #2385 — forwarded to the OpenAI-compatible superclass for shared-client injection. */
+    httpClient: java.net.http.HttpClient? = null,
 ) : OpenAiClient(
     apiKey = apiKey,
     model = model,
@@ -37,6 +39,7 @@ open class DeepSeekClient(
     providerLabel = "DeepSeek",
     reasoning = reasoning,
     toolChoice = toolChoice,
+    httpClient = httpClient,
 ) {
     /**
      * #2409 — by default DeepSeek thinking is disabled (preserves prior
