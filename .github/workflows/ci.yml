@@ -27,14 +27,19 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e  # v6.1.0
 
-      # #2892 — install the Linux sandbox tools so the `linux_only` ProcessSandbox
+      # #2892 — install the Linux sandbox tools so the linux_only ProcessSandbox
       # tests run on the runner instead of assumeTrue-skipping (no bwrap = skip).
-      # The runner is a native Ubuntu kernel, so bwrap works without a container.
       - name: Install Linux sandbox tools (bubblewrap / firejail)
         run: sudo apt-get update && sudo apt-get install -y bubblewrap firejail
+
+      # ubuntu-latest (24.04) restricts unprivileged user namespaces via AppArmor,
+      # which a non-setuid bwrap needs. Relax it so the confinement tests can
+      # actually build a sandbox (otherwise they assumeTrue-skip).
+      - name: Allow unprivileged user namespaces (bwrap)
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Build
         run: ./gradlew build -x test
 
       - name: Test
-        run: ./gradlew test
+        run: ./gradlew tes
