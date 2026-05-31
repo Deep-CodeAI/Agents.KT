@@ -80,11 +80,18 @@ open class ClaudeClient(
      *   - [ToolChoice.Specific] → `{"type":"tool","name":...}`
      */
     private val toolChoice: ToolChoice = ToolChoice.Auto,
+    /**
+     * #2385 — optional shared `HttpClient`. When non-null it is used verbatim
+     * (share a connection pool / executor / proxy / telemetry across agents);
+     * when null each client builds its own, byte-for-byte unchanged.
+     */
+    httpClient: HttpClient? = null,
 ) : ModelClient {
 
-    private val http: HttpClient = HttpClient.newBuilder()
+    internal val httpClient: HttpClient = httpClient ?: HttpClient.newBuilder()
         .connectTimeout(connectTimeout.toJavaDuration())
         .build()
+    private val http: HttpClient get() = httpClient
 
     override fun supportsConstrainedDecoding(): Boolean = true
 

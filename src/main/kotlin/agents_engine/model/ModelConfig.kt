@@ -1,5 +1,6 @@
 package agents_engine.model
 
+import java.net.http.HttpClient
 import kotlin.time.Duration
 
 /**
@@ -73,6 +74,14 @@ data class ModelConfig(
      * the connect leg itself is the bottleneck.
      */
     val connectTimeout: Duration? = null,
+    /**
+     * #2385 — optional shared `HttpClient` for this model's provider client.
+     * Lets multiple agents share one connection pool / executor / proxy / telemetry
+     * surface. Null (default) → each client builds its own, byte-for-byte unchanged.
+     * Note: identity-compared in `equals`/`hashCode` (it is an infrastructure object,
+     * not a value), so inject a stable instance if you rely on config-keyed caching.
+     */
+    val httpClient: HttpClient? = null,
 ) {
     val baseUrl: String get() = "http://$host:$port"
 
@@ -126,6 +135,9 @@ class ModelBuilder {
      * itself is the bottleneck.
      */
     var connectTimeout: Duration? = null
+
+    /** #2385 — opt into a shared `HttpClient` across agents (pool / proxy / rate-limit). */
+    var httpClient: HttpClient? = null
 
     fun ollama(modelName: String) {
         name = modelName
@@ -200,6 +212,7 @@ class ModelBuilder {
             reasoning = reasoningConfig,
             requestTimeout = requestTimeout,
             connectTimeout = connectTimeout,
+            httpClient = httpClient,
         )
     }
 }

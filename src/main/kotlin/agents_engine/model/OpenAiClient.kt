@@ -87,11 +87,18 @@ open class OpenAiClient(
      * literally cannot call anything.
      */
     private val toolChoice: ToolChoice = ToolChoice.Auto,
+    /**
+     * #2385 — optional shared `HttpClient`; used verbatim when non-null, else a
+     * per-client one is built (byte-for-byte unchanged). Inherited by subclasses
+     * such as [DeepSeekClient].
+     */
+    httpClient: HttpClient? = null,
 ) : ModelClient {
 
-    private val http: HttpClient = HttpClient.newBuilder()
+    internal val httpClient: HttpClient = httpClient ?: HttpClient.newBuilder()
         .connectTimeout(connectTimeout.toJavaDuration())
         .build()
+    private val http: HttpClient get() = httpClient
 
     override fun supportsConstrainedDecoding(): Boolean = true
 

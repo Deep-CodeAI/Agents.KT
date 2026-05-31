@@ -97,12 +97,18 @@ open class OllamaClient(
      * genuinely can't call anything — that part IS enforceable on Ollama.
      */
     private val toolChoice: ToolChoice = ToolChoice.Auto,
+    /**
+     * #2385 — optional shared `HttpClient`; used verbatim when non-null, else a
+     * per-client one is built (byte-for-byte unchanged).
+     */
+    httpClient: HttpClient? = null,
 ) : ModelClient {
     private val baseUrl = "http://$host:$port"
 
-    private val http: HttpClient = HttpClient.newBuilder()
+    internal val httpClient: HttpClient = httpClient ?: HttpClient.newBuilder()
         .connectTimeout(connectTimeout.toJavaDuration())
         .build()
+    private val http: HttpClient get() = httpClient
 
     /**
      * #706: Once a model has been observed to reject native tools, skip the native
