@@ -197,7 +197,7 @@ class ModelBuilder {
                 ModelProvider.ANTHROPIC -> error("model { claude(\"$name\") } requires apiKey to be set")
                 ModelProvider.OPENAI -> error("model { openai(\"$name\") } requires apiKey to be set")
                 ModelProvider.DEEPSEEK -> error("model { deepseek(\"$name\") } requires apiKey to be set")
-                ModelProvider.KIMI -> error("model { kimi(\"$name\") } requires apiKey to be set (load from .secrets/kimi-key)")
+                ModelProvider.KIMI -> error("model { kimi(\"$name\") } requires apiKey to be set")
                 ModelProvider.OLLAMA -> Unit
             }
         }

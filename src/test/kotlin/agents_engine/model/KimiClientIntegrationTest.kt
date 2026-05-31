@@ -95,10 +95,15 @@ class KimiClientIntegrationTest {
             tools = listOf(tool),
         )
 
-        val response = client.chat(listOf(
-            LlmMessage("system", "You are a tool-calling assistant. Always call the available tool; do not answer in text."),
-            LlmMessage("user", """Call report_number with JSON arguments {"value":7}."""),
-        ))
+        val response = client.chat(
+            listOf(
+                LlmMessage(
+                    "system",
+                    "You are a tool-calling assistant. Always call the available tool; do not answer in text.",
+                ),
+                LlmMessage("user", """Call report_number with JSON arguments {"value":7}."""),
+            ),
+        )
 
         val calls = assertIs<LlmResponse.ToolCalls>(response)
         val call = calls.calls.single()
