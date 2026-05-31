@@ -282,3 +282,76 @@ class ProcessToolMacTest {
         }
     }
 }
+
+/**
+ * #2892 — pure tests for the Linux bubblewrap argv. Run on every platform (no
+ * subprocess), so the bwrap contract is pinned even on macOS / CI-without-bwrap.
+ */
+class BwrapArgsTest {
+
+    private fun has3(args: List<String>, a: String, b: String, c: String) =
+        args.windowed(3).any { it == listOf(a, b, c) }
+
+    @Test fun `binds root-fs read-only, write roots read-write, unshares net by default`() {
+        val args = ProcessSandbox.bwrapArgs(listOf(Path.of("/data/a"), Path.of("/data/b")))
+        assertTrue(has3(args, "--ro-bind", "/", "/"), "whole fs read-only: $args")
+        assertTrue(has3(args, "--bind", "/data/a", "/data/a"), "root A read-write: $args")
+        assertTrue(has3(args, "--bind", "/data/b", "/data/b"), "root B read-write: $args")
+        assertTrue("--unshare-net" in args, "network denied by default: $args")
+    }
+
+    @Test fun `allowNetwork keeps the network namespace`() {
+        assertFalse("--unshare-net" in ProcessSandbox.bwrapArgs(listOf(Path.of("/data")), allowNetwork = true))
+    }
+
+    @Test fun `no write roots means no read-write bind (deny all writes)`() {
+        assertFalse("--bind" in ProcessSandbox.bwrapArgs(emptyList()))
+    }
+}
+
+/**
+ * OS-gated integration: spawns `bwrap` and asserts kernel-level write confinement
+ * on Linux. Tagged `linux_only`; on macOS run via `scripts/lima-test.sh`.
+ * `assumeTrue` skips cleanly on a Linux box without bubblewrap installed.
+ */
+@EnabledOnOs(OS.LINUX)
+@Tag("linux_only")
+@OptIn(ExperimentalPathApi::class)
+class ProcessSandboxLinuxTest {
+
+    private fun shWrite(text: String, target: Path): List<String> =
+        listOf("/bin/sh", "-c", "printf '%s' \"\$1\" > \"\$2\"", "sh", text, target.toString())
+
+    @Test fun `bwrap is detected as a supported backend`() {
+        Assumptions.assumeTrue(ProcessSandbox.isSupported(), "bwrap not installed")
+        assertTrue(ProcessSandbox.isSupported())
+    }
+
+    @Test fun `write inside the sandboxed folder succeeds`() {
+        Assumptions.assumeTrue(ProcessSandbox.isSupported(), "bwrap not installed")
+        val root = createTempDirectory("sbx-lin-in").toRealPath()
+        try {
+            val target = root.resolve("note.txt")
+            val res = ProcessSandbox(root).run(shWrite("hello bwrap", target))
+            assertTrue(res.ok, "expected success, got exit=${res.exitCode} stderr=${res.stderr}")
+            assertTrue(target.exists() && target.readText() == "hello bwrap")
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun `write outside the sandboxed folder is blocked by bwrap`() {
+        Assumptions.assumeTrue(ProcessSandbox.isSupported(), "bwrap not installed")
+        val root = createTempDirectory("sbx-lin-root").toRealPath()
+        val outside = createTempDirectory("sbx-lin-out").toRealPath()
+        try {
+            val target = outside.resolve("escape.txt")
+            val res = ProcessSandbox(root).run(shWrite("nope", target))
+            assertFalse(res.ok, "out-of-folder write must fail; exit=${res.exitCode}")
+            assertFalse(target.exists(), "no file may be created outside the sandboxed folder")
+        } finally {
+            root.deleteRecursively()
+            outside.deleteRecursively()
+        }
+    }
+}
