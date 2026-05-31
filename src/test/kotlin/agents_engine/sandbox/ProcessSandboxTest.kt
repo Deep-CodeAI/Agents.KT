@@ -1,5 +1,6 @@
 package agents_engine.sandbox
 
+import agents_engine.core.ToolRisk
 import agents_engine.core.toolPolicy
 import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.Tag
@@ -210,6 +211,72 @@ class ProcessSandboxMacTest {
                 "ALLOWED" in allowed.stdout || "CONNECTED" in allowed.stdout,
                 "allowNetwork must permit the socket; ${diag(allowed)}",
             )
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+}
+
+/**
+ * #2914 — `processTool` auto-sandboxes a subprocess tool from its declared policy.
+ */
+@EnabledOnOs(OS.MAC)
+@Tag("mac_os_only")
+@OptIn(ExperimentalPathApi::class)
+class ProcessToolMacTest {
+
+    private fun writePolicy(root: Path) = toolPolicy {
+        risk = ToolRisk.MEDIUM
+        filesystem { write("$root/**") }
+    }
+
+    private fun writer(root: Path) = processTool("writer", policy = writePolicy(root)) { args ->
+        listOf("/bin/sh", "-c", "printf '%s' \"\$1\" > \"\$2\"", "sh", args["text"].toString(), args["path"].toString())
+    }
+
+    @Test fun `processTool write inside the declared policy root succeeds`() {
+        val root = createTempDirectory("ptool-in").toRealPath()
+        try {
+            val target = root.resolve("out.txt")
+            val res = writer(root).executor(mapOf("text" to "hello", "path" to target.toString())) as String
+            assertFalse(res.startsWith("ERROR"), "in-policy write should succeed: $res")
+            assertTrue(target.exists() && target.readText() == "hello")
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun `processTool write outside the declared policy root is blocked`() {
+        val root = createTempDirectory("ptool-root").toRealPath()
+        val outside = createTempDirectory("ptool-out").toRealPath()
+        try {
+            val target = outside.resolve("escape.txt")
+            val res = writer(root).executor(mapOf("text" to "nope", "path" to target.toString())) as String
+            assertTrue(res.startsWith("ERROR"), "out-of-policy write should fail: $res")
+            assertFalse(target.exists())
+        } finally {
+            root.deleteRecursively(); outside.deleteRecursively()
+        }
+    }
+
+    @Test fun `processTool returns the command stdout on success`() {
+        val root = createTempDirectory("ptool-stdout").toRealPath()
+        try {
+            val tool = processTool("echoer", policy = writePolicy(root)) { args ->
+                listOf("/bin/echo", args["msg"].toString())
+            }
+            assertEquals("hello world", tool.executor(mapOf("msg" to "hello world")) as String)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun `processTool carries the declared policy and risk onto the ToolDef`() {
+        val root = createTempDirectory("ptool-policy").toRealPath()
+        try {
+            val tool = processTool("writer", policy = writePolicy(root)) { emptyList() }
+            assertEquals(ToolRisk.MEDIUM, tool.risk)
+            assertTrue(tool.policy?.filesystem?.write?.globs?.any { "$root" in it } == true)
         } finally {
             root.deleteRecursively()
         }
