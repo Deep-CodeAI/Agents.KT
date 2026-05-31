@@ -322,13 +322,40 @@ class ProcessSandboxLinuxTest {
     private fun shWrite(text: String, target: Path): List<String> =
         listOf("/bin/sh", "-c", "printf '%s' \"\$1\" > \"\$2\"", "sh", text, target.toString())
 
+    /**
+     * Skip cleanly when bwrap is absent *or* present-but-unusable. On a host that
+     * restricts unprivileged user namespaces (e.g. Ubuntu 24.04's
+     * `kernel.apparmor_restrict_unprivileged_userns=1`) with a non-setuid
+     * `bubblewrap`, bwrap cannot create its namespace — it prints `bwrap: ...` and
+     * every command returns non-zero. That is an *environment* limitation, not a
+     * policy verdict, so a confinement test can't be meaningfully run; skip it
+     * rather than report a false failure. A trivial `/bin/true` probe distinguishes
+     * "the kernel won't let bwrap start" (skip) from "bwrap runs but my args are
+     * wrong" (the real assertions below still execute and fail).
+     */
+    private fun assumeBwrapUsable() {
+        Assumptions.assumeTrue(ProcessSandbox.isSupported(), "bwrap not installed")
+        val probeRoot = createTempDirectory("sbx-probe").toRealPath()
+        try {
+            val probe = ProcessSandbox(probeRoot).run(listOf("/bin/true"))
+            Assumptions.assumeTrue(
+                probe.ok,
+                "bwrap is installed but cannot create a sandbox here (likely restricted " +
+                    "unprivileged user namespaces — see kernel.apparmor_restrict_unprivileged_userns); " +
+                    "exit=${probe.exitCode} stderr=${probe.stderr.trim()}",
+            )
+        } finally {
+            probeRoot.deleteRecursively()
+        }
+    }
+
     @Test fun `bwrap is detected as a supported backend`() {
         Assumptions.assumeTrue(ProcessSandbox.isSupported(), "bwrap not installed")
         assertTrue(ProcessSandbox.isSupported())
     }
 
     @Test fun `write inside the sandboxed folder succeeds`() {
-        Assumptions.assumeTrue(ProcessSandbox.isSupported(), "bwrap not installed")
+        assumeBwrapUsable()
         val root = createTempDirectory("sbx-lin-in").toRealPath()
         try {
             val target = root.resolve("note.txt")
@@ -341,7 +368,7 @@ class ProcessSandboxLinuxTest {
     }
 
     @Test fun `write outside the sandboxed folder is blocked by bwrap`() {
-        Assumptions.assumeTrue(ProcessSandbox.isSupported(), "bwrap not installed")
+        assumeBwrapUsable()
         val root = createTempDirectory("sbx-lin-root").toRealPath()
         val outside = createTempDirectory("sbx-lin-out").toRealPath()
         try {

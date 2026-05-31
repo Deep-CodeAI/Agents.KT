@@ -146,6 +146,16 @@ tasks.test {
     }
 }
 
+// Show the full exception (message + stack) for failing tests, so a CI failure
+// carries its assertion message — e.g. the bwrap stderr behind a linux_only
+// ProcessSandbox failure — instead of a bare `AssertionFailedError`.
+tasks.withType<Test>().configureEach {
+    testLogging {
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        events("failed")
+    }
+}
+
 // Mutation testing — perturbs the source (flips operators, swaps return values,
 // removes statements) and re-runs the suite. Surviving mutants identify code paths
 // the tests touch but don't actually verify. See #836.
