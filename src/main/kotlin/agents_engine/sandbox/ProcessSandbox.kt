@@ -2,6 +2,7 @@ package agents_engine.sandbox
 
 import agents_engine.core.ToolNetworkPolicy
 import agents_engine.core.ToolPolicy
+import java.io.File
 import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
@@ -10,19 +11,19 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Layer 2 (#2891 / #1916): OS-level isolation for a subprocess, via macOS
- * **Seatbelt** (`/usr/bin/sandbox-exec`).
+ * Layer 2 (#2891 / #1916): OS-level isolation for a subprocess. Two backends,
+ * picked by OS at [run] time: macOS **Seatbelt** (`/usr/bin/sandbox-exec`, #2906)
+ * and Linux **bubblewrap** (`bwrap`, #2892).
  *
- * [run] launches a command under a generated Seatbelt profile that denies
- * everything by default and allows file **writes** only under the configured
- * roots (#2906 single-root PoC; #2909 multi-root from a tool's [ToolPolicy]).
- * A write to any path outside those roots is blocked by the **kernel** — not just
- * the in-JVM Layer-1 gate (#2890). Reads and process exec stay allowed so the
- * command (e.g. `/bin/sh`) can load and run; network stays blocked unless opened.
+ * [run] launches the command confined so that file **writes** are allowed only
+ * under the configured roots (#2909 derives them from a tool's [ToolPolicy]); a
+ * write anywhere else is blocked by the **kernel**, not just the in-JVM Layer-1
+ * gate (#2890). Reads + process exec stay allowed so the command (e.g. `/bin/sh`)
+ * can load; network is blocked unless opened.
  *
- * macOS only for now ([isSupported] is false elsewhere and [run] throws). The
- * Linux (bwrap/firejail) backend is #2892; network hostname filtering is the
- * proxy (#2893); read-confinement and the `process { }` DSL remain in #2891.
+ * [isSupported] is true on macOS-with-sandbox-exec or Linux-with-bwrap; [run]
+ * throws elsewhere. The firejail fallback, network hostname filtering (#2893),
+ * read-confinement, and the `process { }` DSL remain follow-ups.
  */
 class ProcessSandbox private constructor(
     private val realRoots: List<Path>,
@@ -36,13 +37,22 @@ class ProcessSandbox private constructor(
     constructor(writableRoot: Path) : this(listOf(canonicalPath(writableRoot)), allowNetwork = false)
 
     fun run(command: List<String>, stdin: String? = null, timeout: Duration = 10.seconds): SandboxResult {
-        check(isSupported()) {
-            "ProcessSandbox requires macOS with $SANDBOX_EXEC (Linux backend is #2892). " +
-                "os.name='${System.getProperty("os.name")}'"
-        }
         require(command.isNotEmpty()) { "command must not be empty" }
 
-        val argv = listOf(SANDBOX_EXEC, "-p", seatbeltProfile(realRoots, allowNetwork)) + command
+        // Dispatch by OS: Seatbelt on macOS, bwrap on Linux. Both confine the
+        // subprocess to the same write roots; only the wrapping differs.
+        val sandboxExec = macSandboxExec()
+        val bwrap = linuxBwrap()
+        val argv = when {
+            sandboxExec != null ->
+                listOf(sandboxExec.toString(), "-p", seatbeltProfile(realRoots, allowNetwork)) + command
+            bwrap != null ->
+                listOf(bwrap.toString()) + bwrapArgs(realRoots, allowNetwork) + command
+            else -> error(
+                "ProcessSandbox needs macOS+sandbox-exec or Linux+bwrap (Wasm/Docker = #2894/#2895). " +
+                    "os.name='${System.getProperty("os.name")}'",
+            )
+        }
         val process = ProcessBuilder(argv).redirectErrorStream(false).start()
 
         // Drain stdout/stderr on daemon threads to avoid a full-pipe deadlock
@@ -84,6 +94,7 @@ class ProcessSandbox private constructor(
 
     companion object {
         private const val SANDBOX_EXEC = "/usr/bin/sandbox-exec"
+        private const val BWRAP = "bwrap"
 
         // Grace period for the process to exit after destroy() before destroyForcibly().
         private const val GRACEFUL_DESTROY_WAIT_SEC = 2L
@@ -91,9 +102,23 @@ class ProcessSandbox private constructor(
         private const val DRAIN_JOIN_TIMEOUT_MS = 2_000L
         private const val DRAIN_JOIN_AFTER_KILL_MS = 1_000L
 
-        fun isSupported(): Boolean =
-            System.getProperty("os.name", "").contains("Mac", ignoreCase = true) &&
-                Files.isExecutable(Path.of(SANDBOX_EXEC))
+        private fun osName() = System.getProperty("os.name", "")
+
+        /** macOS `sandbox-exec` when this is a Mac and the binary is present; else null. */
+        private fun macSandboxExec(): Path? =
+            Path.of(SANDBOX_EXEC).takeIf { osName().contains("Mac", ignoreCase = true) && Files.isExecutable(it) }
+
+        /** Linux `bwrap` (bubblewrap) resolved from PATH when this is Linux; else null. */
+        private fun linuxBwrap(): Path? =
+            if (!osName().contains("Linux", ignoreCase = true)) {
+                null
+            } else {
+                (System.getenv("PATH") ?: "").split(File.pathSeparatorChar)
+                    .firstNotNullOfOrNull { dir -> Path.of(dir, BWRAP).takeIf { Files.isExecutable(it) } }
+            }
+
+        /** True when an OS sandbox backend is available (macOS Seatbelt or Linux bwrap). */
+        fun isSupported(): Boolean = macSandboxExec() != null || linuxBwrap() != null
 
         /** Confine writes to the given roots (canonicalized). */
         fun forWritableRoots(roots: List<Path>, allowNetwork: Boolean = false): ProcessSandbox =
@@ -127,6 +152,21 @@ class ProcessSandbox private constructor(
 
         /** Single-root convenience (#2906); delegates to the list form. */
         fun seatbeltProfile(realRoot: Path): String = seatbeltProfile(listOf(realRoot))
+
+        /**
+         * Pure: Linux bubblewrap args (#2892). Bind the whole filesystem
+         * **read-only**, give the command a fresh `/proc` + `/dev`, re-bind each
+         * (canonical) write root **read-write**, and — unless [allowNetwork] —
+         * unshare the network namespace. A write outside a root hits the read-only
+         * mount ("Read-only file system"); reads + exec stay allowed.
+         */
+        fun bwrapArgs(writeRoots: List<Path>, allowNetwork: Boolean = false): List<String> = buildList {
+            add("--ro-bind"); add("/"); add("/")
+            add("--proc"); add("/proc")
+            add("--dev"); add("/dev")
+            writeRoots.forEach { add("--bind"); add(it.toString()); add(it.toString()) }
+            if (!allowNetwork) add("--unshare-net")
+        }
 
         // The literal directory prefix of a write glob — the deepest path that
         // contains no wildcard. Examples (slash-star avoided here because Kotlin
