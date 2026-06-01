@@ -4,6 +4,16 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `ToolCapabilityExtractor`: static capability classification (#2884, epic #2882)
+
+- New `ToolCapabilityExtractor` in `agents-kt-detekt` statically classifies what a tool's executor
+  body actually does — `FS_READ` / `FS_WRITE` / `NETWORK` / `ENVIRONMENT` / `EXEC` — by walking its
+  call expressions and matching callee names (`writeText`/`Files.write` → write, `readText`/
+  `readAllBytes` → read, `URL`/`openConnection` → network, `getenv` → env, `ProcessBuilder`/`exec` →
+  exec). The reusable input the upcoming `ToolPolicy`↔capability comparator (#2887) checks against the
+  *declared* policy. Syntactic by design (callee-name match, no FQN resolution) and intentionally
+  conservative — reflection / aliasing / transitive state are Pillar-3 residual.
+
 ### Added — `ToolAuditLedger`: tamper-evident, Merkle-chained tool-action log (#2886, epic #2882)
 
 - New `ToolAuditLedger` (in `agents-kt-observability`, sibling to `JsonlAuditExporter`) — an
