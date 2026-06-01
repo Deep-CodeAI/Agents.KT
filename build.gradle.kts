@@ -12,7 +12,7 @@ plugins {
 }
 
 group = "ai.deep-code"
-version = "0.7.1"
+version = "0.7.2"
 
 repositories {
     mavenCentral()
@@ -344,6 +344,33 @@ tasks.register("testAll") {
         ":mcpIntegrationTest",
     )
 }
+
+// #2873 — release guard. The README advertises the dependency coordinate
+// `ai.deep-code:agents-kt:<version>`; if that drifts from the actual Gradle
+// project version we ship a README pointing at the wrong (or non-existent)
+// artifact — the exact drift an external 0.7.0 review flagged. Wired into
+// `check`, so CI fails the moment the two disagree.
+tasks.register("checkReadmeVersion") {
+    description = "Fails if README.md's agents-kt dependency version differs from the project version."
+    group = "verification"
+    val readmeFile = rootProject.file("README.md")
+    val projectVersion = project.version.toString()
+    inputs.file(readmeFile)
+    inputs.property("version", projectVersion)
+    doLast {
+        val declared = Regex("""ai\.deep-code:agents-kt:([0-9]+\.[0-9]+\.[0-9]+[^"]*)""")
+            .find(readmeFile.readText())?.groupValues?.get(1)
+        requireNotNull(declared) {
+            "No `ai.deep-code:agents-kt:<version>` dependency snippet found in README.md."
+        }
+        check(declared == projectVersion) {
+            "README.md advertises agents-kt:$declared but the project version is $projectVersion. " +
+                "Keep the README dependency snippet in sync with the Gradle version (#2873)."
+        }
+    }
+}
+
+tasks.named("check") { dependsOn("checkReadmeVersion") }
 
 tasks.register<Test>("integrationTest") {
     description = "Runs live-llm integration tests (Ollama / Ollama Cloud). Hosted-API live tests run in default :test under live-cloud-api."
