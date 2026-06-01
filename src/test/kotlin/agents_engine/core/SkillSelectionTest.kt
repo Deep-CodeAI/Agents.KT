@@ -242,7 +242,10 @@ class SkillSelectionTest {
     }
 
     @Test
-    fun `no model with multiple same-type skills uses first-match fallback`() {
+    fun `no model with multiple same-type skills fails loud instead of silently picking the first`() {
+        // #3087 (de-slop #3083): an "auditable / explicit boundaries" runtime must not silently
+        // route by registration order. Ambiguous candidates with no selector and no model is a
+        // configuration error, not a convenience default.
         val a = agent<String, String>("a") {
             skills {
                 skill<String, String>("first", "first skill") {
@@ -254,7 +257,13 @@ class SkillSelectionTest {
             }
         }
 
-        assertEquals("first: hello", a("hello"))
+        val ex = assertThrows<SkillRoutingException> { a("hello") }
+        // The message must name the ambiguous candidates and how to disambiguate.
+        assertTrue("first" in ex.message!! && "second" in ex.message!!, "names candidates: ${ex.message}")
+        assertTrue(
+            "skillSelection" in ex.message!! || "model" in ex.message!!,
+            "points to a fix (skillSelection/model): ${ex.message}",
+        )
     }
 
     // --- Integration test with real LLM ---

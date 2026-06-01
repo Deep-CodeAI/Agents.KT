@@ -990,9 +990,22 @@ class Agent<IN, OUT>(
                 if (route.rationale.isNotEmpty()) routerRationaleListener?.invoke(route.rationale)
                 selected
             }
-            else -> candidates.first()
+            else -> ambiguousSkillRoutingError(candidates)
         }
     }
+
+    /**
+     * Multiple compatible skills, but no selector and no model to choose between them.
+     * Fail loud rather than silently routing to the first by registration order — routing
+     * in an auditable runtime must be explicit (#3087).
+     */
+    private fun ambiguousSkillRoutingError(candidates: List<Skill<*, *>>): Nothing =
+        throw SkillRoutingException(
+            "Agent \"$name\" has ${candidates.size} compatible skills for ${outType.simpleName} " +
+                "(${candidates.joinToString { "\"${it.name}\"" }}) but no way to choose between them. " +
+                "Add an explicit skillSelection { } selector, or configure a model { } for LLM routing. " +
+                "Silent first-match routing is disallowed — routing must be explicit and auditable."
+        )
 
     fun skills(block: SkillsBuilder.() -> Unit) {
         checkNotFrozen()
