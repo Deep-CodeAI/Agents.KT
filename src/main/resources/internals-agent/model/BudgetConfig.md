@@ -1,10 +1,10 @@
 ---
-description: Source-file knowledge for agents_engine/model/BudgetConfig.kt — six caps (maxTurns 8, maxToolCalls 32, maxDuration 5m, perToolTimeout null, maxTokens null #963, maxConsecutiveSameTool null #969), the BudgetBuilder DSL, BudgetReason enum, BudgetExceededException, and pre-cap threshold warnings via onBudgetThreshold. Call when the IDE LLM needs to reason about cost/runaway control for agentic invocations.
+description: Source-file knowledge for agents_engine/model/BudgetConfig.kt — seven caps (maxTurns 8, maxToolCalls 32, maxDuration 5m, perToolTimeout null, maxTokens null #963, maxConsecutiveSameTool null #969, maxToolArgsBytes null #2888), the BudgetBuilder DSL, BudgetReason enum, BudgetExceededException, and pre-cap threshold warnings via onBudgetThreshold. Call when the IDE LLM needs to reason about cost/runaway/resource-exhaustion control for agentic invocations.
 ---
 
 # `agents_engine/model/BudgetConfig.kt` — agentic invocation caps
 
-Six budget caps, plus a `BudgetBuilder` for the DSL and a `BudgetExceededException(message, reason: BudgetReason)` that fires when any cap trips.
+Seven budget caps, plus a `BudgetBuilder` for the DSL and a `BudgetExceededException(message, reason: BudgetReason)` that fires when any cap trips.
 
 ## The caps
 
@@ -16,6 +16,7 @@ Six budget caps, plus a `BudgetBuilder` for the DSL and a `BudgetExceededExcepti
 | `perToolTimeout` | `null` | Per-tool wall-clock cap. Null = no per-tool cap. |
 | `maxTokens` | `null` | Cumulative LLM tokens (prompt + completion). Only accumulates when provider reports `TokenUsage` (#963). |
 | `maxConsecutiveSameTool` | `null` | How many times the same tool may be invoked in immediate succession. Catches LLM stuck retrying a broken call (#969). |
+| `maxToolArgsBytes` | `null` | `Long?` — hard cap on a single tool call's argument byte size, checked **before** the executor runs. Resource-exhaustion guard (#2888): an oversized (often injected) call is rejected with `BudgetReason.TOOL_ARGS_SIZE`. Unconditional like `perToolTimeout` — not extendable via `onBudgetExceeded`. Size = `ToolCall.rawArguments` when present, else the serialized arg map. Checked at the single chokepoint `executeToolWithBudget`, gating both the session and regular executor paths. |
 
 All caps are `null` to opt out (no cap). `maxTurns`, `maxToolCalls`, `maxDuration` always apply because their defaults are non-null.
 

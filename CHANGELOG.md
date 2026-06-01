@@ -4,6 +4,16 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `maxToolArgsBytes` tool-argument size cap (#2888, epic #2882)
+
+- New `budget { maxToolArgsBytes = … }` (`Long?`, default `null` = off) hard-caps a single tool
+  call's argument byte size, checked at one chokepoint (`executeToolWithBudget`) **before** the
+  executor runs — so an oversized (often prompt-injected) call is rejected, not executed. Resource-
+  exhaustion guard (attack A5). Unconditional like `perToolTimeout` — not extendable via
+  `onBudgetExceeded`; surfaces as `BudgetExceededException(reason = BudgetReason.TOOL_ARGS_SIZE)`.
+  Size is the provider wire form (`ToolCall.rawArguments`) when present, else the serialized arg map.
+  Gates both the session and regular executor paths; back-compat (null = unbounded).
+
 ### Added — `agents-kt-detekt` rule module + `ToolBodyForbiddenApis` (#2885, epic #2882)
 
 - New `:agents-kt-detekt` module ships custom detekt rules (Pillar 1 static layer). The first rule,
