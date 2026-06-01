@@ -4,6 +4,19 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-06-01
+
+**Tool-security hardening** — the self-contained first phase of the capability-ABI epic (#2882),
+all additive and back-compat: a tamper-evident audit ledger, an argument-size cap, and the
+static tool-body guard rails. Plus a release guard so the README's advertised version can't drift
+from the build.
+
+### Added — release guard: README dependency version must match the Gradle version (#2873)
+
+- New `checkReadmeVersion` task (wired into `check`) fails the build if the
+  `ai.deep-code:agents-kt:<version>` snippet in `README.md` differs from the Gradle project
+  version — the exact drift an external 0.7.0 review flagged. README and version now move together.
+
 ### Added — `ToolCapabilityExtractor`: static capability classification (#2884, epic #2882)
 
 - New `ToolCapabilityExtractor` in `agents-kt-detekt` statically classifies what a tool's executor

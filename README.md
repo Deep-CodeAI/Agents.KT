@@ -31,7 +31,7 @@ The 0.6 line turns those boundaries into audit-ready evidence: deterministic per
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("ai.deep-code:agents-kt:0.7.1")
+    implementation("ai.deep-code:agents-kt:0.7.2")
 }
 ```
 
@@ -310,7 +310,9 @@ Topical guides:
 
 ## Current Release
 
-`main` is currently `0.7.1` — a hardening release on top of 0.7.0 driven by external review: the manifest `verify` gate now compares policy **sets** (not coarse scores), so it catches widenings it previously missed — adding a host within `hosts` mode, or broadening a write glob without changing the count — keyed per `agentName.toolName`; plus docs/KDoc drift fixes (six providers, Linux sandbox KDoc, publishing paths).
+`main` is currently `0.7.2` — **tool-security hardening** (the self-contained first phase of the capability-ABI epic #2882, all additive): a tamper-evident, Merkle-chained **`ToolAuditLedger`** (`agent.events.ledger(file)` → `verify()` detects any edit/insert/delete/reorder); a **`maxToolArgsBytes`** budget cap that rejects oversized (often injected) tool calls before the executor runs; the new **`agents-kt-detekt`** module with **`ToolBodyForbiddenApis`** (bans raw `File`/`URL`/`ProcessBuilder`/reflection inside tool executors) and **`ToolCapabilityExtractor`** (statically classifies what an executor body does); plus a **release guard** (`checkReadmeVersion`) so this dependency version can't drift from the build. The `ToolEnvironment` ABI + comparator are the next, larger slice.
+
+**0.7.1 — verify-gate hardening.** The manifest `verify` gate compares policy **sets** (not coarse scores), so it catches widenings it previously missed (a host added within `hosts` mode, or a write glob broadened without changing the count), keyed per `agentName.toolName`; plus docs/KDoc drift fixes.
 
 **0.7.0 — Boundaries you can enforce externally.** The 0.6 line made tool policies declarable and auditable; 0.7.0 makes them **enforced**. A tool's declared `ToolPolicy` now constrains it at runtime: Layer 1 (in-JVM filesystem-argument gate, #2890) plus Layer 2 OS sandboxing (#1916) — macOS Seatbelt, Linux bubblewrap, a firejail setuid fallback, and a plain-`ProcessBuilder` + loud `UNCONFINED` warning where no tool is present — confine subprocess-shaped tools to their declared write roots, an environment allow-list, a working directory, and a default-deny network. And the deterministic permission manifest is reachable **outside Gradle** via the standalone [`agents-kt` CLI](docs/cli.md) (`generate` / `inspect` / `verify`, #1923) — a drop-in CI gate that fails when a change widens a capability boundary. *Deferred to 0.8: `WasmSandbox` (#2894), `DockerSandbox` (#2895), the network hostname-allowlist proxy (#2893), and the `grants { }` structure DSL.*
 
