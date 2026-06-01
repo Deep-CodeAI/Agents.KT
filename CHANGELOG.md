@@ -4,6 +4,19 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `ToolAuditLedger`: tamper-evident, Merkle-chained tool-action log (#2886, epic #2882)
+
+- New `ToolAuditLedger` (in `agents-kt-observability`, sibling to `JsonlAuditExporter`) — an
+  **append-only, Merkle-chained, PII-safe** record of every tool action. Each row's
+  `entryHash = SHA-256(prevHash ‖ sequence ‖ callId ‖ toolName ‖ decision ‖ denialReason ‖
+  resultHash ‖ timestamp)` chains to the previous, so `ToolAuditLedger.verify(path)` recomputes the
+  chain and pinpoints the first **edited / inserted / deleted / reordered** row. The tool result is
+  stored only as a hash, never raw (Pillar 2 of #2882).
+- Auto-wire with `agent.events.ledger(file)` — records `PipelineEvent.ToolCalled` as `APPROVED`,
+  `ToolDenied` as `DENIED` (with reason), `ToolHallucinated` as `HALLUCINATED`, and returns the
+  ledger for later `verify(...)`. (callId-keying of denied/hallucinated rows lands once
+  `PipelineEvent` carries the callId — a scoped #2886 follow-up.)
+
 ### Added — `maxToolArgsBytes` tool-argument size cap (#2888, epic #2882)
 
 - New `budget { maxToolArgsBytes = … }` (`Long?`, default `null` = off) hard-caps a single tool
