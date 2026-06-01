@@ -14,6 +14,20 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
   Size is the provider wire form (`ToolCall.rawArguments`) when present, else the serialized arg map.
   Gates both the session and regular executor paths; back-compat (null = unbounded).
 
+### Added — `agents-kt-detekt` rule module + `ToolBodyForbiddenApis` (#2885, epic #2882)
+
+- New `:agents-kt-detekt` module ships custom detekt rules (Pillar 1 static layer). The first rule,
+  **`ToolBodyForbiddenApis`**, flags raw outside-world APIs (`java.io.File`, `java.net.URL` /
+  `HttpURLConnection`, `ProcessBuilder` / `Runtime.exec`, `Class.forName`, `Unsafe`, sockets) used
+  **inside a tool `executor { }` body** — a tool must reach fs/net/env only through the (forthcoming)
+  closed `ToolEnvironment` ABI, so every action is policy-gated and audited. Suppressible with
+  `@Suppress("ToolBodyForbiddenApis")` + a reviewed reason. Wired into the project's own detekt run
+  (scoped to main source — test fixtures legitimately exercise tools). Consumers opt in via
+  `detektPlugins("ai.deep-code:agents-kt-detekt")`.
+- Honest limit: syntactic (matches the callee name, not a resolved FQN) — reflection / aliasing /
+  transitive state changes are residual risk covered by Pillar 3 (process isolation). The capability
+  *extractor* (#2884) builds on this module next.
+
 ## [0.7.1] — 2026-05-31
 
 Hardening release driven by external review of 0.7.0. The headline fix makes the manifest
