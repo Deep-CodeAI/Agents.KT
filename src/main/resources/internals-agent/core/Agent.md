@@ -80,7 +80,9 @@ When `invoke(input)` is called:
 
 ## Internal session entry point
 
-`invokeSuspendForSession(input, emitter, onSkillCompleted, onSkillStarted)` is the streaming-aware variant (`internal`, called only by `Agent.session(input)` and composition operators). It threads an `AgentEventEmitter` through to `executeAgentic` so `Token`/`ToolCall*` events surface in the consumer's `Flow<AgentEvent<OUT>>`. Existing `invokeSuspend` delegates to this with a no-op emitter — byte-for-byte unchanged non-streaming behavior.
+`invokeSuspendForSession(input, emitter, request, onSkillCompleted, onSkillStarted)` is the streaming-aware variant (`internal`, called only by `Agent.session(input)` and composition operators). It threads an `AgentEventEmitter` through to `executeAgentic` so `Token`/`ToolCall*` events surface in the consumer's `Flow<AgentEvent<OUT>>`. Existing `invokeSuspend` delegates to this with a no-op emitter — byte-for-byte unchanged non-streaming behavior.
+
+The per-invocation execution parameters — prompt override, resume/HITL state (`resumeFrom` / `resumeWith` / `onTurnCheckpoint` / `allowManifestMismatch`), and attachments — are bundled into a single `RunRequest` value object (`RunRequest.kt`) rather than spread across the suspend signature (#3088). All fields default to a fresh invocation, so `RunRequest()` is the no-op request. The `invokeSuspendWithAttachments` / `invokeSuspendResuming` / `invokeSuspendWithPromptOverride` shims each construct a `RunRequest` with just the field they need.
 
 ## Related files
 

@@ -710,7 +710,7 @@ class Agent<IN, OUT>(
             invokeSuspendForSession(
                 input = input,
                 emitter = null,
-                attachments = attachments,
+                request = RunRequest(attachments = attachments),
             ) { /* no-op */ }
         }
 
@@ -781,10 +781,12 @@ class Agent<IN, OUT>(
             invokeSuspendForSession(
                 input = input,
                 emitter = null,
-                resumeFrom = resumeFrom,
-                onTurnCheckpoint = onTurnCheckpoint,
-                resumeWith = resumeWith,
-                allowManifestMismatch = allowManifestMismatch,
+                request = RunRequest(
+                    resumeFrom = resumeFrom,
+                    onTurnCheckpoint = onTurnCheckpoint,
+                    resumeWith = resumeWith,
+                    allowManifestMismatch = allowManifestMismatch,
+                ),
             ) { /* no-op onSkillStarted */ }
         }
 
@@ -806,49 +808,12 @@ class Agent<IN, OUT>(
         input: IN,
         emitter: agents_engine.model.AgentEventEmitter? = null,
         /**
-         * #1747 — optional system-prompt override (used by the `wrap` operator).
-         * When non-null, replaces `this.prompt` as the effective system prompt
-         * for this invocation only. Consolidates the previous separate
-         * `invokeSuspendWithPromptOverride` entry point — that one now
-         * delegates here with `emitter = null`.
+         * #3088 — the per-invocation execution parameters (prompt override, resume/HITL state,
+         * checkpoint callback, manifest-mismatch opt-out, attachments) bundled into one value
+         * object. Defaults to [RunRequest] (a fresh invocation), so the non-streaming path is
+         * unchanged.
          */
-        promptOverride: String? = null,
-        /**
-         * #2749 — optional seed for snapshot/resume. When non-null, the agentic
-         * loop starts from this snapshot's messages + counters (and restores
-         * memory) instead of from a fresh conversation. The `executeAgentic`
-         * loop has carried this parameter as internal since #2416; this layer
-         * is now the public seam.
-         */
-        resumeFrom: agents_engine.core.SessionSnapshot? = null,
-        /**
-         * #2749 — optional per-turn checkpoint callback. Fires at each turn
-         * boundary (after the tool round completes, before the next model
-         * call) with the current resumable state. Also fires when an
-         * `onBudgetExceeded` handler returns [agents_engine.model.BudgetDecision.Checkpoint]
-         * — that path then throws [agents_engine.model.BudgetCheckpointException]
-         * carrying the same snapshot. #2488 — fires once more at the
-         * interrupt site before throwing [agents_engine.core.AgentInterruptException].
-         */
-        onTurnCheckpoint: ((agents_engine.core.SessionSnapshot) -> Unit)? = null,
-        /**
-         * #2488 — typed resume input for HITL interrupt. See
-         * [invokeSuspendResuming.resumeWith].
-         */
-        resumeWith: Any? = null,
-        /**
-         * #2754 — opt out of the snapshot manifest-hash restore guard.
-         */
-        allowManifestMismatch: Boolean = false,
-        /**
-         * #2470 slice b — image attachments to ride on the FIRST user
-         * LlmMessage. Runtime dereferences each `Content.Image` against
-         * [Agent.blobStore] (errors fast when null) and renders into
-         * [agents_engine.model.ImagePart]. Non-image variants in the
-         * list (Document / Audio / Video) are deferred — Stage 2 with
-         * provider adapters. Null = no attachments; wire shape unchanged.
-         */
-        attachments: List<agents_engine.content.Content>? = null,
+        request: RunRequest = RunRequest(),
         onSkillCompleted: (agents_engine.model.TokenUsage?) -> Unit = { /* no-op */ },
         onSkillStarted: (String) -> Unit,
     ): OUT {
@@ -870,14 +835,14 @@ class Agent<IN, OUT>(
             return if (skill.isAgentic) {
                 val result = executeAgentic(
                     this, skill, input,
-                    effectivePrompt = promptOverride ?: this.prompt,
+                    effectivePrompt = request.promptOverride ?: this.prompt,
                     emitter = emitter,
                     runtimeContext = runtimeContext,
-                    resumeFrom = resumeFrom,
-                    onTurnCheckpoint = onTurnCheckpoint,
-                    resumeWith = resumeWith,
-                    allowManifestMismatch = allowManifestMismatch,
-                    attachments = attachments,
+                    resumeFrom = request.resumeFrom,
+                    onTurnCheckpoint = request.onTurnCheckpoint,
+                    resumeWith = request.resumeWith,
+                    allowManifestMismatch = request.allowManifestMismatch,
+                    attachments = request.attachments,
                 )
                 // #1740: surface cumulative usage on the way out. Non-agentic
                 // skills don't go through executeAgentic, so onSkillCompleted
@@ -945,7 +910,7 @@ class Agent<IN, OUT>(
             invokeSuspendForSession(
                 input = input,
                 emitter = null,
-                promptOverride = promptOverride,
+                request = RunRequest(promptOverride = promptOverride),
             ) { /* no-op onSkillStarted */ }
         }
     }

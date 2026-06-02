@@ -4,6 +4,16 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — invocation parameters bundled into `RunRequest` (#3088 stage 1, de-slop #3083)
+
+- The internal `Agent.invokeSuspendForSession` entry point no longer carries an accreted list of
+  optional knobs (prompt override, `resumeFrom` / `resumeWith` / `onTurnCheckpoint` /
+  `allowManifestMismatch`, attachments). They're bundled into a single `RunRequest` value object
+  (new `RunRequest.kt`); each field defaults to a fresh invocation, so `invokeSuspend` and the
+  non-streaming path are byte-for-byte unchanged. **Internal API**, behavior-preserving — no public
+  DSL or `agent { }` surface change. First stage of the staged `Agent.kt` decomposition; collaborator
+  extraction (skill resolution, resume/HITL state) is tracked as later stages of #3088.
+
 ### Changed — skill routing is now explicit: ambiguous candidates fail loud (#3087, de-slop #3083)
 
 - When an agent has **multiple compatible skills** for an output type and **no** `skillSelection { }`
