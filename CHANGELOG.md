@@ -4,6 +4,18 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — README de-slop: honest positioning + accuracy fixes (#3085, #3086, de-slop #3083)
+
+- Replaced the unqualified hero copy ("The auditable Kotlin agent runtime for regulated teams") with
+  a defensible positioning line ("The typed agent runtime for the JVM") plus an up-front pointer to
+  the Security Model and threat model, and an explicit "not a compliance product / does not OS-sandbox
+  arbitrary tool code" caveat in the intro. The honest enforce/don't-enforce tables already existed;
+  the hero no longer contradicts them (#3085).
+- Fixed accuracy drift between "Implemented today" and the limitations/roadmap (#3086): "Four LLM
+  providers shipped" → six (adds Kimi + OpenRouter); "Text-only I/O today" → image/document input
+  shipped, audio + generation still roadmap; Kotlin badge `2.1` → `2.3`; Phase 2 roadmap no longer
+  lists already-shipped image multimodal as planned. No fabricated benchmark claims were found.
+
 ### Added — explicit `securityCheck` gate, `checkDetektBaseline` burndown, and TESTING.md (#3089, de-slop #3083)
 
 - New **`securityCheck`** aggregate task makes the deterministic security suite addressable on its

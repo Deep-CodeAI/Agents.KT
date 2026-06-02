@@ -3,15 +3,21 @@
 </p>
 
 <p align="center">
-  <strong>The auditable Kotlin agent runtime for regulated teams.</strong><br/>
-  <em>Typed boundaries. Least-privilege tools. MCP-native.</em>
+  <strong>The typed agent runtime for the JVM.</strong><br/>
+  <em>Compiler-enforced boundaries. Least-privilege tools. Audit evidence by construction. MCP-native.</em>
+</p>
+
+<p align="center">
+  <sub>Built for teams that need to say exactly what an AI system is allowed to do —
+  with the in-runtime boundaries it <em>does</em> enforce, and the non-goals it doesn't, stated up front:
+  see <a href="#security-model">Security Model</a> and the <a href="docs/threat-model.md">threat model</a>.</sub>
 </p>
 
 <p align="center">
   <a href="https://github.com/Deep-CodeAI/Agents.KT/actions/workflows/ci.yml"><img src="https://github.com/Deep-CodeAI/Agents.KT/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://central.sonatype.com/artifact/ai.deep-code/agents-kt"><img src="https://img.shields.io/maven-central/v/ai.deep-code/agents-kt?color=blue" alt="Maven Central" /></a>
   <a href="https://mvnrepository.com/artifact/ai.deep-code/agents-kt"><img src="https://badges.mvnrepository.com/badge/ai.deep-code/agents-kt/badge.svg?label=MvnRepository" alt="MvnRepository" /></a>
-  <a href="https://kotlinlang.org"><img src="https://img.shields.io/badge/Kotlin-2.1-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin" /></a>
+  <a href="https://kotlinlang.org"><img src="https://img.shields.io/badge/Kotlin-2.3-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin" /></a>
   <a href="https://openjdk.org"><img src="https://img.shields.io/badge/JDK-21+-orange" alt="JDK" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
 </p>
@@ -20,7 +26,7 @@
 
 Agents.KT is built for teams that need to know exactly what an AI system is allowed to do. Every agent is `Agent<IN, OUT>`: one input type, one output type, one job. Type mismatches and wrong compositions are caught by the compiler where composition is purely type-driven, and structural misuses fail fast at construction time.
 
-The 0.6 line turns those boundaries into audit-ready evidence: deterministic permission manifests, runtime `manifestHash` correlation, JSONL audit export, OTel/LangSmith/Langfuse bridge adapters, before-interceptor policy hooks, declarative tool policy metadata, reasoning/thinking stream, vendor-neutral prompt caching with prefix-stability guard, snapshot/resume with manifest-hash restore guard, and typed audit events for hallucinated tool calls. Agents.KT is the runtime behind [agents-kt.dev](https://agents-kt.dev/).
+The 0.6–0.7 line turns those boundaries into reviewable evidence: deterministic permission manifests, runtime `manifestHash` correlation, JSONL audit export, a tamper-evident `ToolAuditLedger`, OTel/LangSmith/Langfuse bridge adapters, before-interceptor policy hooks, declarative tool policy metadata, reasoning/thinking stream, vendor-neutral prompt caching with prefix-stability guard, snapshot/resume with manifest-hash restore guard, and typed audit events for hallucinated tool calls. It is **not** a compliance product, and it does not OS-sandbox arbitrary tool code — [Security Model](#security-model) is precise about which boundaries are kernel-enforced versus deployer-owned. Agents.KT is the runtime behind [agents-kt.dev](https://agents-kt.dev/).
 
 ---
 
@@ -251,7 +257,7 @@ What the framework does **not** enforce — your responsibility:
 
 ### Known Limitations
 
-- **Four LLM providers shipped** — Ollama, Anthropic, OpenAI, and DeepSeek. Google (Gemini) adapter is Phase 2; the injectable `ModelClient` covers test stubs and your own adapters in the meantime.
+- **Six LLM providers shipped** — Ollama, Anthropic, OpenAI, DeepSeek, Kimi (Moonshot AI, #2697), and OpenRouter (#2701). Google (Gemini) is the main adapter still on the roadmap (Phase 2); the injectable `ModelClient` covers test stubs and your own adapters in the meantime.
 - **Synchronous agentic loop** — `runBlocking` inside the loop until the suspend refactor lands (#638). Calling agents from existing coroutine scopes works but doesn't propagate cancellation cleanly.
 - **No built-in MCP rate limiter** — use `McpServer` auth/policy plus a gateway for throttling. Agent/runtime audit events have a first-party JSONL exporter in `:agents-kt-observability`.
 - **Streaming runtime** *(shipped — v0.5.0)*. `agent.session(input): AgentSession<OUT>` exposes `events: Flow<AgentEvent<OUT>>` — bracket events (`SkillStarted` / `SkillCompleted` / `Completed<OUT>` / `Failed`) plus mid-loop `Token` / `Reasoning` / `ToolCallStarted` / `ToolCallArgumentsDelta` / `ToolCallFinished` events as the agentic loop runs. All events carry `requestId`, `sessionId`, and `manifestHash` for audit correlation (#1913). Ollama, Anthropic, OpenAI, and DeepSeek stream at the wire (DeepSeek via the OpenAI-compatible SSE path); live integration tests measure 19 / 2 / 19 chunks for the original three native adapters. `SkillCompleted.tokensUsed` and `Completed.tokensUsed` carry cumulative `TokenUsage` across all turns. The underlying `LlmChunk` sealed type + `ModelClient.chatStream(messages): Flow<LlmChunk>` foundation (#1722) is what custom adapters plug into. See [docs/streaming.md](docs/streaming.md) for the full API + the [v0.5.0 streaming premortem](docs/premortem-0.5.0-streaming.md) for design rationale.
@@ -261,7 +267,7 @@ What the framework does **not** enforce — your responsibility:
 - **No A2A protocol yet** — agent-to-agent over network (Phase 2 / 3).
 - **Inline-tool-call fallback model variance** — small Ollama models (e.g. `gemma3:4b`) reliably emit single tool calls via the inline format but may produce thin final-turn text after multi-step tool sequences. For multi-step reasoning, a tool-native model (`gpt-oss:20b-cloud` and similar) is the better fit.
 - **No tool sandboxing** — tool executors run in-process with full JVM privileges. `grants { }` controls *which* tools an agent can call, not *what they can do* once invoked. Sandboxed execution (`ProcessSandbox` / `WasmSandbox` / `DockerSandbox` opt-in backends) is on the Phase 3 roadmap.
-- **Text-only I/O today** — `LlmMessage.content: String` carries text. Image input (vision-capable adapters: Anthropic, OpenAI, Ollama, Gemini) and audio input land in Phase 2 alongside an `LlmContent` sealed-block evolution of the message model. Image generation (`ImageModelClient`: DALL-E, Imagen, Stability) and text-to-speech (`TTSModelClient`: OpenAI TTS, ElevenLabs, Google) are Phase 3.
+- **Image/document input shipped; audio + generation not yet** — text plus **image and document** content are wired end-to-end (`Content` sealed type + `BlobStore`; vision input to Anthropic / OpenAI / Ollama via `invokeWithAttachments`; #2466–#2470 — see *Implemented today*). Still on the roadmap: **audio/video input**, image generation (`ImageModelClient`: DALL-E, Imagen, Stability), and text-to-speech (`TTSModelClient`: OpenAI TTS, ElevenLabs, Google) — Phase 2/3.
 
 For planned features beyond these limitations, see [docs/roadmap.md](docs/roadmap.md).
 
@@ -271,7 +277,7 @@ For planned features beyond these limitations, see [docs/roadmap.md](docs/roadma
 
 **Phase 1 — Core DSL** *(in progress)*: typed agents, skills, knowledge, composition operators (`then`, `/`, `*`, `forum`, `.loop`, `.branch`), MCP client + server, agent memory, `loadResource(path)` for prompts from classpath, agentic loop with full budget controls (`maxTurns` / `maxToolCalls` / `maxDuration` / `perToolTimeout` / `maxTokens` / `maxConsecutiveSameTool`), observability hooks (`onSkillChosen`, `onToolUse`, `onKnowledgeUsed`, `onError`, `onBudgetThreshold`, `onBudgetExceeded`, `Agent.observe { }`), runtime audit context (`requestId`, `sessionId`, `manifestHash`), JSONL audit export, declarative tool policy metadata, and before-interceptor policy hooks (`onBeforeSkill`, `onBeforeTurn`, `onBeforeToolCall`).
 
-**Phase 2 — Runtime + Distribution** *(Q2 2026)*: remaining provider (Google), native CLI / jlink, `grants {}` permissions, session model, Flow-based observability, **multimodal input** (image + audio content blocks; vision-capable adapters for Anthropic/OpenAI/Ollama/Gemini), `agent.json` serialization, Gradle plugin. *(Anthropic + OpenAI adapters landed in #1644 / #1656; KSP `@Generable` codegen shipped in v0.4.6; per-adapter native streaming overrides — Anthropic SSE, OpenAI SSE, Ollama NDJSON — shipped in v0.5.0; provider-level constrained decoding for `@Generable` outputs shipped in v0.6.0 via #1949; the provider-neutral `Tool<IN, OUT>` / `McpTool<IN, OUT>` hierarchy shipped in v0.6.0 via #1948.)*
+**Phase 2 — Runtime + Distribution** *(Q2 2026)*: remaining provider (Google), native CLI / jlink, `grants {}` permissions, session model, Flow-based observability, **remaining multimodal input** (audio/video content blocks — image/document input already shipped), `agent.json` serialization, Gradle plugin. *(Anthropic + OpenAI adapters landed in #1644 / #1656; KSP `@Generable` codegen shipped in v0.4.6; per-adapter native streaming overrides — Anthropic SSE, OpenAI SSE, Ollama NDJSON — shipped in v0.5.0; provider-level constrained decoding for `@Generable` outputs shipped in v0.6.0 via #1949; the provider-neutral `Tool<IN, OUT>` / `McpTool<IN, OUT>` hierarchy shipped in v0.6.0 via #1948; image/document multimodal input + vision across Anthropic/OpenAI/Ollama shipped via #2466–#2470.)*
 
 **Phase 3 — Production** *(Q3 2026)*: Layer 2 Structure DSL, all 37 compile-time validations, AgentUnit, A2A protocol, file-based knowledge with RAG, OpenTelemetry, **sandboxed tool execution** (`SandboxedExecutor` with `ProcessSandbox` (Seatbelt / bwrap), `WasmSandbox` (Chicory), `DockerSandbox` backends — opt-in per tool, subprocess-shaped tools only, default executor stays in-process), **generative outputs** (`ImageModelClient` for DALL-E / Imagen / Stability, `TTSModelClient` for OpenAI / ElevenLabs / Google).
 
