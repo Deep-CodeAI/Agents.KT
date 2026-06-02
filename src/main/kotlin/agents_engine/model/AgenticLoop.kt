@@ -1,7 +1,5 @@
 package agents_engine.model
 
-import agents_engine.internal.toJsonString
-
 import agents_engine.core.Agent
 import agents_engine.core.AgentRuntimeContext
 import agents_engine.core.Decision
@@ -548,7 +546,7 @@ internal suspend fun <IN> executeAgentic(
                 "Turn denied by interceptor: ${decision.reason}"
             )
             is Decision.Substitute<*> -> return AgenticResult(
-                coerceSubstituteOutput(decision.result, agent.outType),
+                OutputCoercion.coerceSubstituteOutput(decision.result, agent.outType),
                 cumulativeUsage,
             )
         }
@@ -627,7 +625,7 @@ internal suspend fun <IN> executeAgentic(
         when (response) {
             is LlmResponse.Text -> {
                 val parsed = skill.outputTransformer?.invoke(response.content)
-                    ?: parseOutput(response.content, agent.outType)
+                    ?: OutputCoercion.parseOutput(response.content, agent.outType)
                     ?: error("Could not parse LLM output as ${agent.outType.simpleName}: '${response.content}'")
                 return AgenticResult(parsed, cumulativeUsage)
             }
@@ -746,7 +744,7 @@ internal suspend fun <IN> executeAgentic(
                             is Decision.Deny -> {
                                 denied = true
                                 deniedReason = decision.reason
-                                formatDeniedToolError(call.name, decision.reason)
+                                ToolResultRendering.formatDeniedToolError(call.name, decision.reason)
                             }
                             is Decision.Substitute<*> -> decision.result
                         }
@@ -824,10 +822,11 @@ internal suspend fun <IN> executeAgentic(
                         // path produced a ToolCall without one.
                         emitToolFinished(emitter, agent, effectiveCall, result, isError = false)
                     }
+                    val rendered = ToolResultRendering.renderToolResultForLlm(result)
                     val toolMessage = if (!denied && tool.untrustedOutput) {
-                        wrapUntrustedToolResult(tool.name, renderToolResultForLlm(result))
+                        ToolResultRendering.wrapUntrustedToolResult(tool.name, rendered)
                     } else {
-                        renderToolResultForLlm(result)
+                        rendered
                     }
                     messages.add(LlmMessage("tool", toolMessage))
                 }
@@ -866,12 +865,6 @@ private fun semconvProviderName(provider: ModelProvider): String =
         ModelProvider.KIMI -> "kimi"
         ModelProvider.OPENROUTER -> "openrouter"
     }
-
-private fun coerceSubstituteOutput(result: Any?, outType: KClass<*>): Any {
-    if (result != null && outType.java.isInstance(result)) return result
-    return parseOutput(result?.toString() ?: "null", outType)
-        ?: error("Could not parse interceptor substitute result as ${outType.simpleName}: '$result'")
-}
 
 private suspend fun <IN> executeToolWithBudgetHandlingEvents(
     agent: Agent<IN, *>,
@@ -1119,7 +1112,7 @@ private fun <IN> recoverInvalidArguments(
                     IllegalArgumentException(currentError),
                 )
             }
-            is RepairResult.Escalated -> return formatEscalatedToolError(call.name, result)
+            is RepairResult.Escalated -> return ToolResultRendering.formatEscalatedToolError(call.name, result)
             is RepairResult.Unrecoverable -> throw ToolExecutionException(
                 "Tool '${call.name}' argument recovery was unrecoverable",
                 IllegalArgumentException(currentError),
@@ -1168,7 +1161,7 @@ private fun <IN> executeToolWithExecutionRecovery(
                 )
             }
             is RepairResult.Fixed -> return result.value
-            is RepairResult.Escalated -> return formatEscalatedToolError(toolName, result)
+            is RepairResult.Escalated -> return ToolResultRendering.formatEscalatedToolError(toolName, result)
             is RepairResult.Unrecoverable -> throw ToolExecutionException(
                 "Tool '$toolName' failed and recovery was unrecoverable", e
             )
@@ -1177,47 +1170,8 @@ private fun <IN> executeToolWithExecutionRecovery(
     }
 }
 
-private fun formatEscalatedToolError(toolName: String, result: RepairResult.Escalated): String =
-    "ERROR: Tool '$toolName' failed: ${result.reason} " +
-        "(severity: ${result.severity}). Please retry with corrected arguments."
-
-private fun formatDeniedToolError(toolName: String, reason: String): String =
-    "ERROR: Tool '$toolName' denied by policy: $reason"
-
-/**
- * Wrap a tool result from an `untrustedOutput = true` tool in a JSON envelope so
- * the LLM can distinguish data from instructions. See #642.
- *
- * #2756 — routes through the central [toJsonString] escaper instead of a local
- * 5-char replace chain. The local chain handled `\`, `"`, `\n`, `\r`, `\t` but
- * left U+0000–U+001F control characters (`\b`, `\f`, NUL, ESC, etc.) unescaped,
- * producing invalid JSON for binary/OCR/captured-terminal tool output. The
- * central escaper is RFC 8259 §7-conformant — see [JsonEscape]. Tool name is
- * now escaped too, in case a custom tool name contains `"` or `\`.
- */
-private fun wrapUntrustedToolResult(toolName: String, result: Any?): String {
-    val value = result?.toString() ?: "null"
-    return """{"tool":${toolName.toJsonString()},"trusted":false,"value":${value.toJsonString()}}"""
-}
-
-/**
- * #2469 — render a tool's return value into the text the LLM sees as
- * the tool-result message. For a [agents_engine.content.ToolResult]
- * (multimodal), non-text parts surface as `[modality: <mime>]`
- * placeholders — the actual provider-specific multipart rendering is
- * the sibling #2470 ticket, deferred. For non-multimodal returns,
- * `toString()` (or `"null"`) — byte-for-byte the pre-#2469 behaviour.
- */
-private fun renderToolResultForLlm(result: Any?): String = when (result) {
-    is agents_engine.content.ToolResult -> agents_engine.content.renderToolResultPlaceholder(result)
-    null -> "null"
-    else -> result.toString()
-}
-
-private fun parseOutput(text: String, outType: KClass<*>): Any? = when {
-    outType == String::class -> text
-    else -> @Suppress("UNCHECKED_CAST") (outType as KClass<Any>).fromLlmOutput(text)
-}
+// #3376 — formatEscalatedToolError / formatDeniedToolError / wrapUntrustedToolResult /
+// renderToolResultForLlm moved to ToolResultRendering.kt; parseOutput moved to OutputCoercion.kt.
 
 private fun constrainedOutputSchemaFor(
     outType: KClass<*>,
