@@ -16,7 +16,7 @@ plugins {
 }
 
 group = "ai.deep-code"
-version = "0.7.2"
+version = "0.7.21"
 
 repositories {
     mavenCentral()
