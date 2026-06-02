@@ -4,6 +4,16 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — AgenticLoop decomposition: extract rendering + coercion (#3376 batch 1)
+
+- First slice of breaking up the 1369-line `AgenticLoop.kt` / 765-line `executeAgentic`. Extracted
+  the pure tool-result/error renderers into `ToolResultRendering` (`formatEscalatedToolError`,
+  `formatDeniedToolError`, `wrapUntrustedToolResult`, `renderToolResultForLlm`) and output coercion
+  into `OutputCoercion` (`parseOutput`, `coerceSubstituteOutput`) — each a new `internal` file. These
+  were `private` to the loop (untestable); they now have direct unit tests (`ToolResultRenderingTest`,
+  `OutputCoercionTest`, TDD RED→GREEN). Behavior-preserving — `AgenticLoop` delegates. Internal
+  refactor, no public API change.
+
 ### Changed — one-type-per-file complete across the codebase (#3199, final batch)
 
 - Split every remaining multi-type file (rest of `model/`, all of `core/`, `content/`, `composition/`,
