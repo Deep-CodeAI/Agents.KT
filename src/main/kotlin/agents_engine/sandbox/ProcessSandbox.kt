@@ -299,7 +299,3 @@ private fun canonicalPath(p: Path): Path {
     for (segment in tail) real = real.resolve(segment)
     return real.normalize()
 }
-
-data class SandboxResult(val exitCode: Int, val stdout: String, val stderr: String) {
-    val ok: Boolean get() = exitCode == 0
-}

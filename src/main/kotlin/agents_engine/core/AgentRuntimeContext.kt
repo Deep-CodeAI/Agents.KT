@@ -18,16 +18,6 @@ data class AgentRuntimeContext(
     }
 }
 
-private object RuntimeContextThreadLocal {
-    private val current = ThreadLocal<AgentRuntimeContext?>()
-
-    fun current(): AgentRuntimeContext? = current.get()
-
-    fun set(value: AgentRuntimeContext?) {
-        current.set(value)
-    }
-}
-
 internal suspend fun <T> withAgentRuntimeContext(
     context: AgentRuntimeContext,
     block: suspend () -> T,

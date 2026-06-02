@@ -7,14 +7,6 @@ import agents_engine.generation.ReflectionFallback
 import kotlin.reflect.full.findAnnotation
 import kotlin.reflect.full.primaryConstructor
 
-data class KnowledgeTool(
-    val name: String,
-    val description: String,
-    val call: () -> String,
-)
-
-private data class KnowledgeEntry(val description: String, val provider: () -> String)
-
 /**
  * `agents_engine/core/Skill.kt` — the unit of work an `Agent<IN, OUT>` dispatches to.
  *
@@ -226,23 +218,6 @@ inline fun <reified IN : Any, reified OUT : Any> skill(name: String, description
     val skill = Skill<IN, OUT>(name, description, IN::class, OUT::class)
     skill.block()
     return skill
-}
-
-class SkillsBuilder {
-    @PublishedApi internal data class Entry(val skill: Skill<*, *>, val exec: (Any?) -> Any)
-    @PublishedApi internal val entries = mutableListOf<Entry>()
-
-    inline operator fun <reified IN : Any, reified OUT : Any> Skill<IN, OUT>.unaryPlus() {
-        val s = this
-        entries.add(Entry(s) { input -> s(input as IN) })
-    }
-
-    inline fun <reified IN : Any, reified OUT : Any> skill(name: String, description: String = "", block: Skill<IN, OUT>.() -> Unit = {}): Skill<IN, OUT> {
-        val s = Skill<IN, OUT>(name, description, IN::class, OUT::class)
-        s.block()
-        entries.add(Entry(s) { input -> s(input as IN) })
-        return s
-    }
 }
 
 private fun KClass<*>.generableDescription(): String {

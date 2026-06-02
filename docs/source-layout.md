@@ -42,9 +42,11 @@ can't split one without recording the burndown.
 
 ### Burndown status
 
-The remaining multi-type files are being split package-by-package under **#3199** (see the ticket for
-the batch plan: `mcp/` → `model/` → `core/` → `manifest/` → the rest). Current allowlist size is the
-authoritative count of files still to triage — drive it toward only the sealed-ADT exceptions.
+**Complete (#3199).** Every main-source `.kt` file now declares exactly one top-level type — the
+allowlist is empty, so `checkOneTypePerFile` enforces the convention strictly across the whole tree
+with no exceptions. detekt's `MatchingDeclarationName` (on by default) additionally keeps each file
+named after its single declaration. Any new multi-type file fails the build outright; if a genuine
+sealed-ADT exception ever arises, add it to `config/one-type-per-file-allowlist.txt` with a
+`# sealed-ADT: keep` reason.
 
-To regenerate / inspect the violating set, run `./gradlew checkOneTypePerFile` (it lists any file not
-yet covered).
+To inspect, run `./gradlew checkOneTypePerFile` (lists any file with more than one top-level type).

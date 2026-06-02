@@ -1,7 +1,5 @@
 package agents_engine.core
 
-import agents_engine.generation.Generable
-import agents_engine.generation.Guide
 import agents_engine.generation.constructFromMap
 import agents_engine.model.ToolDef
 import java.util.concurrent.ConcurrentHashMap
@@ -90,29 +88,6 @@ class MemoryBank(val maxLines: Int = Int.MAX_VALUE) : Snapshotable<Map<String, S
         else content
     }
 }
-
-/**
- * #2379 — typed args for `memory_write`. Generates a proper JSON Schema
- * via `argsType` instead of relying on the LLM to infer the shape from
- * the description prose. Unblocks safely closing the wire-format
- * tool-schema fallback in a future revisit of #2377.
- */
-@Generable("Arguments for memory_write — overwrites the agent's memory slot.")
-data class MemoryWriteArgs(
-    @Guide("The full content to store. Overwrites whatever was there before.")
-    val content: String,
-)
-
-/**
- * #2379 — typed args for `memory_search`. Same rationale as
- * [MemoryWriteArgs] — the LLM gets a real schema instead of having to
- * parse the description prose.
- */
-@Generable("Arguments for memory_search — returns the lines that contain the query substring.")
-data class MemorySearchArgs(
-    @Guide("Case-insensitive substring to look for in stored memory lines.")
-    val query: String,
-)
 
 /**
  * `parametersSchemaJson` for tools that genuinely take no arguments.

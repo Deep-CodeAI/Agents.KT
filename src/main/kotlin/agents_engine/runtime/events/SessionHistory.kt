@@ -81,18 +81,3 @@ class SessionHistory(val events: List<AgentEvent<*>>) {
     fun skillsStarted(): List<String> =
         events.filterIsInstance<AgentEvent.SkillStarted>().map { it.skillName }
 }
-
-/** Tool invocation as seen by an event-log consumer — the call shape. */
-data class ToolCallRecord(
-    val callId: String,
-    val toolName: String,
-    val arguments: Map<String, Any?>,
-)
-
-/** Tool outcome as seen by an event-log consumer — the result shape. */
-data class ToolResultRecord(
-    val callId: String,
-    val toolName: String,
-    val result: Any?,
-    val isError: Boolean,
-)

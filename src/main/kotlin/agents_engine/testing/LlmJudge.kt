@@ -1,7 +1,5 @@
 package agents_engine.testing
 
-import agents_engine.generation.Generable
-import agents_engine.generation.Guide
 import agents_engine.generation.fromLlmOutput
 import agents_engine.generation.toLlmInput
 import agents_engine.model.LlmMessage
@@ -50,44 +48,6 @@ import agents_engine.model.ModelClient
  * Pairs with #2491 (eval epic), #2492 (DeterministicModelClient),
  * #2493 (eval DSL).
  */
-
-/**
- * Typed rubric for an LLM-as-judge scoring pass. The framework renders
- * this as a system prompt for [judgeModel] when the judge runs.
- *
- * @property criteria the rubric text shown to the judge model. Be
- *   specific about what's being scored ("tone: professional and
- *   neutral" vs. "good answer").
- * @property scoreRange the integer range judges score within. Defaults
- *   to `0..10`. Verdict scores outside this range trip a clear error
- *   in [LlmJudge.score].
- * @property judgeModel the [ModelClient] that produces the verdict.
- *   Independent of the production agent's model — use a pinned model
- *   here. For reproducible unit tests, use [DeterministicModelClient].
- */
-data class JudgeRubric(
-    val criteria: String,
-    val scoreRange: IntRange = 0..10,
-    val judgeModel: ModelClient,
-)
-
-/**
- * Structured judge output. `@Generable` so the judge model returns
- * JSON the framework parses through the existing `fromLlmOutput`
- * pipeline — no string parsing in test code.
- *
- * @property score the integer score within [JudgeRubric.scoreRange].
- *   Out-of-range scores throw at parse time.
- * @property rationale one sentence justifying the score. Surfaces in
- *   test reports alongside the deterministic outcomes.
- */
-@Generable("A structured verdict from an LLM-as-judge scoring pass.")
-data class JudgeVerdict(
-    @Guide("Integer score within the rubric's scoreRange.")
-    val score: Int,
-    @Guide("One sentence justifying the score.")
-    val rationale: String,
-)
 
 /**
  * Runs a [JudgeRubric] over (input, output) pairs and returns a typed

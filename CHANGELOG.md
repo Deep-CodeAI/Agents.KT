@@ -4,6 +4,23 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — one-type-per-file complete across the codebase (#3199, final batch)
+
+- Split every remaining multi-type file (rest of `model/`, all of `core/`, `content/`, `composition/`,
+  `generation/`, `runtime/`, `sandbox/`, `testing/`, and the `manifest` / `observability` / `langfuse`
+  / `langsmith` / `detekt` submodules) into one top-level type per file — ~110 new files, all
+  same-package moves (no FQN / public-API change). **`checkOneTypePerFile` now passes with an empty
+  allowlist: zero multi-type files remain anywhere.** Renamed 3 files so the filename matches the
+  kept type (`Snapshot.kt`→`SessionSnapshot.kt`, `Memory.kt`→`MemoryBank.kt`,
+  `HumanApproval.kt`→`ApprovalBuilder.kt`), which also satisfies detekt's `MatchingDeclarationName`.
+- Minor, non-public visibility consequence of the moves: a handful of file-`private` helpers that
+  were referenced across now-separate files were promoted to `internal` (still module-scoped, not
+  public): the manifest engines (`ManifestVerifier`/`StableJson`/`ManifestJsonParser`/`StableYaml`/
+  `ManifestGraph`), the policy JSON/YAML helpers (`ManifestMaps`/`ManifestJson`/`ManifestYaml`),
+  `RuntimeContextThreadLocal`, `KnowledgeEntry`, and the `nonBlank` helper.
+- Behavior-preserving: full `./gradlew build` green (all modules + all tests + detekt 423/423 +
+  `checkOneTypePerFile` 0 + `checkReadmeVersion`). Completes #3199.
+
 ### Changed — one-type-per-file: split model error/cache types (#3199, batch 3)
 
 - Split three `agents_engine.model` files into one type per file (same package — no FQN/public-API
