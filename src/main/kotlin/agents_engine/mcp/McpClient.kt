@@ -422,12 +422,3 @@ class McpClient internal constructor(private val transport: McpTransport) : Auto
         }
     }
 }
-
-internal data class McpToolDescriptor(
-    val name: String,
-    val description: String,
-    val inputSchema: Map<*, *>?,
-    val title: String? = null,
-    val outputSchema: Map<*, *>? = null,
-    val annotations: McpToolAnnotations? = null,
-)
