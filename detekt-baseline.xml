@@ -176,6 +176,7 @@
     <ID>MaxLineLength:EscalateToolTest.kt$EscalateToolTest$assertTrue(!systemMsg.content.contains("throwException"), "throwException should NOT be in system prompt when not referenced")</ID>
     <ID>MaxLineLength:EvalDsl.kt$EvalCase$EvalOutcome(expectation.label, passed, failureDetail = if (passed) null else expectation.describe(output))</ID>
     <ID>MaxLineLength:EvalDsl.kt$EvalResult$"eval case \"$caseName\" failed: agent threw ${invocationError::class.simpleName}: ${invocationError.message}"</ID>
+    <ID>MaxLineLength:ExposedSkill.kt$ExposedSkill.Companion$?:</ID>
     <ID>MaxLineLength:FibonacciMemoryTest.kt$FibonacciMemoryTest$transformOutput { it.trim().toIntOrNull() ?: Regex("\\d+").find(it)?.value?.toInt() ?: error("No int in: $it") }</ID>
     <ID>MaxLineLength:FilesBlobStoreHardeningTest.kt$FilesBlobStoreHardeningTest$if (errors.isNotEmpty()) fail("Threads threw: ${errors.joinToString { it.message ?: it::class.simpleName ?: "?" }}")</ID>
     <ID>MaxLineLength:Forum.kt$description = "Finalize the forum immediately. Args: value (optional) or a JSON object matching the forum result type."</ID>
@@ -223,7 +224,6 @@
     <ID>MaxLineLength:McpAuthRedactionTest.kt$McpAuthRedactionTest$assertTrue(rendered.contains("redacted", ignoreCase = true), "toString must indicate redaction; got: '$rendered'")</ID>
     <ID>MaxLineLength:McpClient.kt$McpClient$/** Server-reported capabilities map from the initialize handshake; raw shape so we can refine later without re-fetching. */</ID>
     <ID>MaxLineLength:McpRunnerMutationTest.kt$McpRunnerMutationTest$assertTrue(!thread.isAlive, "Runner thread must exit within 2s of server.stop() — stop-watcher start() removal would block here")</ID>
-    <ID>MaxLineLength:McpServer.kt$ExposedSkill.Companion$?:</ID>
     <ID>MaxLineLength:McpServer.kt$McpServer$jsonRpcError(id, JsonRpcErrorCode.INTERNAL_ERROR, "Prompt '$name' rendering failed: ${e.message ?: e.toString()}")</ID>
     <ID>MaxLineLength:McpServer.kt$McpServer$jsonRpcError(id, JsonRpcErrorCode.INTERNAL_ERROR, "Resource '$uri' read failed: ${e.message ?: e.toString()}")</ID>
     <ID>MaxLineLength:McpServer.kt$McpServer.Companion$"Skill \"$name\" is agentic — McpServer only exposes non-agentic skills (implementedBy { }) in this slice."</ID>

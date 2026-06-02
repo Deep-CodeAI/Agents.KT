@@ -4,6 +4,14 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — one-type-per-file: split `McpServer.kt` (#3199, batch 2b)
+
+- Split the four secondary types out of `mcp/McpServer.kt` (same package) — `RegisteredPrompt`,
+  `RegisteredResource`, `McpExposeBuilder`, `ExposedSkill` → one file each; `McpServer` stays
+  (597 → 454 lines). Four now-unused imports (`constructFromMap`, `jsonSchema`, `KClass`,
+  `hasGenerableAnnotation`, all moved to `ExposedSkill`) removed. Completes `mcp/` — allowlist
+  41 → 40. Behavior-preserving pure moves.
+
 ### Changed — one-type-per-file: split the `mcp/` package (#3199, batch 2)
 
 - Split five multi-type files in `agents_engine.mcp` into one type per file (same package — zero
