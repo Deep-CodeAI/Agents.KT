@@ -412,7 +412,58 @@ tasks.register("checkPublishedVersion") {
         }
     }
 }
+// #3089 (de-slop #3083) — detekt baseline burndown. The baseline grandfathers existing
+// violations; without a ceiling it can silently grow, turning "0 new smells" into a lie.
+// Snapshot the count and fail if it ever increases — new violations get fixed, not appended.
+// Ratchet DETEKT_BASELINE_CEILING down (never up) as the count drops.
+val detektBaselineCeiling = 424
+tasks.register("checkDetektBaseline") {
+    description = "Fails if detekt-baseline.xml grows beyond the recorded ceiling ($detektBaselineCeiling)."
+    group = "verification"
+    val baselineFile = rootProject.file("detekt-baseline.xml")
+    inputs.file(baselineFile)
+    inputs.property("ceiling", detektBaselineCeiling)
+    doLast {
+        val count = baselineFile.readText().split("</ID>").size - 1
+        logger.lifecycle("checkDetektBaseline: $count / $detektBaselineCeiling baselined violations")
+        check(count <= detektBaselineCeiling) {
+            "detekt-baseline.xml has grown to $count entries (ceiling $detektBaselineCeiling). " +
+                "Fix new violations instead of baselining them (#3089). The baseline must only shrink."
+        }
+    }
+}
+tasks.named("check") { dependsOn("checkDetektBaseline") }
 
+// #3089 — an explicit, named security gate. These deterministic security/enforcement tests
+// already run inside the default `:test` + module tests; this task makes the security-critical
+// subset addressable on its own, so CI (and a future macOS Seatbelt job) can target it directly
+// and it can't be silently dropped. OS-specific confinement tests (Seatbelt = mac, bwrap/firejail
+// = linux) skip cleanly off-platform via @EnabledOnOs / assumeTrue.
+tasks.register<Test>("securityTest") {
+    description = "Deterministic security suite: sandbox confinement, tool-policy enforcement, manifest guard, arg-size cap."
+    group = "verification"
+    useJUnitPlatform()
+    classpath = sourceSets.test.get().runtimeClasspath
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    filter {
+        includeTestsMatching("agents_engine.sandbox.*")                 // ProcessSandbox write-confinement
+        includeTestsMatching("agents_engine.core.ToolPolicy*")          // declared-policy enforcement (#1916)
+        includeTestsMatching("agents_engine.core.SnapshotManifestGuardTest")
+        includeTestsMatching("agents_engine.model.MaxToolArgsBytesTest") // arg-size cap (#2888)
+    }
+}
+
+// Aggregate gate spanning modules: the runtime security tests above, the audit-ledger
+// tamper-evidence (observability), and the static tool-body rule (detekt module + the detekt
+// run itself). This is the required security gate referenced in TESTING.md.
+tasks.register("securityCheck") {
+    description = "Required security gate: runtime enforcement + audit-ledger tamper-evidence + static tool-body rules."
+    group = "verification"
+    dependsOn("securityTest")
+    dependsOn(":agents-kt-observability:securityTest")
+    dependsOn(":agents-kt-detekt:test")
+    dependsOn("detekt")
+}
 tasks.register<Test>("integrationTest") {
     description = "Runs live-llm integration tests (Ollama / Ollama Cloud). Hosted-API live tests run in default :test under live-cloud-api."
     group = "verification"
