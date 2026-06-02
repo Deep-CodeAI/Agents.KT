@@ -160,7 +160,7 @@ internal suspend fun <IN, OUT> runAgentInSession(
     val output = agent.invokeSuspendForSession(
         input,
         emitter = notifyingEmitter,
-        promptOverride = promptOverride,
+        request = agents_engine.core.RunRequest(promptOverride = promptOverride),
         onSkillCompleted = { usage -> capturedUsage = usage },
     ) { skillName ->
         // SkillStarted fires BEFORE the skill body runs — emitting from
