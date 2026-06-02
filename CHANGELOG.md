@@ -4,6 +4,15 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — skill routing is now explicit: ambiguous candidates fail loud (#3087, de-slop #3083)
+
+- When an agent has **multiple compatible skills** for an output type and **no** `skillSelection { }`
+  selector and **no** `model { }` for LLM routing, invocation now throws `SkillRoutingException`
+  naming the ambiguous candidates and how to disambiguate — instead of silently routing to the
+  first skill by registration order. An "auditable / explicit boundaries" runtime must not pick a
+  production route implicitly. **Behavior change:** code that relied on silent first-match must add
+  an explicit selector or a model. Single-candidate, selector, and model-routed paths are unchanged.
+
 ## [0.7.2] — 2026-06-01
 
 **Tool-security hardening** — the self-contained first phase of the capability-ABI epic (#2882),
