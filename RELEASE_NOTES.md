@@ -1,34 +1,50 @@
-# Agents.KT v0.7.2 — Tool-security hardening
+# Agents.KT v0.7.21 — Security + de-slop
 
-**Release date:** 2026-06-01
+**Release date:** 2026-06-02
 
-The self-contained first phase of the **capability-ABI epic (#2882)** — every change additive and back-compat. Drop-in for 0.7.x.
+A security fix, two correctness behavior changes, a build-wide maintainability refactor, and new
+release/quality guards. Drop-in on the 0.7.x line (internal refactors are behavior-preserving).
 
 ```kotlin
-implementation("ai.deep-code:agents-kt:0.7.2")
-implementation("ai.deep-code:agents-kt-ksp:0.7.2")
+implementation("ai.deep-code:agents-kt:0.7.21")
+implementation("ai.deep-code:agents-kt-ksp:0.7.21")
 ```
 
-## Added
+## 🔒 Fixed — nested agent recursion is now bounded (#3377)
+Budgets bounded a *single* agentic loop, but a tool that re-invoked an agent (Swarm `absorb`,
+agent-as-tool) spun up a fresh loop with a fresh budget — so a self-re-entering agent (A→A) or a
+cycle (A→B→A) recursed one full LLM loop per level until `StackOverflowError` (a DoS / runaway-cost
+vector, triggerable e.g. by prompt injection into a tool result). Now `AgentRuntimeContext` carries a
+nested-invocation `depth` and `budget { maxAgentDepth }` (default **16**) is enforced at the
+invocation chokepoint: exceeding it throws `BudgetExceededException(BudgetReason.AGENT_DEPTH)` **before**
+the over-deep loop runs. An unconditional safety stop; budget caps also now bypass the `onError`
+tool-recovery ladder so a nested cap can't be swallowed.
 
-### Tamper-evident audit ledger (#2886)
-`ToolAuditLedger` (in `agents-kt-observability`) — an **append-only, Merkle-chained, PII-safe** record of every tool action. Each row's hash chains to the previous, so `ToolAuditLedger.verify(path)` recomputes the chain and pinpoints the first **edited / inserted / deleted / reordered** row. The tool result is stored only as a hash, never raw. Auto-wire with `agent.events.ledger(file)` (records `ToolCalled`→`APPROVED`, `ToolDenied`→`DENIED`, `ToolHallucinated`→`HALLUCINATED`). *(Per-tool-call callId-keying of denied/hallucinated rows is a tracked follow-up.)*
+## ⚠️ Behavior changes
+- **Skill routing fails loud on ambiguity (#3087).** When multiple skills match an output type and
+  there's no `skillSelection { }` selector and no `model { }`, invocation now throws
+  `SkillRoutingException` naming the candidates instead of silently picking the first by registration
+  order. Add a selector or a model to disambiguate.
+- **`maxAgentDepth` default (#3377).** Agents that legitimately nest deeper than 16 must raise
+  `budget { maxAgentDepth = … }`.
 
-### Argument-size cap (#2888)
-`budget { maxToolArgsBytes = … }` (`Long?`, default `null` = off) hard-caps a single tool call's argument byte size, checked **before** the executor runs — so an oversized (often prompt-injected) call is rejected, not executed. Unconditional like `perToolTimeout`; surfaces as `BudgetExceededException(reason = BudgetReason.TOOL_ARGS_SIZE)`.
+## Added — release & quality guards
+- **`checkPublishedVersion`** + a release runbook (#3084): fails unless the project version is
+  resolvable on Maven Central — the advertised version can't get ahead of the published artifact.
+- **`securityCheck`** aggregate gate + **detekt-baseline ratchet** (`checkDetektBaseline`) + honest
+  `TESTING.md` (#3089).
+- **`checkOneTypePerFile`** guard (#3199) — enforces one top-level type per file across the tree.
 
-### `agents-kt-detekt` rules module (#2885, #2884)
-A new module shipping custom detekt rules for tool executor bodies:
-- **`ToolBodyForbiddenApis`** — flags raw `java.io.File` / `java.net.URL` / `ProcessBuilder` / `Runtime.exec` / `Class.forName` / `Unsafe` used **inside a tool `executor { }` body** (suppressible with `@Suppress` + a reviewed reason). Dogfooded on the framework's own source.
-- **`ToolCapabilityExtractor`** — statically classifies what an executor body does (`FS_READ`/`FS_WRITE`/`NETWORK`/`ENVIRONMENT`/`EXEC`); the input the upcoming `ToolPolicy`↔capability comparator checks against the declared policy.
-
-Consumers opt in via `detektPlugins("ai.deep-code:agents-kt-detekt")`.
-
-### Release guard (#2873)
-`checkReadmeVersion` (wired into `check`) fails the build if the README's `ai.deep-code:agents-kt:<version>` snippet drifts from the Gradle version — the exact drift an external 0.7.0 review flagged.
-
-## Deferred (next, larger slice)
-The `ToolEnvironment` ABI + the `executor { args -> }` → `{ args, env -> }` migration (#2883/#2889) and the `ToolPolicy`↔capability comparator (#2887) — the architectural core of #2882. Plus the Wasm/Docker/proxy/grants sandbox backends earmarked for 0.8.
+## Changed — maintainability (behavior-preserving)
+- **One type per file, whole codebase (#3199).** Every multi-type file split into focused files;
+  ~110 files reorganized, zero public-API change.
+- **`Agent` God-object decomposition (#3088).** Invocation params bundled into `RunRequest`; skill
+  resolution extracted into `SkillResolver`.
+- **AgenticLoop decomposition started (#3376).** Tool-result rendering + output coercion extracted
+  into `ToolResultRendering` / `OutputCoercion` (now unit-tested); more batches to come.
+- **Honest README positioning (#3085 / #3086).** Threat-model-specific security claims; accurate
+  implemented-vs-roadmap.
 
 ## Compatibility
-Drop-in for 0.7.x. New API is additive and opt-in (a tool that declares nothing is unaffected; `maxToolArgsBytes` defaults to off; the detekt rules are opt-in via `detektPlugins`).
+Drop-in for 0.7.x except the two flagged behavior changes (both correctness/safety). New API is
+additive (`budget { maxAgentDepth }`); no `agent { }` DSL surface removed.

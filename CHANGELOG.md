@@ -4,6 +4,14 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.7.21] — 2026-06-02
+
+**Security + de-slop release.** Headlined by a nested-agent recursion bound (#3377) and the explicit
+skill-routing failure on ambiguity (#3087), plus a build-wide one-type-per-file refactor (#3199) and
+new release/quality guards (#3084 / #3089), the start of the AgenticLoop decomposition (#3376), and
+honest README positioning (#3085 / #3086). Internal refactors are behavior-preserving; the two
+behavior changes (routing, the `maxAgentDepth` default) are called out below. Drop-in on the 0.7.x line.
+
 ### Fixed — bound nested agent recursion with `maxAgentDepth` (#3377, security)
 
 - Budgets bounded a single agentic loop, but a tool that re-invokes an agent (Swarm `absorb`,

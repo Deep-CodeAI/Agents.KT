@@ -37,7 +37,7 @@ The 0.6–0.7 line turns those boundaries into reviewable evidence: deterministi
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("ai.deep-code:agents-kt:0.7.2")
+    implementation("ai.deep-code:agents-kt:0.7.21")
 }
 ```
 
@@ -316,7 +316,9 @@ Topical guides:
 
 ## Current Release
 
-`main` is currently `0.7.2` — **tool-security hardening** (the self-contained first phase of the capability-ABI epic #2882, all additive): a tamper-evident, Merkle-chained **`ToolAuditLedger`** (`agent.events.ledger(file)` → `verify()` detects any edit/insert/delete/reorder); a **`maxToolArgsBytes`** budget cap that rejects oversized (often injected) tool calls before the executor runs; the new **`agents-kt-detekt`** module with **`ToolBodyForbiddenApis`** (bans raw `File`/`URL`/`ProcessBuilder`/reflection inside tool executors) and **`ToolCapabilityExtractor`** (statically classifies what an executor body does); plus a **release guard** (`checkReadmeVersion`) so this dependency version can't drift from the build. The `ToolEnvironment` ABI + comparator are the next, larger slice.
+`main` is currently `0.7.21` — **security + de-slop.** A nested-agent **recursion bound** (`budget { maxAgentDepth }`, default 16) closes an unbounded self-re-entry / cycle vector (#3377); **skill routing now fails loud** on ambiguity instead of silently picking the first match (#3087); a build-wide **one-type-per-file** refactor with a `checkOneTypePerFile` guard (#3199); new **release/quality guards** — `checkPublishedVersion` + release runbook (#3084) and a named `securityCheck` gate + detekt-baseline ratchet (#3089); the start of the **AgenticLoop decomposition** (#3376); honest **README positioning** (#3085 / #3086); and internal decomposition of the `Agent` God-object into `RunRequest` + `SkillResolver` (#3088). Two behavior changes to note: ambiguous routing now throws, and deeply-nested agents (> `maxAgentDepth`) now fail fast — both in the CHANGELOG.
+
+**0.7.2 — tool-security hardening** (the self-contained first phase of the capability-ABI epic #2882, all additive): a tamper-evident, Merkle-chained **`ToolAuditLedger`** (`agent.events.ledger(file)` → `verify()` detects any edit/insert/delete/reorder); a **`maxToolArgsBytes`** budget cap that rejects oversized (often injected) tool calls before the executor runs; the new **`agents-kt-detekt`** module with **`ToolBodyForbiddenApis`** (bans raw `File`/`URL`/`ProcessBuilder`/reflection inside tool executors) and **`ToolCapabilityExtractor`** (statically classifies what an executor body does); plus a **release guard** (`checkReadmeVersion`) so this dependency version can't drift from the build. The `ToolEnvironment` ABI + comparator are the next, larger slice.
 
 **0.7.1 — verify-gate hardening.** The manifest `verify` gate compares policy **sets** (not coarse scores), so it catches widenings it previously missed (a host added within `hosts` mode, or a write glob broadened without changing the count), keyed per `agentName.toolName`; plus docs/KDoc drift fixes.
 
