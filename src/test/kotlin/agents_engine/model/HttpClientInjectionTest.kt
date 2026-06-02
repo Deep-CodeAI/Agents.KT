@@ -89,7 +89,7 @@ class HttpClientInjectionTest {
                 apiKey = if (provider == ModelProvider.OLLAMA) null else "k",
                 httpClient = shared,
             )
-            val client = defaultClientForTesting(config, tools = emptyList())
+            val client = ModelClientFactory.defaultClientForTesting(config, tools = emptyList())
             val resolved = when (client) {
                 is OllamaClient -> client.httpClient
                 is OpenAiClient -> client.httpClient // also catches DeepSeekClient (subclass)
