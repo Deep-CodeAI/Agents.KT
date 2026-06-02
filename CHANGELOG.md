@@ -4,6 +4,16 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — skill resolution extracted into `SkillResolver` (#3088 stage 2, de-slop #3083)
+
+- The skill-resolution cluster — type-compatible candidate filter, manual `skillSelection { }`
+  selector, LLM router (confidence gate), the before-skill-interceptor `ProceedWith` compatibility
+  check, and the fail-loud ambiguity error — moved out of `Agent`'s God-object body into its own
+  `SkillResolver` collaborator (new `SkillResolver.kt`). `Agent` keeps a `private val skillResolver`
+  and delegates. **Internal refactor, behavior-preserving** — every branch, condition, exception
+  type, and message is identical; no public DSL change. `Agent.kt` is now 1017 lines (1116 → 1017
+  across #3088 stages 1+2). Completes the staged decomposition of #3088.
+
 ### Changed — README de-slop: honest positioning + accuracy fixes (#3085, #3086, de-slop #3083)
 
 - Replaced the unqualified hero copy ("The auditable Kotlin agent runtime for regulated teams") with

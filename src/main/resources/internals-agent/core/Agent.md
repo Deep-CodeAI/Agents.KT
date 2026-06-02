@@ -72,7 +72,7 @@ Read-only counts (`beforeSkillInterceptorCount`, `beforeToolCallInterceptorCount
 ## Skill resolution
 
 When `invoke(input)` is called:
-1. `resolveSkill(input)` picks a skill whose `inType` matches `input` and whose `outType` matches the agent's `OUT`. Manual override via `skillSelection { input -> "skillName" }`; automatic LLM routing when multiple skills match and no manual selector is set.
+1. `skillResolver.resolve(input)` picks a skill whose `inType` matches `input` and whose `outType` matches the agent's `OUT`. Manual override via `skillSelection { input -> "skillName" }`; automatic LLM routing when multiple skills match and a model is set; multiple matches with no selector and no model fail loud (#3087). The resolution cluster lives in its own collaborator, `SkillResolver.kt` (#3088 stage 2) — `Agent` holds a `private val skillResolver = SkillResolver(this)` and delegates; the interceptor `ProceedWith` reroute check is `skillResolver.compatible(...)`.
 2. `onBeforeSkill` interceptors run; denial/substitution/reroute decisions apply here.
 3. `skillChosenListener` fires for the effective skill.
 4. If the skill is agentic (declared via `tools(...)`), `executeAgentic(this, skill, input)` runs — multi-turn `chat ↔ tools` driven by the LLM.
@@ -87,6 +87,8 @@ The per-invocation execution parameters — prompt override, resume/HITL state (
 ## Related files
 
 - `Skill.kt` — the unit of work an Agent dispatches to.
+- `SkillResolver.kt` — resolves which skill an invocation dispatches to (candidate filter, manual selector, LLM router, fail-loud ambiguity); extracted from `Agent` in #3088 stage 2.
+- `RunRequest.kt` — the per-invocation execution parameters bundled for `invokeSuspendForSession` (#3088 stage 1).
 - `Pipeline.kt` / `Branch.kt` / `Loop.kt` / `Parallel.kt` / `Forum.kt` / `Wrap.kt` / `Swarm.kt` — composition operators.
 - `AgenticLoop.kt` — the multi-turn LLM-tool dispatch loop.
 - `AgentEvent.kt` / `AgentSession.kt` — the v0.5.0 streaming session surface.
