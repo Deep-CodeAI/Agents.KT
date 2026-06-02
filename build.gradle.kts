@@ -434,6 +434,58 @@ tasks.register("checkDetektBaseline") {
 }
 tasks.named("check") { dependsOn("checkDetektBaseline") }
 
+// #3199 (SRP / one-type-per-file) — fail if a main-source .kt file declares more than one
+// top-level type, unless it's on the allowlist. The allowlist is a ratchet that may only shrink:
+// the guard also fails on a STALE entry (a listed file that no longer violates) so splits can't be
+// done without removing the file from the list. Mirrors checkReadmeVersion / checkDetektBaseline.
+val oneTypePerFileAllowlist = rootProject.file("config/one-type-per-file-allowlist.txt")
+tasks.register("checkOneTypePerFile") {
+    description = "Fails if a main-source .kt file declares >1 top-level type and isn't allowlisted (#3199)."
+    group = "verification"
+    inputs.file(oneTypePerFileAllowlist)
+    val srcTree = rootProject.fileTree(rootProject.projectDir) {
+        include("src/main/kotlin/**/*.kt", "agents-kt-*/src/main/kotlin/**/*.kt")
+        exclude("**/build/**")
+    }
+    inputs.files(srcTree)
+    doLast {
+        // Matches the shell heuristic used to seed the allowlist:
+        //   ^([a-z]+ )*(class|interface|object)<space>   (top-level, any visibility; nested decls are indented).
+        val typeDecl = Regex("^([a-z]+ )*(class|interface|object) ")
+        val rootPath = rootProject.projectDir.toPath()
+        val violating = srcTree.files
+            .filter { f -> f.readLines().count { typeDecl.containsMatchIn(it) } >= 2 }
+            .map { rootPath.relativize(it.toPath()).toString().replace('\\', '/') }
+            .toSortedSet()
+        val allowed = oneTypePerFileAllowlist.readLines()
+            .map { it.substringBefore('#').trim() }
+            .filter { it.isNotEmpty() }
+            .toSortedSet()
+
+        val newViolations = violating - allowed
+        val stale = allowed - violating
+        val problems = buildList {
+            if (newViolations.isNotEmpty()) {
+                add(
+                    "These files declare >1 top-level type and are NOT allowlisted — split them into one " +
+                        "type per file (#3199), or, for a cohesive sealed ADT, add the path to " +
+                        "${oneTypePerFileAllowlist.name} with a '# sealed-ADT: keep' reason:\n  " +
+                        newViolations.joinToString("\n  ")
+                )
+            }
+            if (stale.isNotEmpty()) {
+                add(
+                    "These allowlist entries no longer declare >1 top-level type — remove them " +
+                        "(the allowlist may only shrink):\n  " + stale.joinToString("\n  ")
+                )
+            }
+        }
+        check(problems.isEmpty()) { "checkOneTypePerFile (#3199):\n\n" + problems.joinToString("\n\n") }
+        logger.lifecycle("checkOneTypePerFile: ${violating.size} multi-type files, all allowlisted (${allowed.size} entries)")
+    }
+}
+tasks.named("check") { dependsOn("checkOneTypePerFile") }
+
 // #3089 — an explicit, named security gate. These deterministic security/enforcement tests
 // already run inside the default `:test` + module tests; this task makes the security-critical
 // subset addressable on its own, so CI (and a future macOS Seatbelt job) can target it directly
