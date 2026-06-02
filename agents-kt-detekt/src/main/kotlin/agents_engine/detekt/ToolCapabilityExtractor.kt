@@ -4,9 +4,6 @@ import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.psiUtil.collectDescendantsOfType
 
-/** A capability a tool's executor body exercises, classified statically from its call sites. */
-enum class ToolCapability { FS_READ, FS_WRITE, NETWORK, ENVIRONMENT, EXEC }
-
 /**
  * #2884 (epic #2882, Pillar 1 — static layer). Classifies what a tool's executor body
  * actually does — filesystem read/write, network, environment, process exec — by walking

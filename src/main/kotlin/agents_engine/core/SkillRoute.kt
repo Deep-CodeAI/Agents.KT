@@ -27,5 +27,3 @@ data class SkillRoute(
     @Guide("0.0 to 1.0 — how confident the router is in this choice") val confidence: Double,
     @Guide("One short sentence explaining the choice") val rationale: String,
 )
-
-class SkillRoutingException(message: String) : RuntimeException(message)

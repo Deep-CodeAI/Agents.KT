@@ -34,15 +34,16 @@
     <ID>MagicNumber:Agent.kt$Agent$77</ID>
     <ID>MagicNumber:Agent.kt$Agent$80</ID>
     <ID>MagicNumber:AgenticLoop.kt$1_000_000L</ID>
-    <ID>MagicNumber:BudgetConfig.kt$BudgetBuilder$32</ID>
-    <ID>MagicNumber:BudgetConfig.kt$BudgetBuilder$8</ID>
+    <ID>MagicNumber:BudgetBuilder.kt$BudgetBuilder$32</ID>
+    <ID>MagicNumber:BudgetBuilder.kt$BudgetBuilder$8</ID>
     <ID>MagicNumber:ClaudeClient.kt$ClaudeClient$1024</ID>
     <ID>MagicNumber:InternalsAgent.kt$4</ID>
     <ID>MagicNumber:JsonEscape.kt$0x20</ID>
+    <ID>MagicNumber:JsonSchema.kt$64</ID>
     <ID>MagicNumber:LenientJsonParser.kt$LenientJsonParser.Parser$16</ID>
     <ID>MagicNumber:LenientJsonParser.kt$LenientJsonParser.Parser$4</ID>
     <ID>MagicNumber:LenientJsonParser.kt$LenientJsonParser.Parser$5</ID>
-    <ID>MagicNumber:LiveShow.kt$LiveShowBuilder$20</ID>
+    <ID>MagicNumber:LiveShowBuilder.kt$LiveShowBuilder$20</ID>
     <ID>MagicNumber:Main.kt$60</ID>
     <ID>MagicNumber:McpJson.kt$McpJson$0x20</ID>
     <ID>MagicNumber:McpRunner.kt$McpRunner$50</ID>
@@ -57,9 +58,8 @@
     <ID>MagicNumber:McpServerAuth.kt$McpServerAuth.RequireBearerToken$401</ID>
     <ID>MagicNumber:McpServerAuth.kt$McpServerAuth.RequireBearerTokens$401</ID>
     <ID>MagicNumber:McpServerAuth.kt$McpServerAuth.TrustedLocal$401</ID>
-    <ID>MagicNumber:ModelClient.kt$64</ID>
-    <ID>MagicNumber:ModelConfig.kt$ModelBuilder$0.7</ID>
-    <ID>MagicNumber:ModelConfig.kt$ModelBuilder$11434</ID>
+    <ID>MagicNumber:ModelBuilder.kt$ModelBuilder$0.7</ID>
+    <ID>MagicNumber:ModelBuilder.kt$ModelBuilder$11434</ID>
     <ID>MagicNumber:ModelConfig.kt$ModelConfig$6</ID>
     <ID>MagicNumber:ModelConfig.kt$ModelConfig$8</ID>
     <ID>MagicNumber:PrefixStabilityGuard.kt$PrefixStabilityGuard$4</ID>
@@ -168,18 +168,18 @@
     <ID>MaxLineLength:ClaudeClientChatStreamTest.kt$ClaudeClientChatStreamTest$fun</ID>
     <ID>MaxLineLength:ClaudeReasoningTest.kt$ClaudeReasoningTest$assertNull(assertIs&lt;LlmResponse.Text&gt;(object : ClaudeClient(apiKey = "k", model = "m") {}.parseResponse(body)).reasoning)</ID>
     <ID>MaxLineLength:ClaudeReasoningTest.kt$ClaudeReasoningTest$val body = """{"content":[{"type":"thinking","thinking":"let me reason"},{"type":"text","text":"answer"}],"usage":{"input_tokens":1,"output_tokens":1}}"""</ID>
-    <ID>MaxLineLength:ContentRef.kt$FileBlobStore$Files.move(tmp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)</ID>
     <ID>MaxLineLength:DeepSeekClientIntegrationTest.kt$DeepSeekClientIntegrationTest$LlmMessage("system", "You are a tool-calling assistant. Always call the available tool; do not answer in text.")</ID>
     <ID>MaxLineLength:DeepSeekReasoningTest.kt$DeepSeekReasoningTest$object : DeepSeekClient(apiKey = "k", model = "deepseek-reasoner", reasoning = ReasoningConfig()) {}.parseResponse(body)</ID>
     <ID>MaxLineLength:DeepSeekReasoningTest.kt$DeepSeekReasoningTest$val body = """{"choices":[{"index":0,"message":{"role":"assistant","content":"42","reasoning_content":"divide then check"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}"""</ID>
     <ID>MaxLineLength:EscalateToolTest.kt$EscalateToolTest$assertTrue(!systemMsg.content.contains("escalate"), "escalate should NOT be in system prompt when not referenced")</ID>
     <ID>MaxLineLength:EscalateToolTest.kt$EscalateToolTest$assertTrue(!systemMsg.content.contains("throwException"), "throwException should NOT be in system prompt when not referenced")</ID>
-    <ID>MaxLineLength:EvalDsl.kt$EvalCase$EvalOutcome(expectation.label, passed, failureDetail = if (passed) null else expectation.describe(output))</ID>
-    <ID>MaxLineLength:EvalDsl.kt$EvalResult$"eval case \"$caseName\" failed: agent threw ${invocationError::class.simpleName}: ${invocationError.message}"</ID>
+    <ID>MaxLineLength:EvalCase.kt$EvalCase$EvalOutcome(expectation.label, passed, failureDetail = if (passed) null else expectation.describe(output))</ID>
+    <ID>MaxLineLength:EvalResult.kt$EvalResult$"eval case \"$caseName\" failed: agent threw ${invocationError::class.simpleName}: ${invocationError.message}"</ID>
     <ID>MaxLineLength:ExposedSkill.kt$ExposedSkill.Companion$?:</ID>
     <ID>MaxLineLength:FibonacciMemoryTest.kt$FibonacciMemoryTest$transformOutput { it.trim().toIntOrNull() ?: Regex("\\d+").find(it)?.value?.toInt() ?: error("No int in: $it") }</ID>
+    <ID>MaxLineLength:FileBlobStore.kt$FileBlobStore$Files.move(tmp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)</ID>
     <ID>MaxLineLength:FilesBlobStoreHardeningTest.kt$FilesBlobStoreHardeningTest$if (errors.isNotEmpty()) fail("Threads threw: ${errors.joinToString { it.message ?: it::class.simpleName ?: "?" }}")</ID>
-    <ID>MaxLineLength:Forum.kt$description = "Finalize the forum immediately. Args: value (optional) or a JSON object matching the forum result type."</ID>
+    <ID>MaxLineLength:ForumBuilder.kt$description = "Finalize the forum immediately. Args: value (optional) or a JSON object matching the forum result type."</ID>
     <ID>MaxLineLength:ForumExecutionTest.kt$ForumExecutionTest$LlmResponse.ToolCalls(listOf(agents_engine.model.ToolCall("forum_return", mapOf("value" to "captain verdict"))))</ID>
     <ID>MaxLineLength:ForumExecutionTest.kt$ForumExecutionTest$skills { skill&lt;String, String&gt;("a", "A") { implementedBy { threads["a"] = Thread.currentThread().name; "a" } } }</ID>
     <ID>MaxLineLength:ForumExecutionTest.kt$ForumExecutionTest$skills { skill&lt;String, String&gt;("b", "B") { implementedBy { threads["b"] = Thread.currentThread().name; "b" } } }</ID>
@@ -319,10 +319,10 @@
     <ID>MaxLineLength:SignInAgentTest.kt$SignInAgentTest$buildRequest</ID>
     <ID>MaxLineLength:SignInAgentTest.kt$SignInAgentTest$prompt("You are a sign-in assistant. To build a sign-in request you MUST: 1) call the passwords tool to look up credentials, 2) call build_request with the login and password from that lookup. After build_request returns the JSON, reply with ONLY that JSON — no explanation.")</ID>
     <ID>MaxLineLength:Skill.kt$Skill$message = "Use the typed `tools(first, vararg rest)` overload that takes Tool&lt;*, *&gt; handles returned by `tool(...)` builders. The string form is kept for built-in tools (escalate, throwException, memory_*) and negative tests of validate()."</ID>
-    <ID>MaxLineLength:Skill.kt$SkillsBuilder$inline</ID>
     <ID>MaxLineLength:Skill.kt$inline</ID>
     <ID>MaxLineLength:SkillSelectionTest.kt$SkillSelectionTest$assertTrue(systemPrompt.contains("Convert text to lowercase"), "Routing prompt should contain lower description")</ID>
     <ID>MaxLineLength:SkillSelectionTest.kt$SkillSelectionTest$assertTrue(systemPrompt.contains("Convert text to uppercase"), "Routing prompt should contain upper description")</ID>
+    <ID>MaxLineLength:SkillsBuilder.kt$SkillsBuilder$inline</ID>
     <ID>MaxLineLength:SnapshotResumeTest.kt$SnapshotResumeTest$ModelClient { msgs -&gt; if (firstSeenMessages == null) firstSeenMessages = msgs.toList(); deque.removeFirst() }</ID>
     <ID>MaxLineLength:SnapshotResumeTest.kt$SnapshotResumeTest$tools { step = tool("step", "") { _ -&gt; runsA[0]++; bankA.write("ActorsAgent", "progress=${runsA[0]}"); "ok" } }</ID>
     <ID>MaxLineLength:StdioMcpTransportForProcessTest.kt$StdioMcpTransportForProcessTest$"""read req; echo err-line-1 &gt;&amp;2; echo err-line-2 &gt;&amp;2; printf '{"jsonrpc":"2.0","id":1,"result":null}\n'"""</ID>
@@ -364,7 +364,7 @@
     <ID>TooGenericExceptionCaught:AgenticLoop.kt$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:BranchSessionExtension.kt$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:Decision.kt$t: Throwable</ID>
-    <ID>TooGenericExceptionCaught:EvalDsl.kt$EvalCase$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:EvalCase.kt$EvalCase$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:ForumSessionExtension.kt$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:LiveRunner.kt$LiveRunner$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:LiveShow.kt$LiveShow$e: Throwable</ID>

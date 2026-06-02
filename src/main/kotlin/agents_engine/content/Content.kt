@@ -74,55 +74,6 @@ sealed interface Content {
 }
 
 /**
- * Closed mime type for [Content.Image]. Variants cover the modalities
- * the production providers (Anthropic Vision, OpenAI Vision, Ollama
- * multimodal models) accept today. Extend by adding a variant — string
- * mime types are intentionally not exposed.
- */
-sealed interface ImageMime {
-    /** RFC 7-style mime form, returned by adapters when serialising to the wire. */
-    val wireMime: String
-
-    object Png : ImageMime { override val wireMime: String = "image/png" }
-    object Jpeg : ImageMime { override val wireMime: String = "image/jpeg" }
-    object Gif : ImageMime { override val wireMime: String = "image/gif" }
-    object Webp : ImageMime { override val wireMime: String = "image/webp" }
-}
-
-/** Closed mime type for [Content.Audio]. */
-sealed interface AudioMime {
-    val wireMime: String
-
-    object Mp3 : AudioMime { override val wireMime: String = "audio/mpeg" }
-    object Wav : AudioMime { override val wireMime: String = "audio/wav" }
-    object Flac : AudioMime { override val wireMime: String = "audio/flac" }
-    object Ogg : AudioMime { override val wireMime: String = "audio/ogg" }
-}
-
-/** Closed mime type for [Content.Video]. */
-sealed interface VideoMime {
-    val wireMime: String
-
-    object Mp4 : VideoMime { override val wireMime: String = "video/mp4" }
-    object WebM : VideoMime { override val wireMime: String = "video/webm" }
-    object Mov : VideoMime { override val wireMime: String = "video/quicktime" }
-}
-
-/** Closed mime type for [Content.Document]. */
-sealed interface DocMime {
-    val wireMime: String
-
-    object Pdf : DocMime { override val wireMime: String = "application/pdf" }
-    object Docx : DocMime {
-        override val wireMime: String =
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    }
-    object Markdown : DocMime { override val wireMime: String = "text/markdown" }
-    object Html : DocMime { override val wireMime: String = "text/html" }
-    object PlainText : DocMime { override val wireMime: String = "text/plain" }
-}
-
-/**
  * The runtime-stable name of a content's modality. Used by audit
  * bridges to write a per-part `modality` field without exposing
  * type-checker concerns. Stable across releases — adding a new

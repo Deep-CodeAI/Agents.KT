@@ -1,10 +1,8 @@
 package agents_engine.observability
 
 import agents_engine.content.modality
-import agents_engine.core.Agent
 import agents_engine.core.AgentRuntimeContext
 import agents_engine.core.PipelineEvent
-import agents_engine.core.observe
 import agents_engine.model.TokenUsage
 import agents_engine.runtime.events.AgentEvent
 import java.io.File
@@ -16,7 +14,6 @@ import java.nio.file.StandardOpenOption.APPEND
 import java.nio.file.StandardOpenOption.CREATE
 import java.time.Clock
 import java.time.LocalDate
-import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.logging.Level
 import java.util.logging.Logger
@@ -407,86 +404,5 @@ class JsonlAuditExporter(
                 JUL_LOGGER.log(Level.WARNING, message, cause)
             }
         }
-    }
-}
-
-sealed interface JsonlRotation {
-    data object None : JsonlRotation
-
-    data class Size(val maxBytes: Long) : JsonlRotation
-
-    data class Daily(val zoneId: ZoneId = ZoneOffset.UTC) : JsonlRotation
-}
-
-val <IN, OUT> Agent<IN, OUT>.events: AgentJsonlExports
-    get() = AgentJsonlExports(this)
-
-class AgentJsonlExports internal constructor(private val agent: Agent<*, *>) {
-    fun export(block: AgentJsonlExportBuilder.() -> Unit): List<JsonlAuditExporter> {
-        val builder = AgentJsonlExportBuilder(agent)
-        builder.block()
-        return builder.exporters.toList()
-    }
-
-    /**
-     * #2886 — wire a tamper-evident [ToolAuditLedger] to this agent. Every tool action is
-     * auto-recorded to an append-only, Merkle-chained file: a [PipelineEvent.ToolCalled] as
-     * `APPROVED`, a [PipelineEvent.ToolDenied] as `DENIED` (with the reason), a
-     * [PipelineEvent.ToolHallucinated] as `HALLUCINATED`. PII-safe (the result is hashed,
-     * never stored). Returns the ledger so the caller can [ToolAuditLedger.verify] it later.
-     *
-     * callId-keying of the denied/hallucinated rows lands once `PipelineEvent` carries the
-     * callId (the approved rows already join via the AgentEvent layer) — #2886 follow-up.
-     */
-    fun ledger(file: File): ToolAuditLedger {
-        val ledger = ToolAuditLedger(file.toPath())
-        agent.observe { event ->
-            when (event) {
-                is PipelineEvent.ToolCalled ->
-                    ledger.record(event.toolName, LedgerDecision.APPROVED, result = event.result)
-                is PipelineEvent.ToolDenied ->
-                    ledger.record(event.toolName, LedgerDecision.DENIED, denialReason = event.reason)
-                is PipelineEvent.ToolHallucinated ->
-                    ledger.record(event.requestedName, LedgerDecision.HALLUCINATED)
-                else -> Unit
-            }
-        }
-        return ledger
-    }
-}
-
-class AgentJsonlExportBuilder internal constructor(private val agent: Agent<*, *>) {
-    internal val exporters = mutableListOf<JsonlAuditExporter>()
-
-    fun file(path: String): File = File(path)
-
-    fun jsonl(
-        file: File,
-        rotation: JsonlRotation = JsonlRotation.None,
-        maxBufferedLines: Int = 1_024,
-        clock: Clock = Clock.systemUTC(),
-        logger: (message: String, cause: Throwable?) -> Unit = DEFAULT_EXPORT_LOGGER,
-    ): JsonlAuditExporter {
-        val exporter = JsonlAuditExporter(
-            file = file,
-            rotation = rotation,
-            maxBufferedLines = maxBufferedLines,
-            logger = logger,
-            clock = clock,
-        )
-        agent.observe { exporter.write(it) }
-        exporters += exporter
-        return exporter
-    }
-
-    private companion object {
-        private val DEFAULT_EXPORT_LOGGER: (String, Throwable?) -> Unit =
-            { message, cause ->
-                if (cause == null) {
-                    Logger.getLogger(JsonlAuditExporter::class.java.name).warning(message)
-                } else {
-                    Logger.getLogger(JsonlAuditExporter::class.java.name).log(Level.WARNING, message, cause)
-                }
-            }
     }
 }

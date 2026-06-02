@@ -19,39 +19,6 @@ import kotlin.time.Duration
  */
 
 /**
- * Conversation-history caching mode.
- *
- * The agentic loop resends the entire conversation prefix on every turn.
- * That prefix is mostly byte-identical (older turns never change) but grows
- * by one assistant + one user message each round. [Rolling] inserts a fresh
- * cache breakpoint at the end of every turn so the growing prefix continues
- * to hit. Default is [None] — rolling has a per-vendor write cost
- * (Anthropic charges 25% more for the cached-write tokens) and only pays
- * back on long loops; opt-in keeps short loops from paying the write tax
- * for cache hits they would never collect.
- */
-enum class CacheConversation { None, Rolling }
-
-/**
- * A user-declared cacheable content block — covers the "per-segment marking
- * for large custom context" requirement in the #2656 AC. Added via
- * `caching { cacheable(id, ttl) { ... } }`; surfaces in the prompt as its
- * own segment with [CacheSegment.Custom] so adapters can route it
- * independently of the system / tool-defs segments.
- *
- * @property id stable identifier; doubles as the per-vendor routing key.
- *   Changing it busts the cache.
- * @property content the content block to cache.
- * @property ttl per-segment TTL override. Null = fall back to
- *   [CacheConfig.ttl] or the provider default.
- */
-data class CustomCacheSegment(
-    val id: String,
-    val content: String,
-    val ttl: Duration? = null,
-)
-
-/**
  * Vendor-neutral prompt-caching configuration (#2656). Defaults assume the
  * system prompt and the KSP-generated tool definitions block (#1703) are
  * byte-stable across turns — they cache by default. Conversation rolling
@@ -82,37 +49,3 @@ data class CacheConfig(
     val ttl: Duration? = null,
     val customSegments: List<CustomCacheSegment> = emptyList(),
 )
-
-/** Mutable builder backing the `caching { }` DSL slot on `Agent`. */
-class CacheBuilder {
-    var enabled: Boolean = true
-    var cacheSystemPrompt: Boolean = true
-    var cacheToolDefs: Boolean = true
-    var cacheConversation: CacheConversation = CacheConversation.None
-    var ttl: Duration? = null
-
-    private val customSegmentsList: MutableList<CustomCacheSegment> = mutableListOf()
-
-    /**
-     * Mark a custom content block as cacheable. Appended after the system
-     * prompt as its own [CacheSegment.Custom] segment.
-     *
-     * @param id stable identifier — doubles as the per-vendor routing key.
-     *   Changing it busts the cache.
-     * @param ttl per-segment TTL; null = fall back to [CacheConfig.ttl] or
-     *   the provider default.
-     * @param content content lambda — evaluated once at build time.
-     */
-    fun cacheable(id: String, ttl: Duration? = null, content: () -> String) {
-        customSegmentsList += CustomCacheSegment(id = id, content = content(), ttl = ttl)
-    }
-
-    internal fun build() = CacheConfig(
-        enabled = enabled,
-        cacheSystemPrompt = cacheSystemPrompt,
-        cacheToolDefs = cacheToolDefs,
-        cacheConversation = cacheConversation,
-        ttl = ttl,
-        customSegments = customSegmentsList.toList(),
-    )
-}

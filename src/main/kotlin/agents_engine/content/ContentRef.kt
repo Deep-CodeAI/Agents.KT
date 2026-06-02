@@ -1,11 +1,6 @@
 package agents_engine.content
 
-import java.io.InputStream
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * `agents_engine/content/ContentRef.kt` — content-addressed blob reference
@@ -52,149 +47,10 @@ data class ContentRef(
 )
 
 /**
- * Persistence backend for content-addressed blobs.
- *
- * Implementations: [InMemoryBlobStore] for tests and single-JVM use,
- * [FileBlobStore] for on-disk persistence. Custom backends (S3, GCS,
- * an internal artifact registry) implement this interface and plug in
- * via dependency injection at agent construction.
- *
- * **Idempotency:** `put` is deterministic on byte content. Putting the
- * same bytes twice returns the same [ContentRef]; the second `put` is
- * a no-op on disk.
- */
-interface BlobStore {
-    /**
-     * Store [bytes] under their SHA-256 hash. Returns the resulting
-     * [ContentRef] carrying that hash, the byte length, and [wireMime].
-     */
-    fun put(bytes: ByteArray, wireMime: String): ContentRef
-
-    /**
-     * Look up the blob for [ref]. Returns `null` when the store has no
-     * entry — callers handle the absence (re-fetch, fail closed, etc.).
-     */
-    fun get(ref: ContentRef): ByteArray?
-
-    /**
-     * Stream the blob for [ref] — for large payloads where loading the
-     * full bytes into memory is wasteful. `null` when missing.
-     */
-    fun open(ref: ContentRef): InputStream?
-
-    /** True if the store currently holds [ref]'s blob. */
-    fun exists(ref: ContentRef): Boolean
-
-    /** Remove the blob for [ref] from the store. Idempotent. */
-    fun delete(ref: ContentRef)
-
-    /**
-     * #2871 — integrity check. Returns `true` when [ref] resolves to bytes
-     * whose SHA-256 still equals [ref.hash]. Returns `false` when the
-     * stored bytes don't match (corruption, mid-write crash that wasn't
-     * fully atomic, truncation by an external tool) OR when the blob is
-     * absent.
-     *
-     * Default implementation re-reads via [get] and rehashes. Backends
-     * that can verify cheaper (e.g. an on-disk checksum sidecar) override.
-     *
-     * Use case: audit-time spot check on the snapshot/blob directory
-     * before resuming, or as a periodic integrity scan in long-running
-     * deployments. Not on the hot path of [get] — `verify` is opt-in by
-     * the caller.
-     */
-    fun verify(ref: ContentRef): Boolean {
-        val bytes = get(ref) ?: return false
-        return computeContentHash(bytes) == ref.hash
-    }
-}
-
-/**
  * Compute the [ContentRef] hash for [bytes] without storing anything.
  * Useful when comparing two byte arrays without a [BlobStore] handy.
  */
 fun computeContentHash(bytes: ByteArray): String {
     val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
     return buildString(digest.size * 2) { for (b in digest) append("%02x".format(b)) }
-}
-
-/**
- * In-process [BlobStore] — tests + single-JVM agents that don't need
- * persistence across restarts. Backed by a `ConcurrentHashMap` keyed
- * by hash; bytes are stored as defensive copies on `put` and returned
- * as copies on `get` so consumer mutation can't corrupt the store.
- */
-class InMemoryBlobStore : BlobStore {
-    private val store = ConcurrentHashMap<String, Entry>()
-
-    private data class Entry(val bytes: ByteArray, val wireMime: String)
-
-    override fun put(bytes: ByteArray, wireMime: String): ContentRef {
-        val hash = computeContentHash(bytes)
-        store[hash] = Entry(bytes.copyOf(), wireMime)
-        return ContentRef(hash = hash, sizeBytes = bytes.size.toLong(), wireMime = wireMime)
-    }
-
-    override fun get(ref: ContentRef): ByteArray? = store[ref.hash]?.bytes?.copyOf()
-
-    override fun open(ref: ContentRef): InputStream? = get(ref)?.inputStream()
-
-    override fun exists(ref: ContentRef): Boolean = store.containsKey(ref.hash)
-
-    override fun delete(ref: ContentRef) {
-        store.remove(ref.hash)
-    }
-}
-
-/**
- * On-disk [BlobStore] — one file per blob, filename = hash. Survives
- * process restarts so refs in a persisted [SessionSnapshot]
- * dereference after a restart. Atomic via tmp + rename.
- *
- * Filename is the raw SHA-256 hex — hashes are filesystem-safe by
- * construction. No suffix is appended; mime travels on the ref, not
- * in the path. (Files can be tagged with extension by a deployer's
- * out-of-band tooling if needed.)
- *
- * Composes with the #2753 filename-hashing pattern from
- * `FileSnapshotStore` — both use hashes for filename safety. Here the
- * hash is intrinsic (SHA-256 of blob content); there it was derived
- * (SHA-256 of session id).
- */
-class FileBlobStore(private val dir: Path) : BlobStore {
-    init { Files.createDirectories(dir) }
-
-    override fun put(bytes: ByteArray, wireMime: String): ContentRef {
-        val hash = computeContentHash(bytes)
-        val target = dir.resolve(hash)
-        if (!Files.exists(target)) {
-            // #2871 — unique tmp filename so two threads writing the SAME
-            // hash (rare but valid — same bytes hashed independently) can
-            // never collide on the tmp file. Pre-#2871 used `$hash.tmp`
-            // deterministically, which would race: thread A writes, thread
-            // B truncates A's tmp mid-write, B renames its partial file.
-            // The atomic rename still works — target is keyed on hash, so
-            // the second rename is a same-bytes overwrite.
-            val tmp = dir.resolve("$hash.${java.util.UUID.randomUUID()}.tmp")
-            Files.write(tmp, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)
-            Files.move(tmp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
-        }
-        return ContentRef(hash = hash, sizeBytes = bytes.size.toLong(), wireMime = wireMime)
-    }
-
-    override fun get(ref: ContentRef): ByteArray? {
-        val target = dir.resolve(ref.hash)
-        return if (Files.exists(target)) Files.readAllBytes(target) else null
-    }
-
-    override fun open(ref: ContentRef): InputStream? {
-        val target = dir.resolve(ref.hash)
-        return if (Files.exists(target)) Files.newInputStream(target) else null
-    }
-
-    override fun exists(ref: ContentRef): Boolean = Files.exists(dir.resolve(ref.hash))
-
-    override fun delete(ref: ContentRef) {
-        Files.deleteIfExists(dir.resolve(ref.hash))
-    }
 }

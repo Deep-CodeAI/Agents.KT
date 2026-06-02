@@ -1,24 +1,9 @@
 package agents_engine.runtime
 
 import agents_engine.core.Agent
-import agents_engine.generation.Generable
-import agents_engine.generation.Guide
 import agents_engine.generation.constructFromMap
 import agents_engine.model.ToolDef
 import java.util.ServiceLoader
-
-/**
- * #2379 — typed args for tools minted by [Agent.absorb]. v1 of absorb
- * only supports `Agent<String, *>`, so the delegate tool's input shape
- * is always a single `query: String`. Having a real `argsType` here lets
- * the wire-format provider clients emit a proper JSON Schema instead of
- * falling back to the permissive empty-properties form.
- */
-@Generable("Arguments for a swarm-delegate tool — forward a single-string query to the sibling agent.")
-data class SwarmDelegateArgs(
-    @Guide("Free-text query for the sibling agent. The sibling's first skill must accept String input.")
-    val query: String,
-)
 
 /**
  * `agents_engine/runtime/Swarm.kt` — multi-JAR agent assembly via
@@ -33,23 +18,6 @@ data class SwarmDelegateArgs(
  * `src/main/resources/internals-agent/runtime/Swarm.md`
  * (#1837 / #1891).
  */
-
-/**
- * Service-loadable contract for an agent shipped from a separate JAR (#984).
- *
- * Each agent JAR places `META-INF/services/agents_engine.runtime.AgentProvider`
- * pointing at a class that implements this interface. A captain agent then
- * calls [Swarm.discover] to find and build all sibling providers from the
- * classpath, and [Agent.absorb] to expose each sibling as a tool on itself.
- *
- * In-JVM (not MCP-stdio) by design — preserves the full `Agent<IN, OUT>`
- * surface (prompt, skills, knowledge, memory, observability hooks, error
- * handlers) of every sibling. Trade-off: JVM-only, no process isolation. See
- * the issue description for the rationale.
- */
-fun interface AgentProvider {
-    fun build(): Agent<*, *>
-}
 
 /**
  * Discovers sibling agents on the classpath via [ServiceLoader]. Every
