@@ -36,13 +36,10 @@ src/main/kotlin/agents_engine/core/ToolPolicy.kt
 src/main/kotlin/agents_engine/generation/Annotations.kt
 src/main/kotlin/agents_engine/model/BudgetConfig.kt
 src/main/kotlin/agents_engine/model/CacheConfig.kt
-src/main/kotlin/agents_engine/model/CacheHint.kt
 src/main/kotlin/agents_engine/model/ModelClient.kt
 src/main/kotlin/agents_engine/model/ModelConfig.kt
 src/main/kotlin/agents_engine/model/OllamaClient.kt
-src/main/kotlin/agents_engine/model/OnErrorBuilder.kt
 src/main/kotlin/agents_engine/model/ToolDef.kt
-src/main/kotlin/agents_engine/model/ToolError.kt
 src/main/kotlin/agents_engine/runtime/LineEditor.kt
 src/main/kotlin/agents_engine/runtime/LiveShow.kt
 src/main/kotlin/agents_engine/runtime/Swarm.kt

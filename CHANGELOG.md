@@ -4,6 +4,14 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — one-type-per-file: split model error/cache types (#3199, batch 3)
+
+- Split three `agents_engine.model` files into one type per file (same package — no FQN/public-API
+  change): `ToolError.kt` → `Severity`, `EscalationException`, `ToolExecutionException` (`ToolError`
+  sealed union stays); `CacheHint.kt` → `CacheSegment` (`CacheHint` stays); `OnErrorBuilder.kt` →
+  `RepairResult`, `RepairScope`, `ToolErrorHandler` (`OnErrorBuilder` + the `executeAgentFix` helper
+  stay). Allowlist 40 → 37. Behavior-preserving pure moves; detekt baseline unchanged.
+
 ### Changed — one-type-per-file: split `McpServer.kt` (#3199, batch 2b)
 
 - Split the four secondary types out of `mcp/McpServer.kt` (same package) — `RegisteredPrompt`,

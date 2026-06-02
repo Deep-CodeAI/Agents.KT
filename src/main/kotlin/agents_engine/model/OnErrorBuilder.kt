@@ -14,40 +14,6 @@ import agents_engine.core.Agent
  * (#1837 / #1854).
  */
 
-sealed interface RepairResult {
-    data class Fixed(val value: String) : RepairResult
-    data class Retry(val maxAttempts: Int) : RepairResult
-    data class Escalated(val reason: String, val severity: Severity) : RepairResult
-    data object Unrecoverable : RepairResult
-}
-
-class RepairScope(private val input: String) {
-
-    fun fix(agent: Agent<String, String>, retries: Int = 1): RepairResult {
-        return executeAgentFix(agent, input, retries)
-    }
-
-    fun sanitize(agent: Agent<String, String>, retries: Int = 1): RepairResult =
-        fix(agent, retries)
-
-    fun retry(maxAttempts: Int): RepairResult.Retry = RepairResult.Retry(maxAttempts)
-}
-
-class ToolErrorHandler(
-    private val invalidArgsHandler: ((String, String) -> RepairResult?)?,
-    private val deserializationErrorHandler: ((String, String) -> RepairResult?)?,
-    private val executionErrorHandler: ((Throwable) -> RepairResult?)?,
-) {
-    fun handleInvalidArgs(rawArgs: String, parseError: String): RepairResult? =
-        invalidArgsHandler?.invoke(rawArgs, parseError)
-
-    fun handleDeserializationError(rawValue: String, error: String): RepairResult? =
-        deserializationErrorHandler?.invoke(rawValue, error)
-
-    fun handleExecutionError(cause: Throwable): RepairResult? =
-        executionErrorHandler?.invoke(cause)
-}
-
 class OnErrorBuilder {
     private var invalidArgsBlock: ((String, String) -> RepairResult?)? = null
     private var deserializationErrorBlock: ((String, String) -> RepairResult?)? = null
