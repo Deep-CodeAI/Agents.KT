@@ -11,8 +11,6 @@ import kotlin.reflect.KType
  * `src/main/resources/internals-agent/model/ToolError.md` (#1837 / #1858).
  */
 
-enum class Severity { LOW, MEDIUM, HIGH, CRITICAL }
-
 sealed interface ToolError {
     data class InvalidArgs(
         val rawArgs: String,
@@ -39,7 +37,3 @@ sealed interface ToolError {
         val attempts: Int,
     ) : ToolError
 }
-
-class EscalationException(val reason: String, val severity: Severity) : RuntimeException(reason)
-
-class ToolExecutionException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
