@@ -4,6 +4,16 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — AgenticLoop decomposition: extract the tool-execution subsystem (#3376 batch 3)
+
+- Moved the per-tool-call execution cluster out of `AgenticLoop` into a new `ToolInvoker.kt`: the
+  budget gate (arg-size cap + per-tool timeout), the 4-layer recovery ladder (`executeToolWithBudget`
+  / `executeToolWithRecovery` / `validateTypedArgsOrNull` / `recoverInvalidArguments` /
+  `executeToolWithExecutionRecovery`), `toolArgsByteSize`, and the `ToolCallFinished` emit. These were
+  `private` to the loop (only reachable through a full agentic invocation); now `internal` and
+  directly unit-tested (`ToolInvokerTest`). The loop's thin event-wrapper delegates here.
+  Behavior-preserving move; `AgenticLoop.kt` 1196 → 930 (1369 → 930 across batches 1–3).
+
 ### Changed — AgenticLoop decomposition: extract `ModelClientFactory` (#3376 batch 2)
 
 - Moved the provider/client-construction cluster out of `AgenticLoop` into a new `internal`
