@@ -11,6 +11,7 @@ class BudgetBuilder {
     var maxTokens: Int? = null
     var maxConsecutiveSameTool: Int? = null
     var maxToolArgsBytes: Long? = null
+    var maxAgentDepth: Int = DEFAULT_MAX_AGENT_DEPTH
 
     internal fun build() = BudgetConfig(
         maxTurns = maxTurns,
@@ -20,5 +21,6 @@ class BudgetBuilder {
         maxTokens = maxTokens,
         maxConsecutiveSameTool = maxConsecutiveSameTool,
         maxToolArgsBytes = maxToolArgsBytes,
+        maxAgentDepth = maxAgentDepth,
     )
 }

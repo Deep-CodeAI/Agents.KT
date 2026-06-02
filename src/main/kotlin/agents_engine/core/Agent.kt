@@ -797,7 +797,24 @@ class Agent<IN, OUT>(
         }
 
     internal fun newRuntimeContext(sessionId: String? = null): AgentRuntimeContext =
-        AgentRuntimeContext(sessionId = sessionId, manifestHash = manifestHash)
+        // #3377 — carry nested-invocation depth: a fresh top-level context is depth 0; one created
+        // while another agent invocation is on the stack (a tool re-invoking an agent) is parent + 1.
+        AgentRuntimeContext(
+            sessionId = sessionId,
+            manifestHash = manifestHash,
+            depth = (AgentRuntimeContext.current()?.depth ?: -1) + 1,
+        )
+
+    /** #3377 — fail fast on over-deep nested agent invocation, before the loop runs. */
+    private fun checkAgentDepth(depth: Int) {
+        if (depth > budgetConfig.maxAgentDepth) {
+            throw agents_engine.model.BudgetExceededException(
+                "Agent \"$name\" nested invocation depth $depth exceeded " +
+                    "maxAgentDepth=${budgetConfig.maxAgentDepth} — possible unbounded agent recursion.",
+                BudgetReason.AGENT_DEPTH,
+            )
+        }
+    }
 
     /**
      * #1736 — session-aware sibling of [invokeSuspend]. Same logic, plus an
@@ -824,6 +841,10 @@ class Agent<IN, OUT>(
         onSkillStarted: (String) -> Unit,
     ): OUT {
         val runtimeContext = AgentRuntimeContext.current() ?: newRuntimeContext()
+        // #3377 — bound nested agent invocation BEFORE running the loop. A tool that re-invokes an
+        // agent (Swarm absorb, agent-as-tool) increments runtimeContext.depth via newRuntimeContext;
+        // a self-re-entering or cyclic agent would otherwise recurse one full agentic loop per level.
+        checkAgentDepth(runtimeContext.depth)
         try {
             var skill = skillResolver.resolve(input)
             when (val decision = decideBeforeSkill(skill.name)) {
