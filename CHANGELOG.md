@@ -4,6 +4,18 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — one-type-per-file convention + `checkOneTypePerFile` guard (#3199, batch 1)
+
+- New `checkOneTypePerFile` Gradle guard (wired into `check`) fails the build if a main-source `.kt`
+  file declares >1 top-level type and isn't on `config/one-type-per-file-allowlist.txt`. The allowlist
+  is a ratchet that may only shrink — it also fails on a stale entry (a listed file that no longer
+  violates), so a split must record its own burndown. Documented sealed-ADT exceptions stay listed.
+  Mirrors `checkReadmeVersion` / `checkDetektBaseline`.
+- Batch 1 split: `mcp/McpServerInfo.kt` (12 MCP wire DTOs) → one type per file in the same
+  `agents_engine.mcp` package — zero import churn, no FQN/public-API change. New `docs/source-layout.md`
+  documents the convention, exceptions, and the guard. Remaining multi-type files burn down
+  package-by-package in follow-up batches under #3199.
+
 ### Changed — skill resolution extracted into `SkillResolver` (#3088 stage 2, de-slop #3083)
 
 - The skill-resolution cluster — type-compatible candidate filter, manual `skillSelection { }`
