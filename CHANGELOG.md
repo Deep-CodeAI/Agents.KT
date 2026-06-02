@@ -4,6 +4,16 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — one-type-per-file: split the `mcp/` package (#3199, batch 2)
+
+- Split five multi-type files in `agents_engine.mcp` into one type per file (same package — zero
+  import churn, no FQN/public-API change): `AgentMcpDsl.kt` → `McpServerBuilder.kt`; `JsonRpc.kt` →
+  `JsonRpcWire` / `JsonRpcErrorCode` / `McpException` (+ `JsonRpc` stays); `McpClient.kt` →
+  `McpToolDescriptor`; `McpRunner.kt` → `RunnerConfig` + `McpRunnerBuilder`; `McpServerSecurity.kt` →
+  `ClientPrincipal` / `McpHttpRequestContext` / `McpAuthDecision` / `McpServerAuth` (original file
+  removed). Allowlist 46 → 41. `mcp/McpServer.kt` (597 lines, `ExposedSkill` needs import surgery)
+  is deferred to batch 2b. Behavior-preserving pure moves.
+
 ### Changed — one-type-per-file convention + `checkOneTypePerFile` guard (#3199, batch 1)
 
 - New `checkOneTypePerFile` Gradle guard (wired into `check`) fails the build if a main-source `.kt`

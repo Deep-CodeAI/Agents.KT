@@ -54,9 +54,9 @@
     <ID>MagicNumber:McpServer.kt$McpServer$413</ID>
     <ID>MagicNumber:McpServer.kt$McpServer$415</ID>
     <ID>MagicNumber:McpServer.kt$McpServer$500</ID>
-    <ID>MagicNumber:McpServerSecurity.kt$McpServerAuth.RequireBearerToken$401</ID>
-    <ID>MagicNumber:McpServerSecurity.kt$McpServerAuth.RequireBearerTokens$401</ID>
-    <ID>MagicNumber:McpServerSecurity.kt$McpServerAuth.TrustedLocal$401</ID>
+    <ID>MagicNumber:McpServerAuth.kt$McpServerAuth.RequireBearerToken$401</ID>
+    <ID>MagicNumber:McpServerAuth.kt$McpServerAuth.RequireBearerTokens$401</ID>
+    <ID>MagicNumber:McpServerAuth.kt$McpServerAuth.TrustedLocal$401</ID>
     <ID>MagicNumber:ModelClient.kt$64</ID>
     <ID>MagicNumber:ModelConfig.kt$ModelBuilder$0.7</ID>
     <ID>MagicNumber:ModelConfig.kt$ModelBuilder$11434</ID>
@@ -65,11 +65,9 @@
     <ID>MagicNumber:PrefixStabilityGuard.kt$PrefixStabilityGuard$4</ID>
     <ID>MagicNumber:StdioMcpTransport.kt$StdioMcpTransport.Companion$500</ID>
     <ID>MagicNumber:ToolResult.kt$12</ID>
-    <ID>MaxLineLength:Agent.kt$Agent$"Router uncertain (confidence=${route.confidence}, threshold=$skillSelectionConfidenceThreshold). "</ID>
     <ID>MaxLineLength:Agent.kt$Agent$var</ID>
     <ID>MaxLineLength:AgentEvent.kt$AgentEvent$/** The agent that produced this event. For composed pipelines this is the inner agent's name, not the composition's. */</ID>
     <ID>MaxLineLength:AgentFibonacciMcpTest.kt$AgentFibonacciMcpTest$transformOutput { it.trim().toIntOrNull() ?: Regex("\\d+").find(it)?.value?.toInt() ?: error("No int in: $it") }</ID>
-    <ID>MaxLineLength:AgentMcpDsl.kt$McpServerBuilder$"MCP server \"$name\": auth is only supported on HTTP transport (url=). Connection identity is the auth on stdio/TCP."</ID>
     <ID>MaxLineLength:AgentMemoryTest.kt$AgentMemoryTest$responses.add(LlmResponse.ToolCalls(listOf(ToolCall("memory_write", mapOf("content" to "Known: user prefers dark mode\nKnown: user uses Kotlin")))))</ID>
     <ID>MaxLineLength:AgentSessionBasicEventsTest.kt$AgentSessionBasicEventsTest$assertNull(completed.tokensUsed, "SkillCompleted.tokensUsed stays null until step 3 threads it through executeAgentic")</ID>
     <ID>MaxLineLength:AgentSessionIntegrationTest.kt$AgentSessionIntegrationTest$"expected [SkillStarted, ModelTurnStarted, Token, ModelTurnCompleted, SkillCompleted, Completed]; got: $events"</ID>
@@ -230,6 +228,7 @@
     <ID>MaxLineLength:McpServer.kt$McpServer$jsonRpcError(id, JsonRpcErrorCode.INTERNAL_ERROR, "Resource '$uri' read failed: ${e.message ?: e.toString()}")</ID>
     <ID>MaxLineLength:McpServer.kt$McpServer.Companion$"Skill \"$name\" is agentic — McpServer only exposes non-agentic skills (implementedBy { }) in this slice."</ID>
     <ID>MaxLineLength:McpServerBeforeInterceptorTest.kt$McpServerBeforeInterceptorTest$"""{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","arguments":{"input":"original"}}}"""</ID>
+    <ID>MaxLineLength:McpServerBuilder.kt$McpServerBuilder$"MCP server \"$name\": auth is only supported on HTTP transport (url=). Connection identity is the auth on stdio/TCP."</ID>
     <ID>MaxLineLength:McpServerConformanceTest.kt$McpServerConformanceTest$"""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"$MCP_PROTOCOL_VERSION","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"""</ID>
     <ID>MaxLineLength:McpServerConformanceTest.kt$McpServerConformanceTest$"""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"9999-01-01","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"""</ID>
     <ID>MaxLineLength:McpServerConformanceTest.kt$McpServerConformanceTest$assertEquals("Greets a person by name", desc, "description should be the raw skill.description prose, not toLlmDescription")</ID>

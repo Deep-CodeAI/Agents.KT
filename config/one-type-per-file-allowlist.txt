@@ -34,12 +34,7 @@ src/main/kotlin/agents_engine/core/Snapshot.kt
 src/main/kotlin/agents_engine/core/Tool.kt
 src/main/kotlin/agents_engine/core/ToolPolicy.kt
 src/main/kotlin/agents_engine/generation/Annotations.kt
-src/main/kotlin/agents_engine/mcp/AgentMcpDsl.kt
-src/main/kotlin/agents_engine/mcp/JsonRpc.kt
-src/main/kotlin/agents_engine/mcp/McpClient.kt
-src/main/kotlin/agents_engine/mcp/McpRunner.kt
 src/main/kotlin/agents_engine/mcp/McpServer.kt
-src/main/kotlin/agents_engine/mcp/McpServerSecurity.kt
 src/main/kotlin/agents_engine/model/BudgetConfig.kt
 src/main/kotlin/agents_engine/model/CacheConfig.kt
 src/main/kotlin/agents_engine/model/CacheHint.kt

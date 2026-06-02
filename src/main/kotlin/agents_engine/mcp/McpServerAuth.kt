@@ -3,44 +3,11 @@ package agents_engine.mcp
 import java.net.InetAddress
 
 /**
- * Authenticated caller identity for inbound MCP server requests.
- */
-data class ClientPrincipal(
-    val id: String,
-    val attributes: Map<String, String> = emptyMap(),
-) {
-    companion object {
-        val TrustedLocal: ClientPrincipal = ClientPrincipal(
-            id = "trusted-local",
-            attributes = mapOf("transport" to "local"),
-        )
-    }
-}
-
-/**
- * Minimal HTTP request view exposed to [McpServerAuth] implementations.
- */
-data class McpHttpRequestContext(
-    val headers: Map<String, List<String>>,
-    val remoteAddress: String?,
-) {
-    fun firstHeader(name: String): String? =
-        headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }
-            ?.value
-            ?.firstOrNull()
-}
-
-sealed interface McpAuthDecision {
-    data class Allow(val principal: ClientPrincipal) : McpAuthDecision
-    data class Reject(val statusCode: Int, val message: String) : McpAuthDecision
-}
-
-/**
  * Inbound authentication policy for HTTP-hosted [McpServer] instances.
  *
- * The default [TrustedLocal] mode permits loopback clients only. Use
- * [RequireBearerToken] or [RequireBearerTokens] when the endpoint is reachable
- * from another process boundary or network segment.
+ * The default [TrustedLocal] mode permits loopback clients only. Use [RequireBearerToken] or
+ * [RequireBearerTokens] when the endpoint is reachable from another process boundary or network
+ * segment.
  */
 sealed interface McpServerAuth {
     fun authenticate(request: McpHttpRequestContext): McpAuthDecision

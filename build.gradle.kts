@@ -416,7 +416,7 @@ tasks.register("checkPublishedVersion") {
 // violations; without a ceiling it can silently grow, turning "0 new smells" into a lie.
 // Snapshot the count and fail if it ever increases — new violations get fixed, not appended.
 // Ratchet DETEKT_BASELINE_CEILING down (never up) as the count drops.
-val detektBaselineCeiling = 424
+val detektBaselineCeiling = 423
 tasks.register("checkDetektBaseline") {
     description = "Fails if detekt-baseline.xml grows beyond the recorded ceiling ($detektBaselineCeiling)."
     group = "verification"
