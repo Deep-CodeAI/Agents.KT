@@ -5,13 +5,9 @@ import agents_engine.core.Decision
 import agents_engine.core.Skill
 import agents_engine.generation.Generable
 import agents_engine.generation.LenientJsonParser
-import agents_engine.generation.constructFromMap
-import agents_engine.generation.jsonSchema
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
-import kotlin.reflect.KClass
-import agents_engine.generation.hasGenerableAnnotation
 import agents_engine.generation.toLlmInput
 
 /**
@@ -51,32 +47,6 @@ import agents_engine.generation.toLlmInput
  *   [McpServerAuth.TrustedLocal] accepts loopback clients and rejects
  *   non-local clients; bearer auth is available for network-reachable use.
  */
-/**
- * #1796 — a server-side prompt registration. Mirrors the MCP wire shape
- * for prompts: a name, description, argument spec, and a render closure
- * that turns the call-time args map into the prompt text.
- */
-internal data class RegisteredPrompt(
-    val name: String,
-    val description: String,
-    val arguments: List<McpPromptArgument>,
-    val render: (Map<String, Any?>) -> String,
-)
-
-/**
- * #1810 — a server-side resource registration. Mirrors the MCP wire
- * shape for resources: URI (the addressable handle), display name,
- * optional description and MIME type, and a `read` closure invoked on
- * `resources/read` to produce the resource's text content.
- */
-internal data class RegisteredResource(
-    val uri: String,
-    val name: String,
-    val description: String?,
-    val mimeType: String?,
-    val read: () -> String,
-)
-
 class McpServer private constructor(
     val agent: Agent<*, *>,
     private val exposedSkills: List<ExposedSkill>,
@@ -452,123 +422,6 @@ class McpServer private constructor(
                 toolPolicy = builder.toolPolicy,
             )
         }
-    }
-}
-
-class McpExposeBuilder internal constructor() {
-    var port: Int = 0  // 0 = auto-assign
-    /** Hard cap on inbound request body size. See #851. */
-    var maxRequestBytes: Long = McpServer.DEFAULT_MAX_REQUEST_BYTES
-    /** Inbound auth for HTTP-hosted McpServer requests. Stdio uses local process identity. */
-    var auth: McpServerAuth = McpServerAuth.TrustedLocal
-    /** Optional HTTP Host allowlist. Values may include or omit the port. Empty disables the check. */
-    var allowedHosts: Set<String> = emptySet()
-    /** Optional HTTP Origin allowlist. Empty disables the check for trusted local clients. */
-    var originAllowlist: Set<String> = emptySet()
-    internal val exposedNames = mutableListOf<String>()
-    internal val prompts = mutableListOf<RegisteredPrompt>()
-    internal var toolPolicy: (ClientPrincipal, String) -> Boolean = { _, _ -> true }
-
-    fun expose(skillName: String) { exposedNames += skillName }
-
-    fun toolPolicy(block: (principal: ClientPrincipal, toolName: String) -> Boolean) {
-        toolPolicy = block
-    }
-
-    /**
-     * #1796 — register a server-side prompt template. [render] is invoked
-     * per `prompts/get` call with the client-supplied argument map; its
-     * String output becomes the prompt text returned to the client.
-     */
-    fun prompt(
-        name: String,
-        description: String,
-        arguments: List<McpPromptArgument> = emptyList(),
-        render: (Map<String, Any?>) -> String,
-    ) {
-        require(prompts.none { it.name == name }) {
-            "Prompt \"$name\" already registered on this McpServer."
-        }
-        prompts += RegisteredPrompt(name, description, arguments, render)
-    }
-
-    internal val resources = mutableListOf<RegisteredResource>()
-
-    /**
-     * #1810 — register a server-side resource. [content] is invoked
-     * per `resources/read` call; its String return becomes the
-     * resource's text content. Use a static return for static
-     * resources; pass a closure that reads from disk/db/etc. for
-     * dynamic content.
-     */
-    fun resource(
-        uri: String,
-        name: String,
-        description: String? = null,
-        mimeType: String? = null,
-        content: () -> String,
-    ) {
-        require(resources.none { it.uri == uri }) {
-            "Resource uri \"$uri\" already registered on this McpServer."
-        }
-        resources += RegisteredResource(uri, name, description, mimeType, content)
-    }
-}
-
-internal class ExposedSkill private constructor(
-    val skill: Skill<*, *>,
-    private val inputBuilder: (Map<String, Any?>) -> Any?,
-    private val schema: Map<String, Any?>,
-) {
-    fun toMcpDescriptor(): Map<String, Any?> = buildMap {
-        put("name", skill.name)
-        put("description", skill.description)
-        put("inputSchema", schema)
-    }
-
-    fun toMcpToolInfo(): McpToolInfo =
-        McpToolInfo(name = skill.name, description = skill.description, inputSchema = schema)
-
-    fun deserializeInput(args: Map<String, Any?>): Any? = inputBuilder(args)
-
-    companion object {
-        fun of(skill: Skill<*, *>): ExposedSkill {
-            val inType = skill.inType
-            return when {
-                inType == String::class -> ExposedSkill(
-                    skill = skill,
-                    inputBuilder = { args ->
-                        args["input"] as? String
-                            ?: error("tool '${skill.name}' expects {\"input\": string}; got: $args")
-                    },
-                    schema = mapOf(
-                        "type" to "object",
-                        "properties" to mapOf("input" to mapOf("type" to "string")),
-                        "required" to listOf("input"),
-                    ),
-                )
-                // #1718: cache-aware probe, reflection-free when KSP generated
-                // the companion. Falls through to wrapped reflection otherwise.
-                inType.hasGenerableAnnotation() -> ExposedSkill(
-                    skill = skill,
-                    inputBuilder = { args ->
-                        @Suppress("UNCHECKED_CAST")
-                        (inType as KClass<Any>).constructFromMap(args)
-                            ?: error("tool '${skill.name}' could not deserialize @Generable ${inType.simpleName} from: $args")
-                    },
-                    schema = parseSchema(inType.jsonSchema()),
-                )
-                else -> throw IllegalArgumentException(
-                    "Skill \"${skill.name}\" has unsupported IN type ${inType.simpleName}. " +
-                        "McpServer only exposes skills whose IN is String or a @Generable class."
-                )
-            }
-        }
-
-        @Suppress("UNCHECKED_CAST")
-        private fun parseSchema(json: String): Map<String, Any?> =
-            (LenientJsonParser.parse(json) as? Map<String, Any?>)
-                ?: mapOf("type" to "object")
     }
 }
 
