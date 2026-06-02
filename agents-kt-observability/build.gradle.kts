@@ -37,3 +37,15 @@ kotlin {
 tasks.test {
     useJUnitPlatform()
 }
+
+// #3089 (de-slop #3083) — the audit-ledger tamper-evidence slice of the root `securityCheck`
+// aggregate gate. Runs the Merkle-chain verify() tests on their own so the security gate can
+// target them directly.
+tasks.register<Test>("securityTest") {
+    description = "Runs the tamper-evident audit-ledger (ToolAuditLedger) tests."
+    group = "verification"
+    useJUnitPlatform()
+    classpath = sourceSets.test.get().runtimeClasspath
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    filter { includeTestsMatching("agents_engine.observability.ToolAuditLedgerTest") }
+}

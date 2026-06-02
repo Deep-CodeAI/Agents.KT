@@ -4,6 +4,20 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — explicit `securityCheck` gate, `checkDetektBaseline` burndown, and TESTING.md (#3089, de-slop #3083)
+
+- New **`securityCheck`** aggregate task makes the deterministic security suite addressable on its
+  own — sandbox write-confinement (`ProcessSandbox`: Seatbelt / bwrap / firejail / fallback), tool-
+  policy enforcement (#1916), snapshot manifest guard, the arg-size cap (#2888), the tamper-evident
+  audit ledger (`:agents-kt-observability:securityTest`), and the static tool-body rules
+  (`:agents-kt-detekt:test` + `detekt`). OS-specific confinement skips cleanly off-platform; run
+  `securityCheck` on a macOS job to exercise Seatbelt in CI.
+- New **`checkDetektBaseline`** task (wired into `check`) fails if `detekt-baseline.xml` grows beyond
+  the recorded ceiling (424) — the baseline may only shrink, so new violations get fixed rather than
+  grandfathered.
+- New **[`TESTING.md`](TESTING.md)** documents, honestly, what the default gate runs and excludes
+  (`live-llm` / `live-mcp` / `interactive` are out; `live-cloud-api` is deliberately in), the
+  security gate, the OS-specific confinement matrix, and the baseline ratchet.
 ### Added — `checkPublishedVersion` release gate + release runbook (#3084, de-slop #3083)
 
 - New `checkPublishedVersion` Gradle task HEADs Maven Central for `ai.deep-code:agents-kt` **and**
@@ -35,7 +49,6 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
   first skill by registration order. An "auditable / explicit boundaries" runtime must not pick a
   production route implicitly. **Behavior change:** code that relied on silent first-match must add
   an explicit selector or a model. Single-candidate, selector, and model-routed paths are unchanged.
-
 ## [0.7.2] — 2026-06-01
 
 **Tool-security hardening** — the self-contained first phase of the capability-ABI epic (#2882),
