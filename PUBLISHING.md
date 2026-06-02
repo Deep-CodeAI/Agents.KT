@@ -1,5 +1,11 @@
 # Publishing to Maven Central
 
+> **Ordering matters.** This document covers the *mechanics* (GPG, bundle, upload). For the
+> *sequence* a release must follow — and the rule "never advertise a version that isn't on Central
+> yet" — see [`docs/RELEASE_RUNBOOK.md`](docs/RELEASE_RUNBOOK.md). After uploading, run
+> `./gradlew checkPublishedVersion` to confirm the version is resolvable before bumping the README
+> or announcing.
+
 ## Prerequisites
 
 1. **Sonatype account** — register at [central.sonatype.com](https://central.sonatype.com)

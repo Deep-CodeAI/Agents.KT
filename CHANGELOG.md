@@ -4,6 +4,19 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `checkPublishedVersion` release gate + release runbook (#3084, de-slop #3083)
+
+- New `checkPublishedVersion` Gradle task HEADs Maven Central for `ai.deep-code:agents-kt` **and**
+  `agents-kt-ksp` at the current project version and fails unless both resolve (HTTP 200). It is
+  **not** wired into `check` — it needs network and would (correctly) fail on an unreleased version
+  during dev — so it's the manual last gate before anything user-facing names a new version.
+  Override the base URL with `-PcentralBaseUrl=…`. Complements `checkReadmeVersion` (#2873): one
+  stops the README drifting from the build, the other stops the build advertising a version Central
+  can't serve — the exact drift (README/Gradle at `0.7.2` while Central served `0.7.1`) an external
+  review flagged.
+- New [`docs/RELEASE_RUNBOOK.md`](docs/RELEASE_RUNBOOK.md) pins the release ordering
+  (bump → build → bundle → upload → **confirm resolvable** → only then advertise/tag).
+
 ### Changed — invocation parameters bundled into `RunRequest` (#3088 stage 1, de-slop #3083)
 
 - The internal `Agent.invokeSuspendForSession` entry point no longer carries an accreted list of
