@@ -4,6 +4,18 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Fixed — bound nested agent recursion with `maxAgentDepth` (#3377, security)
+
+- Budgets bounded a single agentic loop, but a tool that re-invokes an agent (Swarm `absorb`,
+  agent-as-tool) spun up a fresh loop with a fresh budget — so a self-re-entering agent (A→A) or a
+  cycle (A→B→A) recursed one full LLM loop per level until `StackOverflowError`, a DoS / runaway-cost
+  vector (triggerable e.g. by prompt injection into a tool result). Now `AgentRuntimeContext` carries
+  a nested-invocation `depth` (incremented in `newRuntimeContext`), and `budget { maxAgentDepth }`
+  (default **16**) is enforced at the invocation chokepoint: exceeding it throws
+  `BudgetExceededException(BudgetReason.AGENT_DEPTH)` **before** the over-deep loop starts — fast, no
+  extra LLM calls, no overflow. An unconditional safety stop (not extendable via `onBudgetExceeded`),
+  and budget caps now bypass the `onError` tool-recovery ladder so a nested cap can't be swallowed.
+
 ### Changed — AgenticLoop decomposition: extract rendering + coercion (#3376 batch 1)
 
 - First slice of breaking up the 1369-line `AgenticLoop.kt` / 765-line `executeAgentic`. Extracted

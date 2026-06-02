@@ -3,6 +3,9 @@ package agents_engine.model
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
+// #3377 — default nested agent-invocation depth cap (see [BudgetConfig.maxAgentDepth]).
+internal const val DEFAULT_MAX_AGENT_DEPTH = 16
+
 /**
  * `agents_engine/model/BudgetConfig.kt` — six budget caps for an agentic
  * invocation, the matching builder, and the [BudgetReason] enum +
@@ -53,6 +56,13 @@ data class BudgetConfig(
     val maxTokens: Int? = null,
     val maxConsecutiveSameTool: Int? = null,
     val maxToolArgsBytes: Long? = null,
+    /**
+     * #3377 — hard cap on nested agent-invocation depth (a tool re-invoking an agent: Swarm
+     * `absorb`, agent-as-tool). 0 = top-level only; the default ([DEFAULT_MAX_AGENT_DEPTH]) allows
+     * shallow legitimate nesting while stopping a self-re-entering or cyclic agent from recursing
+     * unbounded. Like `perToolTimeout`, an **unconditional** safety stop — not extendable.
+     */
+    val maxAgentDepth: Int = DEFAULT_MAX_AGENT_DEPTH,
 ) {
     /**
      * #2805 — render a short, deterministic "what differs from defaults"
@@ -76,6 +86,7 @@ data class BudgetConfig(
             if (maxTokens != d.maxTokens) add("maxTokens=$maxTokens")
             if (maxConsecutiveSameTool != d.maxConsecutiveSameTool) add("maxConsecutiveSameTool=$maxConsecutiveSameTool")
             if (maxToolArgsBytes != d.maxToolArgsBytes) add("maxToolArgsBytes=$maxToolArgsBytes")
+            if (maxAgentDepth != d.maxAgentDepth) add("maxAgentDepth=$maxAgentDepth")
         }
         return if (overrides.isEmpty()) "(defaults)" else overrides.joinToString(", ")
     }

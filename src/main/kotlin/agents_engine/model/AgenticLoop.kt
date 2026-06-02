@@ -1139,6 +1139,11 @@ private fun <IN> executeToolWithExecutionRecovery(
 ): Any? {
     try {
         return tool.executor(args)
+    } catch (budget: BudgetExceededException) {
+        // #3377 — a budget/safety cap that surfaces from inside a tool executor (e.g. a nested agent
+        // invocation hitting maxAgentDepth) is NOT a tool error to recover — it must propagate so the
+        // cap actually stops the run. Never let `onError` swallow it.
+        throw budget
     } catch (e: Throwable) {
         if (handler == null) throw e
 
