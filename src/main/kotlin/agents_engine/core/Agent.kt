@@ -15,7 +15,6 @@ import agents_engine.model.ToolErrorHandler
 import agents_engine.model.ToolsBuilder
 import agents_engine.model.buildBuiltInTools
 import agents_engine.model.executeAgentic
-import agents_engine.model.selectSkillByLlm
 import agents_engine.runtime.events.AgentEvent
 import java.util.logging.Level
 import java.util.logging.Logger
@@ -255,7 +254,14 @@ class Agent<IN, OUT>(
         private set
     var skillSelectionConfidenceThreshold: Double = 0.6
         private set
-    private var skillSelector: ((IN) -> String)? = null
+    internal var skillSelector: ((IN) -> String)? = null
+        private set
+
+    /**
+     * #3088 stage 2 — skill resolution (candidate filter, manual selector, LLM router, fail-loud
+     * ambiguity) lives in its own collaborator; [invokeSuspendForSession] delegates to it.
+     */
+    private val skillResolver = SkillResolver(this)
     private val beforeSkillInterceptors = mutableListOf<(String) -> Decision<String>>()
     private val beforeToolCallInterceptors =
         mutableListOf<(name: String, args: Map<String, Any?>) -> Decision<Map<String, Any?>>>()
@@ -819,10 +825,10 @@ class Agent<IN, OUT>(
     ): OUT {
         val runtimeContext = AgentRuntimeContext.current() ?: newRuntimeContext()
         try {
-            var skill = resolveSkill(input)
+            var skill = skillResolver.resolve(input)
             when (val decision = decideBeforeSkill(skill.name)) {
                 Decision.Proceed -> Unit
-                is Decision.ProceedWith -> skill = compatibleSkill(decision.replacement, input)
+                is Decision.ProceedWith -> skill = skillResolver.compatible(decision.replacement, input)
                 is Decision.Deny -> throw InterceptorDeniedException(
                     "Skill '${skill.name}' denied by interceptor: ${decision.reason}"
                 )
@@ -871,19 +877,6 @@ class Agent<IN, OUT>(
         }
     }
 
-    private fun compatibleSkill(skillName: String, input: IN): Skill<*, *> {
-        val selected = skills[skillName] ?: error(
-            "before-skill interceptor returned unknown skill name \"$skillName\". " +
-                "Available: ${skills.keys}"
-        )
-        check(selected.inType.java.isInstance(input) && selected.outType == outType) {
-            "before-skill interceptor returned incompatible skill \"$skillName\". " +
-                "Compatible skills for agent \"$name\" must accept the invocation input " +
-                "and produce ${outType.simpleName}."
-        }
-        return selected
-    }
-
     /**
      * #1698: Run the agentic loop with [promptOverride] in effect as the
      * system prompt, *without* mutating the agent's baked-in [prompt].
@@ -914,63 +907,6 @@ class Agent<IN, OUT>(
             ) { /* no-op onSkillStarted */ }
         }
     }
-
-    private suspend fun resolveSkill(input: IN): Skill<*, *> {
-        val candidates = skills.values.filter {
-            it.inType.java.isInstance(input) && it.outType == outType
-        }
-
-        skillSelector?.let { selector ->
-            val selectedName = selector(input)
-            val selected = skills[selectedName] ?: error(
-                "skillSelection returned unknown skill name \"$selectedName\". " +
-                    "Available: ${skills.keys}"
-            )
-            check(selected in candidates) {
-                "skillSelection returned incompatible skill \"$selectedName\". " +
-                    "Compatible skills for agent \"$name\": ${candidates.map { it.name }}"
-            }
-            return selected
-        }
-
-        return when {
-            candidates.isEmpty() -> error(
-                "Agent \"$name\" has no skill for ${outType.simpleName}. " +
-                    "Add a skill with implementedBy { } block."
-            )
-            candidates.size == 1 -> candidates.single()
-            modelConfig != null -> {
-                val route = selectSkillByLlm(this, candidates, input)
-                if (route.confidence < skillSelectionConfidenceThreshold) {
-                    throw SkillRoutingException(
-                        "Router uncertain (confidence=${route.confidence}, threshold=$skillSelectionConfidenceThreshold). " +
-                            "Rationale: ${route.rationale}"
-                    )
-                }
-                val selected = candidates.find { it.name == route.skillName }
-                    ?: throw SkillRoutingException(
-                        "LLM router selected unknown skill \"${route.skillName}\". " +
-                            "Available: ${candidates.map { it.name }}. Rationale: ${route.rationale}"
-                    )
-                if (route.rationale.isNotEmpty()) routerRationaleListener?.invoke(route.rationale)
-                selected
-            }
-            else -> ambiguousSkillRoutingError(candidates)
-        }
-    }
-
-    /**
-     * Multiple compatible skills, but no selector and no model to choose between them.
-     * Fail loud rather than silently routing to the first by registration order — routing
-     * in an auditable runtime must be explicit (#3087).
-     */
-    private fun ambiguousSkillRoutingError(candidates: List<Skill<*, *>>): Nothing =
-        throw SkillRoutingException(
-            "Agent \"$name\" has ${candidates.size} compatible skills for ${outType.simpleName} " +
-                "(${candidates.joinToString { "\"${it.name}\"" }}) but no way to choose between them. " +
-                "Add an explicit skillSelection { } selector, or configure a model { } for LLM routing. " +
-                "Silent first-match routing is disallowed — routing must be explicit and auditable."
-        )
 
     fun skills(block: SkillsBuilder.() -> Unit) {
         checkNotFrozen()
