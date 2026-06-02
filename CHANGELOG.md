@@ -4,6 +4,15 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — AgenticLoop decomposition: extract `ModelClientFactory` (#3376 batch 2)
+
+- Moved the provider/client-construction cluster out of `AgenticLoop` into a new `internal`
+  `ModelClientFactory` — `defaultClientFor` (the per-provider dispatch), `defaultClientForTesting`
+  (the #2385 seam), `semconvProviderName`, and `constrainedOutputSchemaFor`. The first three were
+  `private` (only `defaultClientForTesting` was reachable); they now have a direct unit test
+  (`ModelClientFactoryTest`, TDD RED→GREEN). `AgenticLoop` delegates; behavior-preserving, no public
+  API change.
+
 ## [0.7.21] — 2026-06-02
 
 **Security + de-slop release.** Headlined by a nested-agent recursion bound (#3377) and the explicit

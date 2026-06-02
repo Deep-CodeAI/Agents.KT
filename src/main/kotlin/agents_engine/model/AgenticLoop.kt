@@ -9,7 +9,6 @@ import agents_engine.core.SkillRoute
 import agents_engine.core.withAgentRuntimeContext
 import agents_engine.generation.constructFromMap
 import agents_engine.generation.fromLlmOutput
-import agents_engine.generation.hasGenerableAnnotation
 import agents_engine.generation.jsonSchema
 import agents_engine.generation.toLlmInput
 import agents_engine.runtime.events.AgentEvent
@@ -212,8 +211,9 @@ internal suspend fun <IN> executeAgentic(
         agent.manifestHash?.let { "agents-kt:${agent.name}:${it.take(MANIFEST_HASH_PREFIX_LEN)}" }
             ?: "agents-kt:${agent.name}"
     } else null
-    val client = config.client ?: defaultClientFor(config, allToolDefs, cacheRoutingKey, agent.toolChoice)
-    val constrainedOutputSchema = constrainedOutputSchemaFor(agent.outType, skill, client)
+    val client = config.client
+        ?: ModelClientFactory.defaultClientFor(config, allToolDefs, cacheRoutingKey, agent.toolChoice)
+    val constrainedOutputSchema = ModelClientFactory.constrainedOutputSchemaFor(agent.outType, skill, client)
 
     val hasUntrustedTools = allToolDefs.any { it.untrustedOutput }
     val systemContent = buildString {
@@ -557,7 +557,7 @@ internal suspend fun <IN> executeAgentic(
                 agentId = agent.name,
                 skillName = skill.name,
                 turnIndex = turnIndex,
-                provider = semconvProviderName(config.provider),
+                provider = ModelClientFactory.semconvProviderName(config.provider),
                 model = config.name,
                 temperature = config.temperature,
             )
@@ -577,7 +577,7 @@ internal suspend fun <IN> executeAgentic(
                 agentId = agent.name,
                 skillName = skill.name,
                 turnIndex = turnIndex,
-                provider = responseUsage?.provider ?: semconvProviderName(config.provider),
+                provider = responseUsage?.provider ?: ModelClientFactory.semconvProviderName(config.provider),
                 model = responseUsage?.model ?: config.name,
                 responseType = when (response) {
                     is LlmResponse.Text -> "text"
@@ -856,15 +856,6 @@ internal suspend fun <IN> executeAgentic(
     }
 }
 
-private fun semconvProviderName(provider: ModelProvider): String =
-    when (provider) {
-        ModelProvider.ANTHROPIC -> "anthropic"
-        ModelProvider.DEEPSEEK -> "deepseek"
-        ModelProvider.OPENAI -> "openai"
-        ModelProvider.OLLAMA -> "ollama"
-        ModelProvider.KIMI -> "kimi"
-        ModelProvider.OPENROUTER -> "openrouter"
-    }
 
 private suspend fun <IN> executeToolWithBudgetHandlingEvents(
     agent: Agent<IN, *>,
@@ -924,7 +915,7 @@ suspend fun <IN> selectSkillByLlm(
 
     // Skill-routing round-trip is its own LLM call; caching here is rarely
     // useful (skill descriptions are highly variable), so no routing key.
-    val client = config.client ?: defaultClientFor(config, emptyList(), promptCacheKey = null)
+    val client = config.client ?: ModelClientFactory.defaultClientFor(config, emptyList(), promptCacheKey = null)
     val routeSchema = if (client.supportsConstrainedDecoding()) {
         JsonSchema("SkillRoute", SkillRoute::class.jsonSchema())
     } else null
@@ -1178,130 +1169,8 @@ private fun <IN> executeToolWithExecutionRecovery(
 // #3376 — formatEscalatedToolError / formatDeniedToolError / wrapUntrustedToolResult /
 // renderToolResultForLlm moved to ToolResultRendering.kt; parseOutput moved to OutputCoercion.kt.
 
-private fun constrainedOutputSchemaFor(
-    outType: KClass<*>,
-    skill: Skill<*, *>,
-    client: ModelClient,
-): JsonSchema? {
-    if (!client.supportsConstrainedDecoding()) return null
-    if (skill.outputTransformer != null) return null
-    if (!outType.hasGenerableAnnotation()) return null
-    return JsonSchema(
-        name = outType.simpleName ?: "structured_output",
-        schema = outType.jsonSchema(),
-    )
-}
-
-// #1644 / #1656 — provider dispatch for the default client. Mirrors the prior
-// eager `OllamaClient(...)` construction; user-supplied `config.client` still wins.
-// LongMethod-suppressed: this is a flat `when` dispatch table that grows one
-// construction block per provider (six now) — long but low-complexity by design.
-@Suppress("LongMethod")
-private fun defaultClientFor(
-    config: ModelConfig,
-    tools: List<ToolDef>,
-    promptCacheKey: String? = null,
-    // #2479 part 2 — agent.toolChoice flows through each adapter ctor. The
-    // adapters translate to their provider's wire shape (or no-op + warn on
-    // Ollama, which has no native tool_choice).
-    toolChoice: ToolChoice = ToolChoice.Auto,
-): ModelClient =
-    when (config.provider) {
-        ModelProvider.OLLAMA -> OllamaClient(
-            host = config.host,
-            port = config.port,
-            model = config.name,
-            temperature = config.temperature,
-            tools = tools,
-            // #2850 — null falls back to the adapter's DEFAULT_REQUEST_TIMEOUT
-            // (300s on every built-in adapter since the hotfix bump). The
-            // DSL field defaults to null so existing callers are unaffected.
-            requestTimeout = config.requestTimeout ?: OllamaClient.DEFAULT_REQUEST_TIMEOUT,
-            connectTimeout = config.connectTimeout ?: OllamaClient.DEFAULT_CONNECT_TIMEOUT,
-            reasoning = config.reasoning,
-            toolChoice = toolChoice,
-            httpClient = config.httpClient,
-        )
-        ModelProvider.ANTHROPIC -> ClaudeClient(
-            apiKey = config.apiKey
-                ?: error("Agent uses Claude but ModelConfig.apiKey is null — set apiKey in the model { } block"),
-            model = config.name,
-            temperature = config.temperature,
-            maxTokens = config.maxTokens,
-            tools = tools,
-            baseUrl = config.anthropicBaseUrl,
-            requestTimeout = config.requestTimeout ?: ClaudeClient.DEFAULT_REQUEST_TIMEOUT,
-            connectTimeout = config.connectTimeout ?: ClaudeClient.DEFAULT_CONNECT_TIMEOUT,
-            reasoning = config.reasoning,
-            toolChoice = toolChoice,
-            httpClient = config.httpClient,
-        )
-        ModelProvider.OPENAI -> OpenAiClient(
-            apiKey = config.apiKey
-                ?: error("Agent uses OpenAI but ModelConfig.apiKey is null — set apiKey in the model { } block"),
-            model = config.name,
-            temperature = config.temperature,
-            maxTokens = config.maxTokens,
-            tools = tools,
-            baseUrl = config.openAiBaseUrl,
-            requestTimeout = config.requestTimeout ?: OpenAiClient.DEFAULT_REQUEST_TIMEOUT,
-            connectTimeout = config.connectTimeout ?: OpenAiClient.DEFAULT_CONNECT_TIMEOUT,
-            reasoning = config.reasoning,
-            // #2659 — OpenAI automatic prefix caching: pass routing key when
-            // the agent has caching enabled (computed at the call site).
-            promptCacheKey = promptCacheKey,
-            toolChoice = toolChoice,
-            httpClient = config.httpClient,
-        )
-        ModelProvider.DEEPSEEK -> DeepSeekClient(
-            apiKey = config.apiKey
-                ?: error("Agent uses DeepSeek but ModelConfig.apiKey is null — set apiKey in the model { } block"),
-            model = config.name,
-            temperature = config.temperature,
-            maxTokens = config.maxTokens,
-            tools = tools,
-            baseUrl = config.deepSeekBaseUrl,
-            requestTimeout = config.requestTimeout ?: OpenAiClient.DEFAULT_REQUEST_TIMEOUT,
-            connectTimeout = config.connectTimeout ?: OpenAiClient.DEFAULT_CONNECT_TIMEOUT,
-            reasoning = config.reasoning,
-            toolChoice = toolChoice,
-            httpClient = config.httpClient,
-        )
-        // #2697 — Kimi (Moonshot AI) Chat Completions; thin OpenAI-compatible
-        // subclass, identical wiring to DeepSeek but with the Moonshot base URL.
-        ModelProvider.KIMI -> KimiClient(
-            apiKey = config.apiKey
-                ?: error("Agent uses Kimi but ModelConfig.apiKey is null — load it from .secrets/kimi-key"),
-            model = config.name,
-            temperature = config.temperature,
-            maxTokens = config.maxTokens,
-            tools = tools,
-            baseUrl = config.kimiBaseUrl,
-            reasoning = config.reasoning,
-            httpClient = config.httpClient,
-        )
-        // #2701 — OpenRouter is a thin OpenAI-compatible aggregator. Same
-        // wiring as DeepSeek/Kimi but with the two optional attribution
-        // headers carried through ModelConfig.
-        ModelProvider.OPENROUTER -> OpenRouterClient(
-            apiKey = config.apiKey
-                ?: error("Agent uses OpenRouter but ModelConfig.apiKey is null"),
-            model = config.name,
-            temperature = config.temperature,
-            maxTokens = config.maxTokens,
-            tools = tools,
-            baseUrl = config.openRouterBaseUrl,
-            reasoning = config.reasoning,
-            httpReferer = config.openRouterHttpReferer,
-            xTitle = config.openRouterXTitle,
-            httpClient = config.httpClient,
-        )
-    }
-
-// #2385 — internal seam exposing the otherwise-private defaultClientFor dispatch
-// so tests can assert ModelConfig.httpClient forwarding without reflection.
-internal fun defaultClientForTesting(config: ModelConfig, tools: List<ToolDef>): ModelClient =
-    defaultClientFor(config, tools)
+// #3376 — semconvProviderName / constrainedOutputSchemaFor / defaultClientFor /
+// defaultClientForTesting moved to ModelClientFactory.kt.
 
 // #2804 — central emit helper for `AgentEvent.ToolCallFinished`. Replaces
 // four near-identical emit blocks (unknown-tool, denied, success, exception)
