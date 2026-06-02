@@ -1,3 +1,7 @@
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URI
+
 plugins {
     kotlin("jvm") version "2.3.21"
     `maven-publish`
@@ -371,6 +375,43 @@ tasks.register("checkReadmeVersion") {
 }
 
 tasks.named("check") { dependsOn("checkReadmeVersion") }
+
+// #3084 (de-slop #3083): the README/Gradle drift guard (`checkReadmeVersion`) can't catch the
+// drift that actually bit us — advertising a version that isn't on Central yet. This task HEADs
+// the Central artifact URL for the *current* project version and fails if it isn't resolvable.
+// Deliberately NOT wired into `check`: it needs network and would (correctly) fail during normal
+// dev on an unreleased version. Run it manually as the last pre-announce gate:
+//   ./gradlew checkPublishedVersion
+// See docs/RELEASE_RUNBOOK.md for where it sits in the release order.
+tasks.register("checkPublishedVersion") {
+    description = "Fails unless the current project version is resolvable on Maven Central (manual, pre-announce)."
+    group = "verification"
+    val projectVersion = project.version.toString()
+    // Override for staging/mirror checks: -PcentralBaseUrl=https://repo1.maven.org/maven2
+    val baseUrl = (findProperty("centralBaseUrl") as String?)?.trimEnd('/')
+        ?: "https://repo1.maven.org/maven2"
+    val coordinates = listOf("agents-kt", "agents-kt-ksp")
+    doLast {
+        val missing = coordinates.filterNot { artifact ->
+            val url = "$baseUrl/ai/deep-code/$artifact/$projectVersion/$artifact-$projectVersion.pom"
+            val conn = (URI(url).toURL().openConnection() as HttpURLConnection).apply {
+                requestMethod = "HEAD"
+                connectTimeout = 10_000
+                readTimeout = 10_000
+                instanceFollowRedirects = true
+            }
+            val code = try { conn.responseCode } catch (e: IOException) { -1 } finally { conn.disconnect() }
+            (code == 200).also { ok ->
+                logger.lifecycle("checkPublishedVersion: $artifact:$projectVersion -> ${if (ok) "published" else "MISSING (HTTP $code)"}")
+            }
+        }
+        check(missing.isEmpty()) {
+            "Version $projectVersion is not resolvable on Central for: ${missing.joinToString()}. " +
+                "Do NOT advertise or announce $projectVersion until every artifact returns HTTP 200 " +
+                "from $baseUrl — publish the bundle first (docs/RELEASE_RUNBOOK.md, #3084)."
+        }
+    }
+}
 
 tasks.register<Test>("integrationTest") {
     description = "Runs live-llm integration tests (Ollama / Ollama Cloud). Hosted-API live tests run in default :test under live-cloud-api."
