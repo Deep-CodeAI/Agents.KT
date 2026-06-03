@@ -1,20 +1,19 @@
 package agents_engine.mcp
 
 import agents_engine.core.Agent
-import agents_engine.core.Decision
-import agents_engine.core.Skill
-import agents_engine.generation.Generable
 import agents_engine.generation.LenientJsonParser
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
-import agents_engine.generation.toLlmInput
 
 /**
  * `agents_engine/mcp/McpServer.kt` — exposes an [Agent]'s skills as MCP
- * tools (and prompts/resources per #1796) over Streamable HTTP. Stdio
- * hosting reuses the JSON-RPC dispatcher through [McpStdioServer]. Built
- * via `McpServer.from(agent) { expose(...) }`. Scope:
+ * tools (and prompts/resources per #1796) over Streamable HTTP. The
+ * transport-agnostic JSON-RPC protocol core lives in [McpDispatcher] (#2795);
+ * this class owns only HTTP intake — lifecycle, inbound auth, Host+Origin
+ * validation, body framing — and hands parsed requests to the dispatcher.
+ * Stdio hosting ([McpStdioServer]) drives the same dispatcher directly.
+ * Built via `McpServer.from(agent) { expose(...) }`. Scope:
  * HTTP (JDK `HttpServer`) with inbound auth / Host+Origin validation /
  * per-principal tool policy; non-agentic skills only (declared via
  * `implementedBy { }`); skill `IN` must be `String` or a `@Generable`
@@ -37,8 +36,8 @@ import agents_engine.generation.toLlmInput
  * ```
  *
  * Scope:
- * - HTTP transport here (uses JDK [HttpServer]); [McpStdioServer] reuses this
- *   class's JSON-RPC dispatcher for server-side stdio.
+ * - HTTP transport here (uses JDK [HttpServer]); [McpStdioServer] reuses the
+ *   shared [McpDispatcher] for server-side stdio.
  * - Non-agentic skills only (skills declared via `implementedBy { }`).
  *   Agentic skills require server-side LLM access — out of scope here.
  * - Skill `IN` must be `String` or a `@Generable` class. Other types rejected at [start].
@@ -48,19 +47,16 @@ import agents_engine.generation.toLlmInput
  *   non-local clients; bearer auth is available for network-reachable use.
  */
 class McpServer private constructor(
-    val agent: Agent<*, *>,
-    private val exposedSkills: List<ExposedSkill>,
+    private val dispatcher: McpDispatcher,
     private val portRequest: Int,
     private val maxRequestBytes: Long = DEFAULT_MAX_REQUEST_BYTES,
-    private val registeredPrompts: List<RegisteredPrompt> = emptyList(),
-    private val registeredResources: List<RegisteredResource> = emptyList(),
     private val auth: McpServerAuth = McpServerAuth.TrustedLocal,
     private val allowedHosts: Set<String> = emptySet(),
     private val originAllowlist: Set<String> = emptySet(),
-    private val toolPolicy: (ClientPrincipal, String) -> Boolean = { _, _ -> true },
 ) {
     private var http: HttpServer? = null
-    private val sessionId: String = java.util.UUID.randomUUID().toString()
+
+    val agent: Agent<*, *> get() = dispatcher.agent
 
     val url: String
         get() = http?.let { "http://localhost:${it.address.port}/mcp" }
@@ -79,79 +75,71 @@ class McpServer private constructor(
 
     fun isRunning(): Boolean = http != null
 
-    fun snapshotFor(principal: ClientPrincipal): McpServerInfo {
-        val allowedTools = exposedSkills.filter { isToolAllowed(principal, it.skill.name) }
-        return McpServerInfo(
-            name = SERVER_NAME,
-            version = SERVER_VERSION,
-            protocolVersion = MCP_PROTOCOL_VERSION,
-            capabilities = McpCapabilities(
-                tools = allowedTools
-                    .takeIf { it.isNotEmpty() }
-                    ?.let { McpToolsCapability(listChanged = false) },
-                prompts = registeredPrompts
-                    .takeIf { it.isNotEmpty() }
-                    ?.let { McpPromptsCapability(listChanged = false) },
-                resources = registeredResources
-                    .takeIf { it.isNotEmpty() }
-                    ?.let { McpResourcesCapability(listChanged = false, subscribe = false) },
-            ),
-            tools = allowedTools
-                .takeIf { it.isNotEmpty() }
-                ?.map { it.toMcpToolInfo() },
-            prompts = registeredPrompts
-                .takeIf { it.isNotEmpty() }
-                ?.map { it.toMcpPromptInfo() },
-            resources = registeredResources
-                .takeIf { it.isNotEmpty() }
-                ?.map { it.toMcpResourceInfo() },
-        )
-    }
+    fun snapshotFor(principal: ClientPrincipal): McpServerInfo = dispatcher.snapshotFor(principal)
 
     private fun handle(exchange: HttpExchange) {
         try {
             val principal = authenticate(exchange) ?: return
             if (!validateAllowedHost(exchange) || !validateAllowedOrigin(exchange)) return
-            if (exchange.requestMethod != "POST") {
-                exchange.responseHeaders.add("Allow", "POST")
-                respond(exchange, 405, """{"error":"Method Not Allowed — only POST is supported"}""")
-                return
-            }
-            val ct = exchange.requestHeaders.getFirst("Content-Type")
-            if (ct == null || !ct.startsWith("application/json")) {
-                respond(exchange, 415, """{"error":"Unsupported Media Type — expected application/json"}""")
-                return
-            }
-            // #851 — bound the request body before reading. Honors Content-Length when
-            // present; falls back to a length-bounded read otherwise. Avoids OOM from
-            // a same-host process posting a multi-GB body to the loopback server.
-            val declaredLength = exchange.requestHeaders.getFirst("Content-Length")?.toLongOrNull()
-            if (declaredLength != null && declaredLength > maxRequestBytes) {
-                respond(exchange, 413, """{"error":"Payload Too Large — limit is $maxRequestBytes bytes"}""")
-                return
-            }
-            val cap = maxRequestBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-            val bodyBytes = exchange.requestBody.use { it.readNBytes(cap + 1) }
-            if (bodyBytes.size > cap) {
-                respond(exchange, 413, """{"error":"Payload Too Large — limit is $maxRequestBytes bytes"}""")
-                return
-            }
+            if (!validateRequest(exchange)) return
+            val bodyBytes = readBoundedBody(exchange) ?: return
             val bodyText = String(bodyBytes, Charsets.UTF_8)
             val request = LenientJsonParser.parse(bodyText) as? Map<*, *>
                 ?: return respond(exchange, 400, "{}")
             val method = request["method"] as? String ?: return respond(exchange, 400, "{}")
 
+            // HTTP framing that needs the parsed method before business dispatch:
+            // notifications / id-less requests are acknowledged with 202, and the
+            // session id is surfaced on the initialize response.
             if (!request.containsKey("id") || method.startsWith("notifications/")) {
                 respond(exchange, 202, "")
                 return
             }
-            if (method == "initialize") exchange.responseHeaders.add("Mcp-Session-Id", sessionId)
-            respond(exchange, 200, dispatchJsonRpcRequest(request, principal))
+            if (method == "initialize") exchange.responseHeaders.add("Mcp-Session-Id", dispatcher.sessionId)
+            respond(exchange, 200, dispatcher.dispatchRequest(request, principal))
         } catch (e: Exception) {
             respond(exchange, 500, """{"error":${McpJson.encode(e.message ?: e.toString())}}""")
         } finally {
             exchange.close()
         }
+    }
+
+    /**
+     * Method + content-type intake guards. Responds (405 / 415) and returns false on rejection so
+     * [handle] stays short orchestration (#2795).
+     */
+    private fun validateRequest(exchange: HttpExchange): Boolean {
+        if (exchange.requestMethod != "POST") {
+            exchange.responseHeaders.add("Allow", "POST")
+            respond(exchange, 405, """{"error":"Method Not Allowed — only POST is supported"}""")
+            return false
+        }
+        val ct = exchange.requestHeaders.getFirst("Content-Type")
+        if (ct == null || !ct.startsWith("application/json")) {
+            respond(exchange, 415, """{"error":"Unsupported Media Type — expected application/json"}""")
+            return false
+        }
+        return true
+    }
+
+    /**
+     * #851 — bound the request body before reading. Honors Content-Length when present; falls back to
+     * a length-bounded read otherwise. Avoids OOM from a same-host process posting a multi-GB body to
+     * the loopback server. Responds 413 and returns null when the cap is exceeded (#2795).
+     */
+    private fun readBoundedBody(exchange: HttpExchange): ByteArray? {
+        val declaredLength = exchange.requestHeaders.getFirst("Content-Length")?.toLongOrNull()
+        if (declaredLength != null && declaredLength > maxRequestBytes) {
+            respond(exchange, 413, """{"error":"Payload Too Large — limit is $maxRequestBytes bytes"}""")
+            return null
+        }
+        val cap = maxRequestBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val bodyBytes = exchange.requestBody.use { it.readNBytes(cap + 1) }
+        if (bodyBytes.size > cap) {
+            respond(exchange, 413, """{"error":"Payload Too Large — limit is $maxRequestBytes bytes"}""")
+            return null
+        }
+        return bodyBytes
     }
 
     private fun authenticate(exchange: HttpExchange): ClientPrincipal? {
@@ -184,191 +172,6 @@ class McpServer private constructor(
         return false
     }
 
-    internal fun dispatchJsonRpc(bodyText: String): String? = try {
-        val request = JsonRpc.parseEnvelope(bodyText)
-            ?: return JsonRpc.encodeError(null, JsonRpcErrorCode.PARSE_ERROR, "Parse error")
-        if (request[JsonRpcWire.KEY_METHOD] !is String) {
-            return JsonRpc.encodeError(null, JsonRpcErrorCode.INVALID_REQUEST, "Missing method")
-        }
-        if (JsonRpc.isNotification(request)) return null
-        dispatchJsonRpcRequest(request, ClientPrincipal.TrustedLocal)
-    } catch (e: Exception) {
-        JsonRpc.encodeError(null, JsonRpcErrorCode.INTERNAL_ERROR, e.message ?: e.toString())
-    }
-
-    private fun dispatchJsonRpcRequest(request: Map<*, *>, principal: ClientPrincipal): String {
-        val method = request["method"] as? String
-            ?: return jsonRpcError(request["id"], JsonRpcErrorCode.INVALID_REQUEST, "Missing method")
-        val id = request["id"]
-        return when (method) {
-            "initialize" -> handleInitialize(id, request, principal)
-            "ping" -> jsonRpcResult(id, emptyMap<String, Any?>())
-            "tools/list" -> jsonRpcResult(id, mapOf(
-                "tools" to exposedSkills
-                    .filter { isToolAllowed(principal, it.skill.name) }
-                    .map { it.toMcpDescriptor() },
-                "nextCursor" to null,
-            ))
-            "tools/call" -> handleToolCall(id, request, principal)
-            "prompts/list" -> jsonRpcResult(id, mapOf(
-                "prompts" to registeredPrompts.map { it.toMcpDescriptor() },
-                "nextCursor" to null,
-            ))
-            "prompts/get" -> handlePromptGet(id, request)
-            "resources/list" -> jsonRpcResult(id, mapOf(
-                "resources" to registeredResources.map { it.toMcpDescriptor() },
-                "nextCursor" to null,
-            ))
-            "resources/read" -> handleResourceRead(id, request)
-            else -> jsonRpcError(id, JsonRpcErrorCode.METHOD_NOT_FOUND, "Method not found: $method")
-        }
-    }
-
-    private fun handleInitialize(id: Any?, request: Map<*, *>, principal: ClientPrincipal): String {
-        val params = request["params"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
-        val requested = params["protocolVersion"] as? String
-        if (requested != null && requested != MCP_PROTOCOL_VERSION) {
-            return jsonRpcError(
-                id,
-                JsonRpcErrorCode.INVALID_PARAMS,
-                "Unsupported protocolVersion: \"$requested\". Server speaks: \"$MCP_PROTOCOL_VERSION\".",
-            )
-        }
-        val capabilities = snapshotFor(principal).capabilities.toWireMap()
-        return jsonRpcResult(id, mapOf(
-            "protocolVersion" to MCP_PROTOCOL_VERSION,
-            "capabilities" to capabilities,
-            "serverInfo" to mapOf("name" to SERVER_NAME, "version" to SERVER_VERSION),
-        ))
-    }
-
-    private fun handlePromptGet(id: Any?, request: Map<*, *>): String {
-        val params = request["params"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
-        val name = params["name"] as? String
-            ?: return jsonRpcError(id, JsonRpcErrorCode.INVALID_PARAMS, "Missing prompt name")
-        val prompt = registeredPrompts.firstOrNull { it.name == name }
-            ?: return jsonRpcError(id, JsonRpcErrorCode.METHOD_NOT_FOUND, "Unknown prompt: $name")
-        @Suppress("UNCHECKED_CAST")
-        val args = (params["arguments"] as? Map<String, Any?>) ?: emptyMap()
-        return try {
-            val rendered = prompt.render(args)
-            jsonRpcResult(id, mapOf(
-                "description" to prompt.description,
-                "messages" to listOf(
-                    mapOf(
-                        "role" to "user",
-                        "content" to mapOf("type" to "text", "text" to rendered),
-                    ),
-                ),
-            ))
-        } catch (e: Exception) {
-            jsonRpcError(id, JsonRpcErrorCode.INTERNAL_ERROR, "Prompt '$name' rendering failed: ${e.message ?: e.toString()}")
-        }
-    }
-
-    private fun RegisteredPrompt.toMcpDescriptor(): Map<String, Any?> = buildMap {
-        put("name", name)
-        put("description", description)
-        if (arguments.isNotEmpty()) {
-            put("arguments", arguments.map { arg ->
-                buildMap<String, Any?> {
-                    put("name", arg.name)
-                    arg.description?.let { put("description", it) }
-                    put("required", arg.required)
-                }
-            })
-        }
-    }
-
-    private fun RegisteredPrompt.toMcpPromptInfo(): McpPromptInfo =
-        McpPromptInfo(name = name, description = description, arguments = arguments)
-
-    private fun handleResourceRead(id: Any?, request: Map<*, *>): String {
-        val params = request["params"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
-        val uri = params["uri"] as? String
-            ?: return jsonRpcError(id, JsonRpcErrorCode.INVALID_PARAMS, "Missing resource uri")
-        val resource = registeredResources.firstOrNull { it.uri == uri }
-            ?: return jsonRpcError(id, JsonRpcErrorCode.METHOD_NOT_FOUND, "Unknown resource uri: $uri")
-        return try {
-            val content = resource.read()
-            jsonRpcResult(id, mapOf(
-                "contents" to listOf(
-                    buildMap<String, Any?> {
-                        put("uri", resource.uri)
-                        resource.mimeType?.let { put("mimeType", it) }
-                        put("text", content)
-                    },
-                ),
-            ))
-        } catch (e: Exception) {
-            jsonRpcError(id, JsonRpcErrorCode.INTERNAL_ERROR, "Resource '$uri' read failed: ${e.message ?: e.toString()}")
-        }
-    }
-
-    private fun RegisteredResource.toMcpDescriptor(): Map<String, Any?> = buildMap {
-        put("uri", uri)
-        put("name", name)
-        description?.let { put("description", it) }
-        mimeType?.let { put("mimeType", it) }
-    }
-
-    private fun RegisteredResource.toMcpResourceInfo(): McpResourceInfo =
-        McpResourceInfo(uri = uri, name = name, description = description, mimeType = mimeType)
-
-    private fun handleToolCall(id: Any?, request: Map<*, *>, principal: ClientPrincipal): String {
-        val params = request["params"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
-        val name = params["name"] as? String
-            ?: return jsonRpcError(id, JsonRpcErrorCode.INVALID_PARAMS, "Missing tool name")
-        if (!isToolAllowed(principal, name)) {
-            return jsonRpcError(id, JsonRpcErrorCode.METHOD_NOT_FOUND, "Method not found")
-        }
-        val exposed = exposedSkills.firstOrNull { it.skill.name == name }
-            ?: return jsonRpcError(id, JsonRpcErrorCode.METHOD_NOT_FOUND, "Unknown tool: $name")
-        @Suppress("UNCHECKED_CAST")
-        val args = (params["arguments"] as? Map<String, Any?>) ?: emptyMap()
-        return try {
-            val effectiveArgs = when (val decision = agent.decideBeforeToolCall(name, args)) {
-                Decision.Proceed -> args
-                is Decision.ProceedWith -> decision.replacement
-                is Decision.Deny -> return jsonRpcResult(id, mcpToolResult(
-                    text = "ERROR: Tool '$name' denied by policy: ${decision.reason}",
-                    isError = true,
-                ))
-                is Decision.Substitute<*> -> return jsonRpcResult(id, mcpToolResult(
-                    text = decision.result?.toString() ?: "",
-                    isError = false,
-                ))
-            }
-            val input = exposed.deserializeInput(effectiveArgs)
-            @Suppress("UNCHECKED_CAST")
-            val output = (exposed.skill as Skill<Any?, Any?>).execute(input)
-            // #2483 — route through `toLlmInput` so `@Generable` outputs render
-            // as JSON instead of the Kotlin data-class debug form
-            // (`SearchPayload(text=Hello, source=wiki)`). String / Number /
-            // Boolean stay clean; non-`@Generable` types still fall back to
-            // `.toString()` (documented limitation — register a `@Generable`
-            // output type for typed MCP boundaries).
-            jsonRpcResult(id, mcpToolResult(toLlmInput(output), isError = false))
-        } catch (e: Exception) {
-            jsonRpcResult(id, mcpToolResult(e.message ?: e.toString(), isError = true))
-        }
-    }
-
-    private fun mcpToolResult(text: String, isError: Boolean): Map<String, Any?> =
-        mapOf(
-            "content" to listOf(mapOf("type" to "text", "text" to text)),
-            "isError" to isError,
-        )
-
-    // #2796 — thin instance-level wrappers around the shared envelope builders
-    // in [JsonRpc]. Keep the method names so the dispatcher body reads as
-    // before; the wire shape now flows through one source of truth.
-    private fun jsonRpcResult(id: Any?, result: Any?): String =
-        JsonRpc.encodeResult(id, result)
-
-    private fun jsonRpcError(id: Any?, code: Int, message: String): String =
-        JsonRpc.encodeError(id, code, message)
-
     private fun respond(exchange: HttpExchange, status: Int, body: String) {
         val bytes = body.toByteArray(Charsets.UTF_8)
         exchange.responseHeaders.add("Content-Type", "application/json")
@@ -376,60 +179,22 @@ class McpServer private constructor(
         if (bytes.isNotEmpty()) exchange.responseBody.use { it.write(bytes) }
     }
 
-    private fun isToolAllowed(principal: ClientPrincipal, toolName: String): Boolean =
-        runCatching { toolPolicy(principal, toolName) }.getOrDefault(false)
-
     companion object {
-        private const val SERVER_NAME = "agents-kt-mcp-server"
-        // #2806 — was a hardcoded "0.1.3" that drifted from the project version;
-        // now flows through BuildInfo so the JAR's Implementation-Version is the
-        // single source of truth.
-        private val SERVER_VERSION: String = agents_engine.internal.BuildInfo.version
-
         // 8 MiB — generous for tools/call payloads, far short of OOM on a typical
         // JVM heap. See #851.
         const val DEFAULT_MAX_REQUEST_BYTES: Long = 8L * 1024 * 1024
 
         fun from(agent: Agent<*, *>, block: McpExposeBuilder.() -> Unit): McpServer {
             val builder = McpExposeBuilder().apply(block)
-            require(
-                builder.exposedNames.isNotEmpty() ||
-                    builder.prompts.isNotEmpty() ||
-                    builder.resources.isNotEmpty()
-            ) {
-                "McpServer requires at least one expose(skillName), prompt(...), or resource(...) registration."
-            }
-            val exposed = builder.exposedNames.map { name ->
-                val skill = agent.skills[name]
-                    ?: throw IllegalArgumentException(
-                        "Skill \"$name\" not found on agent \"${agent.name}\". Available: ${agent.skills.keys}"
-                    )
-                require(!skill.isAgentic) {
-                    "Skill \"$name\" is agentic — McpServer only exposes non-agentic skills (implementedBy { }) in this slice."
-                }
-                ExposedSkill.of(skill)
-            }
             return McpServer(
-                agent = agent,
-                exposedSkills = exposed,
+                dispatcher = McpDispatcher.build(agent, builder),
                 portRequest = builder.port,
                 maxRequestBytes = builder.maxRequestBytes,
-                registeredPrompts = builder.prompts,
-                registeredResources = builder.resources,
                 auth = builder.auth,
                 allowedHosts = builder.allowedHosts,
                 originAllowlist = builder.originAllowlist,
-                toolPolicy = builder.toolPolicy,
             )
         }
-    }
-}
-
-private fun McpCapabilities.toWireMap(): Map<String, Any?> = buildMap {
-    tools?.let { put("tools", mapOf("listChanged" to it.listChanged)) }
-    prompts?.let { put("prompts", mapOf("listChanged" to it.listChanged)) }
-    resources?.let {
-        put("resources", mapOf("listChanged" to it.listChanged, "subscribe" to it.subscribe))
     }
 }
 

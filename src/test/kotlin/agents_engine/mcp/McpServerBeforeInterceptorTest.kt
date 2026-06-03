@@ -26,8 +26,8 @@ class McpServerBeforeInterceptorTest {
             else Decision.Proceed
         }
 
-        val server = McpServer.from(a) { expose("echo") }
-        val response = server.dispatchJsonRpc(
+        val dispatcher = McpDispatcher.from(a) { expose("echo") }
+        val response = dispatcher.dispatchEnvelope(
             """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","arguments":{"input":"secret"}}}"""
         )!!
 
@@ -49,8 +49,8 @@ class McpServerBeforeInterceptorTest {
             Decision.ProceedWith(args + ("input" to "mutated"))
         }
 
-        val server = McpServer.from(a) { expose("echo") }
-        val response = server.dispatchJsonRpc(
+        val dispatcher = McpDispatcher.from(a) { expose("echo") }
+        val response = dispatcher.dispatchEnvelope(
             """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","arguments":{"input":"original"}}}"""
         )!!
 

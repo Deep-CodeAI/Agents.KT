@@ -10,11 +10,11 @@ import java.io.OutputStream
  * tools/prompts/resources over line-delimited stdio. Reads one JSON-RPC
  * envelope per stdin line and writes response envelopes only to stdout,
  * preserving stdout as protocol traffic. Notifications produce no
- * response. Reuses [McpServer]'s dispatcher so HTTP and stdio stay in
- * behavioral lockstep.
+ * response. Drives the shared [McpDispatcher] directly (#2795) so HTTP and
+ * stdio stay in behavioral lockstep, with no HTTP server in the stdio path.
  */
 class McpStdioServer private constructor(
-    private val delegate: McpServer,
+    private val dispatcher: McpDispatcher,
 ) {
 
     fun serve(
@@ -27,7 +27,7 @@ class McpStdioServer private constructor(
             while (true) {
                 val line = reader.readLine() ?: return
                 if (line.isBlank()) continue
-                val response = delegate.dispatchJsonRpc(line)
+                val response = dispatcher.dispatchEnvelope(line)
                 if (response != null) {
                     writer.write(response)
                     writer.newLine()
@@ -41,6 +41,6 @@ class McpStdioServer private constructor(
 
     companion object {
         fun from(agent: Agent<*, *>, block: McpExposeBuilder.() -> Unit): McpStdioServer =
-            McpStdioServer(McpServer.from(agent, block))
+            McpStdioServer(McpDispatcher.from(agent, block))
     }
 }
