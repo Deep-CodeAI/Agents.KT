@@ -25,41 +25,40 @@ class Branch<IN, OUT> internal constructor(
 
     suspend fun invokeSuspend(input: IN): OUT {
         val result: Any? = source.invokeSuspend(input)
-        if (result == null) {
-            val nullRoute = routes.firstOrNull { it is BranchRoute.NullRoute }
-                ?: routes.firstOrNull { it is BranchRoute.ElseRoute }
-                ?: error(
-                    "Branch source produced null and no onNull or onElse clause was declared. " +
-                        "Add `onNull then ...` or `onElse then ...` to handle this case."
-                )
-            return nullRoute.executor(null)
-        }
-        for (route in routes) {
-            when (route) {
-                is BranchRoute.TypeRoute -> if (route.klass.isInstance(result)) return route.executor(result)
-                is BranchRoute.NullRoute -> { /* skipped for non-null */ }
-                is BranchRoute.ElseRoute -> return route.executor(result)
-            }
-        }
-        error("No branch defined for ${result::class.simpleName} (and no onElse clause).")
+        // #2802 — one ordered-match implementation. The non-streaming path now delegates to
+        // [matchRoute] exactly like the streaming `session` path, instead of re-deriving the loop.
+        val route = matchRoute(result) ?: noMatchError(result)
+        return route.executor(result)
     }
 
+    private fun noMatchError(result: Any?): Nothing =
+        if (result == null) {
+            error(
+                "Branch source produced null and no onNull or onElse clause was declared. " +
+                    "Add `onNull then ...` or `onElse then ...` to handle this case."
+            )
+        } else {
+            error("No branch defined for ${result::class.simpleName} (and no onElse clause).")
+        }
+
     /**
-     * #1748 — picks the matching route for [result] using the same order/precedence
-     * as [invokeSuspend]. Returns null if no route matches (caller can `error()`).
+     * #1748 — picks the matching route for [result] using documented order/precedence: a null result
+     * prefers an explicit `onNull` then falls back to `onElse`; a non-null result takes the first
+     * `onType` whose class matches, else `onElse`. Returns null if nothing matches (caller errors).
      */
     internal fun matchRoute(result: Any?): BranchRoute<OUT>? {
         if (result == null) {
             return routes.firstOrNull { it is BranchRoute.NullRoute }
                 ?: routes.firstOrNull { it is BranchRoute.ElseRoute }
         }
-        for (route in routes) {
+        // #2802 — classify each route for a non-null result; NullRoute simply never matches here
+        // (handled above), replacing the dead empty exhaustiveness arm with a real `false`.
+        return routes.firstOrNull { route ->
             when (route) {
-                is BranchRoute.TypeRoute -> if (route.klass.isInstance(result)) return route
-                is BranchRoute.NullRoute -> { /* skipped */ }
-                is BranchRoute.ElseRoute -> return route
+                is BranchRoute.TypeRoute -> route.klass.isInstance(result)
+                is BranchRoute.ElseRoute -> true
+                is BranchRoute.NullRoute -> false
             }
         }
-        return null
     }
 }

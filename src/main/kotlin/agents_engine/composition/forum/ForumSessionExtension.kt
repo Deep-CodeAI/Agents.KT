@@ -14,13 +14,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * `agents_engine/composition/forum/ForumSessionExtension.kt` — the
@@ -54,8 +50,7 @@ fun <IN, OUT> Forum<IN, OUT>.session(input: IN): AgentSession<OUT> {
     val channel = Channel<AgentEvent<OUT>>(Channel.BUFFERED)
     val result = CompletableDeferred<OUT>()
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
-    val captain = forum.agents.last()
-    val participants = forum.agents.dropLast(1)
+    val captain = forum.captain
     val runtimeContext = AgentRuntimeContext(sessionId = java.util.UUID.randomUUID().toString())
 
     scope.launch {
@@ -65,43 +60,12 @@ fun <IN, OUT> Forum<IN, OUT>.session(input: IN): AgentSession<OUT> {
                 channel.trySend(event.withRuntimeContext(runtimeContext) as AgentEvent<OUT>)
             }
             try {
-                val verdict: OUT = try {
-                    val contributions = withContext(Dispatchers.Default) {
-                        coroutineScope {
-                            participants.map { participant ->
-                                async {
-                                    @Suppress("UNCHECKED_CAST")
-                                    val out = runAgentInSession(
-                                        participant as Agent<IN, Any?>,
-                                        input,
-                                        emitter,
-                                    ).first
-                                    forum.fireMentionListener(participant.name, out)
-                                    ParticipantContribution(participant.name, out)
-                                }
-                            }.awaitAll()
-                        }
-                    }
-                    val captainVerdict: OUT = if (forum.captainTakesTranscript) {
-                        val transcript = ForumTranscript(originalInput = input, contributions = contributions)
-                        @Suppress("UNCHECKED_CAST")
-                        runAgentInSession(
-                            captain as Agent<ForumTranscript<IN>, OUT>,
-                            transcript,
-                            emitter,
-                        ).first
-                    } else {
-                        @Suppress("UNCHECKED_CAST")
-                        runAgentInSession(
-                            captain as Agent<IN, OUT>,
-                            input,
-                            emitter,
-                        ).first
-                    }
-                    forum.fireMentionListener(captain.name, captainVerdict)
-                    captainVerdict
-                } catch (e: ForumReturnException) {
-                    forum.castForumReturnInternal(e.value)
+                // #2802 — same deliberation core as Forum.invokeSuspend; the streaming difference is
+                // only that each agent runs through runAgentInSession so its events surface on the
+                // emitter. forum_return short-circuit + transcript-captain branching live in deliberate.
+                val verdict: OUT = forum.deliberate(input) { agent, value ->
+                    @Suppress("UNCHECKED_CAST")
+                    runAgentInSession(agent as Agent<Any?, Any?>, value, emitter).first
                 }
 
                 channel.trySend(AgentEvent.Completed(captain.name, verdict, null))
