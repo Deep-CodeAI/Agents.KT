@@ -4,6 +4,15 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — AgenticLoop setup extraction: `SkillRouting` + `buildSystemPrompt` (#3406)
+
+- Follow-up to #3376. Relocated `selectSkillByLlm` (LLM skill router) out of `AgenticLoop.kt` into
+  its own `SkillRouting.kt` (same package — no FQN change for its `SkillResolver` caller); it's a
+  routing concern, not a loop one. Extracted the inline system-prompt `buildString` into a pure,
+  unit-tested `buildSystemPrompt` (`SystemPrompt.kt`) — `SystemPromptTest` pins the tool listing and
+  the untrusted-tools security preamble (present iff a tool declares `untrustedOutput`).
+  Behavior-preserving; `AgenticLoop.kt` 834 → 758 (1369 → 758 since #3376 began).
+
 ### Changed — AgenticLoop: collapse the executeAgentic signature into `RunRequest` (#3376 batch 5)
 
 - `executeAgentic`'s accreted 11-parameter signature is folded into a single `RunRequest` (reusing
