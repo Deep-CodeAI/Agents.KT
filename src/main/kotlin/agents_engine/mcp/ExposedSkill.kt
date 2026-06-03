@@ -2,10 +2,9 @@ package agents_engine.mcp
 
 import agents_engine.core.Skill
 import agents_engine.generation.LenientJsonParser
-import agents_engine.generation.constructFromMap
+import agents_engine.generation.codec
 import agents_engine.generation.hasGenerableAnnotation
 import agents_engine.generation.jsonSchema
-import kotlin.reflect.KClass
 
 /**
  * Internal wrapper over a [Skill] that [McpServer] exposes as an MCP tool: builds the tool's input
@@ -49,8 +48,9 @@ internal class ExposedSkill private constructor(
                 inType.hasGenerableAnnotation() -> ExposedSkill(
                     skill = skill,
                     inputBuilder = { args ->
-                        @Suppress("UNCHECKED_CAST")
-                        (inType as KClass<Any>).constructFromMap(args)
+                        // #2803 — deserialize through the shared GenerableCodec boundary; no
+                        // `KClass<Any>` cast at the MCP edge.
+                        inType.codec().decode(args)
                             ?: error("tool '${skill.name}' could not deserialize @Generable ${inType.simpleName} from: $args")
                     },
                     schema = parseSchema(inType.jsonSchema()),
