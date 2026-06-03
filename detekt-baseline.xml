@@ -83,7 +83,6 @@
     <ID>MaxLineLength:AgentSessionLiveTest.kt$AgentSessionLiveTest$fun</ID>
     <ID>MaxLineLength:AgenticLoop.kt$"Agent '${agent.name}' invoked tool '${call.name}' $consecutiveSameTool times in a row (cap: $cap)"</ID>
     <ID>MaxLineLength:AgenticLoop.kt$"hash=${content.ref.hash.take(BLOB_HASH_PREFIX_LEN)}…, size=${content.ref.sizeBytes}); "</ID>
-    <ID>MaxLineLength:AgenticLoop.kt$appendLine("""{"skillName": "&lt;one of the listed skills&gt;", "confidence": 0.0..1.0, "rationale": "&lt;one sentence&gt;"}""")</ID>
     <ID>MaxLineLength:AgenticLoopMutationTest.kt$AgenticLoopMutationTest$arguments = mapOf("name" to "world")</ID>
     <ID>MaxLineLength:AgenticLoopTest.kt$AgenticLoopTest$"Ollama returned text with no digits — likely tool-call divergence flake; skipping rather than red-flagging"</ID>
     <ID>MaxLineLength:AgenticLoopTest.kt$AgenticLoopTest$add = tool("add", "Add two numbers. Args: a, b") { args -&gt; num(args, "a") + num(args, "b") }</ID>
@@ -320,6 +319,7 @@
     <ID>MaxLineLength:SignInAgentTest.kt$SignInAgentTest$prompt("You are a sign-in assistant. To build a sign-in request you MUST: 1) call the passwords tool to look up credentials, 2) call build_request with the login and password from that lookup. After build_request returns the JSON, reply with ONLY that JSON — no explanation.")</ID>
     <ID>MaxLineLength:Skill.kt$Skill$message = "Use the typed `tools(first, vararg rest)` overload that takes Tool&lt;*, *&gt; handles returned by `tool(...)` builders. The string form is kept for built-in tools (escalate, throwException, memory_*) and negative tests of validate()."</ID>
     <ID>MaxLineLength:Skill.kt$inline</ID>
+    <ID>MaxLineLength:SkillRouting.kt$appendLine("""{"skillName": "&lt;one of the listed skills&gt;", "confidence": 0.0..1.0, "rationale": "&lt;one sentence&gt;"}""")</ID>
     <ID>MaxLineLength:SkillSelectionTest.kt$SkillSelectionTest$assertTrue(systemPrompt.contains("Convert text to lowercase"), "Routing prompt should contain lower description")</ID>
     <ID>MaxLineLength:SkillSelectionTest.kt$SkillSelectionTest$assertTrue(systemPrompt.contains("Convert text to uppercase"), "Routing prompt should contain upper description")</ID>
     <ID>MaxLineLength:SkillsBuilder.kt$SkillsBuilder$inline</ID>
