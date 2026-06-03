@@ -16,8 +16,6 @@ import agents_engine.model.ToolsBuilder
 import agents_engine.model.buildBuiltInTools
 import agents_engine.model.executeAgentic
 import agents_engine.runtime.events.AgentEvent
-import java.util.logging.Level
-import java.util.logging.Logger
 
 /**
  * `agents_engine/core/Agent.kt` — the typed-agent class. One input type,
@@ -262,11 +260,12 @@ class Agent<IN, OUT>(
      * ambiguity) lives in its own collaborator; [invokeSuspendForSession] delegates to it.
      */
     private val skillResolver = SkillResolver(this)
-    private val beforeSkillInterceptors = mutableListOf<(String) -> Decision<String>>()
-    private val beforeToolCallInterceptors =
-        mutableListOf<(name: String, args: Map<String, Any?>) -> Decision<Map<String, Any?>>>()
-    private val beforeTurnInterceptors = mutableListOf<(List<ChatMessage>) -> Decision<List<ChatMessage>>>()
-    private val interceptorDecisionListeners = mutableListOf<(InterceptorPoint, Decision<*>) -> Unit>()
+    /**
+     * #2793 — the before-interceptor lists + decision wiring live in their own collaborator; the
+     * `onBeforeX` / `onInterceptorDecision` DSL setters and `beforeXInterceptorCount` readers below
+     * delegate to it.
+     */
+    private val interceptors = InterceptorChain()
     private val agentEventListeners = mutableListOf<(AgentEvent<*>) -> Unit>()
     private val toolErrorHandlers: MutableMap<String, ToolErrorHandler> = mutableMapOf()
     internal var manifestHash: String? = null
@@ -276,13 +275,13 @@ class Agent<IN, OUT>(
     internal val autoToolNames: MutableSet<String> = mutableSetOf()
 
     val beforeSkillInterceptorCount: Int
-        get() = beforeSkillInterceptors.size
+        get() = interceptors.beforeSkillCount
 
     val beforeToolCallInterceptorCount: Int
-        get() = beforeToolCallInterceptors.size
+        get() = interceptors.beforeToolCallCount
 
     val beforeTurnInterceptorCount: Int
-        get() = beforeTurnInterceptors.size
+        get() = interceptors.beforeTurnCount
 
     val tokenUsageListenerCount: Int
         get() = tokenUsageListeners.size
@@ -427,11 +426,7 @@ class Agent<IN, OUT>(
 
     internal fun fireTokenUsage(usage: TokenUsage) {
         tokenUsageListeners.toList().forEach { listener ->
-            try {
-                listener(usage)
-            } catch (t: Throwable) {
-                LOGGER.log(Level.WARNING, "onTokenUsage listener failed; swallowing", t)
-            }
+            dispatchSafely("onTokenUsage listener") { listener(usage) }
         }
     }
 
@@ -491,19 +486,19 @@ class Agent<IN, OUT>(
     }
 
     fun onBeforeSkill(block: (skillName: String) -> Decision<String>) {
-        beforeSkillInterceptors += block
+        interceptors.addBeforeSkill(block)
     }
 
     fun onBeforeToolCall(block: (name: String, args: Map<String, Any?>) -> Decision<Map<String, Any?>>) {
-        beforeToolCallInterceptors += block
+        interceptors.addBeforeToolCall(block)
     }
 
     fun onBeforeTurn(block: (messages: List<ChatMessage>) -> Decision<List<ChatMessage>>) {
-        beforeTurnInterceptors += block
+        interceptors.addBeforeTurn(block)
     }
 
     fun onInterceptorDecision(block: (point: InterceptorPoint, decision: Decision<*>) -> Unit) {
-        interceptorDecisionListeners += block
+        interceptors.addDecisionListener(block)
     }
 
     fun onAgentEvent(block: (AgentEvent<*>) -> Unit) {
@@ -512,79 +507,26 @@ class Agent<IN, OUT>(
 
     internal fun fireAgentEvent(event: AgentEvent<*>) {
         agentEventListeners.toList().forEach { listener ->
-            try {
-                listener(event)
-            } catch (t: Throwable) {
-                LOGGER.log(Level.WARNING, "onAgentEvent listener failed; swallowing", t)
-            }
+            dispatchSafely("onAgentEvent listener") { listener(event) }
         }
     }
 
-    internal fun decideBeforeSkill(skillName: String): Decision<String> {
-        val interceptors = beforeSkillInterceptors.toList()
-        val decision = runDecisionChain(skillName, interceptors)
-        fireInterceptorDecision(InterceptorPoint.BeforeSkill, decision, interceptors.isNotEmpty())
-        return decision
-    }
+    internal fun decideBeforeSkill(skillName: String): Decision<String> =
+        interceptors.decideBeforeSkill(skillName)
 
     internal fun decideBeforeToolCall(name: String, args: Map<String, Any?>): Decision<Map<String, Any?>> {
         // Layer 1 of #1916: built-in declared-policy gate runs *before* user
         // interceptors. A denial short-circuits the chain (matching "first
-        // non-Proceed wins"); the executed call still flows through any user
-        // `onBeforeToolCall` below.
-        if (enforceToolPolicies) {
-            val gate = ToolPolicyEnforcer.evaluate(toolMap[name]?.policy, args)
-            if (gate is Decision.Deny) {
-                fireInterceptorDecision(InterceptorPoint.BeforeToolCall, gate, hasInterceptors = true)
-                return gate
-            }
-        }
-
-        val interceptors = beforeToolCallInterceptors.toList()
-        var current = args
-        var effective: Decision<Map<String, Any?>> = Decision.Proceed
-
-        interceptors.forEach { interceptor ->
-            val decision = try {
-                interceptor(name, current)
-            } catch (t: Throwable) {
-                Decision.Deny(t.message ?: t.toString())
-            }
-
-            if (effective is Decision.Proceed) {
-                effective = decision
-                if (decision is Decision.ProceedWith<*>) {
-                    @Suppress("UNCHECKED_CAST")
-                    current = decision.replacement as Map<String, Any?>
-                }
-            }
-        }
-
-        fireInterceptorDecision(InterceptorPoint.BeforeToolCall, effective, interceptors.isNotEmpty())
-        return effective
+        // non-Proceed wins"); a non-deny gate lets the call flow through any
+        // user `onBeforeToolCall`. The chain owns the fold + decision firing.
+        val gate = if (enforceToolPolicies) {
+            ToolPolicyEnforcer.evaluate(toolMap[name]?.policy, args) as? Decision.Deny
+        } else null
+        return interceptors.decideBeforeToolCall(name, args, gate)
     }
 
-    internal fun decideBeforeTurn(messages: List<ChatMessage>): Decision<List<ChatMessage>> {
-        val interceptors = beforeTurnInterceptors.toList()
-        val decision = runDecisionChain(messages, interceptors)
-        fireInterceptorDecision(InterceptorPoint.BeforeTurn, decision, interceptors.isNotEmpty())
-        return decision
-    }
-
-    private fun fireInterceptorDecision(
-        point: InterceptorPoint,
-        decision: Decision<*>,
-        hasInterceptors: Boolean,
-    ) {
-        if (!hasInterceptors) return
-        interceptorDecisionListeners.toList().forEach { listener ->
-            try {
-                listener(point, decision)
-            } catch (t: Throwable) {
-                LOGGER.log(Level.WARNING, "onInterceptorDecision listener failed; swallowing", t)
-            }
-        }
-    }
+    internal fun decideBeforeTurn(messages: List<ChatMessage>): Decision<List<ChatMessage>> =
+        interceptors.decideBeforeTurn(messages)
 
     fun skillSelection(block: (IN) -> String) {
         checkNotFrozen()
@@ -1019,8 +961,6 @@ class Agent<IN, OUT>(
         frozen = true
     }
 }
-
-private val LOGGER: Logger = Logger.getLogger(Agent::class.java.name)
 
 inline fun <IN, reified OUT : Any> agent(name: String, block: Agent<IN, OUT>.() -> Unit): Agent<IN, OUT> {
     val agent = Agent<IN, OUT>(name, OUT::class) { it as OUT }
