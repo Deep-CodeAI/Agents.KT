@@ -1,7 +1,7 @@
 # This is a Gradle generated file for dependency locking.
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
-com.google.devtools.ksp:symbol-processing-api:2.3.7=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.google.devtools.ksp:symbol-processing-api:2.3.9=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 io.github.java-diff-utils:java-diff-utils:4.12=kotlinInternalAbiValidation
 junit:junit:4.13.2=testCompileClasspath,testRuntimeClasspath
 org.bouncycastle:bcpg-jdk18on:1.84=compileClasspath,kotlinBouncyCastleConfiguration
