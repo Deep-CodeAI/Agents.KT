@@ -3,6 +3,7 @@ package agents_engine.model
 import agents_engine.core.FileSnapshotStore
 import agents_engine.core.InMemorySnapshotStore
 import agents_engine.core.MemoryBank
+import agents_engine.core.RunRequest
 import agents_engine.core.SessionSnapshot
 import agents_engine.core.agent
 import kotlinx.coroutines.runBlocking
@@ -48,7 +49,10 @@ class SnapshotResumeTest {
 
         assertFailsWith<IllegalStateException> {
             runBlocking {
-                executeAgentic(agentA, skillA, "go", onTurnCheckpoint = { s -> snaps += s; store.save(sessionId, s) })
+                executeAgentic(
+                    agentA, skillA, "go",
+                    request = RunRequest(onTurnCheckpoint = { s -> snaps += s; store.save(sessionId, s) }),
+                )
             }
         }
         assertEquals(3, snaps.size, "one checkpoint per completed tool-turn")
@@ -75,7 +79,7 @@ class SnapshotResumeTest {
         val skillB = agentB.skills.values.first()
 
         val resumed = assertNotNull(store.load(sessionId), "snapshot should be in the store")
-        val result = runBlocking { executeAgentic(agentB, skillB, "go", resumeFrom = resumed) }
+        val result = runBlocking { executeAgentic(agentB, skillB, "go", request = RunRequest(resumeFrom = resumed)) }
 
         assertEquals("done", result.output, "B continues to completion")
         assertEquals(2, runsB[0], "B ran only the remaining 2 tool calls")

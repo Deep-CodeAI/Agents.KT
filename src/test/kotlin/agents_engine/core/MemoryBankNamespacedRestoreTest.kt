@@ -80,7 +80,7 @@ class MemoryBankNamespacedRestoreTest {
         val skillA = a.skills.values.first()
 
         runBlocking {
-            executeAgentic(a, skillA, "go", onTurnCheckpoint = { s -> captured[0] = s })
+            executeAgentic(a, skillA, "go", request = RunRequest(onTurnCheckpoint = { s -> captured[0] = s }))
         }
 
         val snap = assertNotNull(captured[0])
@@ -105,7 +105,7 @@ class MemoryBankNamespacedRestoreTest {
         }
         val skillB = b.skills.values.first()
 
-        runBlocking { executeAgentic(b, skillB, "go", resumeFrom = snap) }
+        runBlocking { executeAgentic(b, skillB, "go", request = RunRequest(resumeFrom = snap)) }
 
         assertEquals("actors-state", sharedBank.read("ActorsAgent"), "actor's slot restored from snapshot")
         assertEquals("other-still-here", sharedBank.read("OtherAgent"), "other agent's slot must NOT be wiped")

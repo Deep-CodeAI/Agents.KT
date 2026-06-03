@@ -44,7 +44,7 @@ class SnapshotManifestGuardTest {
         val agent = trivialAgent("hash-A")
         val skill = agent.skills.values.first()
         val result = runBlocking {
-            executeAgentic(agent, skill, "go", resumeFrom = freshSnapshot("hash-A"))
+            executeAgentic(agent, skill, "go", request = RunRequest(resumeFrom = freshSnapshot("hash-A")))
         }
         assertEquals("done", result.output)
     }
@@ -54,7 +54,9 @@ class SnapshotManifestGuardTest {
         val agent = trivialAgent("hash-NEW")
         val skill = agent.skills.values.first()
         val ex = assertFailsWith<SnapshotManifestMismatchException> {
-            runBlocking { executeAgentic(agent, skill, "go", resumeFrom = freshSnapshot("hash-OLD")) }
+            runBlocking {
+                executeAgentic(agent, skill, "go", request = RunRequest(resumeFrom = freshSnapshot("hash-OLD")))
+            }
         }
         assertEquals("hash-OLD", ex.expected)
         assertEquals("hash-NEW", ex.actual)
@@ -67,8 +69,10 @@ class SnapshotManifestGuardTest {
         val result = runBlocking {
             executeAgentic(
                 agent, skill, "go",
-                resumeFrom = freshSnapshot("hash-OLD"),
-                allowManifestMismatch = true,
+                request = RunRequest(
+                    resumeFrom = freshSnapshot("hash-OLD"),
+                    allowManifestMismatch = true,
+                ),
             )
         }
         assertEquals("done", result.output, "explicit opt-in lets the resume proceed")
@@ -79,7 +83,7 @@ class SnapshotManifestGuardTest {
         val agent = trivialAgent("hash-NEW")
         val skill = agent.skills.values.first()
         val result = runBlocking {
-            executeAgentic(agent, skill, "go", resumeFrom = freshSnapshot(null))
+            executeAgentic(agent, skill, "go", request = RunRequest(resumeFrom = freshSnapshot(null)))
         }
         assertEquals("done", result.output, "pre-0.6.4 snapshots without manifestHash still resume")
     }
@@ -89,7 +93,9 @@ class SnapshotManifestGuardTest {
         val agent = trivialAgent(null)
         val skill = agent.skills.values.first()
         val ex = assertFailsWith<SnapshotManifestMismatchException> {
-            runBlocking { executeAgentic(agent, skill, "go", resumeFrom = freshSnapshot("hash-OLD")) }
+            runBlocking {
+                executeAgentic(agent, skill, "go", request = RunRequest(resumeFrom = freshSnapshot("hash-OLD")))
+            }
         }
         assertEquals("hash-OLD", ex.expected)
         assertEquals(null, ex.actual, "the agent lost its manifest — should still refuse")
@@ -100,7 +106,9 @@ class SnapshotManifestGuardTest {
         val agent = trivialAgent("currentHash")
         val skill = agent.skills.values.first()
         val ex = assertFailsWith<SnapshotManifestMismatchException> {
-            runBlocking { executeAgentic(agent, skill, "go", resumeFrom = freshSnapshot("oldHash")) }
+            runBlocking {
+                executeAgentic(agent, skill, "go", request = RunRequest(resumeFrom = freshSnapshot("oldHash")))
+            }
         }
         val msg = assertNotNull(ex.message)
         assertEquals(true, msg.contains("oldHash") && msg.contains("currentHash"), "message=$msg")

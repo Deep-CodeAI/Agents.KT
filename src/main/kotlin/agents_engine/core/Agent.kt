@@ -862,14 +862,9 @@ class Agent<IN, OUT>(
             return if (skill.isAgentic) {
                 val result = executeAgentic(
                     this, skill, input,
-                    effectivePrompt = request.promptOverride ?: this.prompt,
+                    request = request,
                     emitter = emitter,
                     runtimeContext = runtimeContext,
-                    resumeFrom = request.resumeFrom,
-                    onTurnCheckpoint = request.onTurnCheckpoint,
-                    resumeWith = request.resumeWith,
-                    allowManifestMismatch = request.allowManifestMismatch,
-                    attachments = request.attachments,
                 )
                 // #1740: surface cumulative usage on the way out. Non-agentic
                 // skills don't go through executeAgentic, so onSkillCompleted

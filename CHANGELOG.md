@@ -4,6 +4,18 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — AgenticLoop: collapse the executeAgentic signature into `RunRequest` (#3376 batch 5)
+
+- `executeAgentic`'s accreted 11-parameter signature is folded into a single `RunRequest` (reusing
+  the value object from #3088): the six per-invocation knobs (prompt override, resume/HITL state,
+  checkpoint callback, manifest-mismatch opt-out, attachments) become `request: RunRequest`, leaving
+  `(agent, skill, input, request, emitter, runtimeContext)`. The body is unchanged — the request is
+  unpacked into the same locals at the top. `Agent.invokeSuspendForSession` now passes its `RunRequest`
+  straight through instead of unpacking it. Internal API; behavior-preserving (the existing
+  resume/snapshot/memory test suites are the net). Caps the #3376 decomposition: `AgenticLoop.kt`
+  1369 → 834 across batches 1–5, with rendering / coercion / client-factory / tool-execution /
+  snapshot-restore each extracted into their own unit-tested file.
+
 ### Changed — AgenticLoop decomposition: extract `restoreFromSnapshot` (#3376 batch 4)
 
 - Pulled the resume/HITL restore step out of `executeAgentic`'s inline `if (resumeFrom != null)`
