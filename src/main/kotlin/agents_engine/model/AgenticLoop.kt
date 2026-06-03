@@ -240,67 +240,7 @@ internal suspend fun <IN> executeAgentic(
     // history already contains the system + user messages, so we don't re-add
     // them. A fresh run builds them as usual.
     if (resumeFrom != null) {
-        // #2754 — fail closed on manifestHash mismatch unless the caller
-        // explicitly opts out. Null snapshot.manifestHash means the snapshot
-        // predates the guard (or the originating agent had no manifest); allow.
-        val snapHash = resumeFrom.manifestHash
-        if (!allowManifestMismatch && snapHash != null && snapHash != agent.manifestHash) {
-            throw agents_engine.core.SnapshotManifestMismatchException(
-                expected = snapHash,
-                actual = agent.manifestHash,
-            )
-        }
-        messages.addAll(resumeFrom.messages)
-        // #2755 — only restore THIS agent's namespaced slot, not the whole bank.
-        // The wipe-all `restore(Map)` was destructive in the documented
-        // shared-workspace topology (one bank, many agents): resuming session
-        // A would erase session B's slot. Snapshot.memory carries `{agentName:
-        // value}` for the resuming agent only (see capture site below).
-        agent.memoryBank?.let { bank ->
-            val mine = resumeFrom.memory[agent.name]
-            bank.restoreForAgent(agent.name, mine)
-        }
-        // #2488 — HITL interrupt resume. If the snapshot carries a pending
-        // interrupt call id, synthesise the tool result message from
-        // `resumeWith` and append it. The next model turn will see this as
-        // the result of the call it issued before the pause, so the model's
-        // view of the conversation is continuous. v1 constraint:
-        // single-tool-per-interrupting-turn — multi-tool turns where the
-        // first call interrupts will leave subsequent calls unanswered at
-        // the wire, which the provider may reject. Documented in
-        // Interrupt.kt.
-        val pendingCallId = resumeFrom.pendingInterruptCallId
-        if (pendingCallId != null) {
-            require(resumeWith != null) {
-                "Snapshot has pendingInterruptCallId=$pendingCallId but resumeWith was not provided. " +
-                    "Pass resumeWith = <the human's reply> to invokeSuspendResuming / executeAgentic."
-            }
-            // #2489 — if resumeWith is a HumanDecision, emit the audit
-            // event before synthesising the tool result. Renders the
-            // decision verbatim into the LLM context via toLlmInput.
-            if (resumeWith is agents_engine.core.HumanDecision) {
-                val (decisionName, hasPayload) = when (resumeWith) {
-                    agents_engine.core.HumanDecision.Approved -> "Approved" to false
-                    agents_engine.core.HumanDecision.Rejected -> "Rejected" to false
-                    is agents_engine.core.HumanDecision.Edited -> "Edited" to (resumeWith.payload != null)
-                    is agents_engine.core.HumanDecision.Responded -> "Responded" to (resumeWith.payload != null)
-                }
-                withAgentRuntimeContext(runtimeContext) {
-                    agent.approvalDecidedListener?.invoke(decisionName, hasPayload)
-                }
-            }
-            // toLlmInput renders @Generable typed replies as JSON; strings stay
-            // strings; primitives stay primitives. Matches the existing
-            // tool-result rendering path. The OpenAI adapter pairs tool
-            // results to preceding assistant tool_calls positionally, so the
-            // call_id only needs to live on the snapshot — not on
-            // LlmMessage itself.
-            val synthesised = LlmMessage(
-                role = "tool",
-                content = toLlmInput(resumeWith),
-            )
-            messages.add(synthesised)
-        }
+        restoreFromSnapshot(agent, resumeFrom, allowManifestMismatch, resumeWith, runtimeContext, messages)
     } else {
         // #2656 — vendor-neutral cache hints derived from agent.cacheConfig.
         // The hint marks an LlmMessage as the end of a cacheable group;
