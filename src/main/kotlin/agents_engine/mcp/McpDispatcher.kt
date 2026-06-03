@@ -128,8 +128,7 @@ internal class McpDispatcher(
             ?: return jsonRpcError(id, JsonRpcErrorCode.INVALID_PARAMS, "Missing prompt name")
         val prompt = registeredPrompts.firstOrNull { it.name == name }
             ?: return jsonRpcError(id, JsonRpcErrorCode.METHOD_NOT_FOUND, "Unknown prompt: $name")
-        @Suppress("UNCHECKED_CAST")
-        val args = (params["arguments"] as? Map<String, Any?>) ?: emptyMap()
+        val args = params.argumentsMap()
         return try {
             val rendered = prompt.render(args)
             jsonRpcResult(id, mapOf(
@@ -212,8 +211,7 @@ internal class McpDispatcher(
         }
         val exposed = exposedSkills.firstOrNull { it.skill.name == name }
             ?: return jsonRpcError(id, JsonRpcErrorCode.METHOD_NOT_FOUND, "Unknown tool: $name")
-        @Suppress("UNCHECKED_CAST")
-        val args = (params["arguments"] as? Map<String, Any?>) ?: emptyMap()
+        val args = params.argumentsMap()
         return try {
             val effectiveArgs = when (val decision = agent.decideBeforeToolCall(name, args)) {
                 Decision.Proceed -> args
@@ -313,3 +311,12 @@ internal fun McpCapabilities.toWireMap(): Map<String, Any?> = buildMap {
         put("resources", mapOf("listChanged" to it.listChanged, "subscribe" to it.subscribe))
     }
 }
+
+/**
+ * #2803 — the one site that reads the JSON-RPC `params.arguments` sub-map (used by both `tools/call`
+ * and `prompts/get`). The single unchecked cast at the request-payload boundary lives here instead of
+ * being copy-pasted at each handler; absent or mis-shaped arguments collapse to an empty map.
+ */
+@Suppress("UNCHECKED_CAST")
+private fun Map<*, *>.argumentsMap(): Map<String, Any?> =
+    (this["arguments"] as? Map<String, Any?>) ?: emptyMap()
