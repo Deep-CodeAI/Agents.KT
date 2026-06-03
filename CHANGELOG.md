@@ -4,6 +4,15 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — AgenticLoop decomposition: extract `restoreFromSnapshot` (#3376 batch 4)
+
+- Pulled the resume/HITL restore step out of `executeAgentic`'s inline `if (resumeFrom != null)`
+  block into `SnapshotRestore.kt` (`restoreFromSnapshot`): the manifest-hash fail-closed guard
+  (#2754), namespaced memory restore (#2755), and the HITL interrupt-reply synthesis (#2488/#2489).
+  The loop now delegates a one-liner. Previously only reachable through a full resuming invocation;
+  now directly unit-tested (`SnapshotRestoreTest` — manifest-mismatch fail-closed + message restore).
+  Behavior-preserving; `AgenticLoop.kt` 925 → 865.
+
 ### Changed — AgenticLoop decomposition: extract the tool-execution subsystem (#3376 batch 3)
 
 - Moved the per-tool-call execution cluster out of `AgenticLoop` into a new `ToolInvoker.kt`: the
