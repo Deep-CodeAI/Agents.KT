@@ -5,6 +5,7 @@ import agents_engine.generation.constructFromMap
 import agents_engine.generation.fromLlmOutput
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -39,6 +40,12 @@ class Forum<IN, OUT>(
         mentionListener = block
     }
 
+    /** The deliberating agents — everyone but the [captain] (#2802). */
+    val participants: List<Agent<IN, *>> get() = agents.dropLast(1)
+
+    /** The synthesizing agent that delivers the final verdict — the last registered agent (#2802). */
+    val captain: Agent<IN, *> get() = agents.last()
+
     operator fun invoke(input: IN): OUT = runBlocking { invokeSuspend(input) }
 
     /**
@@ -47,31 +54,43 @@ class Forum<IN, OUT>(
      * choice all live with the caller — the framework no longer creates its own
      * scope inside the agentic loop.
      */
-    @Suppress("UNCHECKED_CAST")
-    suspend fun invokeSuspend(input: IN): OUT = try {
+    suspend fun invokeSuspend(input: IN): OUT = deliberate(input) { agent, value ->
+        @Suppress("UNCHECKED_CAST")
+        (agent as Agent<Any?, Any?>).invokeSuspend(value)
+    }
+
+    /**
+     * #2802 — the single deliberation core shared by the non-streaming [invokeSuspend] and the
+     * streaming `session` extension. Runs every [participant][participants] concurrently then the
+     * [captain], firing [fireMentionListener] at each step, and short-circuits on `forum_return`
+     * (cast through [castForumReturn]). [runAgent] abstracts *how* an agent runs: the non-streaming
+     * path calls `invokeSuspend`; the streaming path routes through `runAgentInSession` so the
+     * agent's events surface on the session emitter. The two paths previously re-derived this whole
+     * body with subtly different shapes.
+     */
+    internal suspend fun deliberate(
+        input: IN,
+        runAgent: suspend (agent: Agent<*, *>, value: Any?) -> Any?,
+    ): OUT = try {
         withContext(Dispatchers.Default) {
             coroutineScope {
-            val participants = agents.dropLast(1)
-            val captain = agents.last()
+                val contributions = participants.map { participant ->
+                    async {
+                        val output = runAgent(participant, input)
+                        fireMentionListener(participant.name, output)
+                        ParticipantContribution(participant.name, output)
+                    }
+                }.awaitAll()
 
-            // All participants process the input concurrently
-            val contributions = participants.map { agent ->
-                async {
-                    val output = (agent as Agent<IN, Any?>).invokeSuspend(input)
-                    mentionListener?.invoke(agent.name, output)
-                    ParticipantContribution(agent.name, output)
+                val verdict = if (captainTakesTranscript) {
+                    val transcript = ForumTranscript(originalInput = input, contributions = contributions)
+                    runAgent(captain, transcript)
+                } else {
+                    runAgent(captain, input)
                 }
-            }.map { it.await() }
-
-            // Captain delivers the final verdict
-            val verdict: OUT = if (captainTakesTranscript) {
-                val transcript = ForumTranscript(originalInput = input, contributions = contributions)
-                (captain as Agent<ForumTranscript<IN>, OUT>).invokeSuspend(transcript)
-            } else {
-                (captain as Agent<IN, OUT>).invokeSuspend(input)
-            }
-            mentionListener?.invoke(captain.name, verdict)
-            verdict
+                fireMentionListener(captain.name, verdict)
+                @Suppress("UNCHECKED_CAST")
+                verdict as OUT
             }
         }
     } catch (e: ForumReturnException) {
