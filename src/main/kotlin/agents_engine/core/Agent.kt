@@ -151,8 +151,8 @@ class Agent<IN, OUT>(
 
     /** Internal API to remove a tool (e.g., Forum cleaning up forum_return on captain change). */
     internal fun unregisterTool(name: String) { _toolMap.remove(name) }
-    var toolUseListener: ((name: String, args: Map<String, Any?>, result: Any?) -> Unit)? = null
-        private set
+    val toolUseListener: ((name: String, args: Map<String, Any?>, result: Any?) -> Unit)?
+        get() = listeners.toolUseListener
     /**
      * Fires when an `onBeforeToolCall` interceptor returns [Decision.Deny] and
      * the call is blocked before its executor runs (#2395). Parallel to
@@ -160,8 +160,8 @@ class Agent<IN, OUT>(
      * audit log catches them even on the non-streaming path. [toolUseListener]
      * deliberately does NOT fire for a denied call (no executor ran).
      */
-    var toolDeniedListener: ((name: String, args: Map<String, Any?>, reason: String) -> Unit)? = null
-        private set
+    val toolDeniedListener: ((name: String, args: Map<String, Any?>, reason: String) -> Unit)?
+        get() = listeners.toolDeniedListener
     /**
      * #2757 — fires when the model emits a tool name that is NOT in the
      * current skill's allowlist (hallucinated, or a tool that belongs to a
@@ -175,8 +175,8 @@ class Agent<IN, OUT>(
      * recovery message exposes to the model. Does NOT leak the wider
      * `agent.toolMap`.
      */
-    var toolHallucinatedListener: ((name: String, args: Map<String, Any?>, allowedTools: List<String>) -> Unit)? = null
-        private set
+    val toolHallucinatedListener: ((name: String, args: Map<String, Any?>, allowedTools: List<String>) -> Unit)?
+        get() = listeners.toolHallucinatedListener
     /**
      * #2489 — fires when a tool inside the agentic loop calls `humanApproval
      * { }` and the runtime is about to pause for human input. Pure
@@ -185,21 +185,20 @@ class Agent<IN, OUT>(
      * advisory `timeoutMs`. Body content is omitted by design — see
      * [PipelineEvent.ApprovalRequested].
      */
-    var approvalRequestedListener: ((title: String, hasBody: Boolean, timeoutMs: Long?) -> Unit)? = null
-        private set
+    val approvalRequestedListener: ((title: String, hasBody: Boolean, timeoutMs: Long?) -> Unit)?
+        get() = listeners.approvalRequestedListener
     /**
      * #2489 — fires on the resume path when `resumeWith` is a [HumanDecision].
      * Receives the variant name and whether the variant carried a payload
      * (Edited/Responded). Body content omitted by design — see
      * [PipelineEvent.ApprovalDecided].
      */
-    var approvalDecidedListener: ((decision: String, hasPayload: Boolean) -> Unit)? = null
-        private set
-    private val tokenUsageListeners = mutableListOf<(TokenUsage) -> Unit>()
-    var knowledgeUsedListener: ((name: String, content: String) -> Unit)? = null
-        private set
-    var skillChosenListener: ((name: String) -> Unit)? = null
-        private set
+    val approvalDecidedListener: ((decision: String, hasPayload: Boolean) -> Unit)?
+        get() = listeners.approvalDecidedListener
+    val knowledgeUsedListener: ((name: String, content: String) -> Unit)?
+        get() = listeners.knowledgeUsedListener
+    val skillChosenListener: ((name: String) -> Unit)?
+        get() = listeners.skillChosenListener
     /**
      * #2470 slice b — optional [agents_engine.content.BlobStore] for
      * dereferencing `Content.Image` attachments at the agent invoke
@@ -214,8 +213,8 @@ class Agent<IN, OUT>(
         private set
     var memoryBank: MemoryBank? = null
         private set
-    var routerRationaleListener: ((rationale: String) -> Unit)? = null
-        private set
+    val routerRationaleListener: ((rationale: String) -> Unit)?
+        get() = listeners.routerRationaleListener
     /**
      * Fires when an infrastructure error is about to propagate out of an agentic
      * invocation — LLM transport failures, response parse failures, budget
@@ -225,8 +224,8 @@ class Agent<IN, OUT>(
      * Distinct from [onToolError], which is per-tool *semantic* recovery and
      * can substitute a value or repaired arguments for the failure.
      */
-    var errorListener: ((Throwable) -> Unit)? = null
-        private set
+    val errorListener: ((Throwable) -> Unit)?
+        get() = listeners.errorListener
     /**
      * Pre-cap warning hook (#966). Fires once per [BudgetReason] when cumulative
      * usage of that cap crosses [budgetThreshold]. Lets the user wrap up
@@ -239,8 +238,8 @@ class Agent<IN, OUT>(
      */
     var budgetThreshold: Double = 0.8
         private set
-    var budgetThresholdListener: ((reason: BudgetReason, usedPercent: Double) -> Unit)? = null
-        private set
+    val budgetThresholdListener: ((reason: BudgetReason, usedPercent: Double) -> Unit)?
+        get() = listeners.budgetThresholdListener
     /**
      * Hard-cap decision hook (#2412). When a budget cap would throw, this is
      * consulted with the reason and the current limit; returning
@@ -248,8 +247,8 @@ class Agent<IN, OUT>(
      * [agents_engine.model.BudgetDecision.Stop] (or no listener) throws. Currently
      * wired for the tool-call cap. Settable post-construction like other listeners.
      */
-    var budgetExceededListener: ((reason: BudgetReason, currentLimit: Int) -> agents_engine.model.BudgetDecision)? = null
-        private set
+    val budgetExceededListener: ((reason: BudgetReason, currentLimit: Int) -> agents_engine.model.BudgetDecision)?
+        get() = listeners.budgetExceededListener
     var skillSelectionConfidenceThreshold: Double = 0.6
         private set
     internal var skillSelector: ((IN) -> String)? = null
@@ -266,7 +265,12 @@ class Agent<IN, OUT>(
      * delegate to it.
      */
     private val interceptors = InterceptorChain()
-    private val agentEventListeners = mutableListOf<(AgentEvent<*>) -> Unit>()
+    /**
+     * #2793 — the observability listener slots + multi-subscriber `fire*` dispatch live in their own
+     * collaborator. The public `agent.<slot>` reads below forward to it (no public-API change), the
+     * `onX` DSL setters delegate writes here, and the runtime fires through `agent.listeners.fireX`.
+     */
+    internal val listeners = ListenerRegistry()
     private val toolErrorHandlers: MutableMap<String, ToolErrorHandler> = mutableMapOf()
     internal var manifestHash: String? = null
         private set
@@ -284,7 +288,7 @@ class Agent<IN, OUT>(
         get() = interceptors.beforeTurnCount
 
     val tokenUsageListenerCount: Int
-        get() = tokenUsageListeners.size
+        get() = listeners.tokenUsageListenerCount
 
     /**
      * Set true at end of [validate] (#697). Structural mutators (skills, tools,
@@ -352,7 +356,7 @@ class Agent<IN, OUT>(
     }
 
     fun onToolUse(block: (name: String, args: Map<String, Any?>, result: Any?) -> Unit) {
-        toolUseListener = block
+        listeners.toolUseListener = block
     }
 
     /**
@@ -362,7 +366,7 @@ class Agent<IN, OUT>(
      * remains settable after construction for instrumentation.
      */
     fun onToolDenied(block: (name: String, args: Map<String, Any?>, reason: String) -> Unit) {
-        toolDeniedListener = block
+        listeners.toolDeniedListener = block
     }
 
     /**
@@ -374,7 +378,7 @@ class Agent<IN, OUT>(
      * after construction like the other listener slots.
      */
     fun onToolHallucinated(block: (name: String, args: Map<String, Any?>, allowedTools: List<String>) -> Unit) {
-        toolHallucinatedListener = block
+        listeners.toolHallucinatedListener = block
     }
 
     /**
@@ -382,7 +386,7 @@ class Agent<IN, OUT>(
      * Settable post-construction. See [PipelineEvent.ApprovalRequested].
      */
     fun onApprovalRequested(block: (title: String, hasBody: Boolean, timeoutMs: Long?) -> Unit) {
-        approvalRequestedListener = block
+        listeners.approvalRequestedListener = block
     }
 
     /**
@@ -391,7 +395,7 @@ class Agent<IN, OUT>(
      * post-construction. See [PipelineEvent.ApprovalDecided].
      */
     fun onApprovalDecided(block: (decision: String, hasPayload: Boolean) -> Unit) {
-        approvalDecidedListener = block
+        listeners.approvalDecidedListener = block
     }
 
     /**
@@ -421,25 +425,23 @@ class Agent<IN, OUT>(
      *   → `provider = "ollama"`.
      */
     fun onTokenUsage(block: (TokenUsage) -> Unit) {
-        tokenUsageListeners += block
+        listeners.addTokenUsageListener(block)
     }
 
     internal fun fireTokenUsage(usage: TokenUsage) {
-        tokenUsageListeners.toList().forEach { listener ->
-            dispatchSafely("onTokenUsage listener") { listener(usage) }
-        }
+        listeners.fireTokenUsage(usage)
     }
 
     fun onKnowledgeUsed(block: (name: String, content: String) -> Unit) {
-        knowledgeUsedListener = block
+        listeners.knowledgeUsedListener = block
     }
 
     fun onSkillChosen(block: (name: String) -> Unit) {
-        skillChosenListener = block
+        listeners.skillChosenListener = block
     }
 
     fun onError(block: (Throwable) -> Unit) {
-        errorListener = block
+        listeners.errorListener = block
     }
 
     /**
@@ -452,7 +454,7 @@ class Agent<IN, OUT>(
             "onBudgetThreshold threshold must be in [0.0, 1.0]; got $threshold"
         }
         budgetThreshold = threshold
-        budgetThresholdListener = block
+        listeners.budgetThresholdListener = block
     }
 
     /**
@@ -482,7 +484,7 @@ class Agent<IN, OUT>(
      * which to extend vs which to stop.
      */
     fun onBudgetExceeded(block: (reason: BudgetReason, currentLimit: Int) -> agents_engine.model.BudgetDecision) {
-        budgetExceededListener = block
+        listeners.budgetExceededListener = block
     }
 
     fun onBeforeSkill(block: (skillName: String) -> Decision<String>) {
@@ -502,13 +504,11 @@ class Agent<IN, OUT>(
     }
 
     fun onAgentEvent(block: (AgentEvent<*>) -> Unit) {
-        agentEventListeners += block
+        listeners.addAgentEventListener(block)
     }
 
     internal fun fireAgentEvent(event: AgentEvent<*>) {
-        agentEventListeners.toList().forEach { listener ->
-            dispatchSafely("onAgentEvent listener") { listener(event) }
-        }
+        listeners.fireAgentEvent(event)
     }
 
     internal fun decideBeforeSkill(skillName: String): Decision<String> =
@@ -533,7 +533,7 @@ class Agent<IN, OUT>(
         skillSelector = block
     }
 
-    fun routerRationale(block: (rationale: String) -> Unit) { routerRationaleListener = block }
+    fun routerRationale(block: (rationale: String) -> Unit) { listeners.routerRationaleListener = block }
 
     fun skillSelectionConfidenceThreshold(threshold: Double) {
         checkNotFrozen()
