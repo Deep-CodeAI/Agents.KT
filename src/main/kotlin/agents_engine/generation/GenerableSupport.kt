@@ -85,7 +85,7 @@ private object GeneratedMetaCache {
      * has no generated companion or no `constructFromMap` method (e.g. the
      * class had default-valued params and KSP skipped that emission).
      */
-    fun lookupConstructor(kClass: KClass<*>): ((Map<*, Any?>) -> Any?)? {
+    fun lookupConstructor(kClass: KClass<*>): ((Map<*, *>) -> Any?)? {
         val method = load(kClass).constructor ?: return null
         return { fields -> method.invoke(null, fields) }
     }
@@ -533,35 +533,38 @@ fun <T : Any> KClass<T>.fromLlmOutput(json: String): T? {
             val obj = parsed as? Map<*, *> ?: return@withReflection null
             val typeName = obj["type"] as? String ?: return@withReflection null
             val variant = sealedSubclasses.find { it.simpleName == typeName } ?: return@withReflection null
-            @Suppress("UNCHECKED_CAST")
-            variant.constructFromMap(obj as Map<String, Any?>) as? T
+            // #2803 — the variant's codec types the result as the variant (a `T`), no cast.
+            variant.codec().decode(obj)
         }
     }
 
     val obj = parsed as? Map<*, *> ?: return null
-    @Suppress("UNCHECKED_CAST")
-    return constructFromMap(obj as Map<String, Any?>)
+    return constructFromMap(obj)
 }
 
-@Suppress("UNCHECKED_CAST")
-@PublishedApi
-internal fun <T : Any> KClass<T>.constructFromMap(fields: Map<*, Any?>): T? {
-    // #1704: prefer the KSP-generated constructFromMap when present. The
-    // generated method is byte-for-byte equivalent to the reflection path
-    // for classes without default-valued params; for everything else, the
-    // cache returns null and we fall through to reflection below.
+/**
+ * #2803 — resolve the [GenerableCodec] for [this] type. Prefers the KSP-generated `constructFromMap`
+ * (#1704) — byte-for-byte equivalent to reflection for classes without default-valued params — and
+ * otherwise wraps the reflective path (#1705: returns null on missing kotlin-reflect, which routes
+ * typed-tool deserialization through `onError.invalidArgs`). The lone unchecked cast (the generated
+ * method's erased `Any?` result → `T?`) lives here.
+ */
+internal fun <T : Any> KClass<T>.codec(): GenerableCodec<T> {
     GeneratedMetaCache.lookupConstructor(this)?.let { invoke ->
-        return invoke(fields) as T?
+        return GenerableCodec { fields ->
+            @Suppress("UNCHECKED_CAST")
+            invoke(fields) as T?
+        }
     }
-    // #1705: wrap reflection — typed-tool deserialization returns null on
-    // missing kotlin-reflect, which routes through onError.invalidArgs.
-    return ReflectionFallback.withReflection {
-        constructFromMapReflective(fields)
+    return GenerableCodec { fields ->
+        ReflectionFallback.withReflection { constructFromMapReflective(fields) }
     }
 }
 
-@Suppress("UNCHECKED_CAST")
-private fun <T : Any> KClass<T>.constructFromMapReflective(fields: Map<*, Any?>): T? {
+@PublishedApi
+internal fun <T : Any> KClass<T>.constructFromMap(fields: Map<*, *>): T? = codec().decode(fields)
+
+private fun <T : Any> KClass<T>.constructFromMapReflective(fields: Map<*, *>): T? {
     // #2482a — sealed parent dispatch. When the called class is a sealed
     // PARENT (not a variant), `primaryConstructor` is null and we'd return
     // null below — meaning a sealed @Generable input type (e.g. a McpServer
@@ -571,13 +574,10 @@ private fun <T : Any> KClass<T>.constructFromMapReflective(fields: Map<*, Any?>)
     if (this.isSealed) {
         val typeName = fields["type"] as? String ?: return null
         val variant = sealedSubclasses.firstOrNull { it.simpleName == typeName } ?: return null
-        // data-object variants: no fields, the singleton IS the value.
-        variant.objectInstance?.let {
-            @Suppress("UNCHECKED_CAST")
-            return it as? T
-        }
-        @Suppress("UNCHECKED_CAST")
-        return (variant as KClass<Any>).constructFromMap(fields) as? T
+        // data-object variants: no fields, the singleton IS the value (`out T` is a `T`).
+        variant.objectInstance?.let { return it }
+        // #2803 — recurse through the variant's codec; its result types as the variant (a `T`).
+        return variant.codec().decode(fields)
     }
 
     val ctor = primaryConstructor ?: return null
@@ -631,7 +631,6 @@ private fun <T : Any> KClass<T>.constructFromMapReflective(fields: Map<*, Any?>)
     }
 }
 
-@Suppress("UNCHECKED_CAST")
 private fun coerceValue(value: Any?, type: KType): Any? {
     if (value == null) return null
     return when (type.classifier) {
@@ -667,7 +666,8 @@ private fun coerceValue(value: Any?, type: KType): Any? {
                 val map: Map<*, *> = (value as? Map<*, *>)
                     ?: (value as? String)?.let { LenientJsonParser.parse(it) as? Map<*, *> }
                     ?: return null
-                (cls as KClass<Any>).constructFromMap(map)
+                // #2803 — decode the nested @Generable through its codec; no `KClass<Any>` cast.
+                cls.codec().decode(map)
             } else {
                 value
             }
