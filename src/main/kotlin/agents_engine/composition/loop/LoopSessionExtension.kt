@@ -1,20 +1,7 @@
 package agents_engine.composition.loop
 
-import agents_engine.core.AgentRuntimeContext
-import agents_engine.core.withAgentRuntimeContext
-import agents_engine.model.AgentEventEmitter
-import agents_engine.runtime.events.AgentEvent
 import agents_engine.runtime.events.AgentSession
-import agents_engine.runtime.events.withRuntimeContext
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.consumeAsFlow
-import kotlinx.coroutines.launch
+import agents_engine.runtime.events.agentSessionScope
 
 /**
  * `agents_engine/composition/loop/LoopSessionExtension.kt` — the
@@ -23,7 +10,9 @@ import kotlinx.coroutines.launch
  * agent's `agentId`. Iterations interleave only one at a time
  * (loops are sequential). Termination as in the non-streaming path:
  * `next` returns `null` or `maxIterations` hit. Terminal `Completed`
- * carries `loopAgentId` (or `"loop"` fallback) (#1749). See
+ * carries `loopAgentId` (or `"loop"` fallback) (#1749). The channel /
+ * scope / context / terminal-event lifecycle lives in the shared
+ * [agentSessionScope] (#2797). See
  * `src/main/resources/internals-agent/composition/loop/LoopSessionExtension.md`
  * (#1837 / #1870).
  */
@@ -43,60 +32,22 @@ import kotlinx.coroutines.launch
  */
 fun <IN, OUT> Loop<IN, OUT>.session(input: IN): AgentSession<OUT> {
     val loop = this
-    val channel = Channel<AgentEvent<OUT>>(Channel.BUFFERED)
-    val result = CompletableDeferred<OUT>()
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
-    val terminalAgentId = loop.loopAgentId ?: "loop"
-    val runtimeContext = AgentRuntimeContext(sessionId = java.util.UUID.randomUUID().toString())
+    return agentSessionScope({ loop.loopAgentId ?: "loop" }) { emit ->
+        // sessionExec streams the wrapped run's inner events per iteration; falls back to plain
+        // execution (no events) when the Loop was constructed without the factory functions.
+        val streamingExec: suspend (IN) -> OUT =
+            loop.sessionExec?.let { f -> { i: IN -> f(i, emit) } } ?: loop.execution
 
-    scope.launch {
-        withAgentRuntimeContext(runtimeContext) {
-            @Suppress("UNCHECKED_CAST")
-            val emitter: AgentEventEmitter = { event ->
-                channel.trySend(event.withRuntimeContext(runtimeContext) as AgentEvent<OUT>)
+        var current = streamingExec(input)
+        var iterations = 1
+        while (true) {
+            val feedback = loop.next(current) ?: break
+            check(iterations < loop.maxIterations) {
+                "Loop exceeded maxIterations=${loop.maxIterations} without termination."
             }
-            try {
-                // sessionExec streams the wrapped run's inner events per
-                // iteration; falls back to plain execution (no events) when
-                // the Loop was constructed without the factory functions.
-                val streamingExec: suspend (IN) -> OUT = loop.sessionExec?.let { f -> { input -> f(input, emitter) } }
-                    ?: loop.execution
-
-                var current = streamingExec(input)
-                var iterations = 1
-                while (true) {
-                    val feedback = loop.next(current)
-                    if (feedback == null) break
-                    check(iterations < loop.maxIterations) {
-                        "Loop exceeded maxIterations=${loop.maxIterations} without termination."
-                    }
-                    current = streamingExec(feedback)
-                    iterations++
-                }
-
-                channel.trySend(AgentEvent.Completed(terminalAgentId, current, null))
-                channel.close()
-                result.complete(current)
-            } catch (timeout: TimeoutCancellationException) {
-                // #2863 — caught BEFORE CancellationException (subtype).
-                channel.trySend(AgentEvent.Failed(terminalAgentId, timeout))
-                channel.close()
-                result.completeExceptionally(timeout)
-            } catch (cancel: CancellationException) {
-                // #2863 — bare cancellation propagates per structured concurrency.
-                result.completeExceptionally(cancel)
-                channel.close(cancel)
-                throw cancel
-            } catch (t: Throwable) {
-                channel.trySend(AgentEvent.Failed(terminalAgentId, t))
-                channel.close()
-                result.completeExceptionally(t)
-            }
+            current = streamingExec(feedback)
+            iterations++
         }
+        current
     }
-
-    return AgentSession(
-        events = channel.consumeAsFlow(),
-        resultDeferred = result,
-    )
 }

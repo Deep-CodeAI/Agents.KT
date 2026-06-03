@@ -1,21 +1,7 @@
 package agents_engine.composition.pipeline
 
-import agents_engine.core.AgentRuntimeContext
-import agents_engine.core.withAgentRuntimeContext
-import agents_engine.model.AgentEventEmitter
-import agents_engine.runtime.events.AgentEvent
 import agents_engine.runtime.events.AgentSession
-import agents_engine.runtime.events.withRuntimeContext
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.consumeAsFlow
-import kotlinx.coroutines.launch
-import java.util.logging.Logger
+import agents_engine.runtime.events.agentSessionScope
 
 /**
  * `agents_engine/composition/pipeline/PipelineSessionExtension.kt` — the
@@ -24,7 +10,8 @@ import java.util.logging.Logger
  * `execution` for un-converted `then` overloads, surfacing only the
  * terminal Completed). Inner agents' events stream with their own
  * `agentId`s. Terminal `Completed` carries the pipeline's final
- * output (#1745). See
+ * output (#1745). The channel / scope / context / terminal-event
+ * lifecycle lives in the shared [agentSessionScope] (#2797). See
  * `src/main/resources/internals-agent/composition/pipeline/PipelineSessionExtension.md`
  * (#1837 / #1874).
  */
@@ -52,56 +39,9 @@ import java.util.logging.Logger
  */
 fun <IN, OUT> Pipeline<IN, OUT>.session(input: IN): AgentSession<OUT> {
     val pipeline = this
-    val channel = Channel<AgentEvent<OUT>>(Channel.BUFFERED)
-    val result = CompletableDeferred<OUT>()
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
-    val runtimeContext = AgentRuntimeContext(sessionId = java.util.UUID.randomUUID().toString())
-    // agentId for the terminal Completed: last agent's name (its OUT
-    // matches Pipeline's OUT). Pipeline has no name of its own.
-    val terminalAgentId = pipeline.agents.lastOrNull()?.name ?: "pipeline"
-
-    scope.launch {
-        withAgentRuntimeContext(runtimeContext) {
-            @Suppress("UNCHECKED_CAST")
-            val emitter: AgentEventEmitter = { event ->
-                val typed = event.withRuntimeContext(runtimeContext) as AgentEvent<OUT>
-                val sendResult = channel.trySend(typed)
-                if (sendResult.isFailure) {
-                    PIPELINE_LOGGER.warning(
-                        "channel.trySend dropped a ${typed::class.simpleName} from pipeline session " +
-                            "(terminalAgent='$terminalAgentId', sessionId='${runtimeContext.sessionId}')"
-                    )
-                }
-            }
-            try {
-                val output = pipeline.effectiveSessionExec(input, emitter)
-                channel.send(AgentEvent.Completed(terminalAgentId, output, null))
-                channel.close()
-                result.complete(output)
-            } catch (timeout: TimeoutCancellationException) {
-                // #2863 — TimeoutCancellationException is a real failure.
-                // Must be caught BEFORE CancellationException (subtype).
-                channel.send(AgentEvent.Failed(terminalAgentId, timeout))
-                channel.close()
-                result.completeExceptionally(timeout)
-            } catch (cancel: CancellationException) {
-                // #2863 — bare cancellation propagates per structured concurrency.
-                result.completeExceptionally(cancel)
-                channel.close(cancel)
-                throw cancel
-            } catch (t: Throwable) {
-                channel.send(AgentEvent.Failed(terminalAgentId, t))
-                channel.close()
-                result.completeExceptionally(t)
-            }
-        }
+    // agentId for the terminal Completed: last agent's name (its OUT matches Pipeline's OUT).
+    // Pipeline has no name of its own.
+    return agentSessionScope({ pipeline.agents.lastOrNull()?.name ?: "pipeline" }) { emit ->
+        pipeline.effectiveSessionExec(input, emit)
     }
-
-    return AgentSession(
-        events = channel.consumeAsFlow(),
-        resultDeferred = result,
-    )
 }
-
-// #2806 — visible drops on the non-suspending emitter path.
-private val PIPELINE_LOGGER: Logger = Logger.getLogger("agents_engine.composition.pipeline.PipelineSession")

@@ -356,16 +356,12 @@
     <ID>TooGenericExceptionCaught:Agent.kt$Agent$callbackError: Throwable</ID>
     <ID>TooGenericExceptionCaught:Agent.kt$Agent$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:AgentSessionExtension.kt$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:AgentSessionScope.kt$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:AgenticLoop.kt$t: Throwable</ID>
-    <ID>TooGenericExceptionCaught:BranchSessionExtension.kt$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:Decision.kt$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:EvalCase.kt$EvalCase$t: Throwable</ID>
-    <ID>TooGenericExceptionCaught:ForumSessionExtension.kt$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:LiveRunner.kt$LiveRunner$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:LiveShow.kt$LiveShow$e: Throwable</ID>
-    <ID>TooGenericExceptionCaught:LoopSessionExtension.kt$t: Throwable</ID>
-    <ID>TooGenericExceptionCaught:ParallelSessionExtension.kt$t: Throwable</ID>
-    <ID>TooGenericExceptionCaught:PipelineSessionExtension.kt$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:ToolInvoker.kt$e: Throwable</ID>
     <ID>TooGenericExceptionThrown:AgenticLoopCoverageTest.kt$AgenticLoopCoverageTest$throw RuntimeException("original-failure")</ID>
     <ID>TooGenericExceptionThrown:AgenticLoopCoverageTest.kt$AgenticLoopCoverageTest$throw RuntimeException("real-failure")</ID>

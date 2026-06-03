@@ -1,24 +1,11 @@
 package agents_engine.composition.parallel
 
-import agents_engine.core.AgentRuntimeContext
-import agents_engine.core.withAgentRuntimeContext
-import agents_engine.model.AgentEventEmitter
-import agents_engine.runtime.events.AgentEvent
 import agents_engine.runtime.events.AgentSession
-import agents_engine.runtime.events.withRuntimeContext
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
+import agents_engine.runtime.events.agentSessionScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.consumeAsFlow
-import kotlinx.coroutines.launch
-import java.util.logging.Logger
 
 /**
  * `agents_engine/composition/parallel/ParallelSessionExtension.kt` — the
@@ -26,7 +13,9 @@ import java.util.logging.Logger
  * via `sessionExecutions`, their events interleave on the shared
  * channel — demultiplex by `agentId` on the consumer side. Terminal
  * `Completed` fires once with the full `List<OUT>` after all branches
- * complete. `Failed` if any branch throws (#1750). See
+ * complete. `Failed` if any branch throws (#1750). The channel / scope /
+ * context / terminal-event lifecycle lives in the shared
+ * [agentSessionScope] (#2797). See
  * `src/main/resources/internals-agent/composition/parallel/ParallelSessionExtension.md`
  * (#1837 / #1872).
  */
@@ -56,68 +45,20 @@ import java.util.logging.Logger
  */
 fun <IN, OUT> Parallel<IN, OUT>.session(input: IN): AgentSession<List<OUT>> {
     val parallel = this
-    val channel = Channel<AgentEvent<List<OUT>>>(Channel.BUFFERED)
-    val result = CompletableDeferred<List<OUT>>()
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
-    val runtimeContext = AgentRuntimeContext(sessionId = java.util.UUID.randomUUID().toString())
-
-    scope.launch {
-        withAgentRuntimeContext(runtimeContext) {
-            @Suppress("UNCHECKED_CAST")
-            val emitter: AgentEventEmitter = { event ->
-                val typed = event.withRuntimeContext(runtimeContext) as AgentEvent<List<OUT>>
-                val sendResult = channel.trySend(typed)
-                if (sendResult.isFailure) {
-                    PARALLEL_LOGGER.warning(
-                        "channel.trySend dropped a ${typed::class.simpleName} from parallel session " +
-                            "(sessionId='${runtimeContext.sessionId}') — consumer is slower than branches"
-                    )
-                }
-            }
-            try {
-                val outputs = coroutineScope {
-                    val sessionExecs = parallel.sessionExecutions
-                    if (sessionExecs != null) {
-                        // Streaming path: each branch async with shared emitter.
-                        sessionExecs.map { exec ->
-                            async(Dispatchers.Default) { exec(input, emitter) }
-                        }.awaitAll()
-                    } else {
-                        // Fallback: no per-branch streaming. Just run executions.
-                        parallel.executions.map { exec ->
-                            async(Dispatchers.Default) { exec(input) }
-                        }.awaitAll()
-                    }
-                }
-
-                channel.send(AgentEvent.Completed("parallel", outputs, null))
-                channel.close()
-                result.complete(outputs)
-            } catch (timeout: TimeoutCancellationException) {
-                // #2863 — caught BEFORE CancellationException (subtype). Real
-                // failure path: emit Failed.
-                channel.send(AgentEvent.Failed("parallel", timeout))
-                channel.close()
-                result.completeExceptionally(timeout)
-            } catch (cancel: CancellationException) {
-                // #2863 — bare cancellation propagates per structured concurrency.
-                result.completeExceptionally(cancel)
-                channel.close(cancel)
-                throw cancel
-            } catch (t: Throwable) {
-                channel.send(AgentEvent.Failed("parallel", t))
-                channel.close()
-                result.completeExceptionally(t)
+    return agentSessionScope({ "parallel" }) { emit ->
+        coroutineScope {
+            val sessionExecs = parallel.sessionExecutions
+            if (sessionExecs != null) {
+                // Streaming path: each branch async with the shared emitter.
+                sessionExecs.map { exec ->
+                    async(Dispatchers.Default) { exec(input, emit) }
+                }.awaitAll()
+            } else {
+                // Fallback: no per-branch streaming. Just run executions.
+                parallel.executions.map { exec ->
+                    async(Dispatchers.Default) { exec(input) }
+                }.awaitAll()
             }
         }
     }
-
-    return AgentSession(
-        events = channel.consumeAsFlow(),
-        resultDeferred = result,
-    )
 }
-
-// #2806 — visible drops on the non-suspending emitter path; bracket events
-// switched to suspending `send` (above) so they cannot be dropped.
-private val PARALLEL_LOGGER: Logger = Logger.getLogger("agents_engine.composition.parallel.ParallelSession")
