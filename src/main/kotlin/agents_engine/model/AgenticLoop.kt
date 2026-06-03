@@ -88,12 +88,11 @@ internal suspend fun <IN> executeAgentic(
     skill: Skill<*, *>,
     input: IN,
     /**
-     * #1707/#3: the effective system prompt for this invocation. Defaults
-     * to the agent's baked-in `prompt`. The `wrap` operator passes the
-     * teacher's output here instead of mutating `agent.prompt` (which
-     * races on concurrent invocation of the same pipeline).
+     * #3376 batch 5 — the per-invocation execution parameters (prompt override, resume/HITL state,
+     * checkpoint callback, manifest-mismatch opt-out, attachments) bundled into one [RunRequest],
+     * shared with [Agent.invokeSuspendForSession]. Defaults to a fresh invocation.
      */
-    effectivePrompt: String = agent.prompt,
+    request: agents_engine.core.RunRequest = agents_engine.core.RunRequest(),
     /**
      * #1739: optional AgentEvent emitter. When non-null, the loop streams
      * via `client.chatStream(...)`, surfaces `Token` / `ToolCallStarted` /
@@ -104,51 +103,21 @@ internal suspend fun <IN> executeAgentic(
      */
     emitter: AgentEventEmitter? = null,
     runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
-    /**
-     * #2416 — resume seed. When non-null, the loop starts from this snapshot's
-     * messages + counters (and restores memory) instead of a fresh conversation.
-     */
-    resumeFrom: agents_engine.core.SessionSnapshot? = null,
-    /**
-     * #2416 — fired at each turn boundary (after a tool round completes, before
-     * the next model call) with the current resumable state, for persistence.
-     */
-    onTurnCheckpoint: ((agents_engine.core.SessionSnapshot) -> Unit)? = null,
-    /**
-     * #2754 — when [resumeFrom] is non-null and carries a `manifestHash` that
-     * differs from the current agent's `manifestHash`, resume fails closed by
-     * throwing [agents_engine.core.SnapshotManifestMismatchException]. Set to
-     * `true` to override (callers take responsibility for any migration
-     * semantics). `null` snapshot.manifestHash is treated as "no manifest at
-     * the time of snapshot" — allowed regardless, for back-compat with pre-
-     * 0.6.4 snapshots.
-     */
-    allowManifestMismatch: Boolean = false,
-    /**
-     * #2488 — typed resume input for the HITL interrupt primitive. When
-     * [resumeFrom] is non-null and carries `pendingInterruptCallId`, this
-     * value is rendered via [toLlmInput] (so typed `@Generable` replies
-     * become JSON) and synthesised as the interrupted tool's result message
-     * before the loop resumes. Required when resuming an interrupted
-     * snapshot; ignored otherwise.
-     */
-    resumeWith: Any? = null,
-    /**
-     * #2470 slice b — image attachments for the FIRST user LlmMessage.
-     * Each `Content.Image` is dereferenced against [Agent.blobStore]
-     * (errors fast when null), base64-encoded once, and rendered into
-     * an [ImagePart]. Non-image content variants are skipped — Document
-     * / Audio / Video flow through the wire only once #2470 slice c
-     * (provider doc/audio/video adapters) ships. Ignored on resume (the
-     * snapshot's restored conversation already carries the original
-     * attachments on the saved user turn).
-     */
-    attachments: List<agents_engine.content.Content>? = null,
 ): AgenticResult {
     val config = requireNotNull(agent.modelConfig) {
         "Agent '${agent.name}' has no model configured. Add a model { } block."
     }
     val budget = agent.budgetConfig
+
+    // #3376 batch 5 — unpack the bundled request into the locals the loop body uses, so the body is
+    // byte-for-byte unchanged. `effectivePrompt` defaults to the agent's baked-in prompt (the `wrap`
+    // operator passes a per-invocation override via request.promptOverride).
+    val effectivePrompt = request.promptOverride ?: agent.prompt
+    val resumeFrom = request.resumeFrom
+    val onTurnCheckpoint = request.onTurnCheckpoint
+    val allowManifestMismatch = request.allowManifestMismatch
+    val resumeWith = request.resumeWith
+    val attachments = request.attachments
 
     val messages = mutableListOf<LlmMessage>()
 
