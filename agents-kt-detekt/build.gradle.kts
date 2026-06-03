@@ -16,10 +16,10 @@ dependencyLocking {
 dependencies {
     // detekt-api provides Rule / RuleSetProvider / the Kotlin PSI surface. compileOnly:
     // consumers get it transitively from the detekt plugin at analysis time.
-    compileOnly("io.gitlab.arturbosch.detekt:detekt-api:1.23.7")
+    compileOnly("io.gitlab.arturbosch.detekt:detekt-api:1.23.8")
     testImplementation(kotlin("test"))
-    testImplementation("io.gitlab.arturbosch.detekt:detekt-api:1.23.7")
-    testImplementation("io.gitlab.arturbosch.detekt:detekt-test:1.23.7")
+    testImplementation("io.gitlab.arturbosch.detekt:detekt-api:1.23.8")
+    testImplementation("io.gitlab.arturbosch.detekt:detekt-test:1.23.8")
 }
 
 kotlin {
