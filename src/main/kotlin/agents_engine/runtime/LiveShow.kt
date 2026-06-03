@@ -22,71 +22,6 @@ import kotlinx.coroutines.runBlocking
  */
 
 /**
- * Default banner — full-resolution ASCII rendering of the Agents.KT logo.
- * Geometric cat face (`@`) with pink crown accents (`+`) and a block-letter
- * "Agents.KT" wordmark below. Approximately 140 columns wide; assumes a
- * standard wide terminal.
- */
-internal val DEFAULT_BANNER: String =
-    """
-                                     @@                                                             @@
-                                     @@@@@                                                       @@@@@
-                                     @@@@@@@                                                  @@@@@@@@
-                                      @@-@@@@@@                     +++                     @@@@@@:@@
-                                      @@%..@@@@@@@               +++++++++               @@@@@@@=.#@@
-                                      @@@...@@@@@@@@           +++++++++++++           @@@@@@@@...@@@
-                                      @@@#...:@@@@@@@@@      +++++++++++++++++      @@@@@@@@@+...+@@@
-                                      @@@@.....@@@@@@@@@@  +++++++++++++++++++++  @@@@@@@@@@.....@@@@
-                                       @@@......@@@@@@@@@@@@@@@@@@@@%%@@@@@@@@@@@@@@@@@@@@-......@@@
-                                       @@@@.......@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@.......@@@@
-                                       @@@@........@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@+........@@@@
-                                       @@@@+......@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@.......@@@@
-                                       @@@@@....@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@....@@@@@
-                                       @@@@@..@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@..@@@@@
-                                       @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-                                       +@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@%+
-                                     ++++@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@++++
-                                   ++++++@@@@@@@@@%@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@++++++
-                                 ++++++++@@@@@@@@@=.........#@@@@@@@@@@@@@@@@@..........@@@@@@@@@@++++++++
-                               +++++++++++@@@@@@@@@@..........@@@@@@@@@@@@@@@.........-@@@@@@@@@@++++++++++
-                             +++++++++++++@@@@@@@@@@@@.........+@@@@@@@@@@@..........@@@@@@@@@@@@+++++++++++++
-                            ++++++++++++++@@@@@@@@@@@@@#........-@@@@#@@@@.........@@@@@@@@@@@@@@++++++++++++++
-                              +++++++++++++@@@@@@@@@@@@@@@@@@@@@@@@@...@@@@@@@@@@@@@@@@@@@@@@@@@+++++++++++++
-                                +++++++++++@@@@@@@@@@@@@@@@@@@@@@@@.....@@@@@@@@@@@@@@@@@@@@@@@@+++++++++++
-                                  @++++++++*@@@@@@@@@@@@@@@@@@@@@@.......@@@@@@@@@@@@@@@@@@@@@@*++++++++%
-                                    @%++++++@@@@@@@@@@@@@@@@@@@@@@-......@@@@@@@@@@@@@@@@@@@@@@+++++++@
-                                      @@++++@@@@@@@@@@@@@@@@@@@@@@@@@.=@@@@@@@@@@@@@@@@@@@@@@@%++++#@
-                                        @@+++@@@@@@@@@@@@@....@@@@@@@@@@@@@@=....#@@@@@@@@@@@@+++@@
-                                          @@*@@@@@@@@....%@@@-@@@@@@@@@@@@@@..@@@#....@@@@@@@@+@@
-                                            @@@@@@...@@@#...=@@@@@@@=.+@@@@@@@*...+@@@...@@@@@@
-                                              @@@@@@@%...@@@@@@@@@.......@@@@@@@@@...+@@@@@@@
-                                                @@@@@-@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@=%@@@@
-                                                  @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-                                                    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-                                                      @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-                                                        @@@@@@@@@@@@@@@@@@@@@@@@@@@
-                                                          @@@@@@@@@@@@@@@@@@@@@@@
-                                                            @@@@@@@@@@@@@@@@@@@
-                                                              @@@@@@@@@@@@@@@
-                                                                @@@@@@@@@@@
-                                                                  @@@@@@@
-                                                                    @@@
-
-
-                                @@@                                     @@                @@@@   @@@ @@@@@@@@@@@
-                               @@@@@                                   @@@                @@@@ @@@@  @@@@@@@@@@@
-                              @@@@@@@   @@@@@@@@@  @@@@@@@@ @@@@@@@@@ @@@@@@@@@@@@@@@     @@@@@@@@       @@@
-                             @@@@ @@@  @@@@   @@@ @@@@@@@@@ @@@@  @@@  @@@   @@@@@        @@@@@@@        @@@
-                             @@@@@@@@@ @@@@   @@@ @@@@@@@@@ @@@   @@@@ @@@    @@@@@@@     @@@@@@@@       @@@
-                            @@@@@@@@@@@ @@@@@@@@@ @@@@@@@@@ @@@   @@@@ @@@@@ @@@@@@@@ @@@ @@@@ @@@@@     @@@
-                           @@@@     @@@@ @@@@@@@@   @@@@@@@ @@@   @@@   @@@@@@@@@@@@  @@@ @@@@   @@@@    @@@
-                                        @@@@@@@@@
-                                        @@@@@@@
-""".trimIndent()
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
  * REPL deployment surface for any String-input agent or composed structure (#981).
  *
  * Mirrors MCP's two-layer split — `LiveShow.from(agent).start()` is the
@@ -183,13 +118,18 @@ class LiveShow internal constructor(
         cfg.onTurnStart?.invoke(line)
 
         val composed = composeInput(history, line, cfg.historyDelimiter)
-        val output = runWithSpinner(writer) {
+        // Spinner animates in place while the agent runs; a null (colors off / empty spinner) drives
+        // the nullable-AutoCloseable `use` as a no-op, so the block still runs without animation.
+        val spinner = SpinnerAnimation.start(writer, cfg.spinner, effectiveColors) {
+            themed(it, cfg.theme.prompt)
+        }
+        val output = spinner.use {
             try {
                 runBlocking { invoke(composed) }
             } catch (e: Throwable) {
                 cfg.onErrorReported?.invoke(e)
                 writer.println(themed("error: ${e.message ?: e.toString()}", cfg.theme.error))
-                return@runWithSpinner SENTINEL_FAILURE
+                return@use SENTINEL_FAILURE
             }
         }
 
@@ -204,38 +144,6 @@ class LiveShow internal constructor(
         }
 
         cfg.onTurnEnd?.invoke(line, output)
-    }
-
-    /**
-     * Run [block] while animating the configured [Spinner] in place. Spinner
-     * is suppressed when colors are disabled (would pollute pipe captures).
-     * Final line-clear uses CR + ANSI erase-line so the rendered output sits
-     * cleanly where the spinner used to be.
-     */
-    private fun runWithSpinner(writer: PrintWriter, block: () -> Any?): Any? {
-        if (!effectiveColors || cfg.spinner.isEmpty) return block()
-
-        val running = AtomicBoolean(true)
-        val thread = Thread({
-            var idx = 0
-            while (running.get()) {
-                val frame = cfg.spinner.frames[idx % cfg.spinner.frames.size]
-                writer.print("\r" + themed(frame, cfg.theme.prompt))
-                writer.flush()
-                try { Thread.sleep(cfg.spinner.intervalMs) } catch (_: InterruptedException) { break }
-                idx++
-            }
-        }, "LiveShow-Spinner").apply { isDaemon = true; start() }
-
-        try {
-            return block()
-        } finally {
-            running.set(false)
-            thread.interrupt()
-            // Carriage return + ANSI erase-to-end-of-line clears the spinner.
-            writer.print("\r${Ansi.ERASE_LINE}")
-            writer.flush()
-        }
     }
 
     private fun themed(s: String, color: AnsiColor): String =
