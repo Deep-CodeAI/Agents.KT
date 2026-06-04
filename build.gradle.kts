@@ -12,7 +12,7 @@ plugins {
     // broad catch, long methods, high complexity, nested blocks). The
     // detekt-baseline.xml freezes the current violation count so the
     // build stays green on existing code; new violations fail.
-    id("io.gitlab.arturbosch.detekt") version "1.23.7"
+    id("io.gitlab.arturbosch.detekt") version "1.23.8"
 }
 
 group = "ai.deep-code"
@@ -98,7 +98,7 @@ kotlin {
 // flagged exactly these categories; broader rules can be enabled in
 // follow-up tickets as the codebase converges.
 detekt {
-    toolVersion = "1.23.7"
+    toolVersion = "1.23.8"
     config.setFrom(rootProject.file("detekt.yml"))
     buildUponDefaultConfig = true
     baseline = rootProject.file("detekt-baseline.xml")
