@@ -4,6 +4,20 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `onLLMError` model-failure policy + recovery hook (#3508)
+
+- Makes the model-error contract explicit: when a model is configured, a failed model call in the
+  agentic loop (a down provider — surfacing as the raw transport error like `ConnectException` — a
+  5xx, or a malformed response) **fails fast and loud by default**. New `agent.onLLMError { e ->
+  LlmErrorDecision }` opts into recovery: `RespondWith(fallback)` uses a canned/typed value (routed
+  through the agent's `castOut`) instead of throwing; `Rethrow` (the default with no handler) keeps it
+  loud. The handler receives the **original** exception — identity is preserved (the internal
+  `LlmCallFailure` marker that makes a model failure recognizable is unwrapped at the loop boundary,
+  so `onError` observers and `assertThrows` still see the real error). Does not fire for budget caps
+  (`onBudgetExceeded`) or cancellation. With **no model** configured, `implementedBy` skills run
+  deterministically and no model error can arise. Recovery is scoped to the agentic loop in this
+  release; a model failure during multi-skill LLM routing still propagates loud (follow-up).
+
 ### Changed — AgenticLoop setup extraction: `SkillRouting` + `buildSystemPrompt` (#3406)
 
 - Follow-up to #3376. Relocated `selectSkillByLlm` (LLM skill router) out of `AgenticLoop.kt` into

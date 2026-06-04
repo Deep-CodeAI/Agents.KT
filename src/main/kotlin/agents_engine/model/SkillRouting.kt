@@ -48,6 +48,8 @@ suspend fun <IN> selectSkillByLlm(
     val routeSchema = if (client.supportsConstrainedDecoding()) {
         JsonSchema("SkillRoute", SkillRoute::class.jsonSchema())
     } else null
+    // #3508 — a routing-time model failure propagates its original exception (fail loud). onLLMError
+    // recovery is scoped to the agentic loop in v1; routing recovery is a follow-up.
     val response = withContext(Dispatchers.IO) { client.chat(messages, routeSchema) }
 
     val raw = when (response) {

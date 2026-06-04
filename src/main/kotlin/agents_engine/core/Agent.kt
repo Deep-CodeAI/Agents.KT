@@ -249,6 +249,12 @@ class Agent<IN, OUT>(
      */
     val budgetExceededListener: ((reason: BudgetReason, currentLimit: Int) -> agents_engine.model.BudgetDecision)?
         get() = listeners.budgetExceededListener
+    /**
+     * #3508 — model-error recovery handler set via [onLLMError]. Null (the default) means a failed
+     * model call fails fast and loud.
+     */
+    val llmErrorHandler: ((Throwable) -> agents_engine.model.LlmErrorDecision)?
+        get() = listeners.llmErrorHandler
     var skillSelectionConfidenceThreshold: Double = 0.6
         private set
     internal var skillSelector: ((IN) -> String)? = null
@@ -485,6 +491,19 @@ class Agent<IN, OUT>(
      */
     fun onBudgetExceeded(block: (reason: BudgetReason, currentLimit: Int) -> agents_engine.model.BudgetDecision) {
         listeners.budgetExceededListener = block
+    }
+
+    /**
+     * #3508 — register a recovery hook for model-call failures. When a model is configured and a call
+     * to it fails (a down server, a provider 5xx, a malformed response — all normalized to
+     * `LlmProviderException`), [block] is consulted with the error and decides:
+     * [agents_engine.model.LlmErrorDecision.Rethrow] (fail fast and loud — the default with no hook)
+     * or [agents_engine.model.LlmErrorDecision.RespondWith] (recover, using the supplied value as the
+     * agent's result via its `castOut`). Covers both the agentic loop and LLM skill routing. Does NOT
+     * fire for budget caps (use [onBudgetExceeded]) or cancellation. Settable post-construction.
+     */
+    fun onLLMError(block: (Throwable) -> agents_engine.model.LlmErrorDecision) {
+        listeners.llmErrorHandler = block
     }
 
     fun onBeforeSkill(block: (skillName: String) -> Decision<String>) {
@@ -817,11 +836,10 @@ class Agent<IN, OUT>(
                 castOut(executors[skill.name]!!(input))
             }
         } catch (t: Throwable) {
-            // #962: observability hook for infrastructure errors. Fires on
-            // *anything* that escapes the agentic invocation — LLM transport
-            // failures, response parse failures, budget exceptions, skill
-            // routing errors. Listener exceptions are attached as suppressed
-            // so they can never swallow the original error.
+            // #962: observability hook for infrastructure errors. Fires on *anything* that escapes the
+            // agentic invocation — LLM transport failures (after onLLMError declined to recover, #3508),
+            // response parse failures, budget exceptions, skill routing errors. Listener exceptions are
+            // attached as suppressed so they can never swallow the original error.
             errorListener?.let { listener ->
                 try {
                     withAgentRuntimeContext(runtimeContext) {

@@ -72,7 +72,43 @@ private const val BLOB_HASH_PREFIX_LEN = 12
  * invocation. [tokenUsage] is null when the provider never reported
  * usage for any turn.
  */
-internal data class AgenticResult(val output: Any, val tokenUsage: TokenUsage?)
+internal data class AgenticResult(val output: Any?, val tokenUsage: TokenUsage?)
+
+/**
+ * #3508 — run a model round-trip, tagging ANY failure with the internal [LlmCallFailure] marker so
+ * the single chokepoint in `Agent.invokeSuspendForSession` can recognize "the LLM call failed" and
+ * distinguish it from a tool error, a budget cap, or cancellation. A *down* server surfaces as a raw
+ * `java.net.ConnectException`; a 5xx / malformed-stream as something else again — the marker makes
+ * model failures recognizable WITHOUT changing the identity of the underlying error (the chokepoint
+ * unwraps it). Lives in the loop core (its primary caller via [chatOrStream]); also used by the skill
+ * router (`selectSkillByLlm`).
+ *
+ * [kotlinx.coroutines.CancellationException] (including `TimeoutCancellationException` from budget /
+ * `withTimeout`) propagates untouched — structured concurrency and budget handling own those, and
+ * recovering them would break cooperative cancellation. An already-marked [LlmCallFailure] passes
+ * through (no double-wrap).
+ */
+internal suspend fun <T> guardLlmCall(block: suspend () -> T): T = try {
+    block()
+} catch (cancel: kotlinx.coroutines.CancellationException) {
+    throw cancel
+} catch (marked: LlmCallFailure) {
+    throw marked
+} catch (t: Throwable) {
+    throw LlmCallFailure(t)
+}
+
+/**
+ * #3508 — apply the agent's `onLLMError` policy to a failed agentic-loop model call. The default (no
+ * handler) and [LlmErrorDecision.Rethrow] rethrow the [original] error — fail fast and loud, with the
+ * model-call exception's identity preserved. [LlmErrorDecision.RespondWith] recovers: its value
+ * becomes the loop's result (token usage is null — the turn that would have produced it failed).
+ */
+private fun recoverAgenticLlmError(agent: Agent<*, *>, original: Throwable): AgenticResult =
+    when (val decision = agent.llmErrorHandler?.invoke(original)) {
+        is LlmErrorDecision.RespondWith -> AgenticResult(decision.output, null)
+        LlmErrorDecision.Rethrow, null -> throw original
+    }
 
 /**
  * Runs the agentic loop for [skill] on [agent] with [input].
@@ -403,14 +439,21 @@ internal suspend fun <IN> executeAgentic(
                 temperature = config.temperature,
             )
         )
-        val response = chatOrStream(
-            client = client,
-            messages = messages,
-            agentId = agent.name,
-            skillName = skill.name,
-            emitter = emitter,
-            jsonSchema = constrainedOutputSchema,
-        )
+        val response = try {
+            chatOrStream(
+                client = client,
+                messages = messages,
+                agentId = agent.name,
+                skillName = skill.name,
+                emitter = emitter,
+                jsonSchema = constrainedOutputSchema,
+            )
+        } catch (failure: LlmCallFailure) {
+            // #3508 — the model call failed (down server, provider 5xx, malformed response). Apply the
+            // onLLMError policy: RespondWith short-circuits the loop with a fallback; Rethrow / no
+            // handler rethrows the ORIGINAL error (fail fast and loud). The marker never escapes.
+            return recoverAgenticLlmError(agent, failure.original)
+        }
         turns++
         val responseUsage = response.tokenUsage
         emitter?.invoke(
