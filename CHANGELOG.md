@@ -4,6 +4,15 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.7.23] — 2026-06-04
+
+**Maintainability + an explicit model-error policy.** Closes the bulk of the code-smell remediation
+epic (#2790), finishes the `AgenticLoop` decomposition begun in 0.7.21, and makes the model-error
+contract explicit with a new `onLLMError` recovery hook. The maintainability changes are all
+behavior-preserving (no public-API change); `onLLMError` is the one additive public API. Over the
+line, the detekt-baseline ratchet fell **423 → 415** and the main-module `@Suppress("UNCHECKED_CAST")`
+count **42 → 30**. Drop-in on the 0.7.x line.
+
 ### Added — `onLLMError` model-failure policy + recovery hook (#3508)
 
 - Makes the model-error contract explicit: when a model is configured, a failed model call in the
@@ -17,6 +26,67 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
   (`onBudgetExceeded`) or cancellation. With **no model** configured, `implementedBy` skills run
   deterministically and no model error can arise. Recovery is scoped to the agentic loop in this
   release; a model failure during multi-skill LLM routing still propagates loud (follow-up).
+
+### Changed — Decompose the `Agent` god class: `InterceptorChain` + `ListenerRegistry` (#2793)
+
+- The before-interceptor subsystem (the three interceptor lists, `onInterceptorDecision` observers,
+  and decision plumbing) moves into an `InterceptorChain` collaborator; `decideBeforeToolCall`'s
+  hand-inlined fold now reuses `runDecisionChain` (dropping the duplicated fold and its second
+  `@Suppress("UNCHECKED_CAST")`). The ~11 observability listener slots + the token-usage / agent-event
+  streams + their `fire*` dispatch move into a `ListenerRegistry`. The three copy-pasted
+  fire-listener-swallow-and-log blocks collapse into one shared `dispatchSafely`. `Agent` keeps its
+  public `onX` DSL setters and the `agent.<slot>` reads (forwarding to the collaborators) — no
+  public-API change. `Agent.kt` is back to its structural graph + resolution config.
+
+### Changed — Split the `McpServer` god class into HTTP transport + `McpDispatcher` (#2795)
+
+- The transport-agnostic JSON-RPC protocol core (the `when(method)` routing + every per-method
+  handler) extracts into `McpDispatcher`, operating purely on `Map → String` envelopes. `McpServer`
+  keeps HTTP intake only; `handle()` slims to `authenticate → validateAllowedHost/Origin →
+  validateRequest → readBoundedBody → dispatcher.dispatchRequest`, with the new `validateRequest` /
+  `readBoundedBody` helpers. `McpStdioServer` drives the dispatcher directly via `dispatchEnvelope`,
+  removing the `internal dispatchJsonRpc` back door. `McpServer.kt` 451 → 215; no public-API change.
+
+### Changed — Extract `agentSessionScope`; remove operator session-extension duplication (#2797)
+
+- The five composition operators (`branch` / `forum` / `loop` / `parallel` / `pipeline`) each
+  repeated an identical ~25-line streaming-session scaffold (channel + deferred + supervisor scope +
+  runtime context + context-threading emitter + terminal `Completed`/`Failed` + cancellation
+  ordering). One `agentSessionScope(terminalAgentId, body)` now owns the lifecycle; the operators
+  reduce to their run lambda (net −282 lines). The five emitter casts collapse to one; terminal events
+  unify to never-drop suspending `send`; the per-operator drop-loggers collapse to one.
+
+### Changed — Split the `LiveShow` god file: `LiveShowBanner` + `SpinnerAnimation` (#2798)
+
+- The ASCII banner asset moves to `LiveShowBanner.kt`. The in-place inference spinner — previously a
+  manual `Thread` + an `AtomicBoolean running` that *shadowed* the `LiveShow.running` field — becomes
+  an `AutoCloseable` `SpinnerAnimation` so the turn handler reads `spinner.use { … }`; the shadowing
+  flag is gone. CLI behavior unchanged.
+
+### Changed — One deliberation/match core for `Forum` and `Branch` (#2802)
+
+- `Branch.invokeSuspend` re-derived the ordered-match loop that `matchRoute` already implements; it
+  now delegates, and the dead empty `NullRoute` exhaustiveness arm becomes a real `false`
+  classification. `Forum`'s deliberation body (participants → captain, mention firing, `forum_return`
+  short-circuit) — written twice across `invokeSuspend` and the streaming `session` — extracts into one
+  `deliberate(input, runAgent)` core differing only in the run strategy; `participants` / `captain`
+  are now properties.
+
+### Changed — Typed `GenerableCodec` seam to shrink `UNCHECKED_CAST` clusters (#2803)
+
+- `@Generable` deserialization gains a `GenerableCodec<T>` fun-interface and a single
+  `KClass<T>.codec()` resolution boundary (KSP-generated decoder when present, else reflective).
+  `constructFromMap` / `constructFromMapReflective` / `coerceValue` / `fromLlmOutput` route their casts
+  through it, and the MCP edge (`ExposedSkill`) reuses the same seam — collapsing the casts that were
+  sprinkled across the reflection and wire boundaries to one site. `GenerableSupport.kt` suppressions
+  8 → 2. The tuned reflection edge-cases (sealed dispatch, coercion, strict keys) are unchanged.
+
+### Changed — AgenticLoop: extract `resolveAllowedTools` (#3423)
+
+- The last self-contained setup block in `executeAgentic` — the per-skill tool-set assembly (skill +
+  agent-capability + memory tools, lazy knowledge tools, duplicate-name fail-fast, the authorization
+  allowlist) — extracts into `resolveAllowedTools` returning a `ResolvedTools` bundle. `AgenticLoop.kt`
+  754 → 722; the remaining `executeAgentic` body is the turn loop itself.
 
 ### Changed — AgenticLoop setup extraction: `SkillRouting` + `buildSystemPrompt` (#3406)
 
