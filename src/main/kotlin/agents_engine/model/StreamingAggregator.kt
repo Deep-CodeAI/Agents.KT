@@ -63,9 +63,11 @@ internal suspend fun chatOrStream(
     skillName: String,
     jsonSchema: JsonSchema? = null,
     emitter: AgentEventEmitter?,
-): LlmResponse {
+): LlmResponse = guardLlmCall {
+    // #3508 — normalize any model-call failure (down server, 5xx, malformed stream) to
+    // LlmProviderException so Agent's onLLMError chokepoint can recognize and optionally recover it.
     if (emitter == null) {
-        return withContext(Dispatchers.IO) { client.chat(messages, jsonSchema) }
+        return@guardLlmCall withContext(Dispatchers.IO) { client.chat(messages, jsonSchema) }
     }
     val textBuilder = StringBuilder()
     val reasoningBuilder = StringBuilder()
@@ -110,7 +112,7 @@ internal suspend fun chatOrStream(
     }
 
     val reasoning = reasoningBuilder.toString().ifEmpty { null }
-    return if (callOrder.isNotEmpty()) {
+    if (callOrder.isNotEmpty()) {
         val calls = callOrder.map { callId ->
             ToolCall(
                 name = pendingNames[callId] ?: error("LlmChunk.ToolCallStarted missing for callId=$callId"),

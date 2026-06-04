@@ -38,6 +38,13 @@ internal class ListenerRegistry {
     var budgetExceededListener:
         ((reason: BudgetReason, currentLimit: Int) -> agents_engine.model.BudgetDecision)? = null
 
+    /**
+     * #3508 — model-error recovery hook. Like [budgetExceededListener] this is NOT fire-and-forget:
+     * its return decides whether a failed model call (a `LlmProviderException`) rethrows (fail loud,
+     * the default) or recovers with a fallback. Settable post-construction like the other hooks.
+     */
+    var llmErrorHandler: ((Throwable) -> agents_engine.model.LlmErrorDecision)? = null
+
     // Multi-subscriber streams.
     private val tokenUsageListeners = mutableListOf<(TokenUsage) -> Unit>()
     private val agentEventListeners = mutableListOf<(AgentEvent<*>) -> Unit>()
