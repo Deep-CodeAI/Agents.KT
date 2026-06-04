@@ -3,7 +3,7 @@ import java.net.HttpURLConnection
 import java.net.URI
 
 plugins {
-    kotlin("jvm") version "2.3.21"
+    kotlin("jvm") version "2.4.0"
     `maven-publish`
     signing
     id("info.solidsoft.pitest") version "1.19.0"
@@ -61,9 +61,9 @@ dependencies {
     // The test asserts kotlin.reflect.full.KClasses is NOT loadable, then
     // exercises agent construction + typed-tool dispatch. Failure regresses
     // the contract.
-    compileOnly("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
+    compileOnly("org.jetbrains.kotlin:kotlin-reflect:2.4.0")
     // Tests still drive both the generated and reflection paths.
-    testImplementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
+    testImplementation("org.jetbrains.kotlin:kotlin-reflect:2.4.0")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     implementation("org.jline:jline:4.1.3")
