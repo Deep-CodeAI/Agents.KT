@@ -16,6 +16,7 @@ class ModelBuilder {
     var deepSeekBaseUrl: String = DeepSeekClient.DEFAULT_BASE_URL
     var kimiBaseUrl: String = KimiClient.DEFAULT_BASE_URL
     var openRouterBaseUrl: String = OpenRouterClient.DEFAULT_BASE_URL
+    var perplexityBaseUrl: String = PerplexityClient.DEFAULT_BASE_URL
     var openRouterHttpReferer: String? = null
     var openRouterXTitle: String? = null
     var maxTokens: Int = ClaudeClient.DEFAULT_MAX_TOKENS
@@ -96,6 +97,19 @@ class ModelBuilder {
         provider = ModelProvider.OPENROUTER
     }
 
+    /**
+     * Select Perplexity (Sonar) Chat Completions (#3675). [PerplexityClient]
+     * is constructed lazily at AgenticLoop time so the agent's full tool
+     * catalog is available. Model ids follow Perplexity's `sonar` family, e.g.
+     * `"sonar"`, `"sonar-pro"`, `"sonar-reasoning-pro"`, `"sonar-deep-research"`.
+     * For web-grounded search from an agent on a different model, prefer the
+     * `perplexitySearch` tool (#3676) over selecting a sonar model here.
+     */
+    fun perplexity(modelName: String) {
+        name = modelName
+        provider = ModelProvider.PERPLEXITY
+    }
+
     /** Backing field for the [reasoning] DSL (#2406). Off by default. */
     private var reasoningConfig: ReasoningConfig? = null
 
@@ -120,6 +134,7 @@ class ModelBuilder {
                 ModelProvider.DEEPSEEK -> error("model { deepseek(\"$name\") } requires apiKey to be set")
                 ModelProvider.KIMI -> error("model { kimi(\"$name\") } requires apiKey to be set")
                 ModelProvider.OPENROUTER -> error("model { openrouter(\"$name\") } requires apiKey to be set")
+                ModelProvider.PERPLEXITY -> error("model { perplexity(\"$name\") } requires apiKey to be set")
                 ModelProvider.OLLAMA -> Unit
             }
         }
@@ -136,6 +151,7 @@ class ModelBuilder {
             deepSeekBaseUrl = deepSeekBaseUrl,
             kimiBaseUrl = kimiBaseUrl,
             openRouterBaseUrl = openRouterBaseUrl,
+            perplexityBaseUrl = perplexityBaseUrl,
             openRouterHttpReferer = openRouterHttpReferer,
             openRouterXTitle = openRouterXTitle,
             maxTokens = maxTokens,

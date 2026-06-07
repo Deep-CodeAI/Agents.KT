@@ -21,6 +21,7 @@ internal object ModelClientFactory {
             ModelProvider.OLLAMA -> "ollama"
             ModelProvider.KIMI -> "kimi"
             ModelProvider.OPENROUTER -> "openrouter"
+            ModelProvider.PERPLEXITY -> "perplexity"
         }
 
     /**
@@ -139,6 +140,21 @@ internal object ModelClientFactory {
                 reasoning = config.reasoning,
                 httpReferer = config.openRouterHttpReferer,
                 xTitle = config.openRouterXTitle,
+                httpClient = config.httpClient,
+            )
+            // #3675 — Perplexity (Sonar) Chat Completions; thin OpenAI-compatible subclass, identical
+            // wiring to Kimi but with the Perplexity base URL. Web-grounded search is the
+            // `perplexitySearch` tool (#3676), not this connector.
+            ModelProvider.PERPLEXITY -> PerplexityClient(
+                apiKey = config.apiKey
+                    ?: error("Agent uses Perplexity but ModelConfig.apiKey is null — load it from .secrets/perplexity-key"),
+                model = config.name,
+                temperature = config.temperature,
+                maxTokens = config.maxTokens,
+                tools = tools,
+                baseUrl = config.perplexityBaseUrl,
+                reasoning = config.reasoning,
+                toolChoice = toolChoice,
                 httpClient = config.httpClient,
             )
         }

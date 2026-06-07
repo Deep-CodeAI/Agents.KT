@@ -157,6 +157,10 @@ class SessionCancellationTest {
     fun `OpenRouter session — bare cancellation does not emit Failed`() =
         assertNoFailedOnCancel(provider = ModelProvider.OPENROUTER, modelName = "openai/gpt-4o-mini", apiKey = "fake")
 
+    @Test
+    fun `Perplexity session — bare cancellation does not emit Failed`() =
+        assertNoFailedOnCancel(provider = ModelProvider.PERPLEXITY, modelName = "sonar", apiKey = "fake")
+
     /**
      * Shared per-vendor harness. Builds an agent of the requested
      * provider with a stub [ModelClient] whose `chat()` blocks
@@ -186,6 +190,7 @@ class SessionCancellationTest {
                     ModelProvider.DEEPSEEK -> deepseek(modelName)
                     ModelProvider.KIMI -> kimi(modelName)
                     ModelProvider.OPENROUTER -> openrouter(modelName)
+                    ModelProvider.PERPLEXITY -> perplexity(modelName)
                 }
                 apiKey?.let { this.apiKey = it }
                 client = hangingClient
