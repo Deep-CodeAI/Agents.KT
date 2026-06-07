@@ -3,11 +3,14 @@ package agents_engine.model
 import agents_engine.generation.Generable
 import agents_engine.generation.Guide
 import agents_engine.generation.LenientJsonParser
+import agents_engine.generation.hasGenerableAnnotation
+import agents_engine.generation.jsonSchema
 import agents_engine.internal.toJsonString
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import kotlin.reflect.KClass
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 
@@ -75,14 +78,87 @@ data class PerplexitySearchResult(
     override fun toString(): String = render()
 }
 
+/** Perplexity `search_mode` — which corpus to ground against (#3677). */
+enum class SearchMode { WEB, ACADEMIC, SEC }
+
+/** Perplexity `search_recency_filter` — only consider sources newer than this (#3677). */
+enum class SearchRecency { HOUR, DAY, WEEK, MONTH, YEAR }
+
+/** Perplexity `web_search_options.search_context_size` — search depth/cost knob (#3677). */
+enum class SearchContextSize { LOW, MEDIUM, HIGH }
+
 /**
- * Options controlling one search request. #3676 ships only [model]; #3677
- * extends this with `search_mode`, recency/domain filters, context size, and
- * structured output. Default model `sonar` (lightweight grounded search).
+ * Options controlling one search request (#3676 + #3677). All controls beyond
+ * [model] default to "unset" → omitted from the request, so a bare
+ * `PerplexitySearchOptions()` produces the same plain `sonar` web search as
+ * before (additive, backward-compatible). Build ergonomically with
+ * [perplexitySearchOptions].
+ *
+ * @property model sonar variant: `sonar` / `sonar-pro` / `sonar-reasoning-pro` / `sonar-deep-research`.
+ * @property mode `search_mode` — web / academic / sec.
+ * @property recency `search_recency_filter` — hour / day / week / month / year.
+ * @property domainsAllow `search_domain_filter` allow-list (bare domains).
+ * @property domainsDeny `search_domain_filter` deny-list (serialized with a `-` prefix).
+ * @property contextSize `web_search_options.search_context_size` — low / medium / high.
+ * @property reasoningEffort `reasoning_effort` for reasoning / deep-research models
+ *   (API also accepts `minimal`, not modeled by the shared [ReasoningEffort] enum).
+ * @property jsonSchema native `response_format` json_schema — constrains the answer
+ *   to a strict schema (set via [PerplexitySearchOptionsBuilder.structuredOutput]).
  */
 data class PerplexitySearchOptions(
     val model: String = "sonar",
+    val mode: SearchMode? = null,
+    val recency: SearchRecency? = null,
+    val domainsAllow: List<String> = emptyList(),
+    val domainsDeny: List<String> = emptyList(),
+    val contextSize: SearchContextSize? = null,
+    val reasoningEffort: ReasoningEffort? = null,
+    val jsonSchema: JsonSchema? = null,
 )
+
+/** Ergonomic DSL for [PerplexitySearchOptions] — `perplexitySearchOptions { mode = SearchMode.ACADEMIC; … }`. */
+class PerplexitySearchOptionsBuilder {
+    var model: String = "sonar"
+    var mode: SearchMode? = null
+    var recency: SearchRecency? = null
+    var contextSize: SearchContextSize? = null
+    var reasoningEffort: ReasoningEffort? = null
+    var jsonSchema: JsonSchema? = null
+    private val allow = mutableListOf<String>()
+    private val deny = mutableListOf<String>()
+
+    /** Restrict search to these domains (`search_domain_filter`). */
+    fun allowDomains(vararg domains: String) { allow += domains }
+
+    /** Exclude these domains (`search_domain_filter` entries prefixed with `-`). */
+    fun denyDomains(vararg domains: String) { deny += domains }
+
+    /**
+     * Constrain the answer to a `@Generable` type's JSON schema via native
+     * `response_format`. The answer comes back as JSON matching [type].
+     */
+    fun structuredOutput(type: KClass<*>) {
+        require(type.hasGenerableAnnotation()) {
+            "structuredOutput type ${type.simpleName} must be annotated with @Generable"
+        }
+        jsonSchema = JsonSchema(name = type.simpleName ?: "structured_output", schema = type.jsonSchema())
+    }
+
+    internal fun build(): PerplexitySearchOptions = PerplexitySearchOptions(
+        model = model,
+        mode = mode,
+        recency = recency,
+        domainsAllow = allow.toList(),
+        domainsDeny = deny.toList(),
+        contextSize = contextSize,
+        reasoningEffort = reasoningEffort,
+        jsonSchema = jsonSchema,
+    )
+}
+
+/** Build [PerplexitySearchOptions] with the DSL builder. */
+fun perplexitySearchOptions(block: PerplexitySearchOptionsBuilder.() -> Unit): PerplexitySearchOptions =
+    PerplexitySearchOptionsBuilder().apply(block).build()
 
 /**
  * The seam the tool calls — injectable so tests can return a canned result
@@ -96,12 +172,34 @@ fun interface PerplexitySearchBackend {
 class PerplexitySearchException(message: String) : RuntimeException(message)
 
 /**
- * Build the minimal chat-completions request body for a grounded search.
- * Pure + internal so it is unit-testable without a live call. #3677 adds the
- * search-control fields here.
+ * Build the chat-completions request body for a grounded search, including any
+ * #3677 search controls. Pure + internal so it is unit-testable without a live
+ * call. Unset controls are omitted, so a bare [PerplexitySearchOptions]
+ * reproduces the original minimal `model` + `messages` body.
  */
-internal fun buildPerplexitySearchBody(query: String, options: PerplexitySearchOptions): String =
-    """{"model":${options.model.toJsonString()},"messages":[{"role":"user","content":${query.toJsonString()}}]}"""
+internal fun buildPerplexitySearchBody(query: String, options: PerplexitySearchOptions): String {
+    val fields = buildList {
+        add(""""model":${options.model.toJsonString()}""")
+        add(""""messages":[{"role":"user","content":${query.toJsonString()}}]""")
+        options.mode?.let { add(""""search_mode":${it.name.lowercase().toJsonString()}""") }
+        options.recency?.let { add(""""search_recency_filter":${it.name.lowercase().toJsonString()}""") }
+        val domains = options.domainsAllow + options.domainsDeny.map { "-$it" }
+        if (domains.isNotEmpty()) {
+            add(""""search_domain_filter":[${domains.joinToString(",") { it.toJsonString() }}]""")
+        }
+        options.contextSize?.let {
+            add(""""web_search_options":{"search_context_size":${it.name.lowercase().toJsonString()}}""")
+        }
+        options.reasoningEffort?.let { add(""""reasoning_effort":${it.name.lowercase().toJsonString()}""") }
+        options.jsonSchema?.let {
+            add(
+                """"response_format":{"type":"json_schema","json_schema":""" +
+                    """{"name":${it.wireName().toJsonString()},"schema":${it.schema},"strict":true}}""",
+            )
+        }
+    }
+    return "{${fields.joinToString(",")}}"
+}
 
 /**
  * Parse a Perplexity chat-completions response body into a [PerplexitySearchResult].
