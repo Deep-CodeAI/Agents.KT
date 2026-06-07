@@ -17,6 +17,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 
@@ -167,7 +168,7 @@ open class OpenAiClient(
         val argsBuilder: StringBuilder = StringBuilder(),
     )
 
-    private suspend fun parseSseStream(stream: InputStream, collector: kotlinx.coroutines.flow.FlowCollector<LlmChunk>) {
+    private suspend fun parseSseStream(stream: InputStream, collector: FlowCollector<LlmChunk>) {
         // Keyed by `tool_calls[].index` within the choice.
         val toolStates = mutableMapOf<Int, ToolCallState>()
         var usage: TokenUsage? = null
@@ -377,7 +378,9 @@ open class OpenAiClient(
         (root["error"] as? Map<*, *>)?.let { err ->
             val type = err["type"] as? String
             val message = err["message"] as? String
-            throw LlmProviderException("$providerLabel returned an error: ${type ?: "unknown"}: ${message ?: "no message"}")
+            throw LlmProviderException(
+                "$providerLabel returned an error: ${type ?: "unknown"}: ${message ?: "no message"}"
+            )
         }
 
         val tokenUsage = extractTokenUsage(root)
