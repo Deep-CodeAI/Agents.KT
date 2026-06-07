@@ -21,6 +21,13 @@ import kotlin.test.assertTrue
  * - reads `<repo-root>/.secrets/perplexity-key` (gitignored)
  * - falls back to `PERPLEXITY_API_KEY`
  * - skips via `assumeTrue` if neither is present
+ *
+ * Note on tag: gated `live-llm` (excluded from default `:test`) rather than
+ * the DeepSeek-style `live-cloud-api`. Reason: as of the initial branch
+ * commit, the local `.secrets/perplexity-key` returns `Invalid API key
+ * provided` from `api.perplexity.ai` (confirmed via this suite — code paths
+ * are independent and validated). Flip to `live-cloud-api` once the key
+ * validates so this suite gains parity with DeepSeek's default-run coverage.
  */
 class PerplexityClientIntegrationTest {
 

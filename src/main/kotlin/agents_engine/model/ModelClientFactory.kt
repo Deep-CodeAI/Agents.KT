@@ -147,7 +147,7 @@ internal object ModelClientFactory {
             // `perplexitySearch` tool (#3676), not this connector.
             ModelProvider.PERPLEXITY -> PerplexityClient(
                 apiKey = config.apiKey
-                    ?: error("Agent uses Perplexity but ModelConfig.apiKey is null — load it from .secrets/perplexity-key"),
+                    ?: error("Agent uses Perplexity but apiKey is null — load .secrets/perplexity-key"),
                 model = config.name,
                 temperature = config.temperature,
                 maxTokens = config.maxTokens,
