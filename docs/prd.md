@@ -3999,10 +3999,10 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 - [ ] Typed hook payloads: `onSkillStart<T>`, `onToolCall<T>`, `onToolResult<T>` (§8.4)
 - [ ] Typed memory strategies: `sliding<T>`, `tokenBudget<T>`, `summarized<T>` namespaces (§8.5)
 - [ ] Human-in-the-loop: `confirm()` with message templates, timeouts, fallback behavior (§9.2.1)
-- [ ] Session model — multi-turn `AgentSession`, automatic compaction (`SUMMARIZE`, `SLIDING_WINDOW`, `CUSTOM`) (§5.7)
+- [x] Session model — multi-turn `AgentSession` **shipped** (#1736; `events` Flow + `await()` + snapshot/resume). _Remaining:_ automatic compaction (`SUMMARIZE` / `SLIDING_WINDOW` / `CUSTOM`) (§5.7)
 - [ ] Reactive context hooks: `beforeInference`, `afterToolCall` — context-mutating hooks that inject system reminders (§8.4)
 - [ ] `.spawn {}` — independent sub-agent lifecycle, `AgentHandle<OUT>`, parent-managed join
-- [ ] `Flow<PipelineEvent>` for reactive UIs + Pipeline-level events (`StageStarted`, `PipelineCompleted`, etc) — depends on streaming, sub-agents, sessions (§10.2)
+- [x] Reactive event stream for UIs **shipped** — `AgentSession.events: Flow<AgentEvent>` (#1736) + `agent.observe { }` (#965). _Remaining:_ composition-stage event types (`StageStarted`, `PipelineCompleted`) at the Pipeline level (§10.2)
 - [ ] Serialization — `agent.json`, A2A AgentCard
 - [ ] JAR bundles and folder-based assembly
 - [ ] Gradle plugin
