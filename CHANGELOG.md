@@ -4,6 +4,27 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — Perplexity connector + web-grounded search tooling (epic #3674)
+
+- **`PerplexityClient` — seventh model provider (#3675).** A thin OpenAI-compatible `OpenAiClient`
+  subclass for `api.perplexity.ai` (mirrors `DeepSeekClient` / `KimiClient` / `OpenRouterClient`),
+  selectable via `model { perplexity("sonar") }`. Model ids: `sonar` / `sonar-pro` /
+  `sonar-reasoning-pro` / `sonar-deep-research`. Unlike Kimi/DeepSeek, Perplexity accepts OpenAI's
+  `response_format` json_schema, so its constrained-decoding gate stays **on**. `ModelProvider`,
+  `ModelConfig.perplexityBaseUrl`, `ModelBuilder.perplexity(...)`, the factory dispatch, and the
+  permission manifest are all wired. Key from `.secrets/perplexity-key` / `PERPLEXITY_API_KEY`.
+- **`perplexitySearch` tool — web-grounded search with citations (#3676).** `tools { +perplexitySearchTool(key) }`
+  lets an agent on its **own** model fetch live, cited facts from Perplexity. `untrustedOutput = true`,
+  so results are wrapped in the `{"trusted":false}` envelope and flagged as data, not instructions
+  (#642). The result renders the answer + a numbered source list parsed from `search_results[]`
+  (falling back to `citations[]`); sources reach both the model context and the JSONL audit row.
+- **Search controls + structured output (#3677).** `perplexitySearchOptions { }` maps to the documented
+  request params: `search_mode` (web/academic/sec), `search_recency_filter`, `search_domain_filter`
+  (allow + `-`-prefixed deny), `web_search_options.search_context_size`, `reasoning_effort`, and native
+  `response_format` json_schema via `structuredOutput(MyType::class)` from a `@Generable` type.
+- Additive only — no public-API change to existing surfaces. Live tests are gated `live-llm` pending a
+  validated key; the request/parse path is verified against the real API and by unit tests.
+
 ## [0.7.23] — 2026-06-04
 
 **Maintainability + an explicit model-error policy.** Closes the bulk of the code-smell remediation

@@ -2,7 +2,7 @@
 
 # Provider Capability Matrix
 
-Single source of truth for what each shipped `ModelProvider` supports. `ModelProvider.entries` has **six** values: `OLLAMA`, `ANTHROPIC`, `OPENAI`, `DEEPSEEK`, `KIMI`, `OPENROUTER`. The four columns below are the four distinct **wire shapes** — the adapters with their own wiring, caching tests, and live integration coverage. `KIMI` and `OPENROUTER` are first-party providers that **extend the OpenAI adapter** (`model { kimi(...) }` / `model { openrouter(...) }`), so they share the OpenAI column's behavior.
+Single source of truth for what each shipped `ModelProvider` supports. `ModelProvider.entries` has **seven** values: `OLLAMA`, `ANTHROPIC`, `OPENAI`, `DEEPSEEK`, `KIMI`, `OPENROUTER`, `PERPLEXITY`. The four columns below are the four distinct **wire shapes** — the adapters with their own wiring, caching tests, and live integration coverage. `KIMI`, `OPENROUTER`, and `PERPLEXITY` are first-party providers that **extend the OpenAI adapter** (`model { kimi(...) }` / `model { openrouter(...) }` / `model { perplexity(...) }`), so they share the OpenAI column's behavior. Perplexity additionally accepts OpenAI's `response_format` json_schema, so its constrained decoding gate is left **on** (Kimi/DeepSeek leave it off).
 
 For other deployments that ride on one of these wire shapes (vLLM, SGLang, …) see [caching.md → Under evaluation](caching.md#under-evaluation).
 
@@ -66,6 +66,43 @@ All four `ModelClient` adapters report `supportsConstrainedDecoding() == true`; 
 | `LlmChunk.ToolCall*` chunks | ✅ | ✅ | ✅ | ✅ |
 | `LlmChunk.ReasoningDelta` | ✅ | ❌ (count only on `End`) | ✅ | ✅ |
 | Token usage on `End` | ✅ `message_delta.usage` | ✅ via `stream_options.include_usage: true` | ✅ `done: true` NDJSON line | ✅ same as OpenAI |
+
+## Web-grounded search tool (`perplexitySearch`, #3676 / #3677)
+
+Distinct from the `perplexity(...)` **model** above: a `ToolDef` that lets an agent reasoning on its **own** model (Claude, OpenAI, Ollama, …) fetch live, cited facts from Perplexity's Sonar API. Register it on any agent:
+
+```kotlin
+val perplexityKey = java.nio.file.Files.readString(
+    java.nio.file.Paths.get(".secrets", "perplexity-key"),
+).trim()
+
+agent<String, String>("researcher") {
+    model { claude("claude-opus-4-7"); apiKey = anthropicKey }   // your own model
+    tools { +perplexitySearchTool(perplexityKey) }               // grounded search as a tool
+    skills { /* … */ }
+}
+```
+
+- **Untrusted by construction.** The tool is `untrustedOutput = true`, so the agentic loop wraps every result in the `{"trusted":false, …}` envelope and the system prompt warns the model to treat it as data, not instructions (#642). Web search is the canonical prompt-injection vector — this contains it for free.
+- **Citations as audit evidence.** The result renders the answer followed by a numbered source list parsed from `search_results[]` (title/url/snippet/date), falling back to `citations[]` URLs. Sources land in both the model context and the JSONL audit row.
+- **Controls** via `perplexitySearchOptions { }` map to the documented request params: `model` (`sonar` / `sonar-pro` / `sonar-reasoning-pro` / `sonar-deep-research`), `mode` (`search_mode` web/academic/sec), `recency` (`search_recency_filter`), `allowDomains`/`denyDomains` (`search_domain_filter`, deny serialized with a `-` prefix), `contextSize` (`web_search_options.search_context_size`), `reasoningEffort`, and `structuredOutput(MyType::class)` (native `response_format` json_schema from a `@Generable` type).
+
+```kotlin
+tools {
+    +perplexitySearchTool(
+        perplexityKey,
+        perplexitySearchOptions {
+            model = "sonar-pro"
+            mode = SearchMode.ACADEMIC
+            recency = SearchRecency.WEEK
+            allowDomains("arxiv.org", "nature.com")
+            contextSize = SearchContextSize.HIGH
+        },
+    )
+}
+```
+
+Credentials load from `.secrets/perplexity-key` / `PERPLEXITY_API_KEY` (the per-provider `.secrets/<provider>-key` convention). Live tests are tagged `live-llm` pending a validated key.
 
 ## Updating this matrix
 
