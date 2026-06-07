@@ -23,9 +23,13 @@ class MockTcpMcpServer internal constructor(
     private val workers = Executors.newCachedThreadPool { r ->
         Thread(r, "MockTcpMcpServer-${server.localPort}").apply { isDaemon = true }
     }
-    private val acceptThread = Thread({ acceptLoop() }, "MockTcpMcpServer-accept-${server.localPort}").apply {
-        isDaemon = true
-        start()
+    init {
+        // Accept loop runs on its own daemon thread; we don't retain a handle (stop() closes the
+        // ServerSocket, which unblocks accept()).
+        Thread({ acceptLoop() }, "MockTcpMcpServer-accept-${server.localPort}").apply {
+            isDaemon = true
+            start()
+        }
     }
 
     fun stop() {

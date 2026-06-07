@@ -17,6 +17,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 
@@ -167,7 +168,7 @@ open class ClaudeClient(
         val argsBuilder: StringBuilder,
     )
 
-    private suspend fun parseSseStream(stream: InputStream, collector: kotlinx.coroutines.flow.FlowCollector<LlmChunk>) {
+    private suspend fun parseSseStream(stream: InputStream, collector: FlowCollector<LlmChunk>) {
         val blocks = mutableMapOf<Int, BlockState>()
         var inputTokens: Int? = null
         var outputTokens: Int? = null
@@ -229,7 +230,7 @@ open class ClaudeClient(
         event: String,
         dataJson: String,
         blocks: MutableMap<Int, BlockState>,
-        collector: kotlinx.coroutines.flow.FlowCollector<LlmChunk>,
+        collector: FlowCollector<LlmChunk>,
         onInputTokens: (Int) -> Unit,
         onCachedInputTokens: (Int) -> Unit,
         onOutputTokens: (Int) -> Unit,
@@ -408,7 +409,8 @@ open class ClaudeClient(
             // #2658 — when an assistant/user message carries a CacheHint
             // (typically segment=Conversation for rolling mode), attach
             // cache_control to the LAST content block on the wire.
-            val cacheControl = if (msg.cacheHint != null && consumeBreakpoint()) cacheControlJson(msg.cacheHint) else null
+            val cacheControl =
+                if (msg.cacheHint != null && consumeBreakpoint()) cacheControlJson(msg.cacheHint) else null
             when (msg.role) {
                 "user" -> {
                     val images = msg.images
