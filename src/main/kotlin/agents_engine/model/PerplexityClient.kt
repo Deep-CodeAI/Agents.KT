@@ -57,6 +57,13 @@ open class PerplexityClient(
     toolChoice = toolChoice,
     httpClient = httpClient,
 ) {
+    /**
+     * Perplexity serves `/chat/completions` directly (no `/v1` segment) — unlike
+     * OpenAI/DeepSeek/Kimi/OpenRouter. Hitting `/v1/chat/completions` here 404s
+     * with an empty body. #3675.
+     */
+    override val chatCompletionsPath: String = "/chat/completions"
+
     companion object {
         const val DEFAULT_BASE_URL: String = "https://api.perplexity.ai"
         const val DEFAULT_MAX_TOKENS: Int = OpenAiClient.DEFAULT_MAX_TOKENS

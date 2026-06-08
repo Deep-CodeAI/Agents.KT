@@ -22,19 +22,16 @@ import kotlin.test.assertTrue
  * - falls back to `PERPLEXITY_API_KEY`
  * - skips via `assumeTrue` if neither is present
  *
- * Note on tag: gated `live-llm` (excluded from default `:test`) rather than
- * the DeepSeek-style `live-cloud-api`. Reason: as of the initial branch
- * commit, the local `.secrets/perplexity-key` returns `Invalid API key
- * provided` from `api.perplexity.ai` (confirmed via this suite — code paths
- * are independent and validated). Flip to `live-cloud-api` once the key
- * validates so this suite gains parity with DeepSeek's default-run coverage.
+ * Tagged `live-cloud-api` (parity with DeepSeek/OpenAI/Anthropic) — runs in the
+ * default `:test` task when a key is present and skips cleanly otherwise.
+ * Verified end-to-end against `api.perplexity.ai` with a live key (#3675).
  */
 class PerplexityClientIntegrationTest {
 
     private val apiKey: String? = loadApiKey()
     private val model: String = System.getenv("PERPLEXITY_TEST_MODEL") ?: "sonar"
 
-    @Tag("live-llm")
+    @Tag("live-cloud-api")
     @Test
     fun `returns grounded text response for simple prompt`() {
         assumeTrue(apiKey != null, "skipping: no Perplexity key at .secrets/perplexity-key or PERPLEXITY_API_KEY")
@@ -51,7 +48,7 @@ class PerplexityClientIntegrationTest {
         kotlin.test.assertEquals("perplexity", text.tokenUsage?.provider)
     }
 
-    @Tag("live-llm")
+    @Tag("live-cloud-api")
     @Test
     fun `streaming response emits text deltas and Perplexity usage`() = runBlocking {
         assumeTrue(apiKey != null, "skipping: no Perplexity key at .secrets/perplexity-key or PERPLEXITY_API_KEY")

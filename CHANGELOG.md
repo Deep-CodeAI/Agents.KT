@@ -22,8 +22,13 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
   request params: `search_mode` (web/academic/sec), `search_recency_filter`, `search_domain_filter`
   (allow + `-`-prefixed deny), `web_search_options.search_context_size`, `reasoning_effort`, and native
   `response_format` json_schema via `structuredOutput(MyType::class)` from a `@Generable` type.
-- Additive only — no public-API change to existing surfaces. Live tests are gated `live-llm` pending a
-  validated key; the request/parse path is verified against the real API and by unit tests.
+- **`OpenAiClient` gains a `chatCompletionsPath` seam (#3675).** The chat-completions path is now
+  overridable (default `/v1/chat/completions`); `PerplexityClient` overrides it to `/chat/completions`
+  (Perplexity serves no `/v1` segment — hitting `/v1` there 404s with an empty body). Behavior is
+  unchanged for OpenAI / DeepSeek / Kimi / OpenRouter.
+- Additive only — no public-API change to existing surfaces. Verified end-to-end against the live
+  Perplexity API (connector chat + streaming, and `perplexitySearch` with real citations); live tests
+  tagged `live-cloud-api`.
 
 ## [0.7.23] — 2026-06-04
 

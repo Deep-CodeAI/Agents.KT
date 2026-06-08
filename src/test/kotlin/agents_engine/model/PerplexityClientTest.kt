@@ -131,6 +131,21 @@ class PerplexityClientTest {
     fun `default base URL points at Perplexity`() {
         assertEquals("https://api.perplexity.ai", PerplexityClient.DEFAULT_BASE_URL)
     }
+
+    @Test
+    fun `Perplexity targets chat completions WITHOUT the v1 prefix`() {
+        // Regression for the empty-response bug: Perplexity 404s on /v1/chat/completions.
+        // OpenAI/DeepSeek/Kimi/OpenRouter keep the default /v1 path.
+        val pplxPath = object : PerplexityClient("k", "sonar") {
+            fun exposePath() = chatCompletionsPath
+        }.exposePath()
+        assertEquals("/chat/completions", pplxPath)
+
+        val openAiPath = object : OpenAiClient("k", "gpt-4o") {
+            fun exposePath() = chatCompletionsPath
+        }.exposePath()
+        assertEquals("/v1/chat/completions", openAiPath)
+    }
 }
 
 class PerplexityModelDslTest {

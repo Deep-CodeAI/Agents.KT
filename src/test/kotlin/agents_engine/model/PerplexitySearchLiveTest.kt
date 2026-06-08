@@ -9,23 +9,15 @@ import kotlin.test.assertTrue
 
 /**
  * #3676 — live smoke test for the `perplexitySearch` tool against the real
- * Perplexity API. Tagged `live-llm` (excluded from the default `:test`) and
- * key-gated; skips cleanly without a key.
- *
- * Note on tag: gated `live-llm` (excluded from default `:test`) rather than
- * the DeepSeek-style `live-cloud-api`. Reason: as of the initial branch
- * commit, the local `.secrets/perplexity-key` returns `Invalid API key
- * provided` from `api.perplexity.ai` (confirmed by running this suite — the
- * request reaches the API and the error envelope is parsed correctly, so the
- * code path is validated; only the key is bad). Flip to `live-cloud-api` once
- * a valid key is in place so this suite gains parity with DeepSeek's
- * default-run live coverage.
+ * Perplexity API. Tagged `live-cloud-api` (parity with DeepSeek/OpenAI/Anthropic)
+ * — runs in the default `:test` task when a key is present and skips cleanly
+ * otherwise. Verified end-to-end with a live key.
  */
 class PerplexitySearchLiveTest {
 
     private val apiKey: String? = loadApiKey()
 
-    @Tag("live-llm")
+    @Tag("live-cloud-api")
     @Test
     fun `grounded search returns an answer and at least one source`() {
         assumeTrue(apiKey != null, "skipping: no Perplexity key at .secrets/perplexity-key or PERPLEXITY_API_KEY")

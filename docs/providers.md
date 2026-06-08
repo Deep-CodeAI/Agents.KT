@@ -102,7 +102,7 @@ tools {
 }
 ```
 
-Credentials load from `.secrets/perplexity-key` / `PERPLEXITY_API_KEY` (the per-provider `.secrets/<provider>-key` convention). Live tests are tagged `live-llm` pending a validated key.
+Credentials load from `.secrets/perplexity-key` / `PERPLEXITY_API_KEY` (the per-provider `.secrets/<provider>-key` convention). Verified end-to-end against `api.perplexity.ai`; live tests are tagged `live-cloud-api` (run in the default suite when a key is present, skip otherwise).
 
 ## Updating this matrix
 
