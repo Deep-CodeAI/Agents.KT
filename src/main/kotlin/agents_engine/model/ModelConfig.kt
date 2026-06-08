@@ -32,6 +32,8 @@ data class ModelConfig(
     val kimiBaseUrl: String = KimiClient.DEFAULT_BASE_URL,
     /** Override the OpenRouter base URL (regional endpoints, proxies) — #2701. */
     val openRouterBaseUrl: String = OpenRouterClient.DEFAULT_BASE_URL,
+    /** Override the Perplexity (Sonar) base URL — regional endpoints, proxies (#3675). */
+    val perplexityBaseUrl: String = PerplexityClient.DEFAULT_BASE_URL,
     /** Optional `HTTP-Referer` header sent to OpenRouter — origin URL for attribution UI. */
     val openRouterHttpReferer: String? = null,
     /** Optional `X-Title` header sent to OpenRouter — calling app name for attribution UI. */
@@ -84,6 +86,7 @@ data class ModelConfig(
             "deepSeekBaseUrl=$deepSeekBaseUrl, " +
             "kimiBaseUrl=$kimiBaseUrl, " +
             "openRouterBaseUrl=$openRouterBaseUrl, " +
+            "perplexityBaseUrl=$perplexityBaseUrl, " +
             "openRouterHttpReferer=$openRouterHttpReferer, " +
             "openRouterXTitle=$openRouterXTitle, " +
             "maxTokens=$maxTokens, reasoning=$reasoning, " +

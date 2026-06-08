@@ -101,6 +101,15 @@ open class OpenAiClient(
         .build()
     private val http: HttpClient get() = httpClient
 
+    /**
+     * #3675 — the chat-completions path appended to [baseUrl]. OpenAI / DeepSeek /
+     * Kimi / OpenRouter all expose `/v1/chat/completions` (their base URLs are
+     * shaped for it). Perplexity serves `/chat/completions` (no `/v1`), so
+     * [PerplexityClient] overrides this — hitting `/v1` there 404s with an empty
+     * body, which otherwise surfaces as a silently-empty response.
+     */
+    protected open val chatCompletionsPath: String = "/v1/chat/completions"
+
     override fun supportsConstrainedDecoding(): Boolean = true
 
     override fun chat(messages: List<LlmMessage>): LlmResponse =
@@ -153,7 +162,7 @@ open class OpenAiClient(
     /** Test seam — subclasses override to stub the streaming InputStream. */
     internal open fun sendChatStream(body: String, headers: Map<String, String>): InputStream {
         val builder = HttpRequest.newBuilder()
-            .uri(URI.create("$baseUrl/v1/chat/completions"))
+            .uri(URI.create("$baseUrl$chatCompletionsPath"))
             .timeout(requestTimeout.toJavaDuration())
             .POST(HttpRequest.BodyPublishers.ofString(body))
         headers.forEach { (k, v) -> builder.header(k, v) }
@@ -254,7 +263,7 @@ open class OpenAiClient(
     /** Test seam — subclasses override to stub HTTP without a server. */
     internal open fun sendChat(body: String, headers: Map<String, String>): String {
         val builder = HttpRequest.newBuilder()
-            .uri(URI.create("$baseUrl/v1/chat/completions"))
+            .uri(URI.create("$baseUrl$chatCompletionsPath"))
             .timeout(requestTimeout.toJavaDuration())
             .POST(HttpRequest.BodyPublishers.ofString(body))
         headers.forEach { (k, v) -> builder.header(k, v) }

@@ -255,6 +255,7 @@ private fun ModelConfig.toManifestMap(options: PermissionManifestOptions): Map<S
             ModelProvider.DEEPSEEK -> deepSeekBaseUrl
             ModelProvider.KIMI -> kimiBaseUrl
             ModelProvider.OPENROUTER -> openRouterBaseUrl
+            ModelProvider.PERPLEXITY -> perplexityBaseUrl
         },
         "host" to host,
         "port" to port,
@@ -271,6 +272,7 @@ private fun ModelProvider.manifestName(): String = when (this) {
     ModelProvider.DEEPSEEK -> "deepseek"
     ModelProvider.KIMI -> "kimi"
     ModelProvider.OPENROUTER -> "openrouter"
+    ModelProvider.PERPLEXITY -> "perplexity"
 }
 
 private fun BudgetConfig.toManifestMap(): Map<String, Any?> =
