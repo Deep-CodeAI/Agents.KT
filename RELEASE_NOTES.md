@@ -1,77 +1,91 @@
-# Agents.KT v0.7.23 — Maintainability + a model-error policy
+# Agents.KT v0.7.24 — Perplexity: web-grounded search with citations
 
-**Release date:** 2026-06-04
+**Release date:** 2026-06-10
 
-Closes the bulk of the code-smell remediation epic (#2790), finishes the `AgenticLoop`
-decomposition begun in 0.7.21, and makes the model-error contract explicit with a new `onLLMError`
-recovery hook. The maintainability changes are behavior-preserving (no public-API change);
-`onLLMError` is the one additive public API. Drop-in on the 0.7.x line.
+0.7.24's headline is the **Perplexity connector** and the **`perplexitySearch` tool**: agents can now reach the Sonar models directly via `model { perplexity("sonar") }`, or stay on their own model and fetch live, cited web facts through a typed search tool that records both the answer and its sources in the audit row. Plus a docs-accuracy pass that fixes false-negative roadmap signals, a small detekt-baseline reduction, and a Kotlin 2.4.0 upgrade.
+
+Drop-in on the 0.7.x line — additive only, no public-API change to existing surfaces.
+
+## Added — Perplexity connector + web-grounded search (epic #3674)
+
+### `PerplexityClient` — seventh model provider (#3675)
+
+A thin OpenAI-compatible `OpenAiClient` subclass for `api.perplexity.ai`, mirroring `DeepSeekClient` / `KimiClient` / `OpenRouterClient`. Selectable via `model { perplexity("sonar") }`; supports `sonar` / `sonar-pro` / `sonar-reasoning-pro` / `sonar-deep-research`. Unlike Kimi and DeepSeek, Perplexity accepts OpenAI's `response_format` json_schema, so its constrained-decoding gate stays **on** — typed `@Generable` outputs work end-to-end.
+
+`ModelProvider`, `ModelConfig.perplexityBaseUrl`, `ModelBuilder.perplexity(...)`, the factory dispatch, and the permission manifest are all wired. Key from `.secrets/perplexity-key` or `PERPLEXITY_API_KEY` env.
 
 ```kotlin
-implementation("ai.deep-code:agents-kt:0.7.23")
-implementation("ai.deep-code:agents-kt-ksp:0.7.23")
+val analyst = agent<String, MarketBrief>("analyst") {
+    model { perplexity("sonar-deep-research"); apiKey = System.getenv("PERPLEXITY_API_KEY") }
+    skills {
+        skill<String, MarketBrief>("brief", "Produce a typed market brief from a query") {
+            tools(/* no tools — use Perplexity's own web access */)
+        }
+    }
+}
 ```
 
-## Added — `onLLMError` model-failure policy (#3508)
+### `perplexitySearch` tool — web-grounded search with citations (#3676)
 
-Prompted by a *funny case*: Ollama down, but an agent kept running on its hardcoded logic — because
-the resolved skill was a non-agentic `implementedBy`, so the model was never contacted (by design).
-The contract is now explicit:
+Lets an agent on its **own** model (Claude, OpenAI, Ollama, anything) reach into Perplexity for live, cited facts. `tools { +perplexitySearchTool(key) }` registers it; `untrustedOutput = true` so results are wrapped in the `{"trusted":false}` envelope per #642 and flagged as data, not instructions.
 
-- **Model configured** → a failed model call in the agentic loop (a down server — surfacing as the
-  raw transport error, e.g. `ConnectException` — a 5xx, or a malformed response) **fails fast and loud
-  by default**.
-- **No model** → `implementedBy` skills run deterministically; no model error can arise.
-- **`agent.onLLMError { e -> LlmErrorDecision }`** opts into recovery: `RespondWith(fallback)` uses a
-  canned/typed value (routed through the agent's `castOut`) instead of throwing; `Rethrow` (the
-  default with no handler) keeps it loud. The handler receives the **original** exception — identity
-  is preserved. Does not fire for budget caps (`onBudgetExceeded`) or cancellation. Recovery is scoped
-  to the agentic loop in this release; a model failure during multi-skill LLM routing still propagates
-  loud (follow-up).
+The result renders the answer plus a numbered source list parsed from `search_results[]` (falling back to `citations[]`); sources reach both the model context and the JSONL audit row, so the audit lane carries the provenance of every cited fact.
 
-## Changed — god-class / god-file decomposition (behavior-preserving)
+```kotlin
+val researcher = agent<String, String>("researcher") {
+    model { claude("claude-opus-4-7"); apiKey = anthropicKey }
+    tools { +perplexitySearchTool(perplexityKey) }
+    skills {
+        skill<String, String>("research", "Research with citations") { tools("perplexitySearch") }
+    }
+}
+```
 
-- **`Agent` → `InterceptorChain` + `ListenerRegistry` (#2793).** The before-interceptor subsystem and
-  the observability listener slots move into their own collaborators; three copy-pasted
-  swallow-and-log blocks collapse into one `dispatchSafely`, and `decideBeforeToolCall` reuses the
-  shared `runDecisionChain`. `Agent` keeps its public `onX` DSL and `agent.<slot>` reads.
-- **`McpServer` → HTTP intake + `McpDispatcher` (#2795).** The transport-agnostic JSON-RPC core
-  extracts into `McpDispatcher`; `handle()` slims via new `validateRequest` / `readBoundedBody`;
-  `McpStdioServer` drives the dispatcher directly, removing the `internal dispatchJsonRpc` back door.
-  `McpServer.kt` 451 → 215.
-- **`LiveShow` → `LiveShowBanner` + `SpinnerAnimation` (#2798).** The banner asset and the in-place
-  spinner split out; the spinner becomes an `AutoCloseable` (`spinner.use { … }`), removing a manual
-  `Thread` and an `AtomicBoolean` that *shadowed* the `LiveShow.running` field.
+### Search controls + structured output (#3677)
 
-## Changed — duplication removed
+`perplexitySearchOptions { }` maps directly to Perplexity's documented request params:
 
-- **One streaming-session scaffold (#2797).** The five composition operators (`branch` / `forum` /
-  `loop` / `parallel` / `pipeline`) shared an identical ~25-line `session(input)` scaffold; one
-  `agentSessionScope(terminalAgentId, body)` now owns the channel / scope / runtime-context /
-  terminal-event lifecycle. Net **−282 lines**.
-- **One deliberation/match core for `Forum` and `Branch` (#2802).** `Branch.invokeSuspend` delegates
-  to `matchRoute`; `Forum`'s deliberation extracts into one `deliberate(input, runAgent)` shared by
-  the streaming and non-streaming paths.
+- `search_mode` — `web` / `academic` / `sec`
+- `search_recency_filter`
+- `search_domain_filter` — allowlist + `-`-prefixed denylist
+- `web_search_options.search_context_size` — `low` / `medium` / `high`
+- `reasoning_effort`
+- Native `response_format` json_schema via `structuredOutput(MyType::class)` from a `@Generable` type
 
-## Changed — typed seam over weak boundaries
+### `chatCompletionsPath` seam on `OpenAiClient` (#3675)
 
-- **`GenerableCodec` (#2803).** `@Generable` deserialization resolves through one `KClass<T>.codec()`
-  boundary (KSP-generated when present, else reflective); the MCP edge reuses it. The unchecked casts
-  sprinkled across `constructFromMap` / `coerceValue` / `fromLlmOutput` and the MCP request path
-  collapse to one site each.
-- **AgenticLoop completion (#3423, building on #3376 / #3406).** The last setup block in
-  `executeAgentic` — the per-skill tool-set assembly + authorization allowlist — extracts as
-  `resolveAllowedTools`. The remaining loop body is the turn loop itself.
+The chat-completions path is now overridable (default `/v1/chat/completions`); `PerplexityClient` overrides to `/chat/completions` — Perplexity serves no `/v1` segment and hitting `/v1` there 404s with an empty body. Behavior unchanged for OpenAI / DeepSeek / Kimi / OpenRouter.
 
-## Quality
+## Docs — accurate shipped signals
 
-The detekt-baseline ratchet fell **423 → 415** and the main-module `@Suppress("UNCHECKED_CAST")`
-count **42 → 30**. Each change is covered by the existing test suites (behavior-preserving) plus
-focused new unit tests at every extracted seam, and a new `LlmErrorPolicyTest` for the error policy.
+External gap analysis surfaced false-negative signals in the roadmap — multimodal / reactive-UI streaming / the session model were marked unchecked while the README and shipped code said otherwise. The roadmap even contradicted itself: `AgentSession.events` shown as shipped on line 78 and not-shipped on lines 73 / 83. Cleaned up so docs (and future AI consumers reading the repo) get correct signals:
+
+- Multi-turn `AgentSession` (#1736) — marked shipped.
+- `AgentSession.events` `Flow<AgentEvent>` (#1736) + `agent.observe { }` (#965) — marked shipped.
+- Vision / document multimodal input across Anthropic / OpenAI / Ollama — marked shipped.
+- Remaining open items (automatic compaction, Pipeline-stage event types) left as `[ ]`.
+
+## Refactored — one type per file burndown complete (#3199)
+
+`PerplexitySearch.kt` was the last multi-type file. Split into one type per file (`Args` / `Source` / `Result` / `Options` / `OptionsBuilder` / `Backend` / `HttpBackend` / `Exception` + `SearchMode` / `Recency` / `ContextSize`), keeping only the pure wire helpers and the `perplexitySearchTool` factory in `PerplexitySearch.kt`. The `checkOneTypePerFile` guard's allowlist is now empty — future commits cannot reintroduce multi-type files without failing CI.
+
+## Maintainability — detekt baseline 415 → 410
+
+Five real cleanups, no mechanical wraps. Replaced inline `kotlinx.coroutines.flow.FlowCollector` FQNs with imports in `ClaudeClient` / `OpenAiClient` SSE parsers, wrapped two over-long lines that read better wrapped, converted `MockTcpMcpServer`'s unused `private val acceptThread` into an `init { }` block (same start-on-construction, no retained handle). The bulk of the remaining MaxLineLength baseline is intentional — table-aligned test fixtures and inline JSON wire-templates that read worse if wrapped — and was left alone.
+
+## Dependencies
+
+- **Kotlin 2.3.21 → 2.4.0** — compiler, stdlib, reflect across every module + KSP.
+- **`org.jline:jline` 3.27.1 → 4.1.3.**
+- **detekt 1.23.7 → 1.23.8.**
+- **KSP API 2.3.7 → 2.3.9** — matches Kotlin 2.4.0.
 
 ## Compatibility
 
-Drop-in on the 0.7.x line. The only new public API is the additive `onLLMError` hook (default
-behavior is unchanged — model errors already failed loud). No behavior changes to existing surfaces,
-no deprecations. The only open child of the maintainability epic (#2790) is #2791 — the turn-loop
-core of `executeAgentic` — deliberately deferred as the highest-risk refactor.
+Drop-in on the 0.7.x line. The Perplexity surface is additive; no public-API change to existing connectors, the agentic loop, or the audit boundary. The Kotlin 2.4.0 upgrade is binary-compatible for consumers on Kotlin 2.3.x or 2.4.x; existing tests pass byte-for-byte.
+
+## What's not in this release
+
+- Pipeline-stage event types in the streaming surface — still pending.
+- Automatic conversation compaction in `AgentSession` — still pending.
+- Closing #2791 (the turn-loop core of `executeAgentic`) — last open child of the #2790 maintainability epic, deliberately deferred as the highest-risk refactor.

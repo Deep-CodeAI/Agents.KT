@@ -4,6 +4,10 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.7.24] — 2026-06-10
+
+**Perplexity: seventh model provider + web-grounded search with citations.** Headline feature is the Perplexity connector and the `perplexitySearch` tool — agents can now fetch live, cited facts from Perplexity Sonar against their own model. Plus a docs-accuracy pass, detekt-baseline reduction, and dependency bumps (Kotlin 2.4.0, jline 4, detekt 1.23.8, ksp 2.3.9). Drop-in on the 0.7.x line.
+
 ### Added — Perplexity connector + web-grounded search tooling (epic #3674)
 
 - **`PerplexityClient` — seventh model provider (#3675).** A thin OpenAI-compatible `OpenAiClient`
@@ -29,6 +33,45 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 - Additive only — no public-API change to existing surfaces. Verified end-to-end against the live
   Perplexity API (connector chat + streaming, and `perplexitySearch` with real citations); live tests
   tagged `live-cloud-api`.
+
+### Docs — accurate shipped signals
+
+- **Roadmap + PRD checkbox audit.** External gap analysis surfaced false-negatives — multimodal /
+  reactive-UI streaming / the session model were marked unchecked in the roadmap while the README and
+  shipped code said otherwise (the roadmap even contradicted itself: `AgentSession.events` shown as
+  shipped on line 78 and not-shipped on lines 73 / 83). Marked the shipped pieces shipped so docs and
+  future readers — including AI consumers — get correct signals: multi-turn `AgentSession` (#1736),
+  `AgentSession.events` `Flow<AgentEvent>` (#1736), `agent.observe { }` (#965), vision/document
+  multimodal input across Anthropic / OpenAI / Ollama. Remaining open items (automatic compaction,
+  Pipeline-stage event types) left as `[ ]`.
+
+### Refactored — one type per file (#3199 burndown)
+
+- **`PerplexitySearch.kt` split.** The original multi-type file split into one type per file
+  (`Args` / `Source` / `Result` / `Options` / `OptionsBuilder` / `Backend` / `HttpBackend` /
+  `Exception` + `SearchMode` / `Recency` / `ContextSize`), keeping only the pure wire helpers and the
+  `perplexitySearchTool` factory in `PerplexitySearch.kt`. The `checkOneTypePerFile` guard's allowlist
+  is now empty — burndown complete; future commits cannot reintroduce multi-type files without
+  failing CI.
+
+### Maintainability — detekt baseline 415 → 410
+
+- **Five real cleanups, no mechanical wraps.** `kotlinx.coroutines.flow.FlowCollector` inline FQNs
+  replaced with imports across `ClaudeClient` / `OpenAiClient` `parseSseStream` signatures (–3
+  MaxLineLength). One over-long `cacheControl` conditional in `ClaudeClient` wrapped (–1). One
+  over-long provider-error throw in `OpenAiClient` wrapped (–1). `MockTcpMcpServer`'s unused
+  `private val acceptThread` is now an `init { }` block — same start-on-construction, no retained
+  handle (–1 `UnusedPrivateProperty`). The bulk of the remaining MaxLineLength baseline is
+  intentional (table-aligned test fixtures + inline JSON wire-templates that read worse if wrapped);
+  left alone.
+
+### Dependencies
+
+- **Kotlin 2.3.21 → 2.4.0** (compiler + stdlib + reflect). All modules + KSP.
+- **`org.jline:jline` 3.27.1 → 4.1.3.**
+- **detekt 1.23.7 → 1.23.8.**
+- **KSP API 2.3.7 → 2.3.9** (matches Kotlin 2.4.0).
+- `actions/checkout` 6.0.2 → 6.0.3 (CI only).
 
 ## [0.7.23] — 2026-06-04
 
