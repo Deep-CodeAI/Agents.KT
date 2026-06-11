@@ -4054,7 +4054,7 @@ Notation: `[x]` shipped, `[ ]` planned. Mirrors the README's roadmap so contribu
 
 8. **Knowledge embedding cost:** RAG vs full inclusion per skill? Token budget management for large knowledge packs.
 
-9. **Skill selection strategy:** When multiple skills match by input type, should the LLM use `description` + `knowledgeTools()` descriptions to choose, or explicit manual routing? What is the fallback when no LLM is configured? (Current answer: `description` on skills and knowledge entries is implemented; `skillSelection {}` and fallback-first-match are implemented.)
+9. **Skill selection strategy:** When multiple skills match by input type, should the LLM use `description` + `knowledgeTools()` descriptions to choose, or explicit manual routing? What is the fallback when no LLM is configured? (Current answer: `description` on skills and knowledge entries is implemented; `skillSelection {}` is implemented. The first-match fallback originally shipped here was removed in 0.7.21 (#3087) — ambiguous routing without a selector or model now throws `SkillRoutingException`.)
 
 10. ~~**Knowledge bridging:**~~ **Resolved.** Code-based `knowledge("key") { "..." }` entries are the only knowledge mechanism. `loadFile()` inside the lambda handles file content. No framework-managed file conventions.
 
