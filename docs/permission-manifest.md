@@ -1,6 +1,6 @@
 # Permission Manifest
 
-The permission manifest is the 0.6.0 audit artifact for Agents.KT. It turns an
+The permission manifest (shipped in 0.6.0) is the audit artifact for Agents.KT. It turns an
 agent or composition into deterministic JSON/YAML that can be reviewed in CI,
 checked into an evidence pack, and correlated with runtime audit events through
 `manifestHash`.
@@ -27,8 +27,11 @@ Add the manifest module:
 
 ```kotlin
 dependencies {
-    implementation("ai.deep-code:agents-kt:0.6.0")
-    implementation("ai.deep-code:agents-kt-manifest:0.6.0")
+    // published on Maven Central — use the latest released version (see the README quickstart)
+    implementation("ai.deep-code:agents-kt:0.7.23")
+    // in-repo module — build from this repository (not yet published to Central;
+    // only agents-kt and agents-kt-ksp are)
+    implementation(project(":agents-kt-manifest"))
 }
 ```
 
@@ -85,11 +88,11 @@ Today the verifier flags:
 
 ## Gradle Plugin
 
-The manifest module also publishes a Gradle plugin:
+The manifest module also provides a Gradle plugin (built from this repository — not yet on the Gradle Plugin Portal; consume it via an included build or your own plugin repository):
 
 ```kotlin
 plugins {
-    id("ai.deep-code.agents-kt.manifest") version "0.6.0"
+    id("ai.deep-code.agents-kt.manifest")
 }
 
 agentsKtManifest {

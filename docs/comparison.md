@@ -14,7 +14,7 @@ A side-by-side for teams choosing a framework. Written with the constraint of be
 | **Local-first** | Yes — Ollama default, no API key required | Yes (via Ollama integration) | Yes (via various local connectors) | Yes (via various) | Yes — transport-agnostic |
 | **Deployment shape** | Library / hosted MCP server / autonomous JAR — one DSL, three modes | Library | Library | Library | Wire protocol |
 | **License** | MIT | MIT | MIT | CC-BY-4.0 (Microsoft Research) | MIT |
-| **Maturity (early 2026)** | 0.5.0 — production-usable for narrow scopes; APIs still moving | 0.3.x — mature, large ecosystem | 1.x — stable, large enterprise adoption | 0.4.x — research project graduating | Spec 2025-03-26, multiple SDKs |
+| **Maturity (mid 2026)** | 0.7.x — typed boundaries, permission manifests, runtime ToolPolicy enforcement + OS-sandbox slice shipped; pre-1.0 APIs still moving | 0.3.x — mature, large ecosystem | 1.x — stable, large enterprise adoption | 0.4.x — research project graduating | Spec 2025-03-26, multiple SDKs |
 
 ## Where Agents.KT wins
 
@@ -30,13 +30,13 @@ A side-by-side for teams choosing a framework. Written with the constraint of be
 
 ## Where Agents.KT loses
 
-**Ecosystem.** LangChain has 700+ integrations (vector stores, retrievers, embedders, agents, callbacks). Agents.KT has 4 LLM providers (Ollama, Anthropic, OpenAI, DeepSeek) and you write the rest. If your job is "wire up 12 SaaS APIs into a prompt pipeline by Friday," LangChain is the right tool, not this one.
+**Ecosystem.** LangChain has 700+ integrations (vector stores, retrievers, embedders, agents, callbacks). Agents.KT has 7 LLM providers (Ollama, Anthropic, OpenAI, DeepSeek, Kimi, OpenRouter, Perplexity — see [providers.md](providers.md)) and you write the rest. If your job is "wire up 12 SaaS APIs into a prompt pipeline by Friday," LangChain is the right tool, not this one.
 
 **Python AI/ML interop.** If your team already has Python notebooks for embedding generation, fine-tuning, eval harnesses — running an Agents.KT layer next to them is a context switch. SK's Python flavor or LangChain stay in the same language.
 
 **Multi-agent research surfaces.** AutoGen's strength is the conversation graph between agents — `GroupChat`, `ConversableAgent` with custom turn-taking, complex role-play patterns. Agents.KT's `Forum` operator is the equivalent shape but with fewer pre-built conversation patterns. If you're doing research-style multi-agent debate with 5+ heterogeneous agents and need fine-grained turn control, AutoGen has more out-of-the-box.
 
-**Maturity.** v0.5.0 is the streaming-runtime release; v0.6.0 ships per-file IDE-skills. APIs are stable enough to build on (we don't break things gratuitously, and breakage gets a CHANGELOG entry + migration note) but pre-1.0 reservations are real. LangChain has lived through more breaking-change cycles and has scar tissue from them.
+**Maturity.** The 0.5 → 0.7 line shipped streaming, audit evidence (permission manifests, JSONL export, the `agents-kt` CLI), and runtime ToolPolicy enforcement with an OS-sandbox slice. APIs are stable enough to build on (we don't break things gratuitously, and breakage gets a CHANGELOG entry + migration note) but pre-1.0 reservations are real. LangChain has lived through more breaking-change cycles and has scar tissue from them.
 
 **Vector stores / retrievers / embedders.** Not first-class today. Implement via the `Tool<IN, OUT>` interface or wrap a Java client library (Qdrant, Pinecone, pgvector). LangChain has these as native types with retry / chunking / metadata baked in.
 
@@ -137,9 +137,9 @@ A few shortcuts that point at one framework over the others:
 - A correctness audit. None of these frameworks "checks" your prompts. They give you primitives for building agents; the agents are still as good (or as bad) as the prompts and tool design behind them.
 - An endorsement. We use Agents.KT because we built it for our own constraints. If yours are different, pick differently. The frameworks listed here are all good at what they do — none of them is a bad choice for the use case they were designed for.
 
-## Status notes (2026-05)
+## Status notes (2026-06)
 
-- **Agents.KT 0.6.0** — permission manifests, JSONL audit export, OTel / LangSmith / Langfuse bridges, constrained decoding, and DeepSeek shipped.
+- **Agents.KT 0.7.23 (latest release)** — runtime ToolPolicy enforcement (in-JVM gate + OS sandbox), the standalone `agents-kt` CLI, tamper-evident audit ledger, fail-loud skill routing, and the `onLLMError` policy — on top of 0.6.0's permission manifests, JSONL audit export, OTel / LangSmith / Langfuse bridges, and constrained decoding. Unreleased `main` adds Perplexity as the seventh provider plus the `perplexitySearch` grounded tool (see CHANGELOG *Unreleased*).
 - **LangChain 0.3.x** — stable, ecosystem mature. LCEL is the recommended composition surface.
 - **Semantic Kernel 1.x** — stable, MCP integration in preview.
 - **AutoGen 0.4.x** — major architectural rewrite landed; the new core/agentchat split is recent.
