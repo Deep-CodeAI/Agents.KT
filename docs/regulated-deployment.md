@@ -81,8 +81,9 @@ jq -s 'group_by(.eventType) | map({eventType: .[0].eventType, count: length})' /
 **The artifact:** per high-stakes action, a record of: who approved, when, what was approved, what the agent recommended.
 
 **Framework support:**
-- **Today:** roll-your-own pattern. The agent returns a typed `PendingAction(plan, requiresApproval = true)`; your service prompts the user; on approval, a second agent invocation executes with `PendingAction(plan, approvedBy = userId, approvedAt = now())` as input. Both rounds appear in the action log.
-- **#1907:** ships the `onBefore*` interceptor family — `onBeforeToolCall { ... -> Decision.Confirm(messageToUser) }` — so the approval step is first-class instead of a two-invocation dance.
+- **Typed approval + resume (shipped, #2489).** Inside a tool, `humanApproval { title = "Deploy to production?"; body = deploymentPlan; timeout = 30.minutes; defaultOnTimeout = HumanDecision.Rejected }` interrupts the run with a typed `ApprovalRequest`; your service asks the human and resumes via `invokeSuspendResuming(..., resumeWith = <HumanDecision>)` from the session snapshot — the model sees the decision as the tool's result. `defaultOnTimeout` is fail-closed (`Rejected`) by default. Approval-requested/-decided listeners put both sides of the decision in the action log.
+- **Gate/veto without a human in the loop (shipped, #1907):** the `onBeforeToolCall` / `onBefore*` interceptor family returns `Decision.Proceed` / `ProceedWith(replacement)` / `Deny(reason)` / `Substitute(result)` — policy checks, argument rewriting, and hard denials, synchronously in-process. (There is no `Decision.Confirm`; pausing for a human is the `humanApproval` path above.)
+- **Roll-your-own (still valid for service-boundary approval):** the agent returns a typed `PendingAction(plan, requiresApproval = true)`; your service prompts the user; a second invocation executes with `PendingAction(plan, approvedBy = userId, approvedAt = now())` as input. Both rounds appear in the action log.
 
 **Define "high-stakes" up front:**
 - Any tool that mutates external state (writes, posts, sends, transfers).
