@@ -30,6 +30,35 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
   Perplexity API (connector chat + streaming, and `perplexitySearch` with real citations); live tests
   tagged `live-cloud-api`.
 
+### Changed — truth-surface pass: docs catch up with the shipped runtime
+
+- **`main` now carries a `-SNAPSHOT` version between releases** (`0.7.24-SNAPSHOT`). Post-release
+  commits no longer masquerade under the published version's identity. `checkReadmeVersion` learned
+  the dev state: on a `-SNAPSHOT` version the README must advertise a plain release strictly below
+  the snapshot base; exact lockstep still enforced at release (runbook step 8 added).
+- **`SECURITY.md` rewritten to 0.7.x reality:** seven providers over four wire shapes (was "four
+  adapters"); tool sandboxing and `McpServer` authentication are no longer "out of scope" — the
+  Layer-1 in-JVM filesystem gate (#2890), Layer-2 OS sandbox (#1916), and
+  `McpServerAuth.TrustedLocal`/`RequireBearerToken` are documented with the honest remaining-gaps
+  list (in-JVM lambda side effects, read confinement, hostname allowlist deferred to 0.8).
+- **`docs/production-hardening.md`** no longer calls `ToolPolicy` "audit evidence, not enforcement"
+  (stale since 0.7.0) and now points subprocess tools at the fail-closed `processTool` (#2914).
+- **Skill-routing docs match the fail-loud runtime (#3087):** `docs/model-and-tools.md` and the wiki
+  routing pages documented the pre-0.7.21 silent first-match fallback; ambiguity now documented as
+  `SkillRoutingException`, with a migration note.
+- **Provider counts unified at seven** (Perplexity joined in this unreleased line): `model-and-tools.md`
+  (was "six"), `SECURITY.md` (was "four"), `comparison.md` (was "4").
+- **`docs/permission-manifest.md`** stops advertising `ai.deep-code:agents-kt-manifest` Maven
+  coordinates — the module has never been published to Central (only `agents-kt` and `agents-kt-ksp`
+  are); shown as an in-repo `project(":agents-kt-manifest")` dependency with the publication status
+  stated. `comparison.md` maturity claims move from the 0.5/0.6 era to 0.7.23.
+- **`docs/regulated-deployment.md` HITL section** documents the shipped primitives —
+  `humanApproval { }` → `ApprovalRequest` → `resumeWith(HumanDecision)` (#2489) and the `onBefore*`
+  interceptor decisions (#1907) — instead of the never-shipped `Decision.Confirm`.
+- **New `DocsConsistencyTest`** pins provider-count sentences to `ModelProvider.entries`, doc
+  `Decision.X` references to the real sealed variants, and the routing table to
+  `SkillRoutingException` — docs drift in these spots now fails `./gradlew test`.
+
 ## [0.7.23] — 2026-06-04
 
 **Maintainability + an explicit model-error policy.** Closes the bulk of the code-smell remediation
