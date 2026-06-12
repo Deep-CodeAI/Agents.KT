@@ -6,6 +6,9 @@ include(":agents-kt-otel")
 include(":agents-kt-langsmith")
 include(":agents-kt-langfuse")
 include(":agents-kt-manifest")
+include(":agents-kt-rag")
+include(":agents-kt-rag-langchain4j")
+include(":agents-kt-rag-spring-ai")
 // #1923: standalone CLI (manifest generate / inspect / verify) — the "externally"
 // half of 0.7.0, so non-Gradle consumers (CI gates, ops, regulators) can produce and
 // verify the deterministic permission manifest from a binary.

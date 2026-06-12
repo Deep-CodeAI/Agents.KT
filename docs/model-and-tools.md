@@ -159,6 +159,8 @@ This is a first-line defense: the provider is asked to produce the typed shape u
 
 **`onKnowledgeUsed { name, content -> }`** — fires when the LLM fetches a knowledge entry. Receives the key name and loaded content. Does not fire for action tools.
 
+> **Query-aware knowledge (#3863):** `knowledge(key, description, retriever)` takes a `KnowledgeRetriever` instead of a static provider — the entry surfaces as a knowledge tool with a `query` argument, fetched on demand and never inlined into the prompt. The `:agents-kt-rag` module backs this with any `EmbeddingStore` — see [rag.md](rag.md).
+
 **`onSkillChosen { name -> }`** — fires when the agent selects a skill to execute. Works with all routing strategies — manual `skillSelection {}`, LLM, and single-candidate direct routing.
 
 ```kotlin

@@ -38,7 +38,7 @@ A side-by-side for teams choosing a framework. Written with the constraint of be
 
 **Maturity.** The 0.5 → 0.7 line shipped streaming, audit evidence (permission manifests, JSONL export, the `agents-kt` CLI), and runtime ToolPolicy enforcement with an OS-sandbox slice. APIs are stable enough to build on (we don't break things gratuitously, and breakage gets a CHANGELOG entry + migration note) but pre-1.0 reservations are real. LangChain has lived through more breaking-change cycles and has scar tissue from them.
 
-**Vector stores / retrievers / embedders.** Not first-class today. Implement via the `Tool<IN, OUT>` interface or wrap a Java client library (Qdrant, Pinecone, pgvector). LangChain has these as native types with retry / chunking / metadata baked in.
+**Vector stores / retrievers / embedders.** A minimal RAG seam exists (`:agents-kt-rag`, #3863): an `EmbeddingStore` SPI + `ragRetriever(...)` bridging any store into the skill DSL as a query-aware knowledge tool, with LangChain4j and Spring AI adapter modules — see [rag.md](rag.md). Agents.KT still doesn't own storage, chunking, or embedding models; LangChain has those as native types with retry / chunking / metadata baked in.
 
 ## By Dimension
 

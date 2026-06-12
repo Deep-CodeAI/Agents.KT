@@ -93,6 +93,29 @@ class Skill<IN, OUT>(
         _knowledge[key] = KnowledgeEntry(description, provider)
     }
 
+    /**
+     * #3863 — query-aware knowledge source (RAG seam). The [retriever] is
+     * invoked with the model's query at tool-invocation time; the entry is
+     * surfaced as a knowledge tool taking a `query` argument and is never
+     * inlined into the prompt. Use the `:agents-kt-rag` module's
+     * `ragRetriever(store, embedder) { … }` to back this with any
+     * `EmbeddingStore`.
+     */
+    fun knowledge(key: String, description: String = "", retriever: KnowledgeRetriever) {
+        checkNotFrozen()
+        require(key !in _knowledge) {
+            "Skill \"$name\" already has knowledge entry \"$key\". " +
+                "Knowledge keys must be unique per skill."
+        }
+        _knowledge[key] = KnowledgeEntry(
+            description = description,
+            provider = {
+                error("Knowledge entry \"$key\" is query-aware — call the retriever, not the static provider.")
+            },
+            retriever = retriever,
+        )
+    }
+
     fun implementedBy(block: (IN) -> OUT) {
         checkNotFrozen()
         implementation = block
@@ -204,14 +227,20 @@ class Skill<IN, OUT>(
         if (_knowledge.isNotEmpty()) {
             append("\n\nKnowledge:")
             _knowledge.forEach { (key, entry) ->
-                append("\n--- $key ---\n")
-                append(entry.provider())
+                // #3863 — retriever entries have no static content to inline;
+                // the model fetches them on demand via the query-arg knowledge tool.
+                if (entry.retriever == null) {
+                    append("\n--- $key ---\n")
+                    append(entry.provider())
+                } else {
+                    append("\n--- $key (on-demand: call the \"$key\" tool with a query) ---")
+                }
             }
         }
     }
 
     fun knowledgeTools(): List<KnowledgeTool> =
-        _knowledge.map { (key, entry) -> KnowledgeTool(key, entry.description, entry.provider) }
+        _knowledge.map { (key, entry) -> KnowledgeTool(key, entry.description, entry.provider, entry.retriever) }
 }
 
 inline fun <reified IN : Any, reified OUT : Any> skill(name: String, description: String = "", block: Skill<IN, OUT>.() -> Unit = {}): Skill<IN, OUT> {

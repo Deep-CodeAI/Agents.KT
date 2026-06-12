@@ -45,9 +45,28 @@ internal fun resolveAllowedTools(agent: Agent<*, *>, skill: Skill<*, *>): Resolv
     }
     val actionToolDefs = (skillToolDefs + autoToolDefs + memoryToolDefs).distinctBy { it.name }
 
-    // Knowledge tools: exposed lazily — LLM calls them to load context on demand
+    // Knowledge tools: exposed lazily — LLM calls them to load context on demand.
+    // #3863 — query-aware entries advertise a {query} parameter and route the
+    // model's query into the suspend retriever (blocking bridge on the
+    // non-session path, same worker-thread contract as regular blocking tools).
     val knowledgeToolDefs = skill.knowledgeTools().map { kt ->
-        ToolDef(kt.name, kt.description) { _ -> kt.call() }
+        val retriever = kt.retriever
+        if (retriever == null) {
+            ToolDef(kt.name, kt.description) { _ -> kt.call() }
+        } else {
+            ToolDef(
+                name = kt.name,
+                description = kt.description,
+                parametersSchemaJson =
+                    """{"type":"object","properties":{"query":{"type":"string",""" +
+                        """"description":"What to look up in this knowledge source"}},""" +
+                        """"required":["query"],"additionalProperties":false}""",
+                sessionExecutor = { args, _ -> retriever.retrieve(args["query"]?.toString().orEmpty()) },
+                executor = { args ->
+                    kotlinx.coroutines.runBlocking { retriever.retrieve(args["query"]?.toString().orEmpty()) }
+                },
+            )
+        }
     }
     val knowledgeToolMap = knowledgeToolDefs.associateBy { it.name }
 

@@ -4,6 +4,24 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — RAG seam: EmbeddingStore SPI + query-aware knowledge (#3863, P0.2)
+
+- **Core knowledge seam:** `skill { knowledge(key, description, retriever) }` registers a
+  query-aware `KnowledgeRetriever` — surfaced to the model as a knowledge tool taking a `query`
+  argument (suspend on the session path, blocking-bridged otherwise), never inlined into the
+  prompt. Static `knowledge(key) { content }` entries are unchanged.
+- **New `:agents-kt-rag` module (in-repo):** minimal SPI — `EmbeddingStore<T>` (`upsert` /
+  `query`), `Embedder`, `RagQuery` (text + optional embedding), `Match` with
+  `Provenance { chunkId, sourceUri, hash }`, metadata `Filter` — plus a cosine
+  `InMemoryEmbeddingStore` and `ragRetriever(store, embedder) { topK; minScore; filter { } }`
+  bridging any store into the skill DSL with provenance-carrying rendered results.
+- **Adapter modules (in-repo):** `:agents-kt-rag-langchain4j` (wraps LangChain4j
+  `EmbeddingStore<TextSegment>`, 1.16.x) and `:agents-kt-rag-spring-ai` (wraps Spring AI
+  `VectorStore`, 1.1.x — embeds internally, no `Embedder` needed). Both translate store metadata
+  into `Provenance` and apply `Filter`s client-side.
+- Out of scope by design: embedding models, vector-DB lifecycle, re-ranking/hybrid search.
+  New `docs/rag.md`; comparison.md vector-store row updated. 14 new tests across the four modules.
+
 ### Added — streaming flows through every composition operator (#3866, P0.1)
 
 - **Every `then` overload now chains streaming.** Pipelines that mix `Parallel` / `Forum` / `Loop` /
