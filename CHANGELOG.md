@@ -4,6 +4,16 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — patterns recipe library (#3878, P2.2)
+
+- **`docs/patterns.md`** — Anthropic's "Building Effective Agents" catalog mapped 1:1 onto
+  Agents.KT primitives: ReAct, prompt chaining, routing (`handoff`), parallelization
+  (`/` + `.aggregate`), orchestrator-workers (`forum`), evaluator-optimizer (`loopUntil` +
+  `evalGate`), reflexion, multi-agent debate (`consensusCaptain`), speculative execution
+  (`firstOf`), HITL (`humanApproval`/`HumanGateRegistry`), and RAG (`ragRetriever`). Every
+  recipe uses shipped operators — several from this release line. Linked from the README
+  composition section.
+
 ### Changed — `executeAgentic` decomposition, slice 1 (#2791)
 
 - **One `snapshotNow(...)` builder** replaces the three identical 9-field `SessionSnapshot`

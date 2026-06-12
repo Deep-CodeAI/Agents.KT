@@ -89,7 +89,7 @@ Composition is purely type-driven — the compiler enforces that boundaries line
 | `forum { members(…); captain = … }` | `Forum<IN, OUT>` | Council of members with a captain that emits the verdict. |
 | `triage handoff { … }` | `Branch<IN, OUT>` | Named hand-off to specialists on the source's typed output (#3871). Same routing as `branch` + an audit signal (`onHandoff` / `HandoffPerformed`); the target never sees the source's history — typed input only, unlike Swarm-style handoff. |
 
-A single agent instance can only be placed in one composition — wiring it into two spots fails fast at construction. See [`docs/composition.md`](docs/composition.md) for the operator reference and [`docs/comparison.md`](docs/comparison.md) for the release narrative.
+A single agent instance can only be placed in one composition — wiring it into two spots fails fast at construction. See [`docs/composition.md`](docs/composition.md) for the operator reference, [`docs/patterns.md`](docs/patterns.md) for the Anthropic "Building Effective Agents" catalog mapped 1:1 onto these primitives, and [`docs/comparison.md`](docs/comparison.md) for the release narrative.
 
 ### One typed pipeline
 
