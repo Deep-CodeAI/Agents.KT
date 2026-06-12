@@ -4,6 +4,18 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — ToolPolicy ↔ capability comparator + `exec` capability (#2887)
+
+- **`ToolPolicy.exec`** — declared subprocess stance (`exec { allow() }` / `exec { deny() }`;
+  legacy manifests parse as `unspecified`). Serialized in manifest JSON/YAML; the manifest
+  verifier flags `tool.exec.widened` on an unspecified/deny → allow jump (narrowing passes).
+- **`ToolPolicyCapabilityComparator`** (agents-kt-detekt) — the declare-vs-do gate: for
+  `tool { policy { … }; executor { … } }` declarations, the executor body's statically-extracted
+  capabilities must be a subset of what the policy grants; using more than declared fails the
+  build with a widen-or-remove hint. Over-declaration passes (a manifest-review concern).
+  Un-policied tools stay `ToolBodyForbiddenApis`' business. Syntactic, callee-name based —
+  same honest limits as the extractor. 11 new tests across the three modules.
+
 ### Added — built-in forum captains (#3877, P2.1)
 
 - **`consensusCaptain(quorum)`** — N identical member verdicts or fail loud with the full tally;

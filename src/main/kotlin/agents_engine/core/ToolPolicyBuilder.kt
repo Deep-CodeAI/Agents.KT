@@ -5,6 +5,7 @@ class ToolPolicyBuilder {
     private var filesystem: ToolFilesystemPolicy = ToolFilesystemPolicy()
     private var network: ToolNetworkPolicy = ToolNetworkPolicy.Unspecified
     private var environment: ToolEnvironmentPolicy = ToolEnvironmentPolicy.Unspecified
+    private var exec: ToolExecPolicy = ToolExecPolicy.Unspecified
 
     fun filesystem(block: ToolFilesystemPolicyBuilder.() -> Unit) {
         filesystem = ToolFilesystemPolicyBuilder(filesystem).apply(block).build()
@@ -18,11 +19,17 @@ class ToolPolicyBuilder {
         environment = ToolEnvironmentPolicyBuilder(environment).apply(block).build()
     }
 
+    /** #2887 — declared subprocess stance: `exec { allow() }` / `exec { deny() }`. */
+    fun exec(block: ToolExecPolicyBuilder.() -> Unit) {
+        exec = ToolExecPolicyBuilder(exec).apply(block).build()
+    }
+
     fun build(): ToolPolicy =
         ToolPolicy(
             risk = risk,
             filesystem = filesystem,
             network = network,
             environment = environment,
+            exec = exec,
         )
 }

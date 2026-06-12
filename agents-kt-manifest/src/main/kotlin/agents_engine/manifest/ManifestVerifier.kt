@@ -31,6 +31,15 @@ internal object ManifestVerifier {
                 )
             }
 
+            execWidening(currentTool, baselineTool)?.let { detail ->
+                findings += ManifestFinding(
+                    code = "tool.exec.widened",
+                    severity = "high",
+                    path = "tools.$key.policy.exec",
+                    message = "Tool \"$name\" exec access widened ($detail).",
+                )
+            }
+
             networkWidening(currentTool, baselineTool)?.let { detail ->
                 findings += ManifestFinding(
                     code = "tool.network.widened",
@@ -103,6 +112,15 @@ internal object ManifestVerifier {
             "low" -> 1
             else -> 0
         }
+
+    // #2887 — deny/unspecified (0) -> allow (1); any rank increase is a widening.
+    private fun execRank(mode: String): Int = if (mode == "allow") 1 else 0
+
+    private fun execWidening(current: Map<String, Any?>, baseline: Map<String, Any?>): String? {
+        val cm = current.policySection("exec")["mode"]?.toString()?.lowercase() ?: "unspecified"
+        val bm = baseline.policySection("exec")["mode"]?.toString()?.lowercase() ?: "unspecified"
+        return if (execRank(cm) > execRank(bm)) "mode $bm -> $cm" else null
+    }
 
     private fun networkRank(mode: String): Int =
         when (mode) {

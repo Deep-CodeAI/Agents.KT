@@ -157,3 +157,9 @@ Declaration and enforcement are two sides of the same `ToolPolicy`:
   reviewable view of what every tool *may* touch;
 - **Layer 1** makes the filesystem part of that declaration *bite* at runtime;
 - **Layer 2** (#1916) will extend enforcement to the process boundary.
+
+## Declare-vs-do comparator + the `exec` capability (#2887)
+
+`ToolPolicy` gains a fourth capability: **`exec`** — the declared subprocess stance (`exec { allow() }` / `exec { deny() }`; absent sections in legacy manifests parse as `unspecified`). The manifest verifier treats unspecified/deny → allow as a widening (`tool.exec.widened`).
+
+The static half is **`ToolPolicyCapabilityComparator`** in `agents-kt-detekt`: for a `tool { policy { … }; executor { … } }` declaration, the executor body's extracted capabilities (`ToolCapabilityExtractor`: FS_READ / FS_WRITE / NETWORK / ENVIRONMENT / EXEC) must be a **subset** of what the policy grants — using more than you declared fails the build with a widen-or-remove hint; declaring more than you use passes (over-declaration is a manifest-review concern, not a violation). Tools without a `policy { }` block are out of scope here (that's `ToolBodyForbiddenApis`' territory). Same honest limits as the extractor: syntactic and callee-name based — reflection and aliasing are invisible; the Layer-2 sandbox covers the residue.
