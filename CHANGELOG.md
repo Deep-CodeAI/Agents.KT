@@ -4,6 +4,15 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Docs — async-loop premortem (#3874, P2.5 groundwork)
+
+- **`docs/premortem-async-loop.md`** — the suspend-native loop design, decided once before
+  anyone codes it: the blocking residue is `ModelClient.chat` + mid-stream HTTP reads (the loop
+  internals are already suspend), the target is a `chatSuspend` migration per adapter with
+  `runBlocking` surviving only in the public blocking shims, full blast-radius table, the
+  ticket's acceptance gates kept, and the interim workarounds named (MCP/A2A hosting for
+  actor-shaped deployments; `firstOf` for latency). Implementation stays post-1.0.
+
 ### Added — patterns recipe library (#3878, P2.2)
 
 - **`docs/patterns.md`** — Anthropic's "Building Effective Agents" catalog mapped 1:1 onto
