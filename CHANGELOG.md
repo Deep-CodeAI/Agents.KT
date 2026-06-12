@@ -4,6 +4,216 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — multimodal: audio STT + image generation + TTS (#3867 first slice, P0.5)
+
+- **`SpeechToTextClient` / `ImageModelClient` / `TtsModelClient`** fun-interfaces with OpenAI
+  adapters: `OpenAiSpeechToTextClient` (Whisper, multipart), `OpenAiImagesClient` (Images API,
+  b64), `OpenAiTtsClient` (speech, mp3). Bytes land in the caller's `BlobStore`; typed
+  `Content.Image` / `Content.Audio` refs travel through the agent graph. `baseUrl` injectable;
+  wire shapes pinned by stub-server tests incl. the acceptance flow (audio → transcript → image).
+- Not yet: `Content.Audio` inside chat messages (gpt-4o-audio blocks) and non-OpenAI providers —
+  remaining on #3867. 3 tests.
+
+### Added — W3C trace propagation across MCP/A2A (#3873 slice 1, P1.6)
+
+- **`TraceContextPropagation`** (core, no-op default, zero OTel dependency) — outbound MCP and
+  A2A HTTP requests carry the installed propagator's headers (`traceparent`/`tracestate`);
+  `McpServer` / `A2AServer` make the inbound remote context current for the dispatch scope.
+- **`OtelTracePropagation.install()`** (`:agents-kt-otel`) wires the seam to OpenTelemetry's W3C
+  propagators. Distributed agent traces now connect at the process boundaries instead of starting
+  fresh. Remaining on #3873: runtime-native span hierarchy + coroutine ContextStorage. 3 tests.
+
+### Docs — async-loop premortem (#3874, P2.5 groundwork)
+
+- **`docs/premortem-async-loop.md`** — the suspend-native loop design, decided once before
+  anyone codes it: the blocking residue is `ModelClient.chat` + mid-stream HTTP reads (the loop
+  internals are already suspend), the target is a `chatSuspend` migration per adapter with
+  `runBlocking` surviving only in the public blocking shims, full blast-radius table, the
+  ticket's acceptance gates kept, and the interim workarounds named (MCP/A2A hosting for
+  actor-shaped deployments; `firstOf` for latency). Implementation stays post-1.0.
+
+### Added — patterns recipe library (#3878, P2.2)
+
+- **`docs/patterns.md`** — Anthropic's "Building Effective Agents" catalog mapped 1:1 onto
+  Agents.KT primitives: ReAct, prompt chaining, routing (`handoff`), parallelization
+  (`/` + `.aggregate`), orchestrator-workers (`forum`), evaluator-optimizer (`loopUntil` +
+  `evalGate`), reflexion, multi-agent debate (`consensusCaptain`), speculative execution
+  (`firstOf`), HITL (`humanApproval`/`HumanGateRegistry`), and RAG (`ragRetriever`). Every
+  recipe uses shipped operators — several from this release line. Linked from the README
+  composition section.
+
+### Changed — `executeAgentic` decomposition, slice 1 (#2791)
+
+- **One `snapshotNow(...)` builder** replaces the three identical 9-field `SessionSnapshot`
+  constructions (budget checkpoint / interrupt / turn boundary) — the #2755 memory-slice
+  semantics now live in one place.
+- **One `resolveCapDecision(...)` dispatch** replaces the five copy-pasted Stop/Extend/Checkpoint
+  budget-cap blocks (DURATION / TURNS / TOKENS / TOOL_CALLS / CONSECUTIVE_TOOL) with an
+  **exhaustive `when`** over the sealed `BudgetDecision` — a new variant is now a compile error,
+  not a silent fall-through. Pre-existing quirk preserved deliberately: CONSECUTIVE_TOOL never
+  re-armed its threshold on extend (`rearmThreshold = false`).
+- Behavior-preserving (full suite green); the `ToolCalls`-branch extraction continues on #2791.
+
+### Added — cross-model eval regression (#3876, P2.4)
+
+- **`suite.runAcrossModels("label" to agent, …)`** — runs every eval case against each labeled
+  per-model agent and reports **divergence** (cases passing on some models, failing on others) via
+  `CrossModelEvalResult.divergent` plus a `toMarkdown()` case × model matrix for CI artifacts.
+  Duplicate labels fail loud. Hermetic via `DeterministicModelClient`; live runs ride the
+  existing live-tagged suites. 3 tests; docs/eval.md CI example.
+
+### Added — `@Generable` schemas in the permission manifest (manifest v2, #3875)
+
+- Manifests gain a top-level **`schemas`** section: JSON Schema for every `@Generable` IN/OUT type
+  in the agent graph (KSP-aware cache-then-reflection probe), keyed by FQN with per-schema sha256,
+  folded into `manifestHash` — a type change now bumps the manifest. Reviewers see shapes, not
+  just names.
+- **Manifest format v2**; loaded manifests preserve their own version (fixed: `fromJson`
+  previously stamped the current constant over a baseline's version), and version differences
+  verify with a non-fatal `manifest.version.changed` **info** finding (`ok` is now
+  severity-aware — behavior-preserving, all pre-existing finding types are "high"). 3 tests.
+
+### Added — `executor { args, env -> }` + the first `ToolEnvironment` slice (#2889 / #2883)
+
+- **New executor shape:** `tool { policy { … }; executor { args, env -> … } }` — `env` is a
+  per-call, policy-gated `ToolEnvironment` (v1 ABI: `readText` / `writeText` / `env(name)`); an
+  operation the declared policy doesn't grant throws `ToolPolicyViolation` **before** it happens
+  (paths normalized, fail-closed without a declaration). Both loop chokepoints are covered through
+  the single executor seam — no loop changes.
+- **Single-arg `executor { args -> }` keeps compiling and running** (back-compat pinned by test);
+  the builder form carries a `WARNING` deprecation pointing at the new shape, per the one-release
+  migration window. Subprocesses stay with `processTool`; blobs/clock/ledger-envelope recording
+  land with the rest of #2883. 4 tests.
+
+### Added — mechanical `-SNAPSHOT`-on-main enforcement (#4428)
+
+- **`checkSnapshotPolicy`** Gradle task: a non-`-SNAPSHOT` version is only legal on the tagged
+  release commit itself; anything else fails with the runbook-step-8 hint. CI runs it on every
+  push to `main` (release-PR refs exempt by event type — they legitimately carry the release
+  version before the tag exists; the task is deliberately not wired into `check` for the same
+  reason). Closes the enforcement gap the runbook's post-release bump rule left open.
+
+### Added — ToolPolicy ↔ capability comparator + `exec` capability (#2887)
+
+- **`ToolPolicy.exec`** — declared subprocess stance (`exec { allow() }` / `exec { deny() }`;
+  legacy manifests parse as `unspecified`). Serialized in manifest JSON/YAML; the manifest
+  verifier flags `tool.exec.widened` on an unspecified/deny → allow jump (narrowing passes).
+- **`ToolPolicyCapabilityComparator`** (agents-kt-detekt) — the declare-vs-do gate: for
+  `tool { policy { … }; executor { … } }` declarations, the executor body's statically-extracted
+  capabilities must be a subset of what the policy grants; using more than declared fails the
+  build with a widen-or-remove hint. Over-declaration passes (a manifest-review concern).
+  Un-policied tools stay `ToolBodyForbiddenApis`' business. Syntactic, callee-name based —
+  same honest limits as the extractor. 11 new tests across the three modules.
+
+### Added — built-in forum captains (#3877, P2.1)
+
+- **`consensusCaptain(quorum)`** — N identical member verdicts or fail loud with the full tally;
+  **`weightedCaptain(weights)`** — weighted vote keyed by panelist name (default 1.0);
+  **`byzantineCaptain()`** — median of numeric verdicts (1-d geometric median, robust to
+  ⌈n/2⌉−1 adversarial members; vector Krum is a tracked follow-up). All three are deterministic
+  transcript captains — the strategy name is the captain's agent name, so audit events carry
+  which aggregation decided the verdict. 5 tests through real forum deliberations.
+
+### Added — `HumanGateRegistry`: the named HITL adapter (#3868, P1.5)
+
+- **`gates.guard(agent, input)`** returns `GateOutcome.Completed(output)` or
+  `GateOutcome.Paused(gate)` when a tool calls `humanApproval { }` / `interrupt(...)`. The
+  `PendingGate` carries gateId / reason / payload for the reviewer; `approve(reviewer, comment)` /
+  `reject(...)` / `resolve(HumanDecision, ...)` resumes from the snapshot exactly where the run
+  left off (manifest-hash restore guard applies) and resolves exactly once.
+- Snapshots are also persisted to an optional `SnapshotStore` as crash evidence; full
+  post-restart rehydration (re-supplying agent + input) is a tracked follow-up. Audit events ride
+  the existing #2489 channel. 4 tests.
+
+### Added — `loopUntil` + `evalGate` (#3870, P1.4)
+
+- **`agent.loopUntil(maxIterations, feedback?) { predicate }`** (also on `Pipeline`) — the named
+  reflexion / evaluator-optimizer shape: re-run until the predicate approves the output, feeding
+  `feedback(out)` (or the output itself when `IN == OUT`) back as input. Named `loopUntil` rather
+  than a `loop { until { } }` DSL block so the existing `loop { next }` trailing-lambda overload
+  stays source-compatible.
+- **`evalGate(rubric, threshold)`** — pass/fail gate over the LLM-as-judge rubric (one judge call
+  per check, `lastVerdict` keeps the rationale; threshold validated against the rubric's range).
+  7 tests incl. the full reflexion shape against a scripted judge.
+
+### Added — speculative execution: `firstOf` / `.speculative(n)` (#3869, P1.3)
+
+- **`firstOf(a, b)`** races distinct agents; **`agent.speculative(3)`** races the same agent
+  against itself. First **success** wins at the winner's latency; losers are cancelled but not
+  awaited (sacrificial-worker precedent — suspending losers stop promptly, blocking bodies finish
+  in the background, discarded). A failing branch doesn't settle the race; all-fail throws.
+- `onRaceSettled { winner, cancelled, elapsedMillis -> }` audit signal;
+  `firstOf.session(input)` streams every racer's events and completes under the winner's id.
+- Budget honesty documented: losers' partial tokens are real provider spend — bound N;
+  cross-branch accounting of cancelled partial usage is a tracked gap. 6 tests.
+
+### Added — built-in aggregators on `/` (#3872, P1.2)
+
+- **`(a / b / c).aggregate { … }`** — one-line ensemble patterns over a parallel fan-out:
+  `majorityVote()` (deterministic first-encountered tie-break), `selectByMax { }`,
+  `bestOfN { scorer }` (each output scored exactly once), `weighted(weights)` (missing agents
+  default to 1.0). Pure sugar over `then`: builds a deterministic reducer agent named
+  `aggregate-<strategy>`, so audit/streaming events carry the strategy name and the result is an
+  ordinary `Pipeline<IN, OUT>`. All-branches-failed surfaces as the parallel stage's failure
+  (`Failed` terminal on sessions). 6 tests.
+
+### Added — `handoff` named operator (#3871, P1.1)
+
+- **`triage handoff { on<BillingTask>() then billing; … }`** — the named hand-off primitive:
+  identical routing semantics and sealed-exhaustiveness validation as `branch`, plus an audit
+  contract — route selection fires the source agent's `onHandoff { toAgent, decisionInputType -> }`
+  listener and `PipelineEvent.HandoffPerformed` (observe/JSONL/OTel/LangSmith/Langfuse), so
+  reviewers can grep transfers specifically. Unlike OpenAI-Swarm-style handoff, the target never
+  shares the source's conversation history — it receives only its declared input type; the
+  single-placement rule holds across the transfer. Fires on both the blocking and streaming paths.
+
+### Added — A2A protocol v1: server + typed client (#3864, P0.4)
+
+- **`A2AServer.from(agent)`** exposes any `Agent<IN, OUT>` over A2A v0.2 (JSON-RPC over HTTP),
+  following the McpServer precedent: JDK HttpServer, loopback-only bind, optional bearer auth.
+  AgentCard at `/.well-known/agent-card.json` with `@Generable` input schemas; `message/send`
+  maps the first text part to the agent's typed input and returns a completed Task whose
+  artifact carries the output (JSON property map for typed OUT).
+- **`a2aAgent<IN, OUT>(name, url)`** returns a real `Agent<IN, OUT>` handle for a remote A2A
+  endpoint — drops into `then` / `/` / `forum` / `branch` and skill allowlists like a local
+  agent. Remote JSON-RPC errors throw with the remote message; auth/HTTP failures fail loud.
+- v1 scope: `message/send` only — streaming, task lifecycle, and `traceparent` propagation are
+  tracked follow-ups (#3864 / #3873). New `docs/a2a.md`; README limitation bullet replaced.
+  6 in-process round-trip tests (String + `@Generable` both directions, card, auth, errors).
+
+### Added — history compression (#3865 Phase 1, P0.3)
+
+- **`agent { historyCompression { … } }`** — before-turn compression for long-running agents:
+  when the history exceeds `triggerMessages` (default 40; custom `triggerWhen { }` supported), the
+  conversation middle collapses into one deterministic digest message. Leading system messages are
+  pinned, the most recent `preserveRecent` messages stay untouched, and the preserved window
+  extends backward so a tool result is never orphaned from its `tool_call`. Rides the
+  `onBeforeTurn` → `Decision.ProceedWith` seam, so the loop history shrinks permanently.
+- **Degrade-don't-fail:** a summarizer exception skips compression for that turn. Default
+  summarizer is extractive and deterministic (no LLM call); pass `summarizer { }` for abstractive.
+- **Observability:** `onHistoryCompressed { }`, `PipelineEvent.HistoryCompressed` (counts only —
+  no conversation content in audit rows), JSONL audit rows, and OTel / LangSmith / Langfuse
+  bridge events. 6 new tests incl. a mid-run agentic-loop integration.
+- Phases 2 (tiered MemoryBank) and 3 (episodic/semantic split) tracked separately.
+
+### Added — RAG seam: EmbeddingStore SPI + query-aware knowledge (#3863, P0.2)
+
+- **Core knowledge seam:** `skill { knowledge(key, description, retriever) }` registers a
+  query-aware `KnowledgeRetriever` — surfaced to the model as a knowledge tool taking a `query`
+  argument (suspend on the session path, blocking-bridged otherwise), never inlined into the
+  prompt. Static `knowledge(key) { content }` entries are unchanged.
+- **New `:agents-kt-rag` module (in-repo):** minimal SPI — `EmbeddingStore<T>` (`upsert` /
+  `query`), `Embedder`, `RagQuery` (text + optional embedding), `Match` with
+  `Provenance { chunkId, sourceUri, hash }`, metadata `Filter` — plus a cosine
+  `InMemoryEmbeddingStore` and `ragRetriever(store, embedder) { topK; minScore; filter { } }`
+  bridging any store into the skill DSL with provenance-carrying rendered results.
+- **Adapter modules (in-repo):** `:agents-kt-rag-langchain4j` (wraps LangChain4j
+  `EmbeddingStore<TextSegment>`, 1.16.x) and `:agents-kt-rag-spring-ai` (wraps Spring AI
+  `VectorStore`, 1.1.x — embeds internally, no `Embedder` needed). Both translate store metadata
+  into `Provenance` and apply `Filter`s client-side.
+- Out of scope by design: embedding models, vector-DB lifecycle, re-ranking/hybrid search.
+  New `docs/rag.md`; comparison.md vector-store row updated. 14 new tests across the four modules.
+
 ### Added — streaming flows through every composition operator (#3866, P0.1)
 
 - **Every `then` overload now chains streaming.** Pipelines that mix `Parallel` / `Forum` / `Loop` /
@@ -19,6 +229,23 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
   (demultiplex by `agentId`). Cancellation tears down in-flight inner sessions via structured
   concurrency. Operators constructed outside their factory functions still fall back to
   non-streaming execution. Behavior pinned in `CompositionStreamingChainTest` (6 scenarios).
+
+### Changed — truth-surface pass 3 (June-12 delta review)
+
+- **threat-model.md opening paragraph** no longer claims "does not sandbox tool execution" /
+  "does not validate MCP request origins by default" — both contradicted the canonical table
+  below it; rewritten to the precise lambda-vs-subprocess and loopback-default reality.
+- **tool-policy-enforcement.md**: the stale "Layer 2 will extend enforcement" closing line names
+  the shipped Layer 2 and the actual remaining 0.8 work; new high-level-vs-low-level warning box
+  (`processTool` fail-closed vs raw `ProcessSandbox.run` warn-and-run).
+- **model-and-tools.md** ToolPolicy section reframed from "declarative only in the 0.6.x line"
+  to the 0.7 enforcement reality (+ the #2889 `ToolEnvironment` executor shape).
+- **caching.md** provider framing fixed: Kimi/OpenRouter/Perplexity are first-party providers
+  inheriting the OpenAI rows, not "fourth-party deployments"; `ModelProvider.entries` count
+  corrected.
+- **roadmap.md**: threat-model guide marked shipped; the demos bullet's never-shipped `Escalate`
+  decision replaced with the real HITL primitives (#2489 / #3868).
+- **`DocsConsistencyTest`** stale-phrase guard extended with the three newly-fixed claims.
 
 ### Changed — truth-surface pass 2: the rooms the front door missed
 

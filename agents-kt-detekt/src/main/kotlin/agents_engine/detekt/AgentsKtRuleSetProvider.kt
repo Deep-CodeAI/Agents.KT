@@ -14,5 +14,5 @@ class AgentsKtRuleSetProvider : RuleSetProvider {
     override val ruleSetId: String = "agents-kt"
 
     override fun instance(config: Config): RuleSet =
-        RuleSet(ruleSetId, listOf(ToolBodyForbiddenApis(config)))
+        RuleSet(ruleSetId, listOf(ToolBodyForbiddenApis(config), ToolPolicyCapabilityComparator(config)))
 }

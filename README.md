@@ -78,7 +78,7 @@ When multiple skills can take the same input type, the LLM (or a manual `skillSe
 
 ### Composing agents
 
-Composition is purely type-driven — the compiler enforces that boundaries line up. Five primitives ship today:
+Composition is purely type-driven — the compiler enforces that boundaries line up. Six primitives ship today:
 
 | Primitive | Shape | What it does |
 |---|---|---|
@@ -87,8 +87,9 @@ Composition is purely type-driven — the compiler enforces that boundaries line
 | `agent.branch { … }` | `Branch<IN, OUT>` | Route per source-output shape (`onClass<X> then …`, `onElse then …`); sealed sources are exhaustiveness-checked. |
 | `teacher wrap student` | `Pipeline<IN, OUT>` | Teacher-student: `teacher.OUT` (a `String`) becomes `student`'s per-call system prompt. |
 | `forum { members(…); captain = … }` | `Forum<IN, OUT>` | Council of members with a captain that emits the verdict. |
+| `triage handoff { … }` | `Branch<IN, OUT>` | Named hand-off to specialists on the source's typed output (#3871). Same routing as `branch` + an audit signal (`onHandoff` / `HandoffPerformed`); the target never sees the source's history — typed input only, unlike Swarm-style handoff. |
 
-A single agent instance can only be placed in one composition — wiring it into two spots fails fast at construction. See [`docs/composition.md`](docs/composition.md) for the operator reference and [`docs/comparison.md`](docs/comparison.md) for the release narrative.
+A single agent instance can only be placed in one composition — wiring it into two spots fails fast at construction. See [`docs/composition.md`](docs/composition.md) for the operator reference, [`docs/patterns.md`](docs/patterns.md) for the Anthropic "Building Effective Agents" catalog mapped 1:1 onto these primitives, and [`docs/comparison.md`](docs/comparison.md) for the release narrative.
 
 ### One typed pipeline
 
@@ -265,10 +266,10 @@ What the framework does **not** enforce — your responsibility:
   - *Partial cancellation today.* `Flow` collection cancels promptly, and `perToolTimeout` now applies to both regular and session-aware tool calls. Synchronous skill bodies and blocking HTTP reads still are not fully coroutine-cancellable mid-call; the remaining adapter migration is the `sendAsync`/suspend-refactor track.
   - *Composition flow-through shipped (#3866).* Every composition operator exposes `session(...)`, and every `then` overload chains streaming — pipelines mixing `Parallel` / `Forum` / `Loop` / `Branch` mid-chain stream all nested agents' events through the parent session, demultiplexable by `agentId`. Remaining: pipeline-stage event types (`StageStarted` / `PipelineCompleted`).
 - **No native binary** — JVM-only (≥ JDK 21). GraalVM and `jlink` bundles are Phase 2 priorities.
-- **No A2A protocol yet** — agent-to-agent over network (Phase 2 / 3).
+- **A2A protocol — v1 shipped (#3864).** `A2AServer.from(agent)` exposes any agent over A2A (AgentCard + JSON-RPC `message/send`, loopback + bearer auth); `a2aAgent<IN, OUT>(name, url)` returns a typed remote handle that composes like a local agent. Not yet: `message/stream`, task lifecycle methods, `traceparent` propagation — see [docs/a2a.md](docs/a2a.md).
 - **Inline-tool-call fallback model variance** — small Ollama models (e.g. `gemma3:4b`) reliably emit single tool calls via the inline format but may produce thin final-turn text after multi-step tool sequences. For multi-step reasoning, a tool-native model (`gpt-oss:20b-cloud` and similar) is the better fit.
 - **Partial tool sandboxing** — in-JVM lambda bodies still run with full JVM privileges (the tool allowlist controls *which* tools the model may call, and Layer 1 gates filesystem-path arguments against declared `ToolPolicy`, #2890). Subprocess-shaped tools get a real OS sandbox today via `processTool` (`ProcessSandbox`: Seatbelt / bubblewrap / firejail, fail-closed, #1916/#2914). `WasmSandbox` / `DockerSandbox` backends, the hostname-allowlist proxy, and read confinement are 0.8 (#2893–#2895). Canonical table: [threat model](docs/threat-model.md).
-- **Image/document input shipped; audio + generation not yet** — text plus **image and document** content are wired end-to-end (`Content` sealed type + `BlobStore`; vision input to Anthropic / OpenAI / Ollama via `invokeWithAttachments`; #2466–#2470 — see *Implemented today*). Still on the roadmap: **audio/video input**, image generation (`ImageModelClient`: DALL-E, Imagen, Stability), and text-to-speech (`TTSModelClient`: OpenAI TTS, ElevenLabs, Google) — Phase 2/3.
+- **Image/document input shipped; audio STT + image generation + TTS shipped (first slice, #3867)** — vision/document input end-to-end (#2466–#2470); `OpenAiSpeechToTextClient` (Whisper), `OpenAiImagesClient`, and `OpenAiTtsClient` over the `SpeechToTextClient` / `ImageModelClient` / `TtsModelClient` fun-interfaces, all BlobStore-backed with typed `Content` refs. Still on the roadmap: `Content.Audio`/`Video` directly inside chat messages (gpt-4o-audio-style blocks) and non-OpenAI generation providers (Imagen, Stability, ElevenLabs).
 
 For planned features beyond these limitations, see [docs/roadmap.md](docs/roadmap.md).
 

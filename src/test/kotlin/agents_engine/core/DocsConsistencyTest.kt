@@ -88,6 +88,12 @@ class DocsConsistencyTest {
             Regex("""(?i)all three first-party""") to "seven providers stream; three native + four inherited SSE",
             Regex("""(?i)\b(four|five|six) (model )?(providers|adapters)\b""") to
                 "provider count is ModelProvider.entries.size",
+            Regex("""(?i)does not sandbox tool execution""") to
+                "say 'does not sandbox arbitrary in-JVM lambdas' — subprocess tools ARE sandboxed (#1916)",
+            Regex("""(?i)will extend enforcement to the process boundary""") to
+                "Layer 2 shipped in 0.7.0 — name the remaining 0.8 work instead",
+            Regex("""(?i)declarative only in the 0\.6""") to
+                "frame as history: enforced since 0.7.0 (#2890/#1916)",
         )
         val historical = setOf("prd.md")
         val docFiles = Files.list(Path.of("docs")).use { stream ->

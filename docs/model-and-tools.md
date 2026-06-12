@@ -159,6 +159,8 @@ This is a first-line defense: the provider is asked to produce the typed shape u
 
 **`onKnowledgeUsed { name, content -> }`** — fires when the LLM fetches a knowledge entry. Receives the key name and loaded content. Does not fire for action tools.
 
+> **Query-aware knowledge (#3863):** `knowledge(key, description, retriever)` takes a `KnowledgeRetriever` instead of a static provider — the entry surfaces as a knowledge tool with a `query` argument, fetched on demand and never inlined into the prompt. The `:agents-kt-rag` module backs this with any `EmbeddingStore` — see [rag.md](rag.md).
+
 **`onSkillChosen { name -> }`** — fires when the agent selects a skill to execute. Works with all routing strategies — manual `skillSelection {}`, LLM, and single-candidate direct routing.
 
 ```kotlin
@@ -233,7 +235,7 @@ Streaming consumers see `AgentEvent.ToolCallFinished(isError = true)` for the re
 
 ### Declarative tool policy DSL
 
-Tools can also declare what they are expected to touch. This is **declarative only in the 0.6.x line**: it feeds manifest/audit evidence, but it does not sandbox the executor. Process/container enforcement is the sibling #1916 track.
+Tools can also declare what they are expected to touch. In 0.6.x this was declarative only; **since 0.7.0 the declared filesystem stance is enforced** by the Layer-1 path gate (#2890), subprocess tools opt into Layer-2 OS confinement through `processTool` (#1916), and the `executor { args, env -> }` shape gives bodies a policy-gated `ToolEnvironment` (#2889). In-process Kotlin lambda side effects are still not sandboxed — see the [threat model](threat-model.md) for the full enforcement table.
 
 ```kotlin
 tools {
@@ -346,5 +348,22 @@ val result: Int = compute("Calculate 2^10")   // → 1024
 model { ollama("llama3") }
 budget { maxTurns = 10 }   // throws BudgetExceededException after 10 turns
 ```
+
+**History compression (#3865 Phase 1)** — budgets *detect* context-window pressure; compression *relieves* it. When the trigger fires, the conversation middle is replaced with one deterministic digest message before the model call — leading system messages and the most recent turns stay untouched, and the preserved window extends backward so a tool result is never orphaned from its `tool_call`:
+
+```kotlin
+agent<String, String>("long-running") {
+    historyCompression {
+        triggerMessages = 40         // compress when history exceeds N messages (default 40)
+        preserveRecent = 4           // most recent N messages untouched (default 4)
+        // triggerWhen { messages -> ... }    // custom deterministic trigger
+        // summarizer { messages -> ... }     // custom digest (e.g. a cheap model);
+        //                                    // a thrown exception skips compression, never fails the run
+    }
+    onHistoryCompressed { result -> log("compressed ${result.replacedCount} messages") }
+}
+```
+
+Rides the `onBeforeTurn` interceptor seam (`Decision.ProceedWith` replaces the loop history permanently, so compression happens once per trigger, not per turn). Observability: `onHistoryCompressed { }`, `PipelineEvent.HistoryCompressed` via `observe { }` (counts only — no conversation content in audit rows), JSONL audit rows, and OTel / LangSmith / Langfuse bridge events. The default summarizer is a deterministic extractive digest — no LLM call, replayable. Tiered memory (hot/warm/archival) is Phase 2 (#3865).
 
 ---

@@ -17,11 +17,14 @@ data class ToolPolicy(
     val filesystem: ToolFilesystemPolicy = ToolFilesystemPolicy(),
     val network: ToolNetworkPolicy = ToolNetworkPolicy.Unspecified,
     val environment: ToolEnvironmentPolicy = ToolEnvironmentPolicy.Unspecified,
+    /** #2887 — declared subprocess stance; see [ToolExecPolicy]. */
+    val exec: ToolExecPolicy = ToolExecPolicy.Unspecified,
 ) {
     val declaresAnyCapability: Boolean
         get() = filesystem.declaresAnyCapability ||
             network.declaresAnyCapability ||
-            environment.declaresAnyCapability
+            environment.declaresAnyCapability ||
+            exec.declaresAnyCapability
 
     fun toManifestMap(): Map<String, Any?> =
         linkedMapOf(
@@ -29,6 +32,7 @@ data class ToolPolicy(
             "filesystem" to filesystem.toManifestMap(),
             "network" to network.toManifestMap(),
             "environment" to environment.toManifestMap(),
+            "exec" to exec.toManifestMap(),
         )
 
     fun toManifestJson(): String = ManifestJson.encode(toManifestMap())
@@ -42,6 +46,8 @@ data class ToolPolicy(
         appendSimplePolicy(network.toManifestMap(), listKey = "hosts")
         appendLine("environment:")
         appendSimplePolicy(environment.toManifestMap(), listKey = "variables")
+        appendLine("exec:")
+        appendLine("  mode: ${'$'}{exec.mode}")
     }.trimEnd()
 
     private fun StringBuilder.appendFilesystemAccess(name: String, access: ToolFilesystemAccess) {
@@ -66,6 +72,7 @@ data class ToolPolicy(
                 filesystem = ToolFilesystemPolicy.fromManifestMap(ManifestMaps.map(map["filesystem"])),
                 network = ToolNetworkPolicy.fromManifestMap(ManifestMaps.map(map["network"])),
                 environment = ToolEnvironmentPolicy.fromManifestMap(ManifestMaps.map(map["environment"])),
+                exec = ToolExecPolicy.fromManifestMap(ManifestMaps.map(map["exec"])),
             )
 
         fun fromManifestJson(json: String): ToolPolicy {

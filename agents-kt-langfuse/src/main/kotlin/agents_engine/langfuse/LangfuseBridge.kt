@@ -166,6 +166,35 @@ class LangfuseBridge internal constructor(
                     )
                 }
             }
+            is PipelineEvent.HandoffPerformed -> {
+                // #3871 — names only, no payload.
+                mostRecentTrace()?.let { state ->
+                    enqueueEventObservation(
+                        trace = state,
+                        name = "agent.handoff",
+                        input = mapOf(
+                            "to_agent" to event.toAgent,
+                            "decision_input_type" to event.decisionInputType,
+                        ),
+                        metadata = metadata(event.runtimeContext),
+                    )
+                }
+            }
+            is PipelineEvent.HistoryCompressed -> {
+                // #3865 — counts only, no conversation content.
+                mostRecentTrace()?.let { state ->
+                    enqueueEventObservation(
+                        trace = state,
+                        name = "agent.history.compressed",
+                        input = mapOf(
+                            "replaced_count" to event.replacedCount,
+                            "preserved_count" to event.preservedCount,
+                            "digest_chars" to event.digestChars,
+                        ),
+                        metadata = metadata(event.runtimeContext),
+                    )
+                }
+            }
             is PipelineEvent.ApprovalRequested -> {
                 // #2489 — human approval pause. Field-only (no body / PII).
                 mostRecentTrace()?.let { state ->

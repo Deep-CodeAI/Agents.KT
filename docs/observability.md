@@ -269,3 +269,13 @@ The bridge consumes the shipped #1907 interceptor primitives, so adapters receiv
 - **OTel GenAI semconv** — [opentelemetry.io/docs/specs/semconv/gen-ai/](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
 - **LangSmith API v1/v2 overview** — [docs.langchain.com/langsmith/api-v1-v2-overview](https://docs.langchain.com/langsmith/api-v1-v2-overview)
 - **Langfuse ingestion API OpenAPI** — [cloud.langfuse.com/generated/api/openapi.yml](https://cloud.langfuse.com/generated/api/openapi.yml)
+
+## W3C trace propagation across MCP / A2A (#3873, slice 1)
+
+Distributed agent traces connect across process boundaries: outbound MCP and A2A requests carry `traceparent`/`tracestate` from the current span, and the receiving `McpServer`/`A2AServer` makes the remote context current for the dispatch. The seam is no-op (zero overhead, zero OTel dependency in core) until you install the wiring:
+
+```kotlin
+OtelTracePropagation.install()       // from :agents-kt-otel; uses GlobalOpenTelemetry propagators
+```
+
+Pair with `OtelBridge` for the in-process spans. Remaining on #3873: native session→turn→skill→tool span hierarchy emitted by the runtime itself (today the bridge translates audit events), and coroutine `ContextStorage` integration so user HTTP-client auto-instrumentation inherits the context across suspensions.

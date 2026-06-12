@@ -23,16 +23,21 @@ import agents_engine.model.ModelProvider
 import agents_engine.model.ToolDef
 import java.io.File
 import java.security.MessageDigest
+import agents_engine.generation.jsonSchema
 import kotlin.reflect.KClass
 
-const val AGENTS_KT_MANIFEST_VERSION: Int = 1
+// v2 (#3875): adds the top-level "schemas" section (JSON Schema per @Generable
+// IN/OUT type, with per-schema sha256). v1 baselines verify with an info finding.
+const val AGENTS_KT_MANIFEST_VERSION: Int = 2
 
 class PermissionManifest private constructor(
     private val contentWithoutHash: Map<String, Any?>,
 ) {
     val sha256: String = sha256Hex(StableJson.encode(contentWithoutHash))
     private val content: Map<String, Any?> = linkedMapOf(
-        "agentsKtManifestVersion" to AGENTS_KT_MANIFEST_VERSION,
+        // Preserve a loaded manifest's own version (#3875 — a v1 baseline must
+        // still read as v1); fresh builds carry the current constant via root.
+        "agentsKtManifestVersion" to (contentWithoutHash["agentsKtManifestVersion"] ?: AGENTS_KT_MANIFEST_VERSION),
         "manifestSha256" to sha256,
     ) + contentWithoutHash.filterKeys { it != "agentsKtManifestVersion" && it != "manifestSha256" }
 
@@ -161,6 +166,7 @@ private fun buildPermissionManifest(
         ),
         "options" to options.toMap(),
         "agents" to distinctAgents.map { it.toManifestMap(options) },
+        "schemas" to generableSchemas(distinctAgents),
     )
     if (options.includeComposition) {
         root["composition"] = graph.composition
@@ -463,3 +469,32 @@ private fun sha256Hex(text: String): String =
     MessageDigest.getInstance("SHA-256")
         .digest(text.toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it) }
+
+/**
+ * #3875 — JSON Schema (via the KSP-aware cache-then-reflection probe) for
+ * every distinct `@Generable` IN/OUT type in the agent graph, keyed by FQN
+ * and sorted for determinism; each entry carries the parsed schema and its
+ * sha256, so a schema change bumps `manifestHash` — reviewers see the
+ * *types*, not just the names.
+ */
+private fun generableSchemas(agents: List<Agent<*, *>>): Map<String, Any?> {
+    // Java reflection only — the CLI (and the no-reflect consumer profile)
+    // runs without kotlin-reflect on the classpath (#1718 discipline).
+    val types = agents.asSequence()
+        .flatMap { agent -> agent.skills.values.asSequence().flatMap { sequenceOf(it.inType, it.outType) } + sequenceOf(agent.outType) }
+        .filter { klass ->
+            klass.java.annotations.any { it.annotationClass.java.name == "agents_engine.generation.Generable" }
+        }
+        .distinctBy { it.java.name }
+        .sortedBy { it.java.name }
+        .toList()
+    return types.associate { klass ->
+        val schemaJson = klass.jsonSchema()
+        klass.java.name to linkedMapOf(
+            // Raw JSON string (already deterministic from the generator) — the
+            // sha256 is the stable comparison key for verifiers/baselines.
+            "schema" to schemaJson,
+            "sha256" to sha256Hex(schemaJson),
+        )
+    }
+}

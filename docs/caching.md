@@ -2,7 +2,7 @@
 
 ## Prompt Caching
 
-Vendor-neutral, agent-controllable prompt caching across all built-in providers. The agent author declares *what* is cacheable; adapters translate to each vendor's mechanism — Anthropic explicit `cache_control` breakpoints, OpenAI / DeepSeek automatic prefix caching, Ollama engine-level KV-cache reuse. No provider cache types appear in the public API. (See [Under evaluation](#under-evaluation) below for OpenAI-compatible upstreams like Kimi / OpenRouter and engine-level backends like vLLM / SGLang — they inherit the OpenAI wire shape but ship as fourth-party deployments, not first-party adapters in `ModelProvider`.)
+Vendor-neutral, agent-controllable prompt caching across all built-in providers. The agent author declares *what* is cacheable; adapters translate to each vendor's mechanism — Anthropic explicit `cache_control` breakpoints, OpenAI / DeepSeek automatic prefix caching, Ollama engine-level KV-cache reuse. No provider cache types appear in the public API. Kimi, OpenRouter, and Perplexity are first-party providers (#2697/#2701/#3675) that extend the OpenAI adapter, so they inherit the OpenAI rows' automatic prefix-caching behavior — subject to each upstream's own cache support. (Engine-level backends like vLLM / SGLang remain fourth-party deployments; see [Under evaluation](#under-evaluation).)
 
 The win: an agentic tool-calling loop resends a large identical prefix (system + tool defs + history) every turn. Caching turns that prefix into ~10% read cost (Anthropic) or zero-latency reuse (engine-level). For multi-step agents, this is the single biggest lever on per-run cost and latency.
 
@@ -36,7 +36,7 @@ val agent = agent<String, String>("ResearchBot") {
 | **DeepSeek** | Automatic disk-based caching | Inherits the OpenAI-compatible request shape; no extra wiring needed. Cached-input tokens surface on `TokenUsage`. |
 | **Ollama** | Engine-level KV-cache reuse (no wire-level control) | Hints degrade to no-op. Prefix stability (see below) is what makes the engine cache hit. |
 
-The four rows above match `ModelProvider.entries` (Ollama / Anthropic / OpenAI / DeepSeek) — the only providers wired as first-party adapters today. Fourth-party deployments that ride on top of one of these wire shapes are documented under [Under evaluation](#under-evaluation) below.
+The four rows above are the four **wire shapes**; `ModelProvider.entries` has seven values — Kimi, OpenRouter, and Perplexity extend the OpenAI adapter and inherit its row (automatic prefix caching where the upstream supports it). Fourth-party deployments that ride on top of one of these wire shapes are documented under [Under evaluation](#under-evaluation) below.
 
 ### `CacheHint` model
 
@@ -106,7 +106,7 @@ These are the silent killers — `System.currentTimeMillis()` interpolated into 
 
 ### Under evaluation
 
-These backends are **not** first-party `ModelProvider` adapters — `ModelProvider.entries` is `{ OLLAMA, ANTHROPIC, OPENAI, DEEPSEEK }`. Consumers who point the OpenAI adapter at one of these endpoints (via `openAiBaseUrl`) get OpenAI-compatible behavior, but the caching characteristics differ:
+These backends are **not** first-party `ModelProvider` adapters (`ModelProvider.entries` has seven first-party values; these are not among them). Consumers who point the OpenAI adapter at one of these endpoints (via `openAiBaseUrl`) get OpenAI-compatible behavior, but the caching characteristics differ:
 
 | Backend | Wire-shape compatibility | Caching note |
 |---|---|---|

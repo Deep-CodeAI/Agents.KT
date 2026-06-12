@@ -46,6 +46,12 @@ internal class HttpMcpTransport(
             .timeout(requestTimeout.toJavaDuration())
             .also { if (sessionId != null) it.header("Mcp-Session-Id", sessionId!!) }
             .also { applyAuth(it) }
+            // #3873 — W3C trace context across the MCP boundary (no-op unless
+            // a propagator is installed, e.g. OtelTracePropagation.install()).
+            .also { b ->
+                agents_engine.core.TraceContextPropagation.outboundHeaders()
+                    .forEach { (k, v) -> b.header(k, v) }
+            }
             .POST(HttpRequest.BodyPublishers.ofString(envelope))
         // #853 — bounded read so a malicious upstream MCP server can't OOM us.
         val response = http.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream())

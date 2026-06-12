@@ -156,6 +156,33 @@ class LangSmithBridge internal constructor(
                     )
                 }
             }
+            is PipelineEvent.HandoffPerformed -> {
+                // #3871 — names only, no payload.
+                mostRecentAgentRun()?.let { state ->
+                    enqueueEvent(
+                        state,
+                        "agent.handoff",
+                        mapOf(
+                            "to_agent" to event.toAgent,
+                            "decision_input_type" to event.decisionInputType,
+                        ),
+                    )
+                }
+            }
+            is PipelineEvent.HistoryCompressed -> {
+                // #3865 — counts only, no conversation content.
+                mostRecentAgentRun()?.let { state ->
+                    enqueueEvent(
+                        state,
+                        "agent.history.compressed",
+                        mapOf(
+                            "replaced_count" to event.replacedCount,
+                            "preserved_count" to event.preservedCount,
+                            "digest_chars" to event.digestChars,
+                        ),
+                    )
+                }
+            }
             is PipelineEvent.ApprovalRequested -> {
                 // #2489 — field-only (no body) per the audit-row PII discipline.
                 mostRecentAgentRun()?.let { state ->

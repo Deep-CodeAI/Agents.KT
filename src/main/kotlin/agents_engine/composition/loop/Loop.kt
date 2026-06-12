@@ -15,7 +15,7 @@ import kotlinx.coroutines.runBlocking
  * (#1837 / #1869).
  */
 
-private const val DEFAULT_MAX_ITERATIONS = 1_000
+internal const val DEFAULT_MAX_ITERATIONS = 1_000
 
 /**
  * #638: `execution` is suspend so the loop body composes cleanly with other suspending

@@ -311,3 +311,15 @@ Stage 2 (Audio + Video) lights up when a concrete use case lands.
 Sources: `agents_engine/content/Content.kt`, `agents_engine/content/ContentRef.kt`, `agents_engine/content/ToolResult.kt`, audit wiring in `agents-kt-observability/.../JsonlAuditExporter.kt`.
 
 Tests: `ContentAndRefTest.kt`, `ToolResultIntegrationTest.kt`, JsonlAuditExporterTest's "multimodal ToolResult writes outputParts" case.
+
+## Audio input + generation (#3867, first slice)
+
+Three typed clients close the audio/image-generation gap, each storing bytes in your `BlobStore` and passing the typed ref through the agent graph:
+
+```kotlin
+val transcript: String       = OpenAiSpeechToTextClient(key).transcribe(audioContent, blobStore)   // Whisper
+val image: Content.Image     = OpenAiImagesClient(key, blobStore).generate(transcript)             // Images API
+val speech: Content.Audio    = OpenAiTtsClient(key, blobStore).speak("done — image attached")      // TTS
+```
+
+`SpeechToTextClient` / `ImageModelClient` / `TtsModelClient` are `fun interface`s — bring another provider by implementing one method. Wire shapes are pinned by stub-server tests; `baseUrl` is injectable. Not yet wired: `Content.Audio` directly inside chat messages (gpt-4o-audio-style input_audio blocks) — transcribe-then-prompt is the v1 path, matching the roadmap's STT-helper framing.

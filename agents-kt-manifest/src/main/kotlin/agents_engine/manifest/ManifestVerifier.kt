@@ -3,6 +3,20 @@ package agents_engine.manifest
 internal object ManifestVerifier {
     fun verify(current: PermissionManifest, baseline: PermissionManifest): ManifestVerificationResult {
         val findings = mutableListOf<ManifestFinding>()
+
+        // #3875 — manifest format evolved (v2 adds the schemas section). A
+        // version difference is informational: older baselines still verify.
+        val currentVersion = current.toMap()["agentsKtManifestVersion"]
+        val baselineVersion = baseline.toMap()["agentsKtManifestVersion"]
+        if (currentVersion != baselineVersion) {
+            findings += ManifestFinding(
+                code = "manifest.version.changed",
+                severity = "info",
+                path = "agentsKtManifestVersion",
+                message = "Manifest format version changed ($baselineVersion -> $currentVersion); " +
+                    "sections added by newer versions are not compared against this baseline.",
+            )
+        }
         val currentTools = current.toolsByKey()
         val baselineTools = baseline.toolsByKey()
 
@@ -28,6 +42,15 @@ internal object ManifestVerifier {
                     severity = "high",
                     path = "tools.$key.risk",
                     message = "Tool \"$name\" risk increased from ${baselineTool["risk"]} to ${currentTool["risk"]}.",
+                )
+            }
+
+            execWidening(currentTool, baselineTool)?.let { detail ->
+                findings += ManifestFinding(
+                    code = "tool.exec.widened",
+                    severity = "high",
+                    path = "tools.$key.policy.exec",
+                    message = "Tool \"$name\" exec access widened ($detail).",
                 )
             }
 
@@ -103,6 +126,15 @@ internal object ManifestVerifier {
             "low" -> 1
             else -> 0
         }
+
+    // #2887 — deny/unspecified (0) -> allow (1); any rank increase is a widening.
+    private fun execRank(mode: String): Int = if (mode == "allow") 1 else 0
+
+    private fun execWidening(current: Map<String, Any?>, baseline: Map<String, Any?>): String? {
+        val cm = current.policySection("exec")["mode"]?.toString()?.lowercase() ?: "unspecified"
+        val bm = baseline.policySection("exec")["mode"]?.toString()?.lowercase() ?: "unspecified"
+        return if (execRank(cm) > execRank(bm)) "mode $bm -> $cm" else null
+    }
 
     private fun networkRank(mode: String): Int =
         when (mode) {
