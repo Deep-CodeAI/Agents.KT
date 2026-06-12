@@ -33,21 +33,7 @@ import agents_engine.runtime.events.agentSessionScope
 fun <IN, OUT> Loop<IN, OUT>.session(input: IN): AgentSession<OUT> {
     val loop = this
     return agentSessionScope({ loop.loopAgentId ?: "loop" }) { emit ->
-        // sessionExec streams the wrapped run's inner events per iteration; falls back to plain
-        // execution (no events) when the Loop was constructed without the factory functions.
-        val streamingExec: suspend (IN) -> OUT =
-            loop.sessionExec?.let { f -> { i: IN -> f(i, emit) } } ?: loop.execution
-
-        var current = streamingExec(input)
-        var iterations = 1
-        while (true) {
-            val feedback = loop.next(current) ?: break
-            check(iterations < loop.maxIterations) {
-                "Loop exceeded maxIterations=${loop.maxIterations} without termination."
-            }
-            current = streamingExec(feedback)
-            iterations++
-        }
-        current
+        // #3866 — iteration core shared with the pipeline-chaining path.
+        loop.sessionInvoke(input, emit)
     }
 }

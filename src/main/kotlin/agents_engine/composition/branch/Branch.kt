@@ -31,6 +31,25 @@ class Branch<IN, OUT> internal constructor(
         return route.executor(result)
     }
 
+    /**
+     * #3866 — emitter-aware run. Source events stream first, then the matched
+     * route's agent/pipeline streams (routes built outside `BranchBuilder`
+     * fall back to the non-streaming executor). Shared with the `then`
+     * overloads that chain a Branch inside a streaming Pipeline;
+     * `branch.session(input)` keeps its own body because it additionally
+     * tracks the terminal agentId as routing resolves.
+     */
+    internal suspend fun sessionInvoke(
+        input: IN,
+        emitter: agents_engine.model.AgentEventEmitter,
+    ): OUT {
+        @Suppress("UNCHECKED_CAST")
+        val sourceOut =
+            agents_engine.runtime.events.runAgentInSession(source as Agent<IN, Any?>, input, emitter).first
+        val route = matchRoute(sourceOut) ?: noMatchError(sourceOut)
+        return route.sessionExecutor?.invoke(sourceOut, emitter) ?: route.executor(sourceOut)
+    }
+
     private fun noMatchError(result: Any?): Nothing =
         if (result == null) {
             error(

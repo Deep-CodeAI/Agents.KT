@@ -130,13 +130,13 @@ For contributors navigating the streaming test surface:
 
 ## Composition
 
-`Pipeline` / `Branch` / `wrap` / `Swarm` do **not** yet flow events through to a parent session. Only leaf agents (the agent you directly call `.session(input)` on) expose streaming. A composed pipeline still works end-to-end with `pipeline(input)` returning the typed output, but `pipeline.session(input)` is not yet defined.
+**Composition flow-through is shipped (#3866).** Every composition operator exposes `session(input)` — `Pipeline`, `Parallel`, `Forum`, `Loop`, `Branch`, `wrap`, `Swarm` — and every `then` overload chains streaming through: a pipeline that mixes operators mid-chain (`a then (b / c)`, `(a / b) then reduce`, `head then forum`, `head then judge.loop { … }`, `head then classifier.branch { … }`) streams inner events from **all** nested agents through the parent session, each tagged with its own `agentId` for demultiplexing. Sequential stages emit in chain order; `Parallel` / `Forum` participants interleave by arrival order (by design — filter on `agentId`). Cancelling the outer `events` Flow tears down in-flight inner sessions via structured concurrency.
 
-This remains a **current limitation as of 0.7.24** — it was originally framed as a v0.5.0 follow-up, and pipeline-stage event types (`StageStarted` / `PipelineCompleted`) are still pending on the roadmap. The shape per the premortem: `agentId` on every event already namespaces by source agent — a Pipeline session would flow events from each inner agent with their respective `agentId`s, plus its own bracket events.
+The one fallback: an operator instance constructed **outside** its factory functions (`then` / `/` / `*` / `.loop` / `.branch`) has no recorded session exec — it executes non-streaming and only its boundary events appear. Pipeline-stage event types (`StageStarted` / `PipelineCompleted`) remain pending on the roadmap; today the composite emits its children's events plus one terminal `Completed`/`Failed`.
 
 ## Known gaps (current as of 0.7.24)
 
-- **Composition flow-through** (above).
+- **Pipeline-stage event types** (`StageStarted` / `PipelineCompleted`) — the composite session emits children's events + one terminal; no stage-boundary markers yet.
 - **HTTP cancellation** mid-read — blocking InputStream isn't coroutine-cancellable.
 - **Synchronous skill body cancellation** — `implementedBy` lambdas can't be interrupted.
 - **Provider-specific limits** — Ollama bundles tool-call args in one final chunk (no progressive `input_json_delta`); only Anthropic streams tool args progressively today.

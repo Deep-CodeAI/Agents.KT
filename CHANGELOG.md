@@ -4,6 +4,22 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — streaming flows through every composition operator (#3866, P0.1)
+
+- **Every `then` overload now chains streaming.** Pipelines that mix `Parallel` / `Forum` / `Loop` /
+  `Branch` mid-chain (`a then (b / c)`, `(a / b) then reduce`, `head then forum`,
+  `head then judge.loop { … }`, `head then classifier.branch { … }`) stream inner events from all
+  nested agents through the parent `session(input)`, each tagged with its own `agentId`. Previously
+  only `Agent then Agent`, `Pipeline then Agent`, `Pipeline then Pipeline`, and `wrap` streamed —
+  the other 14 overloads fell back to terminal-only.
+- **Internal emitter-aware `sessionInvoke` cores** on `Parallel` / `Forum` / `Loop` / `Branch`,
+  extracted from (and now shared with) their `session(...)` extensions — one streaming
+  implementation per operator instead of extension-local copies.
+- Sequential stages emit in chain order; fan-out participants interleave by arrival order
+  (demultiplex by `agentId`). Cancellation tears down in-flight inner sessions via structured
+  concurrency. Operators constructed outside their factory functions still fall back to
+  non-streaming execution. Behavior pinned in `CompositionStreamingChainTest` (6 scenarios).
+
 ### Changed — truth-surface pass 2: the rooms the front door missed
 
 - **`docs/threat-model.md` is now the canonical "what's enforced where" page.** Its shipped-vs-planned

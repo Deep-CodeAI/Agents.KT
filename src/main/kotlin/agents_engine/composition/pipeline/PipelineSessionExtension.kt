@@ -30,12 +30,13 @@ import agents_engine.runtime.events.agentSessionScope
  * preserves provenance. The terminal `Completed.agentId` uses the LAST
  * agent's name (its `OUT` type matches the pipeline's `OUT`).
  *
- * **Step-4 scope:** only the `Agent then Agent` overload populates
- * `Pipeline.sessionExec` today. Multi-stage chains (`a then b then c`)
- * built via the `Pipeline then Agent` overload fall back to the default
- * (non-streaming) `sessionExec` — `pipeline.session(input)` will emit only
- * the terminal `Completed`. Separate follow-ups flip each composing
- * overload. Documented in the corresponding session test.
+ * **Coverage (#3866):** every `then` overload populates `Pipeline.sessionExec` —
+ * chains mixing Agent / Pipeline / Forum / Parallel / Loop / Branch all stream
+ * inner events through the parent session. Operators chained mid-pipeline use
+ * their internal emitter-aware `sessionInvoke` cores. The only fallback left
+ * is an operator instance constructed outside its factory functions (no
+ * recorded session exec) — it executes non-streaming and only its boundary
+ * events appear.
  */
 fun <IN, OUT> Pipeline<IN, OUT>.session(input: IN): AgentSession<OUT> {
     val pipeline = this

@@ -46,6 +46,27 @@ class Parallel<IN, OUT>(
             executions.map { exec -> async { exec(input) } }.map { it.await() }
         }
     }
+
+    /**
+     * #3866 — emitter-aware fan-out. Branches built via the `/` factories
+     * stream their events into [emitter] (interleaving by arrival order,
+     * demultiplexable by `agentId`); branches without [sessionExecutions]
+     * fall back to the non-streaming [executions]. Shared by
+     * `parallel.session(input)` and the `then` overloads that chain a
+     * Parallel inside a streaming Pipeline. Structured concurrency:
+     * cancelling the caller cancels every in-flight branch.
+     */
+    internal suspend fun sessionInvoke(
+        input: IN,
+        emitter: agents_engine.model.AgentEventEmitter,
+    ): List<OUT> = coroutineScope {
+        val sessionExecs = sessionExecutions
+        if (sessionExecs != null) {
+            sessionExecs.map { exec -> async(Dispatchers.Default) { exec(input, emitter) } }.map { it.await() }
+        } else {
+            executions.map { exec -> async(Dispatchers.Default) { exec(input) } }.map { it.await() }
+        }
+    }
 }
 
 operator fun <A, B> Agent<A, B>.div(other: Agent<A, B>): Parallel<A, B> {
