@@ -4,6 +4,14 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `LlmErrorDecision.Retry` (#4495, antifragility pass)
+
+- **`onLLMError { Retry(maxAttempts = 3, initialBackoffMillis = 500) }`** — third decision next
+  to `Rethrow`/`RespondWith`: re-run the failed model call with exponential backoff (500ms → 1s →
+  2s …). The handler is consulted per failed attempt, so it can switch to `RespondWith`/`Rethrow`
+  mid-schedule; the attempt budget is per model turn; exhaustion rethrows the ORIGINAL error,
+  identity preserved. Default behavior (no handler) unchanged — fail fast and loud. 4 tests.
+
 ### Added — typed tool hooks (#4493, PRD §typed-hooks)
 
 - **`agent.onToolCall<Args>("tool") { args -> }`** (pre-execution) and
