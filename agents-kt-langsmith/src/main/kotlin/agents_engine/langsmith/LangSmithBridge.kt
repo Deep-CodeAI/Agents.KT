@@ -216,6 +216,17 @@ class LangSmithBridge internal constructor(
     @Synchronized
     override fun onAgentEvent(event: AgentEvent<*>) {
         when (event) {
+            is AgentEvent.StageStarted -> {
+                // #4491 — stage boundary.
+                mostRecentAgentRun()?.let { state ->
+                    enqueueEvent(state, "agent.stage.started", mapOf("stage" to event.stageName))
+                }
+            }
+            is AgentEvent.StageCompleted -> {
+                mostRecentAgentRun()?.let { state ->
+                    enqueueEvent(state, "agent.stage.completed", mapOf("stage" to event.stageName))
+                }
+            }
             is AgentEvent.SkillStarted -> {
                 val state = startAgentRun(event.agentId, event.skillName, event.runtimeContext)
                 agentRuns[agentKey(event.agentId, event.skillName, event.runtimeContext)] = state

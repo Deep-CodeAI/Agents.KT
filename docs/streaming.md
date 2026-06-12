@@ -132,11 +132,11 @@ For contributors navigating the streaming test surface:
 
 **Composition flow-through is shipped (#3866).** *(Living demo: `CountingPipelineStreamingDemoTest` — five counting agents under `then`, 50 tokens observed live in stage order while only complete values cross the typed boundaries; it also demonstrates the `Channel.BUFFERED`/`trySend` drop semantics for zero-suspension producers.)* Every composition operator exposes `session(input)` — `Pipeline`, `Parallel`, `Forum`, `Loop`, `Branch`, `wrap`, `Swarm` — and every `then` overload chains streaming through: a pipeline that mixes operators mid-chain (`a then (b / c)`, `(a / b) then reduce`, `head then forum`, `head then judge.loop { … }`, `head then classifier.branch { … }`) streams inner events from **all** nested agents through the parent session, each tagged with its own `agentId` for demultiplexing. Sequential stages emit in chain order; `Parallel` / `Forum` participants interleave by arrival order (by design — filter on `agentId`). Cancelling the outer `events` Flow tears down in-flight inner sessions via structured concurrency.
 
-The one fallback: an operator instance constructed **outside** its factory functions (`then` / `/` / `*` / `.loop` / `.branch`) has no recorded session exec — it executes non-streaming and only its boundary events appear. Pipeline-stage event types (`StageStarted` / `PipelineCompleted`) remain pending on the roadmap; today the composite emits its children's events plus one terminal `Completed`/`Failed`.
+The one fallback: an operator instance constructed **outside** its factory functions (`then` / `/` / `*` / `.loop` / `.branch`) has no recorded session exec — it executes non-streaming and only its boundary events appear. **Stage boundaries are first-class (#4491):** Pipeline sessions emit `StageStarted`/`StageCompleted` pairs around each direct component (agent stages by name, operator legs labeled `parallel`/`forum`/`loop`/`branch`; nested pipelines mark their own stages exactly once) — consumers no longer infer stage transitions from `agentId` flips.
 
 ## Known gaps (current as of 0.7.24)
 
-- **Pipeline-stage event types** (`StageStarted` / `PipelineCompleted`) — the composite session emits children's events + one terminal; no stage-boundary markers yet.
+- *(closed by #4491: stage-boundary markers shipped — see Composition above.)*
 - **HTTP cancellation** mid-read — blocking InputStream isn't coroutine-cancellable.
 - **Synchronous skill body cancellation** — `implementedBy` lambdas can't be interrupted.
 - **Provider-specific limits** — Ollama bundles tool-call args in one final chunk (no progressive `input_json_delta`); only Anthropic streams tool args progressively today.
