@@ -4,6 +4,18 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — `executeAgentic` decomposition, slice 1 (#2791)
+
+- **One `snapshotNow(...)` builder** replaces the three identical 9-field `SessionSnapshot`
+  constructions (budget checkpoint / interrupt / turn boundary) — the #2755 memory-slice
+  semantics now live in one place.
+- **One `resolveCapDecision(...)` dispatch** replaces the five copy-pasted Stop/Extend/Checkpoint
+  budget-cap blocks (DURATION / TURNS / TOKENS / TOOL_CALLS / CONSECUTIVE_TOOL) with an
+  **exhaustive `when`** over the sealed `BudgetDecision` — a new variant is now a compile error,
+  not a silent fall-through. Pre-existing quirk preserved deliberately: CONSECUTIVE_TOOL never
+  re-armed its threshold on extend (`rearmThreshold = false`).
+- Behavior-preserving (full suite green); the `ToolCalls`-branch extraction continues on #2791.
+
 ### Added — cross-model eval regression (#3876, P2.4)
 
 - **`suite.runAcrossModels("label" to agent, …)`** — runs every eval case against each labeled

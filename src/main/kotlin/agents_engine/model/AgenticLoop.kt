@@ -333,6 +333,24 @@ internal suspend fun <IN> executeAgentic(
     // bank), so a shared-workspace topology resume doesn't disturb other
     // agents' slots. Same contract as the turn-boundary checkpoint at the
     // end of each loop iteration.
+    // #2791 — one snapshot builder for all three capture sites (budget
+    // checkpoint, interrupt, turn boundary). #2755 memory-slice semantics
+    // documented at the original site apply identically to all three.
+    fun snapshotNow(pendingInterruptCallId: String? = null) = agents_engine.core.SessionSnapshot(
+        messages = messages.toList(),
+        turns = turns,
+        toolCalls = toolCalls,
+        toolCallLimit = toolCallLimit,
+        tokensUsed = cumulativeUsage,
+        memory = agent.memoryBank?.let { b ->
+            b.snapshotForAgent(agent.name)?.let { v -> mapOf(agent.name to v) }
+        } ?: emptyMap(),
+        requestId = runtimeContext.requestId,
+        sessionId = runtimeContext.sessionId,
+        manifestHash = agent.manifestHash,
+        pendingInterruptCallId = pendingInterruptCallId,
+    )
+
     fun checkpointAndThrow(reason: BudgetReason, currentLimit: Int): Nothing {
         if (onTurnCheckpoint == null) {
             // No place to deliver the snapshot — Stop semantics. Matches the
@@ -342,25 +360,36 @@ internal suspend fun <IN> executeAgentic(
                 reason,
             )
         }
-        val snapshot = agents_engine.core.SessionSnapshot(
-            messages = messages.toList(),
-            turns = turns,
-            toolCalls = toolCalls,
-            toolCallLimit = toolCallLimit,
-            tokensUsed = cumulativeUsage,
-            memory = agent.memoryBank?.let { b ->
-                b.snapshotForAgent(agent.name)?.let { v -> mapOf(agent.name to v) }
-            } ?: emptyMap(),
-            requestId = runtimeContext.requestId,
-            sessionId = runtimeContext.sessionId,
-            manifestHash = agent.manifestHash,
-        )
+        val snapshot = snapshotNow()
         onTurnCheckpoint.invoke(snapshot)
         throw BudgetCheckpointException(
             snapshot = snapshot,
             reason = reason,
             currentLimit = currentLimit,
         )
+    }
+
+    // #2791 — the one Stop/Extend/Checkpoint dispatch for every budget cap.
+    // Exhaustive over the sealed BudgetDecision: a new variant is a compile
+    // error here instead of silently falling into a throw.
+    fun resolveCapDecision(
+        reason: BudgetReason,
+        currentLimit: Int,
+        message: String,
+        rearmThreshold: Boolean = true,
+        applyNewLimit: (Int) -> Unit,
+    ) {
+        when (val decision = agent.budgetExceededListener?.invoke(reason, currentLimit)) {
+            is BudgetDecision.Extend ->
+                if (decision.newLimit > currentLimit) {
+                    applyNewLimit(decision.newLimit)
+                    if (rearmThreshold) firedThresholds.remove(reason)
+                } else {
+                    throw BudgetExceededException(message, reason)
+                }
+            BudgetDecision.Checkpoint -> checkpointAndThrow(reason, currentLimit)
+            BudgetDecision.Stop, null -> throw BudgetExceededException(message, reason)
+        }
     }
 
     while (true) {
@@ -371,37 +400,19 @@ internal suspend fun <IN> executeAgentic(
             // back to nanos for the loop counter. Stop / no handler / Extend
             // with a value ≤ current still throws (back-compat with #2412).
             val currentMillis = (durationLimitNanos / 1_000_000L).toInt().coerceAtLeast(1)
-            val decision = agent.budgetExceededListener?.invoke(BudgetReason.DURATION, currentMillis)
-            val newMillis = (decision as? BudgetDecision.Extend)?.newLimit
-            if (newMillis != null && newMillis > currentMillis) {
-                durationLimitNanos = newMillis.toLong() * 1_000_000L
-                firedThresholds.remove(BudgetReason.DURATION)
-            } else if (decision == BudgetDecision.Checkpoint) {
-                // #2764 — DURATION Checkpoint mirrors TOOL_CALLS Checkpoint.
-                checkpointAndThrow(BudgetReason.DURATION, currentMillis)
-            } else {
-                throw BudgetExceededException(
-                    "Agent '${agent.name}' exceeded duration budget of ${budget.maxDuration}",
-                    BudgetReason.DURATION,
-                )
-            }
+            resolveCapDecision(
+                BudgetReason.DURATION,
+                currentMillis,
+                "Agent '${agent.name}' exceeded duration budget of ${budget.maxDuration}",
+            ) { newMillis -> durationLimitNanos = newMillis.toLong() * 1_000_000L }
         }
         if (turns >= turnLimit) {
             // #2750 — TURNS is now extendable. Same Stop/Extend semantics.
-            val decision = agent.budgetExceededListener?.invoke(BudgetReason.TURNS, turnLimit)
-            val newLimit = (decision as? BudgetDecision.Extend)?.newLimit
-            if (newLimit != null && newLimit > turnLimit) {
-                turnLimit = newLimit
-                firedThresholds.remove(BudgetReason.TURNS)
-            } else if (decision == BudgetDecision.Checkpoint) {
-                // #2764 — TURNS Checkpoint mirrors TOOL_CALLS Checkpoint.
-                checkpointAndThrow(BudgetReason.TURNS, turnLimit)
-            } else {
-                throw BudgetExceededException(
-                    "Agent '${agent.name}' exceeded budget of $turnLimit turns",
-                    BudgetReason.TURNS,
-                )
-            }
+            resolveCapDecision(
+                BudgetReason.TURNS,
+                turnLimit,
+                "Agent '${agent.name}' exceeded budget of $turnLimit turns",
+            ) { newLimit -> turnLimit = newLimit }
         }
 
         // Threshold check before the next chat — DURATION is wall-clock, so
@@ -488,20 +499,11 @@ internal suspend fun <IN> executeAgentic(
                 maybeFireThreshold(BudgetReason.TOKENS, totalTokens.toDouble() / cap)
                 if (totalTokens > cap) {
                     // #2750 — TOKENS is now extendable. Same Stop/Extend semantics.
-                    val decision = agent.budgetExceededListener?.invoke(BudgetReason.TOKENS, cap)
-                    val newLimit = (decision as? BudgetDecision.Extend)?.newLimit
-                    if (newLimit != null && newLimit > cap) {
-                        tokenLimit = newLimit
-                        firedThresholds.remove(BudgetReason.TOKENS)
-                    } else if (decision == BudgetDecision.Checkpoint) {
-                        // #2764 — TOKENS Checkpoint mirrors TOOL_CALLS Checkpoint.
-                        checkpointAndThrow(BudgetReason.TOKENS, cap)
-                    } else {
-                        throw BudgetExceededException(
-                            "Agent '${agent.name}' exceeded token budget of $cap (used $totalTokens)",
-                            BudgetReason.TOKENS,
-                        )
-                    }
+                    resolveCapDecision(
+                        BudgetReason.TOKENS,
+                        cap,
+                        "Agent '${agent.name}' exceeded token budget of $cap (used $totalTokens)",
+                    ) { newLimit -> tokenLimit = newLimit }
                 }
             }
         }
@@ -533,25 +535,11 @@ internal suspend fun <IN> executeAgentic(
                         // onTurnCheckpoint (if registered), and throw
                         // BudgetCheckpointException so the caller can resume
                         // later with a larger budget via invokeSuspendResuming.
-                        val decision = agent.budgetExceededListener
-                            ?.invoke(BudgetReason.TOOL_CALLS, toolCallLimit)
-                        val newLimit = (decision as? agents_engine.model.BudgetDecision.Extend)?.newLimit
-                        if (newLimit != null && newLimit > toolCallLimit) {
-                            toolCallLimit = newLimit
-                            // Re-arm the pre-cap warning so it fires again toward the new cap.
-                            firedThresholds.remove(BudgetReason.TOOL_CALLS)
-                        } else if (decision == agents_engine.model.BudgetDecision.Checkpoint) {
-                            // #2749 / #2764 — capture and throw via the shared
-                            // helper. Falls back to BudgetExceededException
-                            // when onTurnCheckpoint is null (Stop semantics).
-                            checkpointAndThrow(BudgetReason.TOOL_CALLS, toolCallLimit)
-                        } else {
-                            // No handler, Stop, or Extend that didn't raise the limit.
-                            throw BudgetExceededException(
-                                "Agent '${agent.name}' exceeded tool-call budget of $toolCallLimit",
-                                BudgetReason.TOOL_CALLS,
-                            )
-                        }
+                        resolveCapDecision(
+                            BudgetReason.TOOL_CALLS,
+                            toolCallLimit,
+                            "Agent '${agent.name}' exceeded tool-call budget of $toolCallLimit",
+                        ) { newLimit -> toolCallLimit = newLimit }
                     }
                     toolCalls++
                     maybeFireThreshold(
@@ -566,19 +554,14 @@ internal suspend fun <IN> executeAgentic(
                     consecutiveSameToolLimit?.let { cap ->
                         if (consecutiveSameTool > cap) {
                             // #2750 — CONSECUTIVE_TOOL is now extendable.
-                            val decision = agent.budgetExceededListener?.invoke(BudgetReason.CONSECUTIVE_TOOL, cap)
-                            val newLimit = (decision as? BudgetDecision.Extend)?.newLimit
-                            if (newLimit != null && newLimit > cap) {
-                                consecutiveSameToolLimit = newLimit
-                            } else if (decision == BudgetDecision.Checkpoint) {
-                                // #2764 — CONSECUTIVE_TOOL Checkpoint mirrors TOOL_CALLS.
-                                checkpointAndThrow(BudgetReason.CONSECUTIVE_TOOL, cap)
-                            } else {
-                                throw BudgetExceededException(
-                                    "Agent '${agent.name}' invoked tool '${call.name}' $consecutiveSameTool times in a row (cap: $cap)",
-                                    BudgetReason.CONSECUTIVE_TOOL,
-                                )
-                            }
+                            resolveCapDecision(
+                                BudgetReason.CONSECUTIVE_TOOL,
+                                cap,
+                                "Agent '${agent.name}' invoked tool '${call.name}' " +
+                                    "$consecutiveSameTool times in a row (cap: $cap)",
+                                // Pre-#2791 behavior: this cap never re-armed its threshold.
+                                rearmThreshold = false,
+                            ) { newLimit -> consecutiveSameToolLimit = newLimit }
                         }
                     }
                     val isKnowledge = call.name in knowledgeToolMap
@@ -653,18 +636,7 @@ internal suspend fun <IN> executeAgentic(
                                 )
                             }
                         }
-                        val snapshot = agents_engine.core.SessionSnapshot(
-                            messages = messages.toList(),
-                            turns = turns,
-                            toolCalls = toolCalls,
-                            toolCallLimit = toolCallLimit,
-                            tokensUsed = cumulativeUsage,
-                            memory = agent.memoryBank?.let { b ->
-                                b.snapshotForAgent(agent.name)?.let { v -> mapOf(agent.name to v) }
-                            } ?: emptyMap(),
-                            requestId = runtimeContext.requestId,
-                            sessionId = runtimeContext.sessionId,
-                            manifestHash = agent.manifestHash,
+                        val snapshot = snapshotNow(
                             pendingInterruptCallId = effectiveCall.callId ?: "interrupt-${turns}-${toolCalls}",
                         )
                         onTurnCheckpoint?.invoke(snapshot)
@@ -718,25 +690,7 @@ internal suspend fun <IN> executeAgentic(
         }
         // #2416 — turn-boundary checkpoint. Text responses return above; only
         // tool-turns reach here, with messages settled and no half-run tool.
-        onTurnCheckpoint?.invoke(
-            agents_engine.core.SessionSnapshot(
-                messages = messages.toList(),
-                turns = turns,
-                toolCalls = toolCalls,
-                toolCallLimit = toolCallLimit,
-                tokensUsed = cumulativeUsage,
-                // #2755 — snapshot only THIS agent's slot in a (possibly shared)
-                // bank. The pre-#2755 `bank.entries()` dump included every other
-                // agent's slot — leaking unrelated data into the snapshot file
-                // and breaking the namespaced-restore guarantee.
-                memory = agent.memoryBank?.let { b ->
-                    b.snapshotForAgent(agent.name)?.let { v -> mapOf(agent.name to v) }
-                } ?: emptyMap(),
-                requestId = runtimeContext.requestId,
-                sessionId = runtimeContext.sessionId,
-                manifestHash = agent.manifestHash,
-            ),
-        )
+        onTurnCheckpoint?.invoke(snapshotNow())
     }
 }
 
