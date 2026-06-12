@@ -4,6 +4,17 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `HumanGateRegistry`: the named HITL adapter (#3868, P1.5)
+
+- **`gates.guard(agent, input)`** returns `GateOutcome.Completed(output)` or
+  `GateOutcome.Paused(gate)` when a tool calls `humanApproval { }` / `interrupt(...)`. The
+  `PendingGate` carries gateId / reason / payload for the reviewer; `approve(reviewer, comment)` /
+  `reject(...)` / `resolve(HumanDecision, ...)` resumes from the snapshot exactly where the run
+  left off (manifest-hash restore guard applies) and resolves exactly once.
+- Snapshots are also persisted to an optional `SnapshotStore` as crash evidence; full
+  post-restart rehydration (re-supplying agent + input) is a tracked follow-up. Audit events ride
+  the existing #2489 channel. 4 tests.
+
 ### Added — `loopUntil` + `evalGate` (#3870, P1.4)
 
 - **`agent.loopUntil(maxIterations, feedback?) { predicate }`** (also on `Pipeline`) — the named
