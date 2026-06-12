@@ -198,19 +198,33 @@ class ProcessSandboxMacTest {
                 print('ALLOWED')
         """.trimIndent()
 
-        fun diag(r: SandboxResult) = "stdout='${r.stdout.trim()}' stderr='${r.stderr.trim()}'"
-
         val root = createTempDirectory("sbx-net").toRealPath()
+
+        // #4498 (flake #4370) — when this test fails on a runner we can't reproduce on, the
+        // assertion message must carry everything needed to diagnose it after the fact: exit
+        // code, full probe stdout/stderr (sandbox-exec writes its own complaints to stderr),
+        // the python3 used, and the EXACT generated Seatbelt profile handed to sandbox-exec.
+        fun diag(r: SandboxResult, allowNetwork: Boolean) = buildString {
+            append("exit=${r.exitCode} stdout='${r.stdout.trim()}' stderr='${r.stderr.trim()}'")
+            append(" python3='$python3'")
+            append(" profile=<<<")
+            append(ProcessSandbox.seatbeltProfile(listOf(root), allowNetwork))
+            append(">>>")
+        }
+
         try {
             val blocked = ProcessSandbox.forWritableRoots(listOf(root), allowNetwork = false)
                 .run(listOf(python3!!.toString(), "-c", probe))
-            assertTrue("BLOCKED" in blocked.stdout, "deny-default must block the socket; ${diag(blocked)}")
+            assertTrue(
+                "BLOCKED" in blocked.stdout,
+                "deny-default must block the socket; ${diag(blocked, allowNetwork = false)}",
+            )
 
             val allowed = ProcessSandbox.forWritableRoots(listOf(root), allowNetwork = true)
                 .run(listOf(python3.toString(), "-c", probe))
             assertTrue(
                 "ALLOWED" in allowed.stdout || "CONNECTED" in allowed.stdout,
-                "allowNetwork must permit the socket; ${diag(allowed)}",
+                "allowNetwork must permit the socket; ${diag(allowed, allowNetwork = true)}",
             )
         } finally {
             root.deleteRecursively()

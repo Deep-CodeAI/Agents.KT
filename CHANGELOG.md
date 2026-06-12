@@ -4,6 +4,13 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — flake diagnostics on the mac network-sandbox test (#4498, antifragility pass)
+
+- The `ProcessSandboxMacTest` live network probe (flake #4370) now embeds full failure forensics
+  in its assertion message: exit code, probe stdout/stderr (sandbox-exec complains on stderr),
+  the python3 used, and the exact generated Seatbelt profile — so an unreproducible runner
+  failure is diagnosable from the CI log alone.
+
 ### Added — `requireSandbox` strict mode (#4497, antifragility pass)
 
 - **`ProcessSandbox.run(command, requireSandbox = true)`** — fail closed on hosts with no OS
