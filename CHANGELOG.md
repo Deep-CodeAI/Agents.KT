@@ -4,6 +4,15 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — built-in forum captains (#3877, P2.1)
+
+- **`consensusCaptain(quorum)`** — N identical member verdicts or fail loud with the full tally;
+  **`weightedCaptain(weights)`** — weighted vote keyed by panelist name (default 1.0);
+  **`byzantineCaptain()`** — median of numeric verdicts (1-d geometric median, robust to
+  ⌈n/2⌉−1 adversarial members; vector Krum is a tracked follow-up). All three are deterministic
+  transcript captains — the strategy name is the captain's agent name, so audit events carry
+  which aggregation decided the verdict. 5 tests through real forum deliberations.
+
 ### Added — `HumanGateRegistry`: the named HITL adapter (#3868, P1.5)
 
 - **`gates.guard(agent, input)`** returns `GateOutcome.Completed(output)` or

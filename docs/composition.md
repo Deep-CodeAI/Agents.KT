@@ -129,6 +129,21 @@ while (quality < 90f) {
 }
 ```
 
+### Built-in Forum Captains (#3877)
+
+Named aggregation strategies for `forum` verdicts — deterministic transcript captains, auditable by name:
+
+```kotlin
+forum<Question, Answer> {
+    participant(expert1); participant(expert2); participant(expert3)
+    transcriptCaptain(consensusCaptain(quorum = 2))            // N identical verdicts or fail loud with the tally
+    // transcriptCaptain(weightedCaptain(mapOf("expert1" to 3.0)))  // weighted vote by panelist name
+    // transcriptCaptain(byzantineCaptain())                        // median of numeric verdicts — robust to outliers
+}
+```
+
+`byzantineCaptain` is the 1-dimensional geometric median (robust to ⌈n/2⌉−1 adversaries); vector Krum / Weiszfeld for embedding outputs is a tracked follow-up.
+
 ### `.loopUntil { }` + `evalGate` — Reflexion / Evaluator-Optimizer (#3870)
 
 The named exit-condition shape over `.loop {}`:
