@@ -34,7 +34,9 @@ add a final automated gate.
    Gradle version in lockstep from this point on.
 7. **Tag** the release (annotated; use `git tag -a --cleanup=verbatim -F <file>` if the message
    carries `#issue-ref` lines) and push.
-8. **Immediately bump `main` to the next `-SNAPSHOT`** (`0.7.24` released → `version = "0.7.25-SNAPSHOT"`).
+8. **Immediately bump `main` to the next `-SNAPSHOT`** *(mechanically enforced — #4428:
+   CI runs `checkSnapshotPolicy` on every push to `main` and fails when a non-`-SNAPSHOT`
+   version is not the tagged release commit itself; release-PR CI is exempt by ref.)* (`0.7.24` released → `version = "0.7.25-SNAPSHOT"`).
    Leave the README snippet at the just-published version. This keeps post-release commits from
    masquerading under the released version's identity: `main` is always either *exactly* a
    published release (the tagged commit) or visibly `-SNAPSHOT`. `checkReadmeVersion` understands

@@ -4,6 +4,14 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — mechanical `-SNAPSHOT`-on-main enforcement (#4428)
+
+- **`checkSnapshotPolicy`** Gradle task: a non-`-SNAPSHOT` version is only legal on the tagged
+  release commit itself; anything else fails with the runbook-step-8 hint. CI runs it on every
+  push to `main` (release-PR refs exempt by event type — they legitimately carry the release
+  version before the tag exists; the task is deliberately not wired into `check` for the same
+  reason). Closes the enforcement gap the runbook's post-release bump rule left open.
+
 ### Added — ToolPolicy ↔ capability comparator + `exec` capability (#2887)
 
 - **`ToolPolicy.exec`** — declared subprocess stance (`exec { allow() }` / `exec { deny() }`;

@@ -395,6 +395,32 @@ tasks.register("checkReadmeVersion") {
 
 tasks.named("check") { dependsOn("checkReadmeVersion") }
 
+// #4428 — runbook step 8, mechanically enforced. Between releases `main`
+// must carry a -SNAPSHOT version; the only legal non-SNAPSHOT state is the
+// tagged release commit itself. Deliberately NOT wired into `check`: the
+// release PR legitimately carries the release version before its tag
+// exists — CI runs this only on push to main (see ci.yml).
+tasks.register("checkSnapshotPolicy") {
+    description = "Fails when a non-SNAPSHOT version is not the tagged release commit (runbook step 8)."
+    group = "verification"
+    val projectVersion = project.version.toString()
+    doLast {
+        if (projectVersion.endsWith("-SNAPSHOT")) {
+            logger.lifecycle("checkSnapshotPolicy: $projectVersion is a snapshot — ok")
+        } else {
+            val process = ProcessBuilder("git", "tag", "--points-at", "HEAD").start()
+            val tags = process.inputStream.bufferedReader().readText().trim().lines()
+            process.waitFor()
+            check("v$projectVersion" in tags) {
+                "Version $projectVersion is a release version but HEAD is not the tagged " +
+                    "v$projectVersion commit. After tagging, bump main to the next -SNAPSHOT " +
+                    "(docs/RELEASE_RUNBOOK.md step 8)."
+            }
+            logger.lifecycle("checkSnapshotPolicy: HEAD is the tagged v$projectVersion release — ok")
+        }
+    }
+}
+
 // #3084 (de-slop #3083): the README/Gradle drift guard (`checkReadmeVersion`) can't catch the
 // drift that actually bit us — advertising a version that isn't on Central yet. This task HEADs
 // the Central artifact URL for the *current* project version and fails if it isn't resolvable.
