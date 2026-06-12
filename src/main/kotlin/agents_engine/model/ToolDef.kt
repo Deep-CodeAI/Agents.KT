@@ -46,6 +46,8 @@ class ToolDef(
     val untrustedOutput: Boolean = false,
     val risk: agents_engine.core.ToolRisk = agents_engine.core.ToolRisk.LOW,
     val policy: agents_engine.core.ToolPolicy? = null,
+    /** #4490 — per-invocation usage rules; see [agents_engine.core.ToolConstraints]. */
+    val constraints: agents_engine.core.ToolConstraints? = null,
     /**
      * #1752 — session-aware tool executor. When non-null AND the
      * agentic loop runs under a session (`emitter != null`), this is

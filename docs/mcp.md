@@ -157,3 +157,7 @@ You don't pick once — you can **eject** the agent into autonomy when independe
 See the [MCP Integration](https://github.com/Deep-CodeAI/Agents.KT/wiki/MCP-Integration) wiki page for the full DSL surface, lower-level `McpClient` factories, in-process mock servers for hermetic tests, and protocol-version handling.
 
 ---
+
+## Related: A2A
+
+Any agent served over MCP can simultaneously be served over A2A — different protocol shapes of the same instance (skills-as-tools vs one typed agent endpoint). See [a2a.md → Serving MCP and A2A side by side](a2a.md#serving-mcp-and-a2a-side-by-side).

@@ -4,6 +4,15 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — tool usage constraints (#4490, PRD §tool-constraints)
+
+- **`tool { constraints { maxInvocations = 3; onlyAfter("fetch"); forbidden() } }`** — per-tool
+  usage rules, the sibling of `ToolPolicy`: policy says *what* a tool may touch, constraints say
+  *when and how often* it may run per invocation. Violations deny through the standard auditable
+  path (the model self-corrects); per-invocation tracker (no cross-run leakage); manifest-visible
+  under each tool's `constraints` key. `ForceAtStep`/`RequiresApproval` deferred (approval is
+  already first-class). 4 tests.
+
 ### Added — multimodal: audio STT + image generation + TTS (#3867 first slice, P0.5)
 
 - **`SpeechToTextClient` / `ImageModelClient` / `TtsModelClient`** fun-interfaces with OpenAI

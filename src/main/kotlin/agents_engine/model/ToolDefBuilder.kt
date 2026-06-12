@@ -10,6 +10,7 @@ class ToolDefBuilder(private val name: String) {
     private var handler: ToolErrorHandler? = null
     private var untrusted: Boolean = false
     private var policy: ToolPolicy? = null
+    private var constraints: agents_engine.core.ToolConstraints? = null
 
     fun description(text: String) { desc = text }
 
@@ -36,6 +37,11 @@ class ToolDefBuilder(private val name: String) {
         policy = toolPolicy(block)
     }
 
+    /** #4490 — per-invocation usage rules: maxInvocations / onlyAfter / forbidden. */
+    fun constraints(block: agents_engine.core.ToolConstraintsBuilder.() -> Unit) {
+        constraints = agents_engine.core.ToolConstraintsBuilder().apply(block).build()
+    }
+
     fun onError(block: OnErrorBuilder.() -> Unit) {
         handler = OnErrorBuilder().apply(block).build()
     }
@@ -56,6 +62,7 @@ class ToolDefBuilder(private val name: String) {
             untrustedOutput = untrusted,
             risk = policy?.risk ?: agents_engine.core.ToolRisk.LOW,
             policy = policy,
+            constraints = constraints,
             executor = effectiveExecutor(),
         )
         handler?.let { def.errorHandler = it }

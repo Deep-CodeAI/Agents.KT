@@ -333,6 +333,9 @@ internal suspend fun <IN> executeAgentic(
     // bank), so a shared-workspace topology resume doesn't disturb other
     // agents' slots. Same contract as the turn-boundary checkpoint at the
     // end of each loop iteration.
+    // #4490 — per-invocation tool-constraint state (counts + completion set).
+    val constraintTracker = ToolConstraintTracker()
+
     // #2791 — one snapshot builder for all three capture sites (budget
     // checkpoint, interrupt, turn boundary). #2755 memory-slice semantics
     // documented at the original site apply identically to all three.
@@ -595,8 +598,16 @@ internal suspend fun <IN> executeAgentic(
                     var effectiveCall = call
                     var denied = false
                     var deniedReason: String? = null
+                    // #4490 — usage constraints gate dispatch before interceptors:
+                    // a violation denies through the standard auditable path and the
+                    // model sees the reason as the tool result (self-correctable).
+                    val constraintViolation = constraintTracker.violationFor(tool)
                     val result = try {
-                        when (val decision = agent.decideBeforeToolCall(call.name, call.arguments)) {
+                        if (constraintViolation != null) {
+                            denied = true
+                            deniedReason = constraintViolation
+                            ToolResultRendering.formatDeniedToolError(call.name, constraintViolation)
+                        } else when (val decision = agent.decideBeforeToolCall(call.name, call.arguments)) {
                             Decision.Proceed -> executeToolWithBudgetHandlingEvents(
                                 agent, tool, effectiveCall, budget, emitter
                             )
@@ -647,6 +658,11 @@ internal suspend fun <IN> executeAgentic(
                         )
                     }
 
+                    if (!denied) {
+                        // #4490 — count the dispatch and (post-result) the completion.
+                        constraintTracker.recordDispatch(effectiveCall.name)
+                        constraintTracker.recordCompletion(effectiveCall.name)
+                    }
                     if (denied) {
                         // #2395 — a blocked call never reaches onToolUse, so fire the
                         // first-class onToolDenied hook here (under the runtime context
