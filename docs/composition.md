@@ -61,6 +61,19 @@ val ensemble = (a / b / c).aggregate { majorityVote() }
 
 Sugar over `then`: builds a deterministic reducer agent named `aggregate-<strategy>`, so the aggregation is auditable as that agent's events with the strategy in the name. Ties break deterministically (first-encountered in branch order). If every branch fails, the parallel stage fails before the reducer runs (`Failed` terminal on the session path).
 
+### `firstOf` / `.speculative(n)` — Speculative Execution (#3869)
+
+LLM latency is variance-dominated: race N equivalent branches against the same input and return the **first success** at the winner's latency.
+
+```kotlin
+val fast    = firstOf(primary, fallbackProvider)   // distinct agents (single-placement marked)
+val sampled = generator.speculative(3)             // same agent, 3 concurrent racers
+
+fast.onRaceSettled { winner, cancelled, ms -> log("$winner won in ${ms}ms, cancelled $cancelled") }
+```
+
+Semantics: a failing branch does NOT settle the race; all-fail throws the last failure. Losers are cancelled but not awaited (the sacrificial-worker precedent of blocking tools) — a suspending loser stops promptly, a blocking body may finish in the background with its result discarded. **Budget honesty:** losers' tokens up to cancellation are real provider spend; cap worst-case by bounding N (cross-branch accounting of cancelled partial usage is a known gap on #3869). `firstOf.session(input)` streams every racer's events and completes under the winner's id.
+
 ### `*` — Forum (Multi-Agent Coordination)
 
 The `*` shorthand is convention over configuration: every agent receives the same input, all non-final agents run concurrently as participants, and the last agent is the captain. The captain determines the forum `OUT` type and is the default finalizer.

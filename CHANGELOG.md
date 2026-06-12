@@ -4,6 +4,17 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — speculative execution: `firstOf` / `.speculative(n)` (#3869, P1.3)
+
+- **`firstOf(a, b)`** races distinct agents; **`agent.speculative(3)`** races the same agent
+  against itself. First **success** wins at the winner's latency; losers are cancelled but not
+  awaited (sacrificial-worker precedent — suspending losers stop promptly, blocking bodies finish
+  in the background, discarded). A failing branch doesn't settle the race; all-fail throws.
+- `onRaceSettled { winner, cancelled, elapsedMillis -> }` audit signal;
+  `firstOf.session(input)` streams every racer's events and completes under the winner's id.
+- Budget honesty documented: losers' partial tokens are real provider spend — bound N;
+  cross-branch accounting of cancelled partial usage is a tracked gap. 6 tests.
+
 ### Added — built-in aggregators on `/` (#3872, P1.2)
 
 - **`(a / b / c).aggregate { … }`** — one-line ensemble patterns over a parallel fan-out:
