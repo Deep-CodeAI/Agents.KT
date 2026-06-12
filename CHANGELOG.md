@@ -4,6 +4,21 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — history compression (#3865 Phase 1, P0.3)
+
+- **`agent { historyCompression { … } }`** — before-turn compression for long-running agents:
+  when the history exceeds `triggerMessages` (default 40; custom `triggerWhen { }` supported), the
+  conversation middle collapses into one deterministic digest message. Leading system messages are
+  pinned, the most recent `preserveRecent` messages stay untouched, and the preserved window
+  extends backward so a tool result is never orphaned from its `tool_call`. Rides the
+  `onBeforeTurn` → `Decision.ProceedWith` seam, so the loop history shrinks permanently.
+- **Degrade-don't-fail:** a summarizer exception skips compression for that turn. Default
+  summarizer is extractive and deterministic (no LLM call); pass `summarizer { }` for abstractive.
+- **Observability:** `onHistoryCompressed { }`, `PipelineEvent.HistoryCompressed` (counts only —
+  no conversation content in audit rows), JSONL audit rows, and OTel / LangSmith / Langfuse
+  bridge events. 6 new tests incl. a mid-run agentic-loop integration.
+- Phases 2 (tiered MemoryBank) and 3 (episodic/semantic split) tracked separately.
+
 ### Added — RAG seam: EmbeddingStore SPI + query-aware knowledge (#3863, P0.2)
 
 - **Core knowledge seam:** `skill { knowledge(key, description, retriever) }` registers a

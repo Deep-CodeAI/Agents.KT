@@ -518,6 +518,30 @@ class Agent<IN, OUT>(
         interceptors.addBeforeTurn(block)
     }
 
+    /**
+     * #3865 Phase 1 — automatic history compression. When the trigger fires
+     * (default: history exceeds `triggerMessages`), the conversation middle
+     * is replaced with one deterministic digest message before the model
+     * call; leading system messages and the most recent `preserveRecent`
+     * turns stay untouched. Rides the `onBeforeTurn` interceptor seam, so
+     * ordering relative to other before-turn interceptors is registration
+     * order. Observe via `onHistoryCompressed { }` / `observe { }`.
+     */
+    fun historyCompression(block: HistoryCompressionBuilder.() -> Unit = {}) {
+        checkNotFrozen()
+        val config = HistoryCompressionBuilder().apply(block).build()
+        onBeforeTurn { messages ->
+            compressHistory(messages, config) { result ->
+                listeners.historyCompressedListener?.invoke(result)
+            }
+        }
+    }
+
+    /** #3865 — fires after each compression pass with what was replaced. */
+    fun onHistoryCompressed(block: (result: HistoryCompressionResult) -> Unit) {
+        listeners.historyCompressedListener = block
+    }
+
     fun onInterceptorDecision(block: (point: InterceptorPoint, decision: Decision<*>) -> Unit) {
         interceptors.addDecisionListener(block)
     }

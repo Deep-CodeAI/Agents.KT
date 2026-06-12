@@ -116,6 +116,23 @@ sealed interface PipelineEvent {
     ) : PipelineEvent
 
     /**
+     * #3865 Phase 1 — the history-compression pass replaced part of the
+     * conversation with a digest before a model turn. `replacedCount` /
+     * `preservedCount` describe the swap; `digestChars` sizes the summary
+     * without copying potentially sensitive conversation content into the
+     * audit row. Original turn content is recoverable from the session
+     * stream that preceded this event, not from this row.
+     */
+    data class HistoryCompressed(
+        override val agentName: String,
+        override val timestamp: Instant,
+        val replacedCount: Int,
+        val preservedCount: Int,
+        val digestChars: Int,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
+    ) : PipelineEvent
+
+    /**
      * #2489 — a tool inside the agentic loop called `humanApproval { }` and
      * the runtime is about to pause for human input. Emitted before the
      * [AgentInterruptException] is thrown, so audit consumers see the request
@@ -244,6 +261,20 @@ fun Agent<*, *>.observe(handler: (PipelineEvent) -> Unit) {
                 requestedName = name,
                 arguments = args,
                 allowedTools = allowed,
+            ),
+        )
+    }
+
+    val priorCompressed = this.listeners.historyCompressedListener
+    onHistoryCompressed { result ->
+        priorCompressed?.invoke(result)
+        handler(
+            PipelineEvent.HistoryCompressed(
+                agentName = agentName,
+                timestamp = Instant.now(),
+                replacedCount = result.replacedCount,
+                preservedCount = result.preservedCount,
+                digestChars = result.digest.length,
             ),
         )
     }

@@ -100,6 +100,17 @@ class OtelBridge(
                         .build(),
                 )
             }
+            is PipelineEvent.HistoryCompressed -> {
+                // #3865 — before-turn history compression; counts only, no content.
+                mostRecentAgentSpan()?.addEvent(
+                    "agent.history.compressed",
+                    Attributes.builder()
+                        .put("history.replaced_count", event.replacedCount.toLong())
+                        .put("history.preserved_count", event.preservedCount.toLong())
+                        .put("history.digest_chars", event.digestChars.toLong())
+                        .build(),
+                )
+            }
             is PipelineEvent.ApprovalRequested -> {
                 // #2489 — human approval requested; field-only (no body / PII).
                 mostRecentAgentSpan()?.addEvent(

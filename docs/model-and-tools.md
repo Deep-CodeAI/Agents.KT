@@ -349,4 +349,21 @@ model { ollama("llama3") }
 budget { maxTurns = 10 }   // throws BudgetExceededException after 10 turns
 ```
 
+**History compression (#3865 Phase 1)** — budgets *detect* context-window pressure; compression *relieves* it. When the trigger fires, the conversation middle is replaced with one deterministic digest message before the model call — leading system messages and the most recent turns stay untouched, and the preserved window extends backward so a tool result is never orphaned from its `tool_call`:
+
+```kotlin
+agent<String, String>("long-running") {
+    historyCompression {
+        triggerMessages = 40         // compress when history exceeds N messages (default 40)
+        preserveRecent = 4           // most recent N messages untouched (default 4)
+        // triggerWhen { messages -> ... }    // custom deterministic trigger
+        // summarizer { messages -> ... }     // custom digest (e.g. a cheap model);
+        //                                    // a thrown exception skips compression, never fails the run
+    }
+    onHistoryCompressed { result -> log("compressed ${result.replacedCount} messages") }
+}
+```
+
+Rides the `onBeforeTurn` interceptor seam (`Decision.ProceedWith` replaces the loop history permanently, so compression happens once per trigger, not per turn). Observability: `onHistoryCompressed { }`, `PipelineEvent.HistoryCompressed` via `observe { }` (counts only — no conversation content in audit rows), JSONL audit rows, and OTel / LangSmith / Langfuse bridge events. The default summarizer is a deterministic extractive digest — no LLM call, replayable. Tiered memory (hot/warm/archival) is Phase 2 (#3865).
+
 ---

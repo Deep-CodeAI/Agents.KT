@@ -23,6 +23,7 @@ internal class ListenerRegistry {
     var toolHallucinatedListener:
         ((name: String, args: Map<String, Any?>, allowedTools: List<String>) -> Unit)? = null
     var approvalRequestedListener: ((title: String, hasBody: Boolean, timeoutMs: Long?) -> Unit)? = null
+    var historyCompressedListener: ((result: HistoryCompressionResult) -> Unit)? = null
     var approvalDecidedListener: ((decision: String, hasPayload: Boolean) -> Unit)? = null
     var knowledgeUsedListener: ((name: String, content: String) -> Unit)? = null
     var skillChosenListener: ((name: String) -> Unit)? = null
