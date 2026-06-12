@@ -2,6 +2,27 @@
 
 All notable changes to Agents.KT are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0, minor bumps may add new public API; existing API surface is preserved.
 
+## [Unreleased]
+
+### Changed — truth-surface pass 2: the rooms the front door missed
+
+- **`docs/threat-model.md` is now the canonical "what's enforced where" page.** Its shipped-vs-planned
+  table was frozen at 0.5.0 — ToolPolicy enforcement, MCP auth/origin/per-client policy, and the OS
+  sandbox all listed as planned long after shipping. Rewritten as a Boundary / Status / Enforced-by
+  table current to 0.7.24; README, `SECURITY.md`, and `production-hardening.md` now defer to it.
+  Anti-pattern guidance points at fail-closed `processTool` (#2914); the JSONL-retention bullet
+  reflects the shipped exporter (#1914) + tamper-evident ledger.
+- **README security sections** no longer claim `ToolPolicy` is "for review/audit" only or that tool
+  sandboxing is "on the Phase 3 roadmap" — replaced with the enforced-vs-yours split and a link to
+  the canonical table. Kotlin badge 2.3 → 2.4. Streaming bullet covers all seven providers.
+- **`docs/streaming.md`** provider table covers all seven providers (3 native `chatStream`
+  implementations + 4 inherited OpenAI-compatible SSE, Perplexity live-verified); the composition
+  flow-through gap is framed as a current 0.7.24 limitation instead of "the next v0.5.0 milestone".
+- **`DocsConsistencyTest` gains a stale-phrase guard:** known-fixed claims ("sandboxing isn't
+  shipped", "no tool sandboxing", "audit evidence, not", "all three first-party", stale
+  four/five/six provider counts, "the JSONL exporter lands") now fail `./gradlew test` if they
+  resurface in living docs; historical docs (CHANGELOG / RELEASE_NOTES / premortems / prd) exempt.
+
 ## [0.7.24] — 2026-06-12
 
 **Perplexity: seventh model provider + web-grounded search with citations — and a truth-surface pass.** Headline feature is the Perplexity connector and the `perplexitySearch` tool — agents can now fetch live, cited facts from Perplexity Sonar against their own model. The release also lands the docs/version-identity trust patch an external 0.7.23 review called for: SECURITY.md, production-hardening, skill-routing and HITL docs catch up with the shipped runtime, `main` adopts a `-SNAPSHOT` between-releases policy, and a new `DocsConsistencyTest` keeps the claims pinned. Plus dependency bumps (Kotlin 2.4.0, jline 4, detekt 1.23.8, ksp 2.3.9). Drop-in on the 0.7.x line.
