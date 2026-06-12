@@ -364,6 +364,8 @@ agent<String, String>("long-running") {
 }
 ```
 
+**Strategies (#4492):** `strategy = CompactionStrategy.SlidingWindow(keepRecent = 6)` drops the middle entirely (one elision marker, zero summarizer cost; `keepRecent` overrides `preserveRecent`); `CompactionStrategy.Custom { middle -> replacement }` takes full control; the default stays `Summarize` (the digest behavior above). All strategies degrade to an uncompressed turn on failure.
+
 Rides the `onBeforeTurn` interceptor seam (`Decision.ProceedWith` replaces the loop history permanently, so compression happens once per trigger, not per turn). Observability: `onHistoryCompressed { }`, `PipelineEvent.HistoryCompressed` via `observe { }` (counts only — no conversation content in audit rows), JSONL audit rows, and OTel / LangSmith / Langfuse bridge events. The default summarizer is a deterministic extractive digest — no LLM call, replayable. Tiered memory (hot/warm/archival) is Phase 2 (#3865).
 
 ---
