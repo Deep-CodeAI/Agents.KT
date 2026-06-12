@@ -161,6 +161,13 @@ This is a first-line defense: the provider is asked to produce the typed shape u
 
 > **Query-aware knowledge (#3863):** `knowledge(key, description, retriever)` takes a `KnowledgeRetriever` instead of a static provider — the entry surfaces as a knowledge tool with a `query` argument, fetched on demand and never inlined into the prompt. The `:agents-kt-rag` module backs this with any `EmbeddingStore` — see [rag.md](rag.md).
 
+**Typed tool hooks (#4493)** — observation with the tool's `@Generable` Args type instead of a raw map (decode failures skip silently; never blocks or rewrites — that's the interceptors' job; chains with untyped listeners):
+
+```kotlin
+agent.onToolCall<ChargeArgs>("charge_card") { args -> audit(args.amount) }          // pre-execution
+agent.onToolResult<ChargeArgs>("charge_card") { args, result -> reconcile(args, result) }
+```
+
 **`onSkillChosen { name -> }`** — fires when the agent selects a skill to execute. Works with all routing strategies — manual `skillSelection {}`, LLM, and single-candidate direct routing.
 
 ```kotlin
