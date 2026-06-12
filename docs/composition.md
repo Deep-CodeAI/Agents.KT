@@ -129,6 +129,22 @@ while (quality < 90f) {
 }
 ```
 
+### `.loopUntil { }` + `evalGate` — Reflexion / Evaluator-Optimizer (#3870)
+
+The named exit-condition shape over `.loop {}`:
+
+```kotlin
+val gate = evalGate(qualityRubric, threshold = 7)     // LLM-as-judge pass/fail gate
+val refiner = drafter.loopUntil(maxIterations = 5) { draft -> gate.pass(draft) }
+
+val poller = checker.loopUntil(
+    maxIterations = 10,
+    feedback = { it.retryRequest },                   // OUT -> next IN; omit when IN == OUT
+) { it.status == Done }
+```
+
+`evalGate(rubric, threshold)` runs one judge-model scoring pass per call (`gate.lastVerdict` keeps the rationale) — use a cheap pinned judge model, or `DeterministicModelClient` in tests. `maxIterations` still throws on overrun: a predicate that never fires is a bug, not an infinite loop.
+
 ### `.branch {}` — Conditional Routing on Sealed Types
 
 Routes the output of an agent to a different handler per sealed variant. All branches must produce the same `OUT` type. Unhandled variants throw at invocation.

@@ -4,6 +4,17 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `loopUntil` + `evalGate` (#3870, P1.4)
+
+- **`agent.loopUntil(maxIterations, feedback?) { predicate }`** (also on `Pipeline`) — the named
+  reflexion / evaluator-optimizer shape: re-run until the predicate approves the output, feeding
+  `feedback(out)` (or the output itself when `IN == OUT`) back as input. Named `loopUntil` rather
+  than a `loop { until { } }` DSL block so the existing `loop { next }` trailing-lambda overload
+  stays source-compatible.
+- **`evalGate(rubric, threshold)`** — pass/fail gate over the LLM-as-judge rubric (one judge call
+  per check, `lastVerdict` keeps the rationale; threshold validated against the rubric's range).
+  7 tests incl. the full reflexion shape against a scripted judge.
+
 ### Added — speculative execution: `firstOf` / `.speculative(n)` (#3869, P1.3)
 
 - **`firstOf(a, b)`** races distinct agents; **`agent.speculative(3)`** races the same agent
