@@ -148,6 +148,19 @@ class OtelBridge(
     @Synchronized
     override fun onAgentEvent(event: AgentEvent<*>) {
         when (event) {
+            is AgentEvent.StageStarted -> {
+                // #4491 — stage boundary; event on the current agent span.
+                mostRecentAgentSpan()?.addEvent(
+                    "agent.stage.started",
+                    Attributes.builder().put("stage.name", event.stageName).build(),
+                )
+            }
+            is AgentEvent.StageCompleted -> {
+                mostRecentAgentSpan()?.addEvent(
+                    "agent.stage.completed",
+                    Attributes.builder().put("stage.name", event.stageName).build(),
+                )
+            }
             is AgentEvent.SkillStarted -> {
                 val span = startSpan("agent.invoke", event.agentId, event.skillName, event.runtimeContext)
                     .setAttribute("gen_ai.operation.name", "agent")

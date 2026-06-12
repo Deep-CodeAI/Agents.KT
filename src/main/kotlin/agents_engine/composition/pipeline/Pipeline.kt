@@ -66,9 +66,12 @@ infix fun <A, B, C> Agent<A, B>.then(other: Agent<B, C>): Pipeline<A, C> {
         // #1745: streaming path runs both agents through runAgentInSession
         // so events from both flow into the emitter with their own agentIds.
         sessionExec = { input, emitter ->
-            val (mid, _) = agents_engine.runtime.events.runAgentInSession(first, input, emitter)
-            val (out, _) = agents_engine.runtime.events.runAgentInSession(other, mid, emitter)
-            out
+            val mid = staged(first.name, emitter) {
+                agents_engine.runtime.events.runAgentInSession(first, input, emitter).first
+            }
+            staged(other.name, emitter) {
+                agents_engine.runtime.events.runAgentInSession(other, mid, emitter).first
+            }
         },
         execution = { input -> other.invokeSuspend(first.invokeSuspend(input)) },
     )
@@ -85,8 +88,9 @@ infix fun <A, B, C> Pipeline<A, B>.then(other: Agent<B, C>): Pipeline<A, C> {
         // emits the trailing Agent's bracket events.
         sessionExec = { input, emitter ->
             val mid = inner.effectiveSessionExec(input, emitter)
-            val (out, _) = agents_engine.runtime.events.runAgentInSession(other, mid, emitter)
-            out
+            staged(other.name, emitter) {
+                agents_engine.runtime.events.runAgentInSession(other, mid, emitter).first
+            }
         },
         execution = { input -> other.invokeSuspend(inner.invokeSuspend(input)) },
     )
@@ -99,8 +103,10 @@ infix fun <A, B, C> Agent<A, B>.then(other: Forum<B, C>): Pipeline<A, C> {
         agents = listOf(first) + other.agents,
         // #3866: stream the leading agent, then the forum's participants + captain.
         sessionExec = { input, emitter ->
-            val (mid, _) = agents_engine.runtime.events.runAgentInSession(first, input, emitter)
-            other.sessionInvoke(mid, emitter)
+            val mid = staged(first.name, emitter) {
+                agents_engine.runtime.events.runAgentInSession(first, input, emitter).first
+            }
+            staged("forum", emitter) { other.sessionInvoke(mid, emitter) }
         },
         execution = { input -> other.invokeSuspend(first.invokeSuspend(input)) },
     )
@@ -112,7 +118,8 @@ infix fun <A, B, C> Pipeline<A, B>.then(other: Forum<B, C>): Pipeline<A, C> {
         agents = inner.agents + other.agents,
         // #3866: chain the pipeline's streaming stages into the forum's streaming deliberation.
         sessionExec = { input, emitter ->
-            other.sessionInvoke(inner.effectiveSessionExec(input, emitter), emitter)
+            val mid = inner.effectiveSessionExec(input, emitter)
+            staged("forum", emitter) { other.sessionInvoke(mid, emitter) }
         },
         execution = { input -> other.invokeSuspend(inner.invokeSuspend(input)) },
     )
@@ -138,8 +145,10 @@ infix fun <A, B, C> Agent<A, B>.then(other: Parallel<B, C>): Pipeline<A, List<C>
         agents = listOf(first) + other.agents,
         // #3866: stream the leading agent, then fan out — branch events interleave.
         sessionExec = { input, emitter ->
-            val (mid, _) = agents_engine.runtime.events.runAgentInSession(first, input, emitter)
-            other.sessionInvoke(mid, emitter)
+            val mid = staged(first.name, emitter) {
+                agents_engine.runtime.events.runAgentInSession(first, input, emitter).first
+            }
+            staged("parallel", emitter) { other.sessionInvoke(mid, emitter) }
         },
         execution = { input -> other.invokeSuspend(first.invokeSuspend(input)) },
     )
@@ -151,7 +160,8 @@ infix fun <A, B, C> Pipeline<A, B>.then(other: Parallel<B, C>): Pipeline<A, List
         agents = inner.agents + other.agents,
         // #3866: chain the pipeline's streaming stages into the parallel fan-out.
         sessionExec = { input, emitter ->
-            other.sessionInvoke(inner.effectiveSessionExec(input, emitter), emitter)
+            val mid = inner.effectiveSessionExec(input, emitter)
+            staged("parallel", emitter) { other.sessionInvoke(mid, emitter) }
         },
         execution = { input -> other.invokeSuspend(inner.invokeSuspend(input)) },
     )
@@ -164,8 +174,10 @@ infix fun <A, B, C> Parallel<A, B>.then(other: Agent<List<B>, C>): Pipeline<A, C
         agents = fanOut.agents + other,
         // #3866: fan-out branches stream first (interleaved), then the reducer agent.
         sessionExec = { input, emitter ->
-            val mids = fanOut.sessionInvoke(input, emitter)
-            agents_engine.runtime.events.runAgentInSession(other, mids, emitter).first
+            val mids = staged("parallel", emitter) { fanOut.sessionInvoke(input, emitter) }
+            staged(other.name, emitter) {
+                agents_engine.runtime.events.runAgentInSession(other, mids, emitter).first
+            }
         },
         execution = { input -> other.invokeSuspend(fanOut.invokeSuspend(input)) },
     )
@@ -177,7 +189,8 @@ infix fun <A, B, C> Parallel<A, B>.then(other: Pipeline<List<B>, C>): Pipeline<A
         agents = fanOut.agents + other.agents,
         // #3866: fan-out branches stream first (interleaved), then the trailing pipeline's stages.
         sessionExec = { input, emitter ->
-            other.effectiveSessionExec(fanOut.sessionInvoke(input, emitter), emitter)
+            val mids = staged("parallel", emitter) { fanOut.sessionInvoke(input, emitter) }
+            other.effectiveSessionExec(mids, emitter)
         },
         execution = { input -> other.invokeSuspend(fanOut.invokeSuspend(input)) },
     )
@@ -190,8 +203,10 @@ infix fun <A, B, C> Agent<A, B>.then(other: Loop<B, C>): Pipeline<A, C> {
         agents = listOf(first),
         // #3866: stream the leading agent, then every loop iteration's events.
         sessionExec = { input, emitter ->
-            val (mid, _) = agents_engine.runtime.events.runAgentInSession(first, input, emitter)
-            other.sessionInvoke(mid, emitter)
+            val mid = staged(first.name, emitter) {
+                agents_engine.runtime.events.runAgentInSession(first, input, emitter).first
+            }
+            staged("loop", emitter) { other.sessionInvoke(mid, emitter) }
         },
         execution = { input -> other.invokeSuspend(first.invokeSuspend(input)) },
     )
@@ -203,7 +218,8 @@ infix fun <A, B, C> Pipeline<A, B>.then(other: Loop<B, C>): Pipeline<A, C> {
         agents = inner.agents,
         // #3866: chain streaming stages into the loop's per-iteration streaming.
         sessionExec = { input, emitter ->
-            other.sessionInvoke(inner.effectiveSessionExec(input, emitter), emitter)
+            val mid = inner.effectiveSessionExec(input, emitter)
+            staged("loop", emitter) { other.sessionInvoke(mid, emitter) }
         },
         execution = { input -> other.invokeSuspend(inner.invokeSuspend(input)) },
     )
@@ -216,8 +232,10 @@ infix fun <A, B, C> Loop<A, B>.then(other: Agent<B, C>): Pipeline<A, C> {
         agents = listOf(other),
         // #3866: loop iterations stream first, then the trailing agent.
         sessionExec = { input, emitter ->
-            val mid = head.sessionInvoke(input, emitter)
-            agents_engine.runtime.events.runAgentInSession(other, mid, emitter).first
+            val mid = staged("loop", emitter) { head.sessionInvoke(input, emitter) }
+            staged(other.name, emitter) {
+                agents_engine.runtime.events.runAgentInSession(other, mid, emitter).first
+            }
         },
         execution = { input -> other.invokeSuspend(head.invokeSuspend(input)) },
     )
@@ -229,7 +247,8 @@ infix fun <A, B, C> Loop<A, B>.then(other: Pipeline<B, C>): Pipeline<A, C> {
         agents = other.agents,
         // #3866: loop iterations stream first, then the trailing pipeline's stages.
         sessionExec = { input, emitter ->
-            other.effectiveSessionExec(head.sessionInvoke(input, emitter), emitter)
+            val mid = staged("loop", emitter) { head.sessionInvoke(input, emitter) }
+            other.effectiveSessionExec(mid, emitter)
         },
         execution = { input -> other.invokeSuspend(head.invokeSuspend(input)) },
     )
@@ -242,8 +261,10 @@ infix fun <A, B, C> Agent<A, B>.then(other: Branch<B, C>): Pipeline<A, C> {
         agents = listOf(first),
         // #3866: stream the leading agent, then the branch source + routed agent.
         sessionExec = { input, emitter ->
-            val (mid, _) = agents_engine.runtime.events.runAgentInSession(first, input, emitter)
-            other.sessionInvoke(mid, emitter)
+            val mid = staged(first.name, emitter) {
+                agents_engine.runtime.events.runAgentInSession(first, input, emitter).first
+            }
+            staged("branch", emitter) { other.sessionInvoke(mid, emitter) }
         },
         execution = { input -> other.invokeSuspend(first.invokeSuspend(input)) },
     )
@@ -255,7 +276,8 @@ infix fun <A, B, C> Pipeline<A, B>.then(other: Branch<B, C>): Pipeline<A, C> {
         agents = inner.agents,
         // #3866: chain streaming stages into the branch's streaming run.
         sessionExec = { input, emitter ->
-            other.sessionInvoke(inner.effectiveSessionExec(input, emitter), emitter)
+            val mid = inner.effectiveSessionExec(input, emitter)
+            staged("branch", emitter) { other.sessionInvoke(mid, emitter) }
         },
         execution = { input -> other.invokeSuspend(inner.invokeSuspend(input)) },
     )
@@ -268,8 +290,10 @@ infix fun <A, B, C> Branch<A, B>.then(other: Agent<B, C>): Pipeline<A, C> {
         agents = listOf(other),
         // #3866: branch source + routed agent stream first, then the trailing agent.
         sessionExec = { input, emitter ->
-            val mid = head.sessionInvoke(input, emitter)
-            agents_engine.runtime.events.runAgentInSession(other, mid, emitter).first
+            val mid = staged("branch", emitter) { head.sessionInvoke(input, emitter) }
+            staged(other.name, emitter) {
+                agents_engine.runtime.events.runAgentInSession(other, mid, emitter).first
+            }
         },
         execution = { input -> other.invokeSuspend(head.invokeSuspend(input)) },
     )
@@ -281,8 +305,28 @@ infix fun <A, B, C> Branch<A, B>.then(other: Pipeline<B, C>): Pipeline<A, C> {
         agents = other.agents,
         // #3866: branch source + routed agent stream first, then the trailing pipeline's stages.
         sessionExec = { input, emitter ->
-            other.effectiveSessionExec(head.sessionInvoke(input, emitter), emitter)
+            val mid = staged("branch", emitter) { head.sessionInvoke(input, emitter) }
+            other.effectiveSessionExec(mid, emitter)
         },
         execution = { input -> other.invokeSuspend(head.invokeSuspend(input)) },
     )
+}
+
+/**
+ * #4491 — explicit stage boundaries on the session stream: wraps one direct
+ * pipeline component (an agent or an operator leg) in
+ * [agents_engine.runtime.events.AgentEvent.StageStarted] /
+ * [agents_engine.runtime.events.AgentEvent.StageCompleted]. Nested
+ * pipelines are NOT wrapped — their own `sessionExec` marks their stages,
+ * so markers never nest or duplicate.
+ */
+internal suspend fun <T> staged(
+    stageName: String,
+    emitter: agents_engine.model.AgentEventEmitter,
+    block: suspend () -> T,
+): T {
+    emitter(agents_engine.runtime.events.AgentEvent.StageStarted(stageName, stageName))
+    val out = block()
+    emitter(agents_engine.runtime.events.AgentEvent.StageCompleted(stageName, stageName))
+    return out
 }

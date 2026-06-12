@@ -230,6 +230,27 @@ class LangfuseBridge internal constructor(
     @Synchronized
     override fun onAgentEvent(event: AgentEvent<*>) {
         when (event) {
+            is AgentEvent.StageStarted -> {
+                // #4491 — stage boundary.
+                mostRecentTrace()?.let { state ->
+                    enqueueEventObservation(
+                        trace = state,
+                        name = "agent.stage.started",
+                        input = mapOf("stage" to event.stageName),
+                        metadata = metadata(event.runtimeContext),
+                    )
+                }
+            }
+            is AgentEvent.StageCompleted -> {
+                mostRecentTrace()?.let { state ->
+                    enqueueEventObservation(
+                        trace = state,
+                        name = "agent.stage.completed",
+                        input = mapOf("stage" to event.stageName),
+                        metadata = metadata(event.runtimeContext),
+                    )
+                }
+            }
             is AgentEvent.SkillStarted -> {
                 val state = startTrace(event.agentId, event.skillName, event.runtimeContext)
                 traces[traceKey(event.agentId, event.skillName, event.runtimeContext)] = state

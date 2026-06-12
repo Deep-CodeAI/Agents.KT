@@ -148,8 +148,9 @@ class CompositionStreamingChainTest {
 
         // .first() cancels the events Flow after one event — structured
         // concurrency must tear the inner sessions down, not hang the test.
+        // #4491 — the first event is now the head stage's marker.
         val firstEvent = pipeline.session("hello").events.first()
-        assertIs<AgentEvent.SkillStarted>(firstEvent)
-        assertEquals("head", firstEvent.agentId)
+        assertIs<AgentEvent.StageStarted>(firstEvent)
+        assertEquals("head", firstEvent.stageName)
     }
 }

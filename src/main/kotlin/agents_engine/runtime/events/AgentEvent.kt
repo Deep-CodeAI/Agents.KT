@@ -169,6 +169,26 @@ sealed interface AgentEvent<out OUT> {
         override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
     ) : AgentEvent<Nothing>
 
+    /**
+     * #4491 (PRD §10.2) — a composition stage is starting: [stageName] is
+     * the stage's agent name (or operator label like "parallel"/"forum"
+     * for operator-shaped stages). Emitted by Pipeline sessions around
+     * each direct component execution, so consumers get explicit stage
+     * boundaries instead of inferring them from `agentId` transitions.
+     */
+    data class StageStarted(
+        override val agentId: String,
+        val stageName: String,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
+    ) : AgentEvent<Nothing>
+
+    /** #4491 — the matching stage-boundary close; pairs with [StageStarted]. */
+    data class StageCompleted(
+        override val agentId: String,
+        val stageName: String,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
+    ) : AgentEvent<Nothing>
+
     /** Terminal success — carries the typed output of the agent invocation. Emitted exactly once on the happy path. */
     data class Completed<out OUT>(
         override val agentId: String,
@@ -200,6 +220,8 @@ internal fun AgentEvent<*>.withRuntimeContext(context: AgentRuntimeContext): Age
         is AgentEvent.ToolCallFinished -> copy(runtimeContext = context)
         is AgentEvent.SkillStarted -> copy(runtimeContext = context)
         is AgentEvent.SkillCompleted -> copy(runtimeContext = context)
+        is AgentEvent.StageStarted -> copy(runtimeContext = context)
+        is AgentEvent.StageCompleted -> copy(runtimeContext = context)
         is AgentEvent.Completed<*> -> copy(runtimeContext = context)
         is AgentEvent.Failed -> copy(runtimeContext = context)
     }

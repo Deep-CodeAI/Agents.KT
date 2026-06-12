@@ -4,6 +4,15 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — pipeline stage events (#4491, PRD §10.2)
+
+- **`AgentEvent.StageStarted` / `StageCompleted`** — explicit stage boundaries on composite
+  sessions: a marker pair around each direct pipeline component (agent stages named, operator
+  legs labeled `parallel`/`forum`/`loop`/`branch`), nested pipelines marking their own stages
+  exactly once. Consumers stop inferring stage transitions from `agentId` flips. Closes the
+  long-standing "stage event types" roadmap gap left out of #3866 by design. Bridge events on
+  OTel/LangSmith/Langfuse; existing count-pinned session tests updated. 3 new tests.
+
 ### Added — tool usage constraints (#4490, PRD §tool-constraints)
 
 - **`tool { constraints { maxInvocations = 3; onlyAfter("fetch"); forbidden() } }`** — per-tool
