@@ -4,6 +4,15 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — session drop accounting (#4496, antifragility pass)
+
+- **`AgentSession.droppedEvents`** — live count of inner events lost when a consumer lags the
+  producer (the non-suspending emitter forwards via `trySend` into the 64-slot buffer). Event loss
+  is now *observable in code* — assert on it instead of scraping logs. Per-event drop WARNINGs are
+  replaced by one summary line at session close (count + first dropped type); terminal
+  `Completed`/`Failed` still always deliver via suspending `send`. Both session paths covered
+  (`agent.session` and every composition operator). 3 tests.
+
 ### Added — `LlmErrorDecision.Retry` (#4495, antifragility pass)
 
 - **`onLLMError { Retry(maxAttempts = 3, initialBackoffMillis = 500) }`** — third decision next

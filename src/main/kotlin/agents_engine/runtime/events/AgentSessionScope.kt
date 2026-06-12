@@ -26,8 +26,9 @@ import java.util.logging.Logger
  *    can't leak the producer coroutine;
  *  - a fresh per-session [AgentRuntimeContext];
  *  - the context-threading [AgentEventEmitter] — the single place the inner `AgentEvent<*>` →
- *    `AgentEvent<OUT>` cast lives (was copy-pasted with `@Suppress` in all five), `trySend` with a
- *    visible drop-log when the consumer lags;
+ *    `AgentEvent<OUT>` cast lives (was copy-pasted with `@Suppress` in all five), `trySend` with
+ *    aggregated drop accounting when the consumer lags (#4496 — counted on
+ *    `AgentSession.droppedEvents`, one summary log at close);
  *  - the terminal `Completed` / `Failed` emission via suspending `send` (terminal events must never be
  *    dropped) and the #2863 cancellation ordering (timeout → bare-cancel re-throw → other failure).
  *
@@ -47,6 +48,12 @@ internal fun <OUT> agentSessionScope(
     val result = CompletableDeferred<OUT>()
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
     val runtimeContext = AgentRuntimeContext(sessionId = java.util.UUID.randomUUID().toString())
+    // #4496 — drops are counted, not logged per event: one summary line at
+    // close, live count on AgentSession.droppedEvents.
+    val drops = SessionDropCounter(
+        SESSION_SCOPE_LOGGER,
+        "composition session, sessionId='${runtimeContext.sessionId}'",
+    )
 
     scope.launch {
         withAgentRuntimeContext(runtimeContext) {
@@ -54,10 +61,7 @@ internal fun <OUT> agentSessionScope(
                 @Suppress("UNCHECKED_CAST")
                 val typed = event.withRuntimeContext(runtimeContext) as AgentEvent<OUT>
                 if (channel.trySend(typed).isFailure) {
-                    SESSION_SCOPE_LOGGER.warning(
-                        "channel.trySend dropped a ${typed::class.simpleName} from a composition session " +
-                            "(sessionId='${runtimeContext.sessionId}') — consumer is slower than the operator"
-                    )
+                    drops.recordDrop(typed::class.simpleName ?: "?")
                 }
             }
             try {
@@ -80,6 +84,8 @@ internal fun <OUT> agentSessionScope(
                 channel.send(AgentEvent.Failed(terminalAgentId(), t))
                 channel.close()
                 result.completeExceptionally(t)
+            } finally {
+                drops.logSummaryAtClose()
             }
         }
     }
@@ -87,10 +93,12 @@ internal fun <OUT> agentSessionScope(
     return AgentSession(
         events = channel.consumeAsFlow(),
         resultDeferred = result,
+        dropCounter = drops,
     )
 }
 
-// #2806 / #2797 — one logger for visible drops on the non-suspending emitter path, shared by every
-// composition session (replaces the per-operator PARALLEL_LOGGER / PIPELINE_LOGGER / BRANCH_LOGGER).
+// #2806 / #2797 / #4496 — one logger for the one-line drop summary at composition-session close,
+// shared by every composition session (replaces the per-operator PARALLEL_LOGGER / PIPELINE_LOGGER /
+// BRANCH_LOGGER).
 private val SESSION_SCOPE_LOGGER: Logger =
     Logger.getLogger("agents_engine.runtime.events.AgentSessionScope")
