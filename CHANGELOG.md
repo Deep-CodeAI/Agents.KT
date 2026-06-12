@@ -4,6 +4,13 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `requireSandbox` strict mode (#4497, antifragility pass)
+
+- **`ProcessSandbox.run(command, requireSandbox = true)`** — fail closed on hosts with no OS
+  sandbox backend: throws `IllegalStateException` and the subprocess never starts, instead of the
+  historical UNCONFINED plain-`ProcessBuilder` fallback (which stays the default). Brings
+  `processTool`'s fail-closed stance to the low-level API. 2 tests.
+
 ### Added — session drop accounting (#4496, antifragility pass)
 
 - **`AgentSession.droppedEvents`** — live count of inner events lost when a consumer lags the

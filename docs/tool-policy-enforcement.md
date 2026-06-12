@@ -130,9 +130,11 @@ Caveats / status:
   `--unshare-net` unless network is opened), then Linux **firejail** (the **setuid** fallback —
   `--read-only=/` + `--read-write` carve-outs + `--net=none`, so it still confines where
   unprivileged user namespaces are restricted and `bwrap` can't start). `isSupported()` is true
-  when any is present. On a host with **none**, `run` does **not** throw — it runs the command via a
+  when any is present. On a host with **none**, `run` by default does **not** throw — it runs the command via a
   plain `ProcessBuilder` and prints a loud `UNCONFINED` warning (`isSupported()` is false, so a
-  caller that requires enforcement can detect and refuse). Wasm (#2894) and Docker (#2895) are follow-ups.
+  caller that requires enforcement can detect and refuse); `run(command, requireSandbox = true)`
+  (#4497) refuses instead — `IllegalStateException`, subprocess never starts — bringing the
+  fail-closed stance to the low-level API. Wasm (#2894) and Docker (#2895) are follow-ups.
 - **Write / network / env confinement, derived from policy.** `ProcessSandbox.forPolicy(policy)` is
   the bridge from Layer-1 declaration to Layer-2 enforcement: write roots come from `filesystem.write`
   globs (one-or-many); **network is default-deny** and opens only for `network = AllowAll`; and the
@@ -164,7 +166,7 @@ Declaration and enforcement are two sides of the same `ToolPolicy`:
 
 The static half is **`ToolPolicyCapabilityComparator`** in `agents-kt-detekt`: for a `tool { policy { … }; executor { … } }` declaration, the executor body's extracted capabilities (`ToolCapabilityExtractor`: FS_READ / FS_WRITE / NETWORK / ENVIRONMENT / EXEC) must be a **subset** of what the policy grants — using more than you declared fails the build with a widen-or-remove hint; declaring more than you use passes (over-declaration is a manifest-review concern, not a violation). Tools without a `policy { }` block are out of scope here (that's `ToolBodyForbiddenApis`' territory). Same honest limits as the extractor: syntactic and callee-name based — reflection and aliasing are invisible; the Layer-2 sandbox covers the residue.
 
-> **High-level vs low-level sandbox API.** `processTool(name, policy) { … }` is the **fail-closed** path: no OS sandbox backend → the tool refuses to run. Raw `ProcessSandbox.run` is the low-level primitive — it falls back to a plain `ProcessBuilder` with a loud `UNCONFINED` warning. Anything dangerous belongs on `processTool`.
+> **High-level vs low-level sandbox API.** `processTool(name, policy) { … }` is the **fail-closed** path: no OS sandbox backend → the tool refuses to run. Raw `ProcessSandbox.run` is the low-level primitive — by default it falls back to a plain `ProcessBuilder` with a loud `UNCONFINED` warning; pass `requireSandbox = true` to make it fail closed too (#4497). Anything dangerous belongs on `processTool`.
 
 ## Usage constraints — `constraints { }` (#4490)
 
