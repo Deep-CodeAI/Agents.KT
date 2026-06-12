@@ -2,7 +2,9 @@
 
 All notable changes to Agents.KT are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0, minor bumps may add new public API; existing API surface is preserved.
 
-## [Unreleased]
+## [0.7.24] — 2026-06-12
+
+**Perplexity: seventh model provider + web-grounded search with citations — and a truth-surface pass.** Headline feature is the Perplexity connector and the `perplexitySearch` tool — agents can now fetch live, cited facts from Perplexity Sonar against their own model. The release also lands the docs/version-identity trust patch an external 0.7.23 review called for: SECURITY.md, production-hardening, skill-routing and HITL docs catch up with the shipped runtime, `main` adopts a `-SNAPSHOT` between-releases policy, and a new `DocsConsistencyTest` keeps the claims pinned. Plus dependency bumps (Kotlin 2.4.0, jline 4, detekt 1.23.8, ksp 2.3.9). Drop-in on the 0.7.x line.
 
 ### Added — Perplexity connector + web-grounded search tooling (epic #3674)
 
