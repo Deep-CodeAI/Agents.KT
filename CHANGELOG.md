@@ -4,6 +4,18 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `executor { args, env -> }` + the first `ToolEnvironment` slice (#2889 / #2883)
+
+- **New executor shape:** `tool { policy { … }; executor { args, env -> … } }` — `env` is a
+  per-call, policy-gated `ToolEnvironment` (v1 ABI: `readText` / `writeText` / `env(name)`); an
+  operation the declared policy doesn't grant throws `ToolPolicyViolation` **before** it happens
+  (paths normalized, fail-closed without a declaration). Both loop chokepoints are covered through
+  the single executor seam — no loop changes.
+- **Single-arg `executor { args -> }` keeps compiling and running** (back-compat pinned by test);
+  the builder form carries a `WARNING` deprecation pointing at the new shape, per the one-release
+  migration window. Subprocesses stay with `processTool`; blobs/clock/ledger-envelope recording
+  land with the rest of #2883. 4 tests.
+
 ### Added — mechanical `-SNAPSHOT`-on-main enforcement (#4428)
 
 - **`checkSnapshotPolicy`** Gradle task: a non-`-SNAPSHOT` version is only legal on the tagged

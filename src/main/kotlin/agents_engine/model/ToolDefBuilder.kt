@@ -6,13 +6,31 @@ import agents_engine.core.toolPolicy
 class ToolDefBuilder(private val name: String) {
     private var desc: String = ""
     private var exec: ((Map<String, Any?>) -> Any?)? = null
+    private var envExec: ((Map<String, Any?>, agents_engine.core.ToolEnvironment) -> Any?)? = null
     private var handler: ToolErrorHandler? = null
     private var untrusted: Boolean = false
     private var policy: ToolPolicy? = null
 
     fun description(text: String) { desc = text }
 
+    @Deprecated(
+        message = "Tool executors are moving to the (args, env) shape — ToolEnvironment gates " +
+            "filesystem/env access by the declared policy (#2889). The single-arg form keeps " +
+            "working for one minor release.",
+        replaceWith = ReplaceWith("executor { args, _ -> block(args) }"),
+        level = DeprecationLevel.WARNING,
+    )
     fun executor(block: (Map<String, Any?>) -> Any?) { exec = block }
+
+    /**
+     * #2889 — the (args, env) executor shape. [agents_engine.core.ToolEnvironment]
+     * is constructed per call from the tool's declared policy: an operation the
+     * policy doesn't grant throws [agents_engine.core.ToolPolicyViolation] before
+     * it happens.
+     */
+    fun executor(block: (args: Map<String, Any?>, env: agents_engine.core.ToolEnvironment) -> Any?) {
+        envExec = block
+    }
 
     fun policy(block: agents_engine.core.ToolPolicyBuilder.() -> Unit) {
         policy = toolPolicy(block)
@@ -38,9 +56,23 @@ class ToolDefBuilder(private val name: String) {
             untrustedOutput = untrusted,
             risk = policy?.risk ?: agents_engine.core.ToolRisk.LOW,
             policy = policy,
-            executor = requireNotNull(exec) { "Tool \"$name\" must have an executor { } block." },
+            executor = effectiveExecutor(),
         )
         handler?.let { def.errorHandler = it }
         return def
+    }
+
+    private fun effectiveExecutor(): (Map<String, Any?>) -> Any? {
+        val envBlock = envExec
+        val plainBlock = exec
+        return when {
+            // #2889 — per-call policy-gated environment; both loop chokepoints
+            // (regular + session) reach executors through this single seam.
+            envBlock != null -> { args ->
+                envBlock(args, agents_engine.core.JvmToolEnvironment(name, policy))
+            }
+            plainBlock != null -> plainBlock
+            else -> error("Tool \"$name\" must have an executor { } block.")
+        }
     }
 }
