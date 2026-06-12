@@ -4,6 +4,16 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — multimodal: audio STT + image generation + TTS (#3867 first slice, P0.5)
+
+- **`SpeechToTextClient` / `ImageModelClient` / `TtsModelClient`** fun-interfaces with OpenAI
+  adapters: `OpenAiSpeechToTextClient` (Whisper, multipart), `OpenAiImagesClient` (Images API,
+  b64), `OpenAiTtsClient` (speech, mp3). Bytes land in the caller's `BlobStore`; typed
+  `Content.Image` / `Content.Audio` refs travel through the agent graph. `baseUrl` injectable;
+  wire shapes pinned by stub-server tests incl. the acceptance flow (audio → transcript → image).
+- Not yet: `Content.Audio` inside chat messages (gpt-4o-audio blocks) and non-OpenAI providers —
+  remaining on #3867. 3 tests.
+
 ### Added — W3C trace propagation across MCP/A2A (#3873 slice 1, P1.6)
 
 - **`TraceContextPropagation`** (core, no-op default, zero OTel dependency) — outbound MCP and
