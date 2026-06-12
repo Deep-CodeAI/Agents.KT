@@ -47,6 +47,20 @@ val pipeline = (quick / deep) then synthesizer
 // Pipeline<CodeBundle, Report>
 ```
 
+### `.aggregate {}` — One-Line Ensembles over `/` (#3872)
+
+Built-in typed aggregators collapse a fan-out's `List<OUT>` to one `OUT` — no custom reducer skill needed:
+
+```kotlin
+val ensemble = (a / b / c).aggregate { majorityVote() }
+// or: selectByMax { it.confidence }
+// or: bestOfN { judge(it).score }          // scorer runs once per branch output
+// or: weighted(mapOf(expert to 3.0))       // missing agents default to 1.0
+// Pipeline<IN, OUT> — composes and streams like any pipeline
+```
+
+Sugar over `then`: builds a deterministic reducer agent named `aggregate-<strategy>`, so the aggregation is auditable as that agent's events with the strategy in the name. Ties break deterministically (first-encountered in branch order). If every branch fails, the parallel stage fails before the reducer runs (`Failed` terminal on the session path).
+
 ### `*` — Forum (Multi-Agent Coordination)
 
 The `*` shorthand is convention over configuration: every agent receives the same input, all non-final agents run concurrently as participants, and the last agent is the captain. The captain determines the forum `OUT` type and is the default finalizer.

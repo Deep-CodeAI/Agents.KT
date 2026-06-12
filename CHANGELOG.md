@@ -4,6 +4,16 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — built-in aggregators on `/` (#3872, P1.2)
+
+- **`(a / b / c).aggregate { … }`** — one-line ensemble patterns over a parallel fan-out:
+  `majorityVote()` (deterministic first-encountered tie-break), `selectByMax { }`,
+  `bestOfN { scorer }` (each output scored exactly once), `weighted(weights)` (missing agents
+  default to 1.0). Pure sugar over `then`: builds a deterministic reducer agent named
+  `aggregate-<strategy>`, so audit/streaming events carry the strategy name and the result is an
+  ordinary `Pipeline<IN, OUT>`. All-branches-failed surfaces as the parallel stage's failure
+  (`Failed` terminal on sessions). 6 tests.
+
 ### Added — `handoff` named operator (#3871, P1.1)
 
 - **`triage handoff { on<BillingTask>() then billing; … }`** — the named hand-off primitive:
