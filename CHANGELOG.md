@@ -4,6 +4,17 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `@Generable` schemas in the permission manifest (manifest v2, #3875)
+
+- Manifests gain a top-level **`schemas`** section: JSON Schema for every `@Generable` IN/OUT type
+  in the agent graph (KSP-aware cache-then-reflection probe), keyed by FQN with per-schema sha256,
+  folded into `manifestHash` — a type change now bumps the manifest. Reviewers see shapes, not
+  just names.
+- **Manifest format v2**; loaded manifests preserve their own version (fixed: `fromJson`
+  previously stamped the current constant over a baseline's version), and version differences
+  verify with a non-fatal `manifest.version.changed` **info** finding (`ok` is now
+  severity-aware — behavior-preserving, all pre-existing finding types are "high"). 3 tests.
+
 ### Added — `executor { args, env -> }` + the first `ToolEnvironment` slice (#2889 / #2883)
 
 - **New executor shape:** `tool { policy { … }; executor { args, env -> … } }` — `env` is a

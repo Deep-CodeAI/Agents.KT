@@ -82,7 +82,7 @@ class PermissionManifestTest {
 
         assertEquals(firstJson, secondJson)
         assertTrue(manifest.sha256.matches(Regex("[a-f0-9]{64}")))
-        assertContains(firstJson, "\"agentsKtManifestVersion\":1")
+        assertContains(firstJson, "\"agentsKtManifestVersion\":2")
         assertContains(firstJson, "\"manifestSha256\":\"${manifest.sha256}\"")
         assertContains(firstJson, "\"apiKey\":\"masked\"")
         assertContains(firstJson, "\"apiKeyPresent\":true")
@@ -151,7 +151,7 @@ class PermissionManifestTest {
         assertContains(jsonA.readText(), "\"composition\":{\"edges\":[")
         assertContains(jsonA.readText(), "\"type\":\"pipeline\"")
         assertContains(jsonA.readText(), "\"edges\":[{\"from\":\"loader\",\"to\":\"summarizer\",\"type\":\"then\"}]")
-        assertContains(yamlA.readText(), "agentsKtManifestVersion: 1")
+        assertContains(yamlA.readText(), "agentsKtManifestVersion: 2")
         assertContains(yamlA.readText(), "manifestSha256: \"${manifest.sha256}\"")
     }
 

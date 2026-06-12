@@ -7,6 +7,8 @@ checked into an evidence pack, and correlated with runtime audit events through
 
 The manifest captures:
 
+- **(v2, #3875) JSON Schemas** for every `@Generable` IN/OUT type in the agent graph — a top-level `schemas` section keyed by FQN, each entry carrying the schema and its sha256, folded into `manifestHash` so a *type* change bumps the manifest. Reviewers see the shapes, not just the names. v1 baselines verify against v2 manifests with a non-fatal `manifest.version.changed` info finding.
+
 - agents, input/output types, skills, knowledge keys, and per-skill tool allowlists
 - tool risk plus declared filesystem, network, and environment policy
 - memory enablement and memory-tool opt-in

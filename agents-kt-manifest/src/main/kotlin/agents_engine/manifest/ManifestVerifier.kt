@@ -3,6 +3,20 @@ package agents_engine.manifest
 internal object ManifestVerifier {
     fun verify(current: PermissionManifest, baseline: PermissionManifest): ManifestVerificationResult {
         val findings = mutableListOf<ManifestFinding>()
+
+        // #3875 — manifest format evolved (v2 adds the schemas section). A
+        // version difference is informational: older baselines still verify.
+        val currentVersion = current.toMap()["agentsKtManifestVersion"]
+        val baselineVersion = baseline.toMap()["agentsKtManifestVersion"]
+        if (currentVersion != baselineVersion) {
+            findings += ManifestFinding(
+                code = "manifest.version.changed",
+                severity = "info",
+                path = "agentsKtManifestVersion",
+                message = "Manifest format version changed ($baselineVersion -> $currentVersion); " +
+                    "sections added by newer versions are not compared against this baseline.",
+            )
+        }
         val currentTools = current.toolsByKey()
         val baselineTools = baseline.toolsByKey()
 
