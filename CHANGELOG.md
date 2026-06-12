@@ -4,6 +4,20 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — A2A protocol v1: server + typed client (#3864, P0.4)
+
+- **`A2AServer.from(agent)`** exposes any `Agent<IN, OUT>` over A2A v0.2 (JSON-RPC over HTTP),
+  following the McpServer precedent: JDK HttpServer, loopback-only bind, optional bearer auth.
+  AgentCard at `/.well-known/agent-card.json` with `@Generable` input schemas; `message/send`
+  maps the first text part to the agent's typed input and returns a completed Task whose
+  artifact carries the output (JSON property map for typed OUT).
+- **`a2aAgent<IN, OUT>(name, url)`** returns a real `Agent<IN, OUT>` handle for a remote A2A
+  endpoint — drops into `then` / `/` / `forum` / `branch` and skill allowlists like a local
+  agent. Remote JSON-RPC errors throw with the remote message; auth/HTTP failures fail loud.
+- v1 scope: `message/send` only — streaming, task lifecycle, and `traceparent` propagation are
+  tracked follow-ups (#3864 / #3873). New `docs/a2a.md`; README limitation bullet replaced.
+  6 in-process round-trip tests (String + `@Generable` both directions, card, auth, errors).
+
 ### Added — history compression (#3865 Phase 1, P0.3)
 
 - **`agent { historyCompression { … } }`** — before-turn compression for long-running agents:
