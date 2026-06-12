@@ -26,6 +26,20 @@ val flow = triage then remoteBilling          // composes like any local agent
 
 `a2aAgent<IN, OUT>` returns a real `Agent<IN, OUT>` whose single deterministic skill performs the round-trip. Remote failures surface as JSON-RPC errors → thrown with the remote message; HTTP/auth failures fail loud.
 
+## Serving MCP and A2A side by side
+
+The same agent instance can serve both protocols simultaneously — `McpServer.from(agent)` and `A2AServer.from(agent)` are independent wrappers that just invoke the agent (invocation is concurrent-safe, and neither server placement-marks it):
+
+```kotlin
+val mcp = McpServer.from(triage) { expose("classify"); auth = McpServerAuth.RequireBearerToken(t1) }.start()
+val a2a = A2AServer.from(triage, bearerToken = t2).start()
+```
+
+Two things to know:
+
+- **Two listeners, not one.** Each `from(...)` creates its own JDK `HttpServer` on its own loopback port; a gateway in front makes that invisible. (A single-port facade mounting `/mcp` + `/a2a` + the agent card is a natural follow-up — not built today.)
+- **Different shapes of the same agent.** MCP exposes the agent's *skills as individual tools* (`expose(...)` narrows, per-client `toolPolicy` filters `tools/list`). A2A exposes the *agent as one typed `message/send` endpoint* — the agent's own routing decides internally; the AgentCard lists skills as metadata only. Same allowlists, budgets, and audit trail underneath; with `OtelTracePropagation.install()`, inbound calls on **both** protocols join the caller's distributed trace (#3873).
+
 ## v1 scope (follow-ups tracked on #3864)
 
 - `message/send` only — `message/stream` (SSE over the #3866 session surface), `tasks/get` / `tasks/cancel`, and push notifications are not implemented; every task completes synchronously.
