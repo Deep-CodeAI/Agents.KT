@@ -4,6 +4,15 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — W3C trace propagation across MCP/A2A (#3873 slice 1, P1.6)
+
+- **`TraceContextPropagation`** (core, no-op default, zero OTel dependency) — outbound MCP and
+  A2A HTTP requests carry the installed propagator's headers (`traceparent`/`tracestate`);
+  `McpServer` / `A2AServer` make the inbound remote context current for the dispatch scope.
+- **`OtelTracePropagation.install()`** (`:agents-kt-otel`) wires the seam to OpenTelemetry's W3C
+  propagators. Distributed agent traces now connect at the process boundaries instead of starting
+  fresh. Remaining on #3873: runtime-native span hierarchy + coroutine ContextStorage. 3 tests.
+
 ### Docs — async-loop premortem (#3874, P2.5 groundwork)
 
 - **`docs/premortem-async-loop.md`** — the suspend-native loop design, decided once before

@@ -78,6 +78,11 @@ class McpServer private constructor(
     fun snapshotFor(principal: ClientPrincipal): McpServerInfo = dispatcher.snapshotFor(principal)
 
     private fun handle(exchange: HttpExchange) {
+        // #3873 — make the caller's W3C trace context current for the dispatch
+        // (no-op unless a propagator is installed).
+        val inboundTrace = agents_engine.core.TraceContextPropagation.withInbound(
+            exchange.requestHeaders.entries.associate { (k, v) -> k.lowercase() to (v.firstOrNull() ?: "") },
+        )
         try {
             val principal = authenticate(exchange) ?: return
             if (!validateAllowedHost(exchange) || !validateAllowedOrigin(exchange)) return
@@ -100,6 +105,7 @@ class McpServer private constructor(
         } catch (e: Exception) {
             respond(exchange, 500, """{"error":${McpJson.encode(e.message ?: e.toString())}}""")
         } finally {
+            inboundTrace.close()
             exchange.close()
         }
     }

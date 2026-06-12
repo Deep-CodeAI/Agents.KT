@@ -61,6 +61,10 @@ class A2AServer private constructor(
     }
 
     private fun handleSafely(exchange: HttpExchange, block: () -> Unit) {
+        // #3873 — make the caller's W3C trace context current for the dispatch.
+        val inboundTrace = agents_engine.core.TraceContextPropagation.withInbound(
+            exchange.requestHeaders.entries.associate { (k, v) -> k.lowercase() to (v.firstOrNull() ?: "") },
+        )
         try {
             if (!authorized(exchange)) {
                 respond(exchange, HTTP_UNAUTHORIZED, """{"error":"Unauthorized"}""")
@@ -70,6 +74,7 @@ class A2AServer private constructor(
         } catch (e: Exception) {
             respond(exchange, HTTP_SERVER_ERROR, """{"error":${A2AJson.encode(e.message ?: e.toString())}}""")
         } finally {
+            inboundTrace.close()
             exchange.close()
         }
     }

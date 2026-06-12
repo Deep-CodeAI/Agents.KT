@@ -81,6 +81,11 @@ internal class A2ATransport(
             .timeout(timeout)
             .header("Content-Type", "application/json")
             .apply { bearerToken?.let { header("Authorization", "Bearer $it") } }
+            // #3873 — W3C trace context across the A2A boundary.
+            .apply {
+                agents_engine.core.TraceContextPropagation.outboundHeaders()
+                    .forEach { (k, v) -> header(k, v) }
+            }
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build()
         val response = client.send(request, HttpResponse.BodyHandlers.ofString())
