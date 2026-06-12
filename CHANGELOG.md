@@ -4,6 +4,15 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — typed tool hooks (#4493, PRD §typed-hooks)
+
+- **`agent.onToolCall<Args>("tool") { args -> }`** (pre-execution) and
+  **`onToolResult<Args>("tool") { args, result -> }`** (post-execution) — reified observation
+  hooks that decode the tool's `@Generable` Args through the same KSP-aware codec path as typed
+  tools. Filtered by tool name; undecodable payloads skip silently (hooks never kill runs);
+  chains with existing untyped listeners. Observation only — gating stays on `onBeforeToolCall`.
+  3 tests.
+
 ### Added — compaction strategies (#4492, PRD §5.7.1)
 
 - **`historyCompression { strategy = … }`** — `SlidingWindow(keepRecent)` drops the conversation
