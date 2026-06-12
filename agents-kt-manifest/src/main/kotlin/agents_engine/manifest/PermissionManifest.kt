@@ -223,6 +223,8 @@ private fun ToolDef.toManifestMap(options: PermissionManifestOptions): Map<Strin
         "risk" to risk.name.lowercase(),
         "declaresCapability" to (policy?.declaresAnyCapability ?: false),
         "policy" to if (options.includePolicy) policy?.toNormalizedManifestMap() else null,
+        // #4490 — usage constraints are reviewable capability surface too.
+        "constraints" to constraints?.takeIf { it.declaresAny }?.toManifestMap(),
     ).filterValues { it != null }
 
 private fun ToolPolicy.toNormalizedManifestMap(): Map<String, Any?> =

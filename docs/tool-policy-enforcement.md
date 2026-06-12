@@ -165,3 +165,21 @@ Declaration and enforcement are two sides of the same `ToolPolicy`:
 The static half is **`ToolPolicyCapabilityComparator`** in `agents-kt-detekt`: for a `tool { policy { … }; executor { … } }` declaration, the executor body's extracted capabilities (`ToolCapabilityExtractor`: FS_READ / FS_WRITE / NETWORK / ENVIRONMENT / EXEC) must be a **subset** of what the policy grants — using more than you declared fails the build with a widen-or-remove hint; declaring more than you use passes (over-declaration is a manifest-review concern, not a violation). Tools without a `policy { }` block are out of scope here (that's `ToolBodyForbiddenApis`' territory). Same honest limits as the extractor: syntactic and callee-name based — reflection and aliasing are invisible; the Layer-2 sandbox covers the residue.
 
 > **High-level vs low-level sandbox API.** `processTool(name, policy) { … }` is the **fail-closed** path: no OS sandbox backend → the tool refuses to run. Raw `ProcessSandbox.run` is the low-level primitive — it falls back to a plain `ProcessBuilder` with a loud `UNCONFINED` warning. Anything dangerous belongs on `processTool`.
+
+## Usage constraints — `constraints { }` (#4490)
+
+`ToolPolicy` declares *what* a tool may touch; **`ToolConstraints`** declare *when and how often* it may run within one invocation:
+
+```kotlin
+tool("commit") {
+    policy { filesystem { write("/repo/**") } }
+    constraints {
+        maxInvocations = 3        // per agent invocation
+        onlyAfter("fetch")        // prerequisite tools must have completed first
+        // forbidden()            // quarantine: visible to code, never dispatchable by the model
+    }
+    executor { args, env -> … }
+}
+```
+
+Violations deny through the standard auditable path (`onToolDenied` / `PipelineEvent.ToolDenied` / JSONL) and the model sees the reason as the tool result, so it can self-correct instead of dying. Counts are per invocation — a fresh tracker per run, nothing leaks across calls of a shared agent. Constraints appear in the permission manifest under each tool's `constraints` key. Deferred from the PRD sketch: `ForceAtStep` (prescriptive sequencing) and `RequiresApproval` (already first-class via `humanApproval` / `HumanGateRegistry`).
