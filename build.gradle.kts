@@ -16,7 +16,7 @@ plugins {
 }
 
 group = "ai.deep-code"
-version = "0.7.23"
+version = "0.7.24-SNAPSHOT"
 
 repositories {
     mavenCentral()
@@ -367,9 +367,28 @@ tasks.register("checkReadmeVersion") {
         requireNotNull(declared) {
             "No `ai.deep-code:agents-kt:<version>` dependency snippet found in README.md."
         }
-        check(declared == projectVersion) {
-            "README.md advertises agents-kt:$declared but the project version is $projectVersion. " +
-                "Keep the README dependency snippet in sync with the Gradle version (#2873)."
+        if (projectVersion.endsWith("-SNAPSHOT")) {
+            // Unreleased main: the README must keep advertising the last *published*
+            // release — a plain version strictly below the snapshot base. Exact
+            // lockstep resumes at release time (runbook step 6).
+            check(!declared.contains("-SNAPSHOT")) {
+                "README.md advertises agents-kt:$declared — never advertise a -SNAPSHOT; " +
+                    "keep the last published release in the snippet until runbook step 6."
+            }
+            val base = projectVersion.removeSuffix("-SNAPSHOT").split('.').map { it.toInt() }
+            val advertised = declared.split('.').map { it.toInt() }
+            val cmp = advertised.zip(base).map { (a, b) -> a.compareTo(b) }
+                .firstOrNull { it != 0 } ?: advertised.size.compareTo(base.size)
+            check(cmp < 0) {
+                "README.md advertises agents-kt:$declared but main is $projectVersion. " +
+                    "On a -SNAPSHOT main the README must advertise the last published release " +
+                    "(below ${base.joinToString(".")}), per docs/RELEASE_RUNBOOK.md."
+            }
+        } else {
+            check(declared == projectVersion) {
+                "README.md advertises agents-kt:$declared but the project version is $projectVersion. " +
+                    "Keep the README dependency snippet in sync with the Gradle version (#2873)."
+            }
         }
     }
 }

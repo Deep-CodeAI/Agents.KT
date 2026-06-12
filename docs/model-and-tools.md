@@ -42,7 +42,7 @@ calculator("Calculate ((15 + 35) / 2)^2")
 // → "The result is 625."
 ```
 
-**`model { }`** — configures the LLM backend. Six providers ship today:
+**`model { }`** — configures the LLM backend. Seven providers ship today (see [providers.md](providers.md) for the support matrix):
 
 - `model { ollama("gpt-oss:120b-cloud"); host = "..."; port = 11434; temperature = 0.0 }` — local or cloud Ollama; auto-fallback to inline JSON tool-call format for models without native tool support (#706).
 - `model { claude("claude-opus-4-7"); apiKey = System.getenv("ANTHROPIC_API_KEY"); temperature = 0.0; maxTokens = 4096 }` — Anthropic Messages API; maps `LlmMessage` / `LlmResponse` to Anthropic's structured `tool_use` / `tool_result` content blocks; tools advertise as `input_schema` (Anthropic's spelling) (#1644).
@@ -50,8 +50,9 @@ calculator("Calculate ((15 + 35) / 2)^2")
 - `model { deepseek("deepseek-v4-flash"); apiKey = System.getenv("DEEPSEEK_API_KEY") }` — DeepSeek's OpenAI-compatible API; shares the OpenAI adapter's wire shape (#1949 family).
 - `model { kimi("kimi-k2-0905-preview"); apiKey = System.getenv("MOONSHOT_API_KEY") }` — Moonshot's Kimi via its OpenAI-compatible API; extends the OpenAI adapter (#2697).
 - `model { openrouter("anthropic/claude-3.5-sonnet"); apiKey = System.getenv("OPENROUTER_API_KEY") }` — OpenRouter's OpenAI-compatible gateway to many upstream models; extends the OpenAI adapter (#2701).
+- `model { perplexity("sonar-pro"); apiKey = System.getenv("PERPLEXITY_API_KEY") }` — Perplexity's OpenAI-compatible Sonar API with web-grounded answers; extends the OpenAI adapter, keeps constrained decoding on (#3675). Distinct from the `perplexitySearch` *tool* (#3676), which any agent can register regardless of its own model.
 
-All six adapters share the `ModelClient` interface — switching providers is a one-line DSL change. The injectable `client = ...` escape hatch is still there for test stubs or custom adapters (e.g., Google/Gemini ahead of native support).
+All seven providers share the `ModelClient` interface — switching providers is a one-line DSL change. The injectable `client = ...` escape hatch is still there for test stubs or custom adapters (e.g., Google/Gemini ahead of native support).
 
 #### Reasoning / thinking (opt-in, #2406)
 
@@ -116,7 +117,7 @@ val agent = agent<String, String>("kyc") {
 ```
 
 - **Opt-in, never automatic.** `httpClient` defaults to `null` → each client builds its own, byte-for-byte unchanged. Existing code is unaffected.
-- **Every provider.** `ModelConfig.httpClient` is threaded by `defaultClientFor()` into all six adapters (Ollama / Claude / OpenAI / DeepSeek / Kimi / OpenRouter); DeepSeek, Kimi, and OpenRouter inherit it through their `OpenAiClient` superclass.
+- **Every provider.** `ModelConfig.httpClient` is threaded by `defaultClientFor()` into all seven adapters (Ollama / Claude / OpenAI / DeepSeek / Kimi / OpenRouter / Perplexity); DeepSeek, Kimi, OpenRouter, and Perplexity inherit it through their `OpenAiClient` superclass.
 - **You own the policy.** The framework provides the *seam*, not the policy — rate limiting, circuit breaking, and bulkheading live in *your* `HttpClient` (e.g. a `Semaphore`-bounded `executor`). The injected client is used verbatim, so its own `connectTimeout` wins over the DSL `connectTimeout` field (the per-request `requestTimeout` still applies, since it rides on each `HttpRequest`).
 
 **`tools { tool(name, description) { args -> } }`** — registers callable tools. Each tool receives a `Map<String, Any?>` of arguments and returns any value.
@@ -158,7 +159,7 @@ This is a first-line defense: the provider is asked to produce the typed shape u
 
 **`onKnowledgeUsed { name, content -> }`** — fires when the LLM fetches a knowledge entry. Receives the key name and loaded content. Does not fire for action tools.
 
-**`onSkillChosen { name -> }`** — fires when the agent selects a skill to execute. Works with all routing strategies — manual `skillSelection {}`, LLM, and first-match.
+**`onSkillChosen { name -> }`** — fires when the agent selects a skill to execute. Works with all routing strategies — manual `skillSelection {}`, LLM, and single-candidate direct routing.
 
 ```kotlin
 val a = agent<String, String>("coder") {
@@ -308,14 +309,14 @@ assistant("Translate this to French: Hello world")
 // → "Bonjour le monde"
 ```
 
-**3. First-match fallback** — when there is no `skillSelection {}` and no model-based routing, the first type-compatible skill wins (backward compatible).
+**3. Fail-loud on ambiguity** — when there is no `skillSelection {}` and no model-based routing, multiple type-compatible skills throw `SkillRoutingException` at invocation (#3087, since 0.7.21). Silent first-match routing is disallowed — routing must be explicit and auditable. Add a `skillSelection { }` selector or configure a `model { }` for LLM routing. (The LLM router also fails loud: below-threshold confidence or an unknown skill name throws rather than guessing.)
 
 | Condition | Strategy |
 |-----------|----------|
 | `skillSelection {}` set | Manual routing — always wins |
 | Multiple candidates + `model {}` | LLM routing turn |
 | Single candidate | Direct — no routing needed |
-| Multiple candidates, no model | First match |
+| Multiple candidates, no model | `SkillRoutingException` — add a selector or a model |
 
 ---
 

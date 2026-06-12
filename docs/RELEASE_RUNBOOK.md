@@ -34,12 +34,19 @@ add a final automated gate.
    Gradle version in lockstep from this point on.
 7. **Tag** the release (annotated; use `git tag -a --cleanup=verbatim -F <file>` if the message
    carries `#issue-ref` lines) and push.
+8. **Immediately bump `main` to the next `-SNAPSHOT`** (`0.7.24` released → `version = "0.7.25-SNAPSHOT"`).
+   Leave the README snippet at the just-published version. This keeps post-release commits from
+   masquerading under the released version's identity: `main` is always either *exactly* a
+   published release (the tagged commit) or visibly `-SNAPSHOT`. `checkReadmeVersion` understands
+   this state — on a `-SNAPSHOT` version it requires the README to advertise a plain release
+   version strictly below the snapshot base, and exact lockstep resumes at step 6 of the next
+   release.
 
 ## Why two guards
 
 | Guard | When | Catches |
 |---|---|---|
-| `checkReadmeVersion` (#2873) | every `check` | README version ≠ Gradle version |
+| `checkReadmeVersion` (#2873) | every `check` | README version ≠ Gradle version (release); README advertising a `-SNAPSHOT` or a version ≥ the snapshot base (dev) |
 | `checkPublishedVersion` (#3084) | manual, step 5 | Gradle/advertised version not yet on Central |
 
 The first stops the README from drifting from the build; the second stops the build (and therefore

@@ -10,10 +10,10 @@ This is the **actionable companion** to [`docs/threat-model.md`](threat-model.md
 |---|---|
 | TLS, gateway rate limiting | Typed `Agent<IN, OUT>` boundaries |
 | External ingress identity | `McpServerAuth` bearer-token principals |
-| Tool implementation safety (what your lambdas reach) | Tool allowlist per skill |
-| Sandboxing tool execution | Budget caps, freeze contract, observability hooks |
+| Tool implementation safety (what your in-JVM lambdas reach) | Tool allowlist per skill; Layer-1 filesystem-path gate on declared `ToolPolicy` (#2890) |
+| Heavier isolation (Docker, gVisor, Firecracker) for `eval`-style tools | Layer-2 OS sandbox for subprocess tools (`processTool`, Seatbelt / bubblewrap / firejail, fail-closed) |
 | PII redaction in prompts/logs | The hooks to do that redaction (`onToolUse`, etc.) |
-| Network policy / egress control | Declarative `ToolPolicy` metadata for review; deployer-enforced network controls |
+| Selective network egress (hostname allowlists — 0.8, #2893) | Default-deny network inside the Layer-2 sandbox; `ToolPolicy` network declarations for review |
 | Audit log retention + chain-of-custody | Lifecycle events (`AgentEvent`, `PipelineEvent`) with `requestId` / `sessionId` / `manifestHash` |
 | Secret rotation | API-key-masked `toString()` on `ModelConfig` |
 
@@ -27,11 +27,11 @@ The framework gives you the primitives. Wiring them to your runtime, infra, and 
 
 - [ ] **No high-privilege tools in model-callable paths.** Tools that touch credentials, the filesystem outside a sandbox, or arbitrary network egress should NOT be in a skill the LLM picks from. Move them behind manual `skillSelection { input -> ... }` or out of the agent entirely. *Enforced by:* you reviewing every `tools(...)` block in code review.
 
-- [ ] **Tool output wrapped or sanitised** before feeding into the next LLM turn. Use `ToolDef(... untrustedOutput = true)` for tools that ingest user-provided content. The flag is currently a signal (no enforcement); use it as a documentation marker AND wrap the lambda's return value yourself: `"--- BEGIN UNTRUSTED CONTENT ---\n$raw\n--- END ---"`. *Partial enforcement:* `untrustedOutput` flag exists; sandbox enforcement ships in Phase 3.
+- [ ] **Tool output wrapped or sanitised** before feeding into the next LLM turn. Use `ToolDef(... untrustedOutput = true)` for tools that ingest user-provided content. The flag is currently a signal (no enforcement); use it as a documentation marker AND wrap the lambda's return value yourself: `"--- BEGIN UNTRUSTED CONTENT ---\n$raw\n--- END ---"`. *Partial enforcement:* `untrustedOutput` flag exists; output wrapping remains deployer responsibility.
 
-- [ ] **Filesystem / network tools never exposed without a policy.** Declare expected scope with `tool { policy { filesystem { read("/uploads/**"); writeNone() }; network { denyAll() } } }`, then enforce that scope in the tool body or host sandbox. The framework's `tools(...)` allowlist controls WHICH tools the LLM may call; the declarative policy is audit evidence, not 0.6.0 enforcement. *Partial framework support:* `ToolPolicy` (#1915); enforcement remains deployer / #1916.
+- [ ] **Filesystem / network tools never exposed without a policy.** Declare expected scope with `tool { policy { filesystem { read("/uploads/**"); writeNone() }; network { denyAll() } } }`. Since 0.7.0 the declared policy is **enforced**, not just audit evidence: the in-JVM Layer-1 gate (#2890) checks absolute filesystem-path arguments against the globs (with `..`-traversal normalization) before the executor runs, and subprocess tools get the Layer-2 OS sandbox (#1916). Still yours to cover: in-JVM lambda side effects (sockets, env, direct file APIs inside the lambda body — `agents-kt-detekt`'s `ToolBodyForbiddenApis` catches these statically), read confinement, and selective hostname egress (0.8, #2893). *Enforced by:* `ToolPolicyEnforcer` (Layer 1) + `ProcessSandbox` (Layer 2).
 
-- [ ] **Dangerous tools run out-of-process.** Until tool sandboxing ships (Phase 3), invoke shell-exec / subprocess / `eval`-style tools through a separate sandboxed process (Docker, gVisor, Firecracker, browser-based WASM). The agent's tool body becomes a thin RPC client to the sandbox. *Deployer responsibility.*
+- [ ] **Dangerous tools run out-of-process via `processTool`.** Build shell-exec / subprocess tools with `processTool(name, policy) { args -> command }` — the framework derives the OS sandbox (macOS Seatbelt, Linux bubblewrap/firejail) from the declared policy and **fails closed**: if no sandbox backend is available, the tool refuses to run rather than executing unsandboxed. Avoid the low-level `ProcessSandbox.run`, which falls back to a plain `ProcessBuilder` with an `UNCONFINED` warning. For `eval`-style or in-JVM-dangerous tools, heavier isolation (Docker, gVisor, Firecracker, WASM) is still the deployer's layer until 0.8's sandbox backends. *Enforced by:* `processTool` (#2914) + `ProcessSandbox.forPolicy`.
 
 ### MCP server (if you expose one)
 
