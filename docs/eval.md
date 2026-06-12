@@ -222,3 +222,26 @@ For real-model regression coverage there's the existing `live-llm` / `live-cloud
 Sources: `agents_engine/testing/DeterministicModelClient.kt`, `agents_engine/testing/EvalDsl.kt`.
 
 Tests: `DeterministicModelClientTest.kt`, `EvalDslTest.kt`.
+
+## Cross-model regression (#3876)
+
+Run the same suite against several models and surface **behavioral divergence** — cases passing on some models and failing on others, the drift per-model totals hide:
+
+```kotlin
+val report = suite.runAcrossModels(
+    "anthropic-haiku" to buildAgent { claude("claude-haiku-4-5") },
+    "openai-mini"     to buildAgent { openai("gpt-4o-mini") },
+    "deepseek"        to buildAgent { deepseek("deepseek-chat") },
+)
+check(report.divergent.isEmpty()) { report.toMarkdown() }
+```
+
+`toMarkdown()` renders the case × model matrix (divergent cases flagged ⚠️) for CI artifacts or PR comments. Use distinct agent instances per label (agents are single-placement; a small `buildAgent { model { … } }` helper per provider is the natural shape). For hermetic CI, script each "model" with `DeterministicModelClient`; live-provider runs belong in `live-llm`/`live-cloud-api`-tagged tests:
+
+```kotlin
+@Test @Tag("live-cloud-api")
+fun `no cross-model drift on the summary suite`() {
+    val report = suite.runAcrossModels(/* live agents */)
+    assertTrue(report.divergent.isEmpty(), report.toMarkdown())
+}
+```

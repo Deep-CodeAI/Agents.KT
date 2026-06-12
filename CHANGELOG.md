@@ -4,6 +4,14 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — cross-model eval regression (#3876, P2.4)
+
+- **`suite.runAcrossModels("label" to agent, …)`** — runs every eval case against each labeled
+  per-model agent and reports **divergence** (cases passing on some models, failing on others) via
+  `CrossModelEvalResult.divergent` plus a `toMarkdown()` case × model matrix for CI artifacts.
+  Duplicate labels fail loud. Hermetic via `DeterministicModelClient`; live runs ride the
+  existing live-tagged suites. 3 tests; docs/eval.md CI example.
+
 ### Added — `@Generable` schemas in the permission manifest (manifest v2, #3875)
 
 - Manifests gain a top-level **`schemas`** section: JSON Schema for every `@Generable` IN/OUT type
