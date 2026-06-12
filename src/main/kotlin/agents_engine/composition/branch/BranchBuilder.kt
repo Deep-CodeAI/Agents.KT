@@ -113,7 +113,7 @@ fun <IN, SEALED, OUT> Agent<IN, SEALED & Any>.branchNullable(block: BranchBuilde
     return branch(block)
 }
 
-private fun <OUT> validateSealedCompleteness(sourceOutType: KClass<*>, routes: List<BranchRoute<OUT>>) {
+internal fun <OUT> validateSealedCompleteness(sourceOutType: KClass<*>, routes: List<BranchRoute<OUT>>) {
     if (!sourceOutType.isSealed) return
     if (routes.any { it is BranchRoute.ElseRoute }) return  // onElse is the catch-all
 

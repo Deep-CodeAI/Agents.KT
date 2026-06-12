@@ -123,6 +123,23 @@ val pipeline = coder then afterReview then notifier
 // Pipeline<Specification, Notification>
 ```
 
+### `handoff` — Named Transfer to Specialists (#3871)
+
+`branch` semantics with an audit contract: a triage/router agent transfers control to a specialist based on its typed output, and the transfer is observable as a first-class event.
+
+```kotlin
+val flow = triage handoff {
+    on<BillingTask>() then billing
+    on<TechTask>()    then tech
+}
+// Branch<UserMessage, Resolution>
+
+triage.onHandoff { toAgent, inputType -> log("handoff -> $toAgent ($inputType)") }
+// or via observe { }: PipelineEvent.HandoffPerformed(toAgent, decisionInputType)
+```
+
+**Unlike OpenAI-Swarm-style handoff, the target never shares or mutates the source's conversation history.** Each specialist receives only its declared input type — the typed boundary *is* the context contract, and the single-placement rule holds across the transfer. Sealed source outputs get the same construction-time exhaustiveness validation as `branch`. The audit signal fires on both the blocking and streaming (`session`) paths.
+
 ---
 
 ## Single-Placement Rule

@@ -4,6 +4,16 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `handoff` named operator (#3871, P1.1)
+
+- **`triage handoff { on<BillingTask>() then billing; … }`** — the named hand-off primitive:
+  identical routing semantics and sealed-exhaustiveness validation as `branch`, plus an audit
+  contract — route selection fires the source agent's `onHandoff { toAgent, decisionInputType -> }`
+  listener and `PipelineEvent.HandoffPerformed` (observe/JSONL/OTel/LangSmith/Langfuse), so
+  reviewers can grep transfers specifically. Unlike OpenAI-Swarm-style handoff, the target never
+  shares the source's conversation history — it receives only its declared input type; the
+  single-placement rule holds across the transfer. Fires on both the blocking and streaming paths.
+
 ### Added — A2A protocol v1: server + typed client (#3864, P0.4)
 
 - **`A2AServer.from(agent)`** exposes any `Agent<IN, OUT>` over A2A v0.2 (JSON-RPC over HTTP),

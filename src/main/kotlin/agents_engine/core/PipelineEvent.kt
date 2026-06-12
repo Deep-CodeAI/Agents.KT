@@ -116,6 +116,20 @@ sealed interface PipelineEvent {
     ) : PipelineEvent
 
     /**
+     * #3871 — a `handoff` composition transferred control from this agent
+     * to a target. Distinct from generic branch routing so audit reviewers
+     * can grep for handoffs. The target never sees the source's history —
+     * only its declared input type (`decisionInputType` names what routed).
+     */
+    data class HandoffPerformed(
+        override val agentName: String,
+        override val timestamp: Instant,
+        val toAgent: String,
+        val decisionInputType: String,
+        override val runtimeContext: AgentRuntimeContext = AgentRuntimeContext.currentOrNew(),
+    ) : PipelineEvent
+
+    /**
      * #3865 Phase 1 — the history-compression pass replaced part of the
      * conversation with a digest before a model turn. `replacedCount` /
      * `preservedCount` describe the swap; `digestChars` sizes the summary
@@ -275,6 +289,19 @@ fun Agent<*, *>.observe(handler: (PipelineEvent) -> Unit) {
                 replacedCount = result.replacedCount,
                 preservedCount = result.preservedCount,
                 digestChars = result.digest.length,
+            ),
+        )
+    }
+
+    val priorHandoff = this.listeners.handoffListener
+    onHandoff { toAgent, decisionInputType ->
+        priorHandoff?.invoke(toAgent, decisionInputType)
+        handler(
+            PipelineEvent.HandoffPerformed(
+                agentName = agentName,
+                timestamp = Instant.now(),
+                toAgent = toAgent,
+                decisionInputType = decisionInputType,
             ),
         )
     }

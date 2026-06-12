@@ -78,7 +78,7 @@ When multiple skills can take the same input type, the LLM (or a manual `skillSe
 
 ### Composing agents
 
-Composition is purely type-driven — the compiler enforces that boundaries line up. Five primitives ship today:
+Composition is purely type-driven — the compiler enforces that boundaries line up. Six primitives ship today:
 
 | Primitive | Shape | What it does |
 |---|---|---|
@@ -87,6 +87,7 @@ Composition is purely type-driven — the compiler enforces that boundaries line
 | `agent.branch { … }` | `Branch<IN, OUT>` | Route per source-output shape (`onClass<X> then …`, `onElse then …`); sealed sources are exhaustiveness-checked. |
 | `teacher wrap student` | `Pipeline<IN, OUT>` | Teacher-student: `teacher.OUT` (a `String`) becomes `student`'s per-call system prompt. |
 | `forum { members(…); captain = … }` | `Forum<IN, OUT>` | Council of members with a captain that emits the verdict. |
+| `triage handoff { … }` | `Branch<IN, OUT>` | Named hand-off to specialists on the source's typed output (#3871). Same routing as `branch` + an audit signal (`onHandoff` / `HandoffPerformed`); the target never sees the source's history — typed input only, unlike Swarm-style handoff. |
 
 A single agent instance can only be placed in one composition — wiring it into two spots fails fast at construction. See [`docs/composition.md`](docs/composition.md) for the operator reference and [`docs/comparison.md`](docs/comparison.md) for the release narrative.
 

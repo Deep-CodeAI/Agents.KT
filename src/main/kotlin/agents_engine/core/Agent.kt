@@ -542,6 +542,20 @@ class Agent<IN, OUT>(
         listeners.historyCompressedListener = block
     }
 
+    /**
+     * #3871 — fires when a `handoff` composition built on this agent selects
+     * a target. Unlike OpenAI-Swarm-style handoff, the target does NOT share
+     * this agent's conversation history — it receives only its declared
+     * input type; this listener is the audit signal for the transfer.
+     */
+    fun onHandoff(block: (toAgent: String, decisionInputType: String) -> Unit) {
+        listeners.handoffListener = block
+    }
+
+    internal fun fireHandoff(toAgent: String, decisionInputType: String) {
+        listeners.handoffListener?.invoke(toAgent, decisionInputType)
+    }
+
     fun onInterceptorDecision(block: (point: InterceptorPoint, decision: Decision<*>) -> Unit) {
         interceptors.addDecisionListener(block)
     }

@@ -56,6 +56,7 @@ fun <IN, OUT> Branch<IN, OUT>.session(input: IN): AgentSession<OUT> {
         // (no recorded routedAgentName).
         terminalAgentId = route.routedAgentName ?: branch.source.name
 
+        branch.fireHandoffIfNeeded(route, sourceOut)
         route.sessionExecutor?.invoke(sourceOut, emit) ?: route.executor(sourceOut)
     }
 }

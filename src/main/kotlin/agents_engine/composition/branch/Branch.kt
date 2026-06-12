@@ -17,6 +17,14 @@ import kotlinx.coroutines.runBlocking
 class Branch<IN, OUT> internal constructor(
     val source: Agent<IN, *>,
     val routes: List<BranchRoute<OUT>>,
+    /**
+     * #3871 — true when built via the `handoff` operator. Same routing
+     * semantics as `branch`; additionally fires the source agent's
+     * `onHandoff` listener / `PipelineEvent.HandoffPerformed` when a
+     * route is selected, so audit reviewers can search for handoffs
+     * specifically.
+     */
+    internal val isHandoff: Boolean = false,
 ) {
     val agents: List<Agent<*, *>>
         get() = (listOf(source) + routes.flatMap { it.targetAgents }).distinct()
@@ -28,7 +36,17 @@ class Branch<IN, OUT> internal constructor(
         // #2802 — one ordered-match implementation. The non-streaming path now delegates to
         // [matchRoute] exactly like the streaming `session` path, instead of re-deriving the loop.
         val route = matchRoute(result) ?: noMatchError(result)
+        fireHandoffIfNeeded(route, result)
         return route.executor(result)
+    }
+
+    /** #3871 — handoff audit signal; no-op for plain `branch` compositions. */
+    internal fun fireHandoffIfNeeded(route: BranchRoute<OUT>, decisionInput: Any?) {
+        if (!isHandoff) return
+        source.fireHandoff(
+            toAgent = route.routedAgentName ?: "<inline>",
+            decisionInputType = decisionInput?.let { it::class.simpleName } ?: "null",
+        )
     }
 
     /**
@@ -47,6 +65,7 @@ class Branch<IN, OUT> internal constructor(
         val sourceOut =
             agents_engine.runtime.events.runAgentInSession(source as Agent<IN, Any?>, input, emitter).first
         val route = matchRoute(sourceOut) ?: noMatchError(sourceOut)
+        fireHandoffIfNeeded(route, sourceOut)
         return route.sessionExecutor?.invoke(sourceOut, emitter) ?: route.executor(sourceOut)
     }
 
