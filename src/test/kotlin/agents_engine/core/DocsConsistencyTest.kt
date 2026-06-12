@@ -74,6 +74,38 @@ class DocsConsistencyTest {
     }
 
     @Test
+    fun `living docs contain no known-stale security or status phrases`() {
+        // Each pattern is a claim that was true once and got fixed in a truth-surface
+        // pass (0.7.24 / 0.7.25); reappearing means a doc regressed to the stale state.
+        // Historical documents (CHANGELOG, RELEASE_NOTES, premortems, prd) are exempt —
+        // they record what WAS true.
+        val banned = listOf(
+            Regex("""(?i)sandboxing isn.t shipped""") to "Layer 1/2 enforcement shipped in 0.7.0 (#2890/#1916)",
+            Regex("""(?i)no tool sandboxing""") to "subprocess tools are sandboxed via processTool (#2914)",
+            Regex("""(?i)audit evidence, not""") to "declared ToolPolicy is enforced since 0.7.0, not just reviewable",
+            Regex("""(?i)isn.t shipped yet""") to "name the version/issue instead of an undated 'yet'",
+            Regex("""(?i)the JSONL exporter lands""") to "exportJsonl shipped (#1914)",
+            Regex("""(?i)all three first-party""") to "seven providers stream; three native + four inherited SSE",
+            Regex("""(?i)\b(four|five|six) (model )?(providers|adapters)\b""") to
+                "provider count is ModelProvider.entries.size",
+        )
+        val historical = setOf("prd.md")
+        val docFiles = Files.list(Path.of("docs")).use { stream ->
+            stream.filter { p ->
+                val name = p.fileName.toString()
+                name.endsWith(".md") && !name.startsWith("premortem-") && name !in historical
+            }.toList()
+        } + listOf(Path.of("README.md"), Path.of("SECURITY.md"))
+        val hits = docFiles.flatMap { file ->
+            val text = Files.readString(file)
+            banned.mapNotNull { (pattern, hint) ->
+                pattern.find(text)?.let { "$file: \"${it.value}\" — $hint" }
+            }
+        }
+        assertTrue(hits.isEmpty(), "stale claims resurfaced in living docs:\n${hits.joinToString("\n")}")
+    }
+
+    @Test
     fun `routing docs document fail-loud ambiguity not first-match`() {
         val modelAndTools = doc("docs/model-and-tools.md")
         val ambiguousRow = modelAndTools.lines().filter { it.contains("Multiple candidates, no model") }

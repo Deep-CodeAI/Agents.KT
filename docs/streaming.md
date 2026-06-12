@@ -54,13 +54,17 @@ All subtypes carry `agentId`, `requestId`, `sessionId`, and `manifestHash`. `age
 
 ## Provider streaming status
 
-All three first-party adapters override `ModelClient.chatStream` with native wire-level streaming. Numbers below are from the live integration tests under `./gradlew integrationTest` against real APIs.
+All seven providers stream at the wire: three adapters implement `ModelClient.chatStream` natively, and the four OpenAI-compatible providers inherit `OpenAiClient`'s SSE implementation. Numbers below are from the live integration tests under `./gradlew integrationTest` against real APIs.
 
 | Provider | Protocol | File | Live measurement (count 1–10 prompt) |
 |---|---|---|---|
 | Ollama | NDJSON | `OllamaClient.chatStream` | 19 chunks / 84ms gap (gpt-oss:120b-cloud) |
 | Anthropic | SSE with named events + indexed content blocks | `ClaudeClient.chatStream` | 2 chunks / 27ms gap (claude-haiku-4-5) |
 | OpenAI | SSE with `[DONE]` terminator | `OpenAiClient.chatStream` | 19 chunks / 202ms gap (gpt-4o-mini) |
+| DeepSeek | OpenAI-compatible SSE (inherited) | `DeepSeekClient` ← `OpenAiClient.chatStream` | shared-path coverage |
+| Kimi (Moonshot) | OpenAI-compatible SSE (inherited) | `KimiClient` ← `OpenAiClient.chatStream` | shared-path coverage |
+| OpenRouter | OpenAI-compatible SSE (inherited) | `OpenRouterClient` ← `OpenAiClient.chatStream` | shared-path coverage |
+| Perplexity | OpenAI-compatible SSE (inherited; `/chat/completions` — no `/v1` segment) | `PerplexityClient` ← `OpenAiClient.chatStream` | live-verified incl. streaming (#3675) |
 
 Custom `ModelClient` implementations don't need to override `chatStream` — the default impl wraps `chat()` and emits one bundled chunk sequence. That's fine for non-streaming providers; it just won't show incremental arrival.
 
@@ -128,9 +132,9 @@ For contributors navigating the streaming test surface:
 
 `Pipeline` / `Branch` / `wrap` / `Swarm` do **not** yet flow events through to a parent session. Only leaf agents (the agent you directly call `.session(input)` on) expose streaming. A composed pipeline still works end-to-end with `pipeline(input)` returning the typed output, but `pipeline.session(input)` is not yet defined.
 
-This is the next v0.5.0 milestone after step 3. The shape per the premortem: `agentId` on every event already namespaces by source agent — a Pipeline session would flow events from each inner agent with their respective `agentId`s, plus its own bracket events.
+This remains a **current limitation as of 0.7.24** — it was originally framed as a v0.5.0 follow-up, and pipeline-stage event types (`StageStarted` / `PipelineCompleted`) are still pending on the roadmap. The shape per the premortem: `agentId` on every event already namespaces by source agent — a Pipeline session would flow events from each inner agent with their respective `agentId`s, plus its own bracket events.
 
-## Known gaps (post-step-3, pre-v0.5.0-release)
+## Known gaps (current as of 0.7.24)
 
 - **Composition flow-through** (above).
 - **HTTP cancellation** mid-read — blocking InputStream isn't coroutine-cancellable.
