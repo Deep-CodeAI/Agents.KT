@@ -235,7 +235,7 @@ Streaming consumers see `AgentEvent.ToolCallFinished(isError = true)` for the re
 
 ### Declarative tool policy DSL
 
-Tools can also declare what they are expected to touch. This is **declarative only in the 0.6.x line**: it feeds manifest/audit evidence, but it does not sandbox the executor. Process/container enforcement is the sibling #1916 track.
+Tools can also declare what they are expected to touch. In 0.6.x this was declarative only; **since 0.7.0 the declared filesystem stance is enforced** by the Layer-1 path gate (#2890), subprocess tools opt into Layer-2 OS confinement through `processTool` (#1916), and the `executor { args, env -> }` shape gives bodies a policy-gated `ToolEnvironment` (#2889). In-process Kotlin lambda side effects are still not sandboxed — see the [threat model](threat-model.md) for the full enforcement table.
 
 ```kotlin
 tools {

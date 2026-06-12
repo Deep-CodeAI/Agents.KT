@@ -156,10 +156,12 @@ Declaration and enforcement are two sides of the same `ToolPolicy`:
 - the **manifest** ([permission-manifest.md](permission-manifest.md)) is the build-time,
   reviewable view of what every tool *may* touch;
 - **Layer 1** makes the filesystem part of that declaration *bite* at runtime;
-- **Layer 2** (#1916) will extend enforcement to the process boundary.
+- **Layer 2** (#1916, shipped 0.7.0) extends enforcement to the subprocess boundary for `processTool`-based tools; remaining work is read confinement, the hostname-allowlist egress proxy (#2893), Docker/Wasm backends (#2894/#2895), and the `grants { }` DSL — all 0.8.
 
 ## Declare-vs-do comparator + the `exec` capability (#2887)
 
 `ToolPolicy` gains a fourth capability: **`exec`** — the declared subprocess stance (`exec { allow() }` / `exec { deny() }`; absent sections in legacy manifests parse as `unspecified`). The manifest verifier treats unspecified/deny → allow as a widening (`tool.exec.widened`).
 
 The static half is **`ToolPolicyCapabilityComparator`** in `agents-kt-detekt`: for a `tool { policy { … }; executor { … } }` declaration, the executor body's extracted capabilities (`ToolCapabilityExtractor`: FS_READ / FS_WRITE / NETWORK / ENVIRONMENT / EXEC) must be a **subset** of what the policy grants — using more than you declared fails the build with a widen-or-remove hint; declaring more than you use passes (over-declaration is a manifest-review concern, not a violation). Tools without a `policy { }` block are out of scope here (that's `ToolBodyForbiddenApis`' territory). Same honest limits as the extractor: syntactic and callee-name based — reflection and aliasing are invisible; the Layer-2 sandbox covers the residue.
+
+> **High-level vs low-level sandbox API.** `processTool(name, policy) { … }` is the **fail-closed** path: no OS sandbox backend → the tool refuses to run. Raw `ProcessSandbox.run` is the low-level primitive — it falls back to a plain `ProcessBuilder` with a loud `UNCONFINED` warning. Anything dangerous belongs on `processTool`.

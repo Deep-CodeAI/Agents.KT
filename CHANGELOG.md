@@ -161,6 +161,23 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
   concurrency. Operators constructed outside their factory functions still fall back to
   non-streaming execution. Behavior pinned in `CompositionStreamingChainTest` (6 scenarios).
 
+### Changed — truth-surface pass 3 (June-12 delta review)
+
+- **threat-model.md opening paragraph** no longer claims "does not sandbox tool execution" /
+  "does not validate MCP request origins by default" — both contradicted the canonical table
+  below it; rewritten to the precise lambda-vs-subprocess and loopback-default reality.
+- **tool-policy-enforcement.md**: the stale "Layer 2 will extend enforcement" closing line names
+  the shipped Layer 2 and the actual remaining 0.8 work; new high-level-vs-low-level warning box
+  (`processTool` fail-closed vs raw `ProcessSandbox.run` warn-and-run).
+- **model-and-tools.md** ToolPolicy section reframed from "declarative only in the 0.6.x line"
+  to the 0.7 enforcement reality (+ the #2889 `ToolEnvironment` executor shape).
+- **caching.md** provider framing fixed: Kimi/OpenRouter/Perplexity are first-party providers
+  inheriting the OpenAI rows, not "fourth-party deployments"; `ModelProvider.entries` count
+  corrected.
+- **roadmap.md**: threat-model guide marked shipped; the demos bullet's never-shipped `Escalate`
+  decision replaced with the real HITL primitives (#2489 / #3868).
+- **`DocsConsistencyTest`** stale-phrase guard extended with the three newly-fixed claims.
+
 ### Changed — truth-surface pass 2: the rooms the front door missed
 
 - **`docs/threat-model.md` is now the canonical "what's enforced where" page.** Its shipped-vs-planned

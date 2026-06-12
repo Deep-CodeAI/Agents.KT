@@ -4,7 +4,7 @@ This page is the bridge between Agents.KT's security model (what the framework e
 
 The goal: in five minutes you should be able to self-classify your deployment, see which Agents.KT guardrails apply, and know which gaps you must close yourself.
 
-> **What the framework guarantees vs what you guarantee.** Agents.KT enforces typed boundaries, tool allowlists, budget caps, frozen agent state, and (where you opt in) untrusted-output wrapping. It does **not** sandbox tool execution, filter prompt injection, validate MCP request origins by default, or rate-limit beyond `BudgetConfig`. The rest is your job — these scenarios tell you how.
+> **What the framework guarantees vs what you guarantee.** Agents.KT enforces typed boundaries, skill tool allowlists, budget caps, frozen agent state, Layer-1 filesystem-path argument checks for declared `ToolPolicy` (#2890), Layer-2 OS sandboxing for subprocess-shaped tools via `processTool` (#1916), MCP inbound auth (loopback-only by default) with Host/Origin allowlists, and (where you opt in) untrusted-output wrapping. It does **not** sandbox arbitrary in-JVM Kotlin lambdas, filter prompt injection, or replace your gateway, TLS, and rate limiting. The full status of every boundary is the [what's-enforced-where table](#whats-enforced-where-security-relevant-as-of-0724) below; the scenarios tell you how to close your side.
 
 ## Trust boundaries
 
