@@ -60,6 +60,21 @@ class Forum<IN, OUT>(
     }
 
     /**
+     * #3866 — emitter-aware deliberation. Same core as [invokeSuspend],
+     * but every participant (and the captain) runs through
+     * `runAgentInSession` so its events stream into [emitter]. Shared by
+     * `forum.session(input)` and the `then` overloads that chain a Forum
+     * inside a streaming Pipeline.
+     */
+    internal suspend fun sessionInvoke(
+        input: IN,
+        emitter: agents_engine.model.AgentEventEmitter,
+    ): OUT = deliberate(input) { agent, value ->
+        @Suppress("UNCHECKED_CAST")
+        agents_engine.runtime.events.runAgentInSession(agent as Agent<Any?, Any?>, value, emitter).first
+    }
+
+    /**
      * #2802 — the single deliberation core shared by the non-streaming [invokeSuspend] and the
      * streaming `session` extension. Runs every [participant][participants] concurrently then the
      * [captain], firing [fireMentionListener] at each step, and short-circuits on `forum_return`

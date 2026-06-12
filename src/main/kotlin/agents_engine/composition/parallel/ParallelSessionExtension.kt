@@ -2,10 +2,6 @@ package agents_engine.composition.parallel
 
 import agents_engine.runtime.events.AgentSession
 import agents_engine.runtime.events.agentSessionScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 
 /**
  * `agents_engine/composition/parallel/ParallelSessionExtension.kt` — the
@@ -46,19 +42,7 @@ import kotlinx.coroutines.coroutineScope
 fun <IN, OUT> Parallel<IN, OUT>.session(input: IN): AgentSession<List<OUT>> {
     val parallel = this
     return agentSessionScope({ "parallel" }) { emit ->
-        coroutineScope {
-            val sessionExecs = parallel.sessionExecutions
-            if (sessionExecs != null) {
-                // Streaming path: each branch async with the shared emitter.
-                sessionExecs.map { exec ->
-                    async(Dispatchers.Default) { exec(input, emit) }
-                }.awaitAll()
-            } else {
-                // Fallback: no per-branch streaming. Just run executions.
-                parallel.executions.map { exec ->
-                    async(Dispatchers.Default) { exec(input) }
-                }.awaitAll()
-            }
-        }
+        // #3866 — fan-out core shared with the pipeline-chaining `then` overloads.
+        parallel.sessionInvoke(input, emit)
     }
 }

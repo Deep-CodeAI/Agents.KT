@@ -59,6 +59,32 @@ class Loop<IN, OUT>(
             iterations++
         }
     }
+
+    /**
+     * #3866 — emitter-aware full-loop run. Same iteration contract as
+     * [invokeSuspend], but each iteration's wrapped agent (or pipeline)
+     * streams events through [emitter] when the Loop was built via the
+     * factory functions (falls back to the non-streaming [execution]
+     * otherwise). Shared by `loop.session(input)` and the `then`
+     * overloads that chain a Loop inside a streaming Pipeline.
+     */
+    internal suspend fun sessionInvoke(
+        input: IN,
+        emitter: agents_engine.model.AgentEventEmitter,
+    ): OUT {
+        val streamingExec: suspend (IN) -> OUT =
+            sessionExec?.let { f -> { i: IN -> f(i, emitter) } } ?: execution
+        var current = streamingExec(input)
+        var iterations = 1
+        while (true) {
+            val feedback = next(current) ?: return current
+            check(iterations < maxIterations) {
+                "Loop exceeded maxIterations=$maxIterations without termination."
+            }
+            current = streamingExec(feedback)
+            iterations++
+        }
+    }
 }
 
 fun <A, B> Agent<A, B>.loop(

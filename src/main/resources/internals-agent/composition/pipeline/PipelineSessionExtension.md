@@ -10,7 +10,7 @@ Adds `Pipeline<IN, OUT>.session(input): AgentSession<OUT>` (#1745).
 
 Runs `pipeline.effectiveSessionExec(input, emitter)`:
 - When `sessionExec` is explicit, inner agents' events stream into the channel with their own `agentId`s.
-- When `sessionExec` is null (the fallback), `execution(input)` runs and only the terminal event fires — inner events do NOT stream. This is a known gap for un-converted `then` overloads; see #1745 follow-ups for the per-operator session wiring.
+- When `sessionExec` is null (the fallback), `execution(input)` runs and only the terminal event fires — inner events do NOT stream. Since #3866 every `then` overload populates `sessionExec` (operators chained mid-pipeline run through their internal emitter-aware `sessionInvoke` cores), so the null fallback only applies to a `Pipeline` constructed directly outside the `then` factories.
 
 Terminal `Completed(agentId = lastAgent.name, output = result)` fires once `execution` (or `sessionExec`) returns.
 

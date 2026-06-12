@@ -1,9 +1,7 @@
 package agents_engine.composition.forum
 
-import agents_engine.core.Agent
 import agents_engine.runtime.events.AgentSession
 import agents_engine.runtime.events.agentSessionScope
-import agents_engine.runtime.events.runAgentInSession
 
 /**
  * `agents_engine/composition/forum/ForumSessionExtension.kt` — the
@@ -38,11 +36,9 @@ import agents_engine.runtime.events.runAgentInSession
 fun <IN, OUT> Forum<IN, OUT>.session(input: IN): AgentSession<OUT> {
     val forum = this
     return agentSessionScope({ forum.captain.name }) { emit ->
-        // #2802 — same deliberation core as Forum.invokeSuspend; the streaming difference is only that
-        // each agent runs through runAgentInSession so its events surface on the emitter.
-        forum.deliberate(input) { agent, value ->
-            @Suppress("UNCHECKED_CAST")
-            runAgentInSession(agent as Agent<Any?, Any?>, value, emit).first
-        }
+        // #2802 / #3866 — same deliberation core as Forum.invokeSuspend, shared with
+        // the pipeline-chaining path; each agent runs through runAgentInSession so
+        // its events surface on the emitter.
+        forum.sessionInvoke(input, emit)
     }
 }
