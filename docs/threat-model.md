@@ -155,7 +155,7 @@ val server = McpServer.from(agent) {
 
 **Gaps you close yourself (today):**
 - **TLS termination and rate limiting.** Keep those at the gateway.
-- **Audit log retention.** Emit a gateway log; the framework's `onToolUse` listener is supplementary observability until the JSONL exporter lands.
+- **Audit log retention.** The framework emits the rows — `agent.events.exportJsonl(...)` (#1914) writes append-only JSONL with `requestId` / `sessionId` / `manifestHash`, and `agent.events.ledger(file)` adds a tamper-evident Merkle chain. Retention, rotation, and chain-of-custody of those files are yours; a gateway log with client identity remains the complement at the edge.
 
 **Verdict:** Agents.KT-as-shipped is the WRONG shape if your gateway can't take on these responsibilities. With a gateway that can, it works; without one, see anti-patterns below.
 
@@ -190,34 +190,42 @@ Swarm.discover().forEach { sibling ->
 | Anti-pattern | Why it fails |
 |---|---|
 | Internet-facing `McpServer` bound to `0.0.0.0` with no gateway | Bearer auth and origin checks help, but you still lose TLS termination, rate limiting, request logging, and network isolation. Bind to loopback and front with a gateway. |
-| Agent with `executeShellCommand` / `runJavaCode` / `eval`-style tool, exposed to untrusted callers | The LLM will eventually find a prompt injection that gets it to run something the user shouldn't have access to. Sandboxing isn't shipped yet (Phase 3). Until then, don't ship exec-style tools to untrusted callers. |
+| Agent with `executeShellCommand` / `runJavaCode` / `eval`-style tool, exposed to untrusted callers | The LLM will eventually find a prompt injection that gets it to run something the user shouldn't have access to. Build subprocess tools with `processTool(name, policy) { ... }` — it derives an OS sandbox (Seatbelt / bubblewrap / firejail) from the declared policy and **fails closed** when no backend exists (#2914). A raw in-JVM exec lambda gets neither layer; don't ship one to untrusted callers. |
 | One agent instance shared across tenants | The freeze contract prevents mutation, but `memory(MemoryBank())` on the agent gives every tenant access to every other tenant's scratchpad. One agent per tenant, OR scope memory bank per call. |
-| Tool that ingests user-provided URLs / files and feeds raw output into the next LLM turn | Classic prompt injection vector. Wrap tool output with `untrustedOutput = true` on the `ToolDef` (signal flag for sandbox wiring once it lands) AND prefix the model's view with `--- BEGIN UNTRUSTED CONTENT ---` markers in your tool body. |
+| Tool that ingests user-provided URLs / files and feeds raw output into the next LLM turn | Classic prompt injection vector. Wrap tool output with `untrustedOutput = true` on the `ToolDef` (a signal flag — the `{"trusted":false}` envelope marks the data, but content filtering stays your job) AND prefix the model's view with `--- BEGIN UNTRUSTED CONTENT ---` markers in your tool body. |
 | LLM provider with full API key scope (e.g. an Anthropic key that can also access billing) for a single agent | Scope the key. Anthropic supports workspace-scoped keys; OpenAI supports project keys. The agent should NEVER have a key that can do more than it needs. |
 | Logging tool args / outputs to a file that gets shipped to a vendor log aggregator | Tool args / outputs often contain user PII or secrets. Redact at the `onToolUse` listener level before logging. The framework gives you the hook; it doesn't redact for you. |
 | Agent that calls itself recursively as a tool (via Swarm or otherwise) without a loop budget | `maxToolCalls` and `maxTurns` bound it, but the cost can spiral before the cap fires. Use `Loop` with explicit `maxIterations` for any self-feedback shape. |
 
-## What's shipped vs what's not (security-relevant)
+## What's enforced where (security-relevant, as of 0.7.24)
 
-| | Shipped in 0.5.0 | Planned |
+This is the canonical status table — README, `SECURITY.md`, and `production-hardening.md` summarize it; when they disagree, this page wins (and that disagreement is a doc bug worth filing).
+
+| Boundary | Status | Enforced by |
 |---|---|---|
-| Typed `Agent<IN, OUT>` boundaries | ✓ | |
-| Tool allowlist per skill (`tools(...)`) | ✓ | |
-| Budget caps (`BudgetConfig`) | ✓ | |
-| Freeze-after-construction | ✓ | |
-| Single-placement rule | ✓ | |
-| Observability hooks (`onToolUse`, `onError`, `onBudgetThreshold`) | ✓ | |
-| `untrustedOutput` flag on `ToolDef` | ✓ (signal flag; no enforcement yet) | Enforcement via sandbox — Phase 3 |
-| Declarative `ToolPolicy` risk / fs / network / env scope | ✓ (manifest/audit metadata; no enforcement yet) | Enforcement via #1916 |
-| Tool sandboxing (process / WASM / Docker) | | Phase 3 |
-| MCP server incoming auth | x | #1902 |
-| MCP server origin validation | x | #1902 |
-| Per-client MCP tool policy | | #1902 |
-| Prompt-injection filtering | | None (this is your problem) |
-| PII redaction in tool I/O | | None (use `onToolUse` to roll your own) |
-| Permission manifest / capability graph | ✓ (static audit artifact; no sandbox enforcement) | Enforcement via #1916 |
-| JSONL audit log exporter | ✓ | |
-| `onBefore*` interceptors (deny/substitute/proceed) | ✓ | |
+| Typed `Agent<IN, OUT>` boundaries | ✓ shipped | Compiler |
+| Tool allowlist per skill (`tools(...)`) | ✓ shipped | Runtime — unlisted tools are never advertised or callable |
+| Budget caps (`maxTurns` / `maxToolCalls` / `maxDuration` / `perToolTimeout` / `maxTokens` / `maxAgentDepth` / `maxToolArgsBytes`) | ✓ shipped | Runtime (`BudgetConfig` + agentic loop) |
+| Freeze-after-construction / single-placement rule | ✓ shipped | Runtime, at construction |
+| Filesystem-path tool arguments vs declared `ToolPolicy` globs | ✓ shipped (0.7.0, #2890) | **Layer 1** — in-JVM gate, `..`-traversal normalized, denials audited |
+| Subprocess tool confinement (write roots, env, default-deny network) | ✓ shipped (0.7.0, #1916) | **Layer 2** — `ProcessSandbox`: macOS Seatbelt / bubblewrap / firejail; `processTool` (#2914) is the fail-closed path |
+| Arbitrary in-JVM Kotlin lambda side effects | ✗ not sandboxed | Yours (OS/container layer); `agents-kt-detekt`'s `ToolBodyForbiddenApis` catches raw `File`/`URL`/`ProcessBuilder`/reflection statically |
+| Selective network egress (hostname allowlist proxy) | 0.8 planned (#2893) | — (Layer-2 network is deny/allow-all today) |
+| Read confinement in the sandbox | 0.8+ planned | — (reads remain broad) |
+| WASM / Docker sandbox backends | 0.8 planned (#2894 / #2895) | — |
+| `grants { }` structure DSL | 0.8 planned | — |
+| MCP server inbound auth | ✓ shipped | `McpServerAuth.TrustedLocal` default (loopback-only) / `RequireBearerToken(s)` |
+| MCP server Host / Origin validation | ✓ shipped | `allowedHosts` / `originAllowlist` |
+| Per-client MCP tool policy | ✓ shipped | `toolPolicy { principal, tool -> }` — filters `tools/list`, denies `tools/call` opaquely |
+| `untrustedOutput` flag on `ToolDef` | ✓ signal + envelope | `{"trusted":false}` wrapping marks data-not-instructions; content filtering is yours |
+| Prompt-injection filtering | ✗ | Yours (mitigations: `maxToolArgsBytes`, `untrustedOutput`, output wrapping) |
+| PII redaction in tool I/O | ✗ | Yours (`onToolUse` hook) |
+| Permission manifest / capability graph + CI verify | ✓ shipped | `agents-kt` CLI `generate` / `inspect` / `verify`; `manifestHash` on runtime events |
+| JSONL audit export + tamper-evident ledger | ✓ shipped | `exportJsonl` (#1914) + `ToolAuditLedger` (Merkle-chained, `verify()`) |
+| `onBefore*` interceptors (proceed / replace / deny / substitute) | ✓ shipped | Runtime (#1907) |
+| Human-in-the-loop approval + resume | ✓ shipped | `humanApproval { }` → `ApprovalRequest` → `resumeWith(HumanDecision)` (#2489), fail-closed timeout default |
+| Fail-loud ambiguous skill routing | ✓ shipped (0.7.21, #3087) | `SkillRoutingException` — no silent first-match |
+| Model-failure policy | ✓ shipped (0.7.23, #3508) | `onLLMError` — fail-fast-loud default, typed opt-in recovery |
 
 ## Related docs
 
