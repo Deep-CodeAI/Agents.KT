@@ -34,18 +34,33 @@ internal fun compressHistory(
     val middle = messages.subList(headCount, tailStart)
     if (middle.size < MIN_COMPRESSIBLE_MESSAGES) return Decision.Proceed
 
-    val digest = try {
-        config.summarizer(middle)
+    // #4492 — the strategy decides what the middle becomes.
+    val (replacementMiddle, digest) = try {
+        when (val strategy = config.strategy) {
+            is CompactionStrategy.Summarize -> {
+                val digest = config.summarizer(middle)
+                listOf(
+                    ChatMessage(
+                        role = "user",
+                        content = "[History summary — replaces ${middle.size} earlier messages]\n$digest",
+                    ),
+                ) to digest
+            }
+            is CompactionStrategy.SlidingWindow -> {
+                val marker = "[${middle.size} earlier messages elided]"
+                listOf(ChatMessage(role = "user", content = marker)) to marker
+            }
+            is CompactionStrategy.Custom -> {
+                val replaced = strategy.compact(middle)
+                replaced to replaced.joinToString(" | ") { it.content }.take(CUSTOM_DIGEST_PREVIEW)
+            }
+        }
     } catch (_: Exception) {
         // Degrade, don't fail: proceed with the uncompressed history.
         return Decision.Proceed
     }
 
-    val summaryMessage = ChatMessage(
-        role = "user",
-        content = "[History summary — replaces ${middle.size} earlier messages]\n$digest",
-    )
-    val replacement = messages.subList(0, headCount) + summaryMessage + messages.subList(tailStart, messages.size)
+    val replacement = messages.subList(0, headCount) + replacementMiddle + messages.subList(tailStart, messages.size)
     onCompressed(
         HistoryCompressionResult(
             replacedCount = middle.size,
@@ -76,5 +91,6 @@ internal fun extractiveDigest(messages: List<ChatMessage>): String =
     } + if (messages.size > DIGEST_MAX_LINES) "\n- … and ${messages.size - DIGEST_MAX_LINES} more messages" else ""
 
 private const val MIN_COMPRESSIBLE_MESSAGES = 2
+private const val CUSTOM_DIGEST_PREVIEW = 200
 private const val DIGEST_MAX_LINES = 60
 private const val DIGEST_LINE_CHARS = 160

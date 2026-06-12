@@ -8,6 +8,13 @@ class HistoryCompressionBuilder {
     /** Most recent N messages stay untouched (extended backward past orphaned tool results). */
     var preserveRecent: Int = DEFAULT_PRESERVE_RECENT
 
+    /**
+     * #4492 — compaction strategy: `Summarize` (default), `SlidingWindow(keepRecent)`
+     * (drop the middle, zero summarizer cost; overrides [preserveRecent]), or
+     * `Custom { middle -> replacement }`.
+     */
+    var strategy: CompactionStrategy = CompactionStrategy.Summarize()
+
     private var trigger: ((List<ChatMessage>) -> Boolean)? = null
     private var summarizer: (List<ChatMessage>) -> String = ::extractiveDigest
 
@@ -28,15 +35,18 @@ class HistoryCompressionBuilder {
      */
     fun summarizer(block: (List<ChatMessage>) -> String) {
         summarizer = block
+        strategy = CompactionStrategy.Summarize(block)
     }
 
     internal fun build(): HistoryCompressionConfig {
         require(triggerMessages > 1) { "triggerMessages must be > 1, was $triggerMessages." }
         require(preserveRecent >= 0) { "preserveRecent must be >= 0, was $preserveRecent." }
+        val effectivePreserve = (strategy as? CompactionStrategy.SlidingWindow)?.keepRecent ?: preserveRecent
         return HistoryCompressionConfig(
             triggerWhen = trigger ?: { messages -> messages.size > triggerMessages },
-            preserveRecent = preserveRecent,
-            summarizer = summarizer,
+            preserveRecent = effectivePreserve,
+            summarizer = (strategy as? CompactionStrategy.Summarize)?.summarizer ?: summarizer,
+            strategy = strategy,
         )
     }
 

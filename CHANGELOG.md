@@ -4,6 +4,14 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — compaction strategies (#4492, PRD §5.7.1)
+
+- **`historyCompression { strategy = … }`** — `SlidingWindow(keepRecent)` drops the conversation
+  middle behind a one-line elision marker (zero summarizer cost; `keepRecent` overrides
+  `preserveRecent`); `Custom { middle -> replacement }` takes full control; `Summarize` stays the
+  default (#3865 Phase-1 behavior, source-compatible). All strategies degrade to an uncompressed
+  turn on failure. 4 tests.
+
 ### Added — pipeline stage events (#4491, PRD §10.2)
 
 - **`AgentEvent.StageStarted` / `StageCompleted`** — explicit stage boundaries on composite

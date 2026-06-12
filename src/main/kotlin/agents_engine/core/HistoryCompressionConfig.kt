@@ -11,6 +11,8 @@ class HistoryCompressionConfig internal constructor(
     val triggerWhen: (List<ChatMessage>) -> Boolean,
     /** Most recent N messages are never compressed. */
     val preserveRecent: Int,
-    /** Turns the compressed middle into a digest. Deterministic by default. */
+    /** Turns the compressed middle into a digest (Summarize strategy). Deterministic by default. */
     val summarizer: (List<ChatMessage>) -> String,
+    /** #4492 — what the compressed middle becomes; see [CompactionStrategy]. */
+    val strategy: CompactionStrategy = CompactionStrategy.Summarize(),
 )
