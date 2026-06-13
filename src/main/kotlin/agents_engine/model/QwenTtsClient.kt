@@ -45,6 +45,14 @@ class QwenTtsClient(
         else -> error("Unsupported Qwen TTS responseFormat '$responseFormat' (use mp3/wav/flac/opus).")
     }
 
+    /**
+     * #4504 — fail-fast readiness check: returns normally when a server answers at [baseUrl],
+     * throws an actionable [IllegalStateException] otherwise. Cheap (a single GET).
+     */
+    fun preflight() {
+        check(speechEndpointReachable(httpClient, baseUrl)) { "Qwen TTS: $REMEDIATION" }
+    }
+
     override fun speak(text: String): Content.Audio {
         val body = """{"model":${McpJson.encode(model)},"input":${McpJson.encode(text)},""" +
             """"voice":${McpJson.encode(voice)},"response_format":${McpJson.encode(responseFormat)}}"""
@@ -53,7 +61,9 @@ class QwenTtsClient(
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(body))
         bearerToken?.let { builder.header("Authorization", "Bearer $it") }
-        val response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray())
+        val response = withSpeechEndpoint(baseUrl, "Qwen TTS", REMEDIATION) {
+            httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray())
+        }
         check(response.statusCode() == HTTP_OK) {
             "Qwen TTS returned HTTP ${response.statusCode()}: ${String(response.body()).take(ERROR_PREVIEW)}"
         }
@@ -65,5 +75,8 @@ class QwenTtsClient(
         const val HTTP_OK = 200
         const val ERROR_PREVIEW = 200
         const val DEFAULT_TIMEOUT_SECONDS = 120L
+        const val REMEDIATION =
+            "start a self-hosted TTS server exposing /v1/audio/speech " +
+                "(e.g. openedai-speech / LocalAI, or Qwen-TTS behind an OpenAI-compatible shim) or fix baseUrl."
     }
 }

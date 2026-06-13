@@ -4,6 +4,13 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — speech HTTP client DX: preflight + fail-fast errors (#4504)
+
+- **`WhisperSttClient.preflight()` / `QwenTtsClient.preflight()`** — cheap readiness probe that
+  returns normally when the endpoint answers and throws an **actionable** message otherwise (how to
+  start a server / fix `baseUrl`). `transcribe`/`speak` now wrap connection + timeout failures into
+  the same actionable `IllegalStateException` instead of leaking a raw `ConnectException`. 4 tests.
+
 ### Added — end-to-end audio as tools + self-hosted Whisper/Qwen adapters (#4501)
 
 - **Multimodal as tools.** `transcribeAudioTool(stt, blobStore, audioRoot)` (`transcribe_audio`) and

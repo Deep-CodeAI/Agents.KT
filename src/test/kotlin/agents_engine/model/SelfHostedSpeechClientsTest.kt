@@ -93,4 +93,40 @@ class SelfHostedSpeechClientsTest {
         val ex = runCatching { QwenTtsClient(baseUrl, blobs, responseFormat = "aac") }.exceptionOrNull()
         assertTrue(ex is IllegalStateException && "aac" in ex.message.orEmpty(), "got: $ex")
     }
+
+    // ─── #4504 DX: preflight + fail-fast actionable errors ───
+
+    @Test
+    fun `preflight passes against a live endpoint`() {
+        WhisperSttClient(baseUrl).preflight()
+        QwenTtsClient(baseUrl, InMemoryBlobStore()).preflight()
+    }
+
+    @Test
+    fun `preflight against a dead endpoint throws an actionable message`() {
+        val dead = "http://127.0.0.1:1"
+        val ex = runCatching { WhisperSttClient(dead).preflight() }.exceptionOrNull()
+        assertTrue(ex is IllegalStateException, "got: $ex")
+        assertTrue("/v1/audio/transcriptions" in ex.message.orEmpty(), "remediation names the endpoint: ${ex?.message}")
+    }
+
+    @Test
+    fun `transcribe against a dead server fails fast with remediation, not a raw ConnectException`() {
+        val blobs = InMemoryBlobStore()
+        val ref = blobs.put("x".toByteArray(), AudioMime.Wav.wireMime)
+        val ex = runCatching {
+            WhisperSttClient("http://127.0.0.1:1").transcribe(Content.Audio(ref = ref, mime = AudioMime.Wav), blobs)
+        }.exceptionOrNull()
+        assertTrue(ex is IllegalStateException, "wrapped, not raw: $ex")
+        val msg = ex?.message.orEmpty()
+        assertTrue("cannot reach a server" in msg && "baseUrl" in msg, msg)
+    }
+
+    @Test
+    fun `speak against a dead server fails fast with remediation`() {
+        val ex = runCatching {
+            QwenTtsClient("http://127.0.0.1:1", InMemoryBlobStore()).speak("hi")
+        }.exceptionOrNull()
+        assertTrue(ex is IllegalStateException && "cannot reach a server" in ex.message.orEmpty(), "${ex?.message}")
+    }
 }

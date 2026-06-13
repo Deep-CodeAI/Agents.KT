@@ -354,3 +354,13 @@ QwenTtsClient(baseUrl = "http://localhost:8880", blobStore = blobs, voice = "Che
 ```
 
 Both implement the existing `SpeechToTextClient` / `TtsModelClient` interfaces, so the OpenAI hosted adapters remain drop-in swappable in the same tools. Pass `bearerToken` only when a gateway in front of the server requires one. `QwenTtsClient`'s `responseFormat` (`mp3`/`wav`/`flac`/`opus`) maps to the typed `AudioMime`.
+
+**Fail-fast DX (#4504).** Self-hosted endpoints are routinely "not running yet", so call `client.preflight()` at startup — it probes the endpoint and throws an *actionable* message ("start a server … or fix baseUrl") instead of failing later with a raw `ConnectException`. `transcribe`/`speak` wrap connection/timeout failures into the same actionable error.
+
+```kotlin
+val stt = WhisperSttClient("http://localhost:8000").apply { preflight() }  // fails loud now if the server is down
+```
+
+### Weights live outside the jar
+
+Agents.KT ships **no model weights** — not Whisper's, not Qwen-TTS's. The jar is code: the HTTP adapters above talk to a server *you* run (weights live in that server's process), so there is nothing to bundle. This keeps the artifact small and keeps weight licensing (Qwen license, model-card terms) entirely separate from the Apache-licensed code. Weights are a deploy-time concern resolved by `baseUrl` (HTTP) — or, for the in-process path, a model file you provision (`:agents-kt-whisper-jni`, which downloads + checksums a model at runtime, still bundling nothing).

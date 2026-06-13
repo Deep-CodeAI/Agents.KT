@@ -33,6 +33,15 @@ class WhisperSttClient(
 
     private val timeout = Duration.ofSeconds(timeoutSeconds)
 
+    /**
+     * #4504 — fail-fast readiness check: returns normally when a server answers at [baseUrl],
+     * throws an actionable [IllegalStateException] otherwise. Cheap (a single GET); call it at
+     * startup so a missing server surfaces immediately instead of on the first transcription.
+     */
+    fun preflight() {
+        check(speechEndpointReachable(httpClient, baseUrl)) { "Whisper STT: $REMEDIATION" }
+    }
+
     override fun transcribe(audio: Content.Audio, blobStore: BlobStore): String {
         val bytes = blobStore.get(audio.ref)
             ?: error("Audio ref ${audio.ref.hash} not found in the supplied BlobStore.")
@@ -43,7 +52,9 @@ class WhisperSttClient(
             .header("Content-Type", "multipart/form-data; boundary=$boundary")
             .POST(HttpRequest.BodyPublishers.ofByteArray(body))
         bearerToken?.let { builder.header("Authorization", "Bearer $it") }
-        val response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString())
+        val response = withSpeechEndpoint(baseUrl, "Whisper transcription", REMEDIATION) {
+            httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString())
+        }
         check(response.statusCode() == HTTP_OK) {
             "Whisper transcription returned HTTP ${response.statusCode()}: ${response.body().take(ERROR_PREVIEW)}"
         }
@@ -76,5 +87,8 @@ class WhisperSttClient(
         const val ERROR_PREVIEW = 200
         const val DEFAULT_TIMEOUT_SECONDS = 120L
         const val BOUNDARY_HASH_CHARS = 16
+        const val REMEDIATION =
+            "start a self-hosted Whisper server exposing /v1/audio/transcriptions " +
+                "(e.g. `docker run -p 8000:8000 ghcr.io/speaches-ai/speaches`) or fix baseUrl."
     }
 }
