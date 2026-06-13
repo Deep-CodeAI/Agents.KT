@@ -28,6 +28,11 @@ class Forum<IN, OUT>(
     internal val castOut: (Any?) -> OUT,
     internal val captainTakesTranscript: Boolean = false,
 ) {
+    init {
+        // #4500 — participants + captain all stream into one emitter, demuxed by agentId.
+        agents_engine.composition.requireDistinctAgentNames(agents, "forum (*)")
+    }
+
     private var mentionListener: ((agentName: String, output: Any?) -> Unit)? = null
 
     internal fun fireMentionListener(name: String, output: Any?) {

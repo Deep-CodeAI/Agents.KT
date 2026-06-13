@@ -39,6 +39,11 @@ class Parallel<IN, OUT>(
      */
     internal val sessionExecutions: List<suspend (IN, agents_engine.model.AgentEventEmitter) -> OUT>? = null,
 ) {
+    init {
+        // #4500 — events stream into one emitter, demuxed by agentId; duplicate names collide.
+        agents_engine.composition.requireDistinctAgentNames(agents, "parallel (/)")
+    }
+
     operator fun invoke(input: IN): List<OUT> = runBlocking { invokeSuspend(input) }
 
     suspend fun invokeSuspend(input: IN): List<OUT> = withContext(Dispatchers.Default) {
