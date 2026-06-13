@@ -4,6 +4,18 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `:agents-kt-whisper-jni` in-process STT module + weights-free resolver (#4505)
+
+- **New opt-in module** for an in-process Whisper STT backend (no server) — the
+  separate-module pattern for native modality backends, like `:agents-kt-otel`/RAG adapters.
+  Ships **no weights and no native artifact**: `WhisperModelResolver` provisions a GGML model
+  file at runtime (download → cache → SHA-256 verify → reuse, or a local path); the whisper.cpp
+  JNI lib is supplied by the consumer through the one-method `WhisperBackend` seam.
+  `WhisperJniSttClient` is a `SpeechToTextClient` (BlobStore → JVM WAV→PCM decode → backend),
+  drop-in for the `transcribe_audio` tool. 6 hermetic tests (resolver download/cache/checksum;
+  WAV decode through a fake backend — no native lib/model needed). See the module README for the
+  whisper-jni binding. Establishes that **the jar is code; weights are runtime config**.
+
 ### Added — speech HTTP client DX: preflight + fail-fast errors (#4504)
 
 - **`WhisperSttClient.preflight()` / `QwenTtsClient.preflight()`** — cheap readiness probe that
