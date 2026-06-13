@@ -9,8 +9,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import java.util.logging.Logger
 
@@ -91,9 +94,20 @@ internal fun <OUT> agentSessionScope(
     }
 
     return AgentSession(
-        events = channel.consumeAsFlow(),
+        // #4499 — tie the detached producer scope to collection: cancelling (or completing early)
+        // the events flow cancels every in-flight inner agent instead of leaking them. The teardown
+        // is a flow-builder `finally` so it runs even on external cancellation of the collector (a
+        // downstream `onCompletion` stage is skipped in that case).
+        events = flow {
+            try {
+                channel.consumeAsFlow().collect { emit(it) }
+            } finally {
+                scope.cancel()
+            }
+        },
         resultDeferred = result,
         dropCounter = drops,
+        cancelProducer = { scope.cancel() },
     )
 }
 

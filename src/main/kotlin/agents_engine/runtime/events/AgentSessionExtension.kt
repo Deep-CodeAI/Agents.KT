@@ -8,11 +8,14 @@ import agents_engine.model.TokenUsage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import java.util.logging.Logger
 
@@ -120,9 +123,22 @@ fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
     }
 
     return AgentSession(
-        events = channel.consumeAsFlow(),
+        // #4499 — the producer runs in a detached scope; tie its lifecycle to collection so
+        // cancelling (or completing early, e.g. take(1)) the events flow cancels the invocation
+        // instead of leaving it running model calls in the background. The teardown lives in this
+        // flow builder's `finally` — which runs in the collector's own frame on normal completion,
+        // an exception, AND external cancellation of the collecting coroutine. (A downstream
+        // `onCompletion` stage is skipped when the collector is cancelled from outside.)
+        events = flow {
+            try {
+                channel.consumeAsFlow().collect { emit(it) }
+            } finally {
+                scope.cancel()
+            }
+        },
         resultDeferred = result,
         dropCounter = drops,
+        cancelProducer = { scope.cancel() },
     )
 }
 

@@ -1,5 +1,6 @@
 package agents_engine.runtime.events
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.Flow
 
@@ -34,13 +35,28 @@ class AgentSession<OUT> internal constructor(
     val events: Flow<AgentEvent<OUT>>,
     private val resultDeferred: Deferred<OUT>,
     private val dropCounter: SessionDropCounter? = null,
+    /**
+     * #4499 — tears down the detached producer scope. The [events] flow already cancels it via
+     * `onCompletion`; [await] invokes it on cancellation so the await-only path honors the same
+     * "cancel me → cancel the invocation" contract. No-op default for the legacy constructors.
+     */
+    private val cancelProducer: () -> Unit = {},
 ) {
     /**
      * Awaits the agent's typed output. Throws the original exception (NOT
      * wrapped) if the invocation failed — the [AgentEvent.Failed] event
      * still appears in [events] as the terminal element.
+     *
+     * #4499 — cancelling the awaiting coroutine cancels the underlying invocation (matching the
+     * [events]-collection contract): the producer scope is torn down before the cancellation
+     * propagates on.
      */
-    suspend fun await(): OUT = resultDeferred.await()
+    suspend fun await(): OUT = try {
+        resultDeferred.await()
+    } catch (cancel: CancellationException) {
+        cancelProducer()
+        throw cancel
+    }
 
     /**
      * #4496 — count of inner events dropped so far because the consumer lagged behind the

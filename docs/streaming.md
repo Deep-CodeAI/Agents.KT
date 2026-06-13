@@ -91,14 +91,14 @@ session.events.toList().filterIsInstance<AgentEvent.Completed<*>>().single().tok
 
 ## Cancellation
 
-Today's contract: **cancelling the coroutine collecting `events` terminates the Flow promptly.** The session's outer scope is a `SupervisorJob` with `Dispatchers.Unconfined`; cancellation propagates through the channel-backed Flow.
+Contract: **cancelling the coroutine collecting `events` cancels the underlying invocation** (and so does cancelling `await()`). The session's producer runs in a detached `SupervisorJob` + `Dispatchers.Unconfined` scope; #4499 ties that scope's lifecycle to collection — the `events` flow tears the scope down in a `finally` that fires on normal completion, early completion (`take(1)`), AND external cancellation of the collector, and `await()` cancels it on its own cancellation. A suspending invocation (real model calls via `chatStream`, `delay`, any coroutine work) stops promptly instead of running to completion in the background. `SessionCancellationLeakProbeTest` pins this: a model call parked in `chatStream` observes cancellation within milliseconds.
 
-**Step-3 gap (deferred to step 4):** the agent invocation itself may run to completion in the background when cancelled, because:
+**Fundamental limits (not a leak — no suspension point to cancel at):**
 
-- `implementedBy` lambdas are `(IN) -> OUT` — pure synchronous code with no suspension points. Coroutine cancellation can only fire at suspension points, so `Thread.sleep` or a tight loop won't be interrupted.
-- Native streaming adapters use `HttpClient.send(BodyHandlers.ofInputStream())` which blocks inside `BufferedReader.readLine()`. Same issue — coroutine cancel doesn't interrupt the blocking read.
+- `implementedBy` lambdas are `(IN) -> OUT` — pure synchronous code. Coroutine cancellation can only fire at suspension points, so a `Thread.sleep` or tight loop inside one isn't interrupted (the surrounding invocation is still cancelled — that synchronous step just finishes first).
+- Native streaming adapters that block inside `BufferedReader.readLine()` (`HttpClient.send(BodyHandlers.ofInputStream())`) can't be interrupted mid-read by coroutine cancellation. The adapter migration to `sendAsync` (deferred) closes this.
 
-`AgentSessionCancellationTest` documents the current contract: collector cancellation returns under 500ms even while a 2-second `Thread.sleep` is still running in the skill body. Step 4 migrates the adapters to `sendAsync` so HTTP cancellation propagates properly; that's also when synchronous-skill cancellation will be addressed (likely via explicit `session.cancel()`).
+`AgentSessionCancellationTest` pins the bare-cancellation contract (no synthetic `Failed`); `SessionCancellationLeakProbeTest` pins the teardown (#4499).
 
 ## Test coverage map
 
@@ -112,6 +112,8 @@ For contributors navigating the streaming test surface:
 | `AgentSessionIntegrationTest` | failure path (identity-preserved cause), concurrent sessions, agentic-stub bracketing with Token, tool-call event sequence with shared callId, tokensUsed single-turn, tokensUsed cumulative across two turns |
 | `AgentSessionLiveTest` | live π to 20 decimals against Ollama — `full20=true` end-to-end |
 | `AgentSessionCancellationTest` | collector cancel returns under 500ms even with a 2-second sleeping skill |
+| `SessionCancellationLeakProbeTest` | #4499 — collector-cancel / `take(1)` / `await()`-cancel each tear down a parked `chatStream` invocation |
+| `ComplexStreamingTest` | #4499/#4500 — deep chain (head → 3-way parallel → reducer), forum stage, loop stage: no collision, `droppedEvents == 0`, single terminal |
 | `AgentSessionIncrementalArrivalTest` | timing proof — first Token ≥100ms before Completed under a delayed-chunk stub |
 | `ModelClientChatStreamDefaultTest` | default `chatStream` wrap of non-streaming `chat()` — Text and ToolCalls cases |
 
@@ -132,13 +134,16 @@ For contributors navigating the streaming test surface:
 
 **Composition flow-through is shipped (#3866).** *(Living demo: `CountingPipelineStreamingDemoTest` — five counting agents under `then`, 50 tokens observed live in stage order while only complete values cross the typed boundaries; it also demonstrates the `Channel.BUFFERED`/`trySend` drop semantics for zero-suspension producers; #4496 makes loss observable — `session.droppedEvents` carries the count and one summary line logs at close, replacing per-event warnings.)* Every composition operator exposes `session(input)` — `Pipeline`, `Parallel`, `Forum`, `Loop`, `Branch`, `wrap`, `Swarm` — and every `then` overload chains streaming through: a pipeline that mixes operators mid-chain (`a then (b / c)`, `(a / b) then reduce`, `head then forum`, `head then judge.loop { … }`, `head then classifier.branch { … }`) streams inner events from **all** nested agents through the parent session, each tagged with its own `agentId` for demultiplexing. Sequential stages emit in chain order; `Parallel` / `Forum` participants interleave by arrival order (by design — filter on `agentId`). Cancelling the outer `events` Flow tears down in-flight inner sessions via structured concurrency.
 
+Concurrent legs (`Parallel` via `/`, `Forum` via `*`) demultiplex purely by `agentId` (the agent's name), so **#4500 rejects duplicate participant names at construction** — `agent("w") / agent("w")` and `a / b / a` throw with an actionable message, the same fail-loud stance as duplicate tool/skill names. (`speculative(n)` self-racing is the documented exception — those racers deliberately share one agent and its id.)
+
 The one fallback: an operator instance constructed **outside** its factory functions (`then` / `/` / `*` / `.loop` / `.branch`) has no recorded session exec — it executes non-streaming and only its boundary events appear. **Stage boundaries are first-class (#4491):** Pipeline sessions emit `StageStarted`/`StageCompleted` pairs around each direct component (agent stages by name, operator legs labeled `parallel`/`forum`/`loop`/`branch`; nested pipelines mark their own stages exactly once) — consumers no longer infer stage transitions from `agentId` flips.
 
 ## Known gaps (current as of 0.7.24)
 
 - *(closed by #4491: stage-boundary markers shipped — see Composition above.)*
+- *(closed by #4499: cancelling collection / `await()` now cancels the underlying suspending invocation — see Cancellation above.)*
 - **HTTP cancellation** mid-read — blocking InputStream isn't coroutine-cancellable.
-- **Synchronous skill body cancellation** — `implementedBy` lambdas can't be interrupted.
+- **Synchronous skill body cancellation** — `implementedBy` lambdas can't be interrupted (no suspension point; the surrounding invocation is still cancelled).
 - **Provider-specific limits** — Ollama bundles tool-call args in one final chunk (no progressive `input_json_delta`); only Anthropic streams tool args progressively today.
 
 See [`docs/roadmap.md`](roadmap.md) Phase 2 *Secondary* for the planned closure of each.

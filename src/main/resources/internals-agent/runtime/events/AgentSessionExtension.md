@@ -26,7 +26,7 @@ Per call:
 6. On normal completion → emit `Completed(agentId, output)`, complete the deferred, close the channel.
 7. On throw → emit `Failed(agentId, cause)`, fail the deferred with the same cause, close the channel.
 8. A `finally` logs one drop-summary WARNING when anything was lost (#4496).
-9. Return an `AgentSession(events = channel.consumeAsFlow(), resultDeferred = deferred, dropCounter = drops)` — the counter backs the public `AgentSession.droppedEvents`.
+9. Return an `AgentSession` whose `events` is `flow { try { channel.consumeAsFlow().collect { emit(it) } } finally { scope.cancel() } }` — the `finally` ties the detached producer scope to collection (#4499), so cancelling the collector (or completing early via `take(1)`) cancels the invocation instead of leaking it. The teardown lives in this flow-builder frame rather than a downstream `onCompletion` because the latter is skipped when the collecting coroutine is cancelled from outside. `await()` cancels the same scope on its own cancellation (`cancelProducer`). The `SessionDropCounter` backs the public `AgentSession.droppedEvents`.
 
 ## Why `BUFFERED` channel
 
