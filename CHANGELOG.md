@@ -4,6 +4,18 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `:agents-kt-speech-server` pure-JDK OpenAI-compatible speech server (#4506)
+
+- **Run a local STT/TTS server with `java -jar` — no Docker, no Python, zero external
+  deps** (`com.sun.net.httpserver`). Exposes `POST /v1/audio/transcriptions` (multipart →
+  `{"text":…}`) and `POST /v1/audio/speech` (JSON → audio bytes) over two pluggable
+  one-method seams (`ServerSttBackend` / `ServerTtsBackend`) — the server ships no model.
+  Demo backends (fixed-text STT, a real WAV-beep TTS) make both endpoints answer out of the
+  box; `./gradlew :agents-kt-speech-server:run`. Plug whisper-jni (pure-jar STT) and
+  sherpa-onnx *or* a forward-to-Qwen proxy (TTS) for real inference — there is no pure-JVM
+  Qwen-TTS, so a Qwen voice means proxying its endpoint. 5 tests, incl. an in-JVM round trip
+  where `WhisperSttClient` / `QwenTtsClient` hit the server over real HTTP with no Docker.
+
 ### Added — `:agents-kt-whisper-jni` in-process STT module + weights-free resolver (#4505)
 
 - **New opt-in module** for an in-process Whisper STT backend (no server) — the
