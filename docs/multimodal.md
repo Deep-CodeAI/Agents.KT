@@ -53,7 +53,7 @@ sealed interface Content {
 val Content.modality: String   // "text" | "image" | "audio" | "video" | "document"
 ```
 
-Stage 1 (this release): **Image** wire path (provider input + audit + tool-result rendering) is live. **Document** flows through the audit/`ToolResult` placeholder path but the provider-input adapter (#2470 slice c) is deferred — `agent.invokeWithAttachments(...)` silently skips `Content.Document` today. **Audio + Video** are modelled now and exercised through provider adapters in Stage 2. See [providers.md](providers.md) for the per-provider × content-type support matrix — the single source of truth for what's routed to provider input today.
+Stage 1 (this release): **Image** wire path (provider input + audit + tool-result rendering) is live. **Document** flows through the audit/`ToolResult` placeholder path but the provider-input adapter (#2470 slice c) is deferred — `agent.invokeWithAttachments(...)` silently skips `Content.Document` today. **Audio is end-to-end** via the speech *tools* (#4501 — `transcribe_audio` / `speak`; see "End-to-end audio" below) rather than the chat-message attachment path; **Video** is modelled but not yet wired. See [providers.md](providers.md) for the per-provider × content-type support matrix — the single source of truth for what's routed to provider input today.
 
 ### Closed mime types
 
@@ -323,3 +323,34 @@ val speech: Content.Audio    = OpenAiTtsClient(key, blobStore).speak("done — i
 ```
 
 `SpeechToTextClient` / `ImageModelClient` / `TtsModelClient` are `fun interface`s — bring another provider by implementing one method. Wire shapes are pinned by stub-server tests; `baseUrl` is injectable. Not yet wired: `Content.Audio` directly inside chat messages (gpt-4o-audio-style input_audio blocks) — transcribe-then-prompt is the v1 path, matching the roadmap's STT-helper framing.
+
+## End-to-end audio — as tools, with self-hosted Whisper + Qwen TTS (#4501)
+
+The standalone clients above let *you* call STT/TTS by hand. To make audio **end-to-end through an agent**, speech is also exposed **as tools** — the model decides when to transcribe or speak, and the calls ride the full tool spine (ToolPolicy + the Layer-1 filesystem gate, constraints, audit, manifest, typed hooks). No attachment-path wiring needed: `ToolResult` already carries `Content.Audio`, so the `speak` tool's output ref flows through audit and snapshot like any other content.
+
+```kotlin
+val blobs = InMemoryBlobStore()
+val agent = agent<String, String>("voicebot") {
+    model { ollama("llama3.1") }
+    tools {
+        +transcribeAudioTool(WhisperSttClient("http://localhost:8000"), blobs, audioRoot = "/recordings")
+        +speakTool(QwenTtsClient("http://localhost:8880", blobs, voice = "Cherry"))
+    }
+    skills { skill<String, String>("assist", "Hears and answers") { tools("transcribe_audio", "speak") } }
+}
+```
+
+- **`transcribe_audio(path)`** — loads a local audio file (confined to `audioRoot` by a declared `filesystem.read` policy **and** a defensive prefix check), runs STT, returns the transcript. Declares `network` egress (the client ships bytes to its endpoint).
+- **`speak(text)`** — runs TTS and returns a `ToolResult(Content.Text, Content.Audio)`; the synthesized bytes live in the `BlobStore`, the typed ref travels.
+- `speechTools(stt, tts, blobs, audioRoot)` bundles both.
+
+### Self-hosted adapters (first guests)
+
+Both target the **OpenAI-compatible** wire (`/v1/audio/transcriptions`, `/v1/audio/speech`) that the common self-hosted servers expose, with **no API key by default** and a required `baseUrl`:
+
+```kotlin
+WhisperSttClient(baseUrl = "http://localhost:8000")              // faster-whisper-server / Speaches / LocalAI
+QwenTtsClient(baseUrl = "http://localhost:8880", blobStore = blobs, voice = "Cherry")  // openedai-speech / LocalAI
+```
+
+Both implement the existing `SpeechToTextClient` / `TtsModelClient` interfaces, so the OpenAI hosted adapters remain drop-in swappable in the same tools. Pass `bearerToken` only when a gateway in front of the server requires one. `QwenTtsClient`'s `responseFormat` (`mp3`/`wav`/`flac`/`opus`) maps to the typed `AudioMime`.

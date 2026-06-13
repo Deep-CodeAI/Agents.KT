@@ -4,6 +4,23 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — end-to-end audio as tools + self-hosted Whisper/Qwen adapters (#4501)
+
+- **Multimodal as tools.** `transcribeAudioTool(stt, blobStore, audioRoot)` (`transcribe_audio`) and
+  `speakTool(tts)` (`speak`, returning `ToolResult(Content.Text, Content.Audio)`) make audio
+  end-to-end through the agentic loop — the model orchestrates transcription/synthesis itself,
+  reusing the full tool spine (ToolPolicy + Layer-1 filesystem gate, constraints, audit, manifest,
+  typed hooks). `transcribe_audio` confines reads to `audioRoot`; `speak`'s audio ref flows through
+  audit/snapshot via the existing `ToolResult` path — no attachment-path wiring needed. Bundle:
+  `speechTools(...)`.
+- **Self-hosted adapters (first guests).** `WhisperSttClient` (STT) and `QwenTtsClient` (TTS) target
+  the OpenAI-compatible `/v1/audio/transcriptions` and `/v1/audio/speech` endpoints the common
+  self-hosted servers expose (faster-whisper-server / Speaches / LocalAI / openedai-speech), with
+  **no API key by default** and a required `baseUrl` (optional `bearerToken` for a fronting gateway).
+  Both implement the existing `SpeechToTextClient` / `TtsModelClient` interfaces, so the OpenAI hosted
+  adapters stay drop-in swappable. 9 tests (stub-server wire pins + tool executors + agentic-loop
+  end-to-end).
+
 ### Fixed — session cancellation no longer leaks the invocation (#4499, streaming hardening)
 
 - Cancelling collection of `AgentSession.events` (or cancelling `await()`) now **cancels the
