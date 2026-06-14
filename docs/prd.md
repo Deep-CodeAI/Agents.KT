@@ -2902,6 +2902,24 @@ The whole job is: emit our stream wrapped in the `RUN_STARTED … RUN_FINISHED` 
 
 Tracking: epic `[interop] AG-UI support (agent↔frontend serving)`, deferred until a concrete frontend need.
 
+### 12.8 x402 — Agent Payments / Settlement Layer *(planned, deferred — money-handling)*
+
+[x402](https://github.com/x402-foundation/x402) revives HTTP `402 Payment Required` to let agents pay for gated resources in **stablecoins (USDC), gaslessly**. Unlike §12.5–12.7 (which carry no money), x402 is a **settlement layer** — and it sits *beneath* the protocols we already target, not beside them. As of April 2026 it is **Linux-Foundation-governed** (x402 Foundation, 22 orgs incl. Coinbase, Cloudflare, AWS, Google, Circle, Visa, Mastercard, Amex, Stripe, Shopify); Apache-2.0.
+
+**The flow.** Client requests a resource → server returns `402` + `PAYMENT-REQUIRED` header (`PaymentRequirements`: `scheme`, `network`, `maxAmountRequired`, `payTo`, `asset`, `resource`, `maxTimeoutSeconds`, `outputSchema`, `extra`) → client signs an **EIP-3009 `transferWithAuthorization`** (EIP-712; gasless — the facilitator submits on-chain) and resends with `PAYMENT-SIGNATURE` → server calls facilitator `/verify` then `/settle` → returns `200` + `PAYMENT-RESPONSE` receipt. Schemes: `exact`, **`upto`** (authorize a cap, settle actual usage — the natural metered-API model), `batch-settlement`. Networks: EVM/Base, Solana, Stellar. The **facilitator** (Coinbase CDP runs ~80%) is the trust chokepoint; sellers never touch a chain directly.
+
+**Where it fits.** x402 is the settlement *rail* under our existing seams: an official **`a2a-x402` extension** (Google + Coinbase) and an **MCP `paidTool()`** wrapper already exist; Google's **AP2** is the *authorization* layer and x402 is its blessed *crypto rail*. AGNTCY and AG-UI have no payment dimension. So our insertion point is **an A2A x402 extension + an MCP paid-tool wrapper**, not a standalone payments module.
+
+**Seller-side first (safe); buyer-side deferred behind hard custody guardrails.** These are different risk animals:
+- **Seller-side** — our agents expose *paid* endpoints. We *receive* USDC via a hosted facilitator: **no custody, no money-transmitter exposure, no LLM-holds-key problem.** "Emit `402` → verify facilitator settlement → deliver" — a thin Micronaut middleware; may lean on the official Java SDK (`org.x402:x402`, SNAPSHOT — a servlet `PaymentFilter` + client; servlet/reactive impedance to weigh). This makes agents that can **monetize themselves** — a real differentiator. Ship **experimental**.
+- **Buyer-side** — our agents autonomously *pay*. **Deferred.** All real-money risk lives here. Only behind scoped ERC-4337 session keys (on-chain per-tx caps, payee allowlists, velocity limits), **signing isolated from the model layer**, and human-in-the-loop for settlement. Separate, later, opt-in module.
+
+**Non-negotiable design constraint:** **keep signing and spending limits below the model layer** — the LLM must never hold a key or carry a spend limit in its prompt. x402 moves **irreversible** money (no chargebacks; liability lands on the deployer), and prompt-injection drains are confirmed-real (Grok/Bankr ~$150–200k, Freysa $47k; peer-reviewed *Five Attacks on x402*). A self-hosted *custodial* facilitator likely triggers money-transmitter / stablecoin regulation (FinCEN MSB, GENIUS Act, MiCA) — prefer a hosted facilitator and never take custody on the seller path.
+
+**Why deferred.** Lower strategic priority than the interop trio (A2A/AGNTCY/AG-UI are table-stakes with no money/custody/regulatory surface). Adoption is also early — real settled volume is ~\$28k/day (much of it wash-traded) over 13 months — so this is a forward-looking, on-trend bet, sequenced **after** the interop work, seller-side first.
+
+Tracking: epic `[interop] x402 agent payments`, deferred — seller-side experimental, buyer-side gated.
+
 ---
 
 ## 13. Distributed Agents Framework
