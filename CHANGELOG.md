@@ -4,6 +4,37 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — flake diagnostics on the mac network-sandbox test (#4498, antifragility pass)
+
+- The `ProcessSandboxMacTest` live network probe (flake #4370) now embeds full failure forensics
+  in its assertion message: exit code, probe stdout/stderr (sandbox-exec complains on stderr),
+  the python3 used, and the exact generated Seatbelt profile — so an unreproducible runner
+  failure is diagnosable from the CI log alone.
+
+### Added — `requireSandbox` strict mode (#4497, antifragility pass)
+
+- **`ProcessSandbox.run(command, requireSandbox = true)`** — fail closed on hosts with no OS
+  sandbox backend: throws `IllegalStateException` and the subprocess never starts, instead of the
+  historical UNCONFINED plain-`ProcessBuilder` fallback (which stays the default). Brings
+  `processTool`'s fail-closed stance to the low-level API. 2 tests.
+
+### Added — session drop accounting (#4496, antifragility pass)
+
+- **`AgentSession.droppedEvents`** — live count of inner events lost when a consumer lags the
+  producer (the non-suspending emitter forwards via `trySend` into the 64-slot buffer). Event loss
+  is now *observable in code* — assert on it instead of scraping logs. Per-event drop WARNINGs are
+  replaced by one summary line at session close (count + first dropped type); terminal
+  `Completed`/`Failed` still always deliver via suspending `send`. Both session paths covered
+  (`agent.session` and every composition operator). 3 tests.
+
+### Added — `LlmErrorDecision.Retry` (#4495, antifragility pass)
+
+- **`onLLMError { Retry(maxAttempts = 3, initialBackoffMillis = 500) }`** — third decision next
+  to `Rethrow`/`RespondWith`: re-run the failed model call with exponential backoff (500ms → 1s →
+  2s …). The handler is consulted per failed attempt, so it can switch to `RespondWith`/`Rethrow`
+  mid-schedule; the attempt budget is per model turn; exhaustion rethrows the ORIGINAL error,
+  identity preserved. Default behavior (no handler) unchanged — fail fast and loud. 4 tests.
+
 ### Added — typed tool hooks (#4493, PRD §typed-hooks)
 
 - **`agent.onToolCall<Args>("tool") { args -> }`** (pre-execution) and

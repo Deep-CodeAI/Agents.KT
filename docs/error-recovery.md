@@ -208,4 +208,26 @@ sealed interface ToolError {
 
 No tool has error handling by default. When no handler is set and a tool throws, the exception propagates normally — zero overhead on the happy path.
 
+## Model-call error recovery — `onLLMError`
+
+Tool recovery (above) handles a tool that fails; `onLLMError` (#3508) handles the **model call itself** failing — a down provider (raw `ConnectException`), a 5xx, a malformed response. The default with no handler is fail fast and loud: the original exception propagates, identity preserved. A registered handler returns an `LlmErrorDecision` per failed attempt:
+
+```kotlin
+agent<String, Report>("analyst") {
+    model { openai("gpt-5") }
+    onLLMError { e ->
+        when {
+            e is ConnectException -> LlmErrorDecision.Retry(maxAttempts = 3, initialBackoffMillis = 500)
+            else                  -> LlmErrorDecision.RespondWith(Report.empty())
+        }
+    }
+}
+```
+
+- **`Rethrow`** (the default) — fail fast and loud; the original exception propagates.
+- **`RespondWith(output)`** — recover with a typed fallback; the value must be assignable to the agent's `OUT` (a wrong type fails fast with `ClassCastException`).
+- **`Retry(maxAttempts, initialBackoffMillis)`** (#4495) — re-run the call with exponential backoff (500ms → 1s → 2s …, by default). `maxAttempts` counts the original call; the handler is consulted again on every failure, so it can switch to `RespondWith`/`Rethrow` mid-schedule. The attempt budget is **per model turn** — one flaky turn can't starve a multi-turn run. Exhaustion rethrows the original error, exactly as `Rethrow` would.
+
+The handler does **not** fire for budget caps (`onBudgetExceeded` owns those) or cancellation, and v1 scopes recovery to the agentic loop — a model failure during multi-skill LLM routing still propagates loud. See [production-hardening.md](production-hardening.md) for the deployment checklist entry.
+
 ---

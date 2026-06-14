@@ -25,9 +25,12 @@ import kotlin.time.Duration.Companion.seconds
  * bwrap is preferred (unprivileged user namespaces); firejail is the **setuid**
  * fallback that still confines where unprivileged userns is restricted (e.g.
  * Ubuntu 24.04's `apparmor_restrict_unprivileged_userns`). When **no** backend is
- * present, [run] does not throw — it runs the command via a plain `ProcessBuilder`
- * and prints a loud warning that the process is UNCONFINED ([isSupported] is false
- * there, so a caller that requires enforcement can detect and refuse). Network
+ * present, [run] by default does not throw — it runs the command via a plain
+ * `ProcessBuilder` and prints a loud warning that the process is UNCONFINED
+ * ([isSupported] is false there, so a caller that requires enforcement can detect
+ * and refuse). Pass `requireSandbox = true` (#4497) to refuse instead: the call
+ * throws `IllegalStateException` and the subprocess never starts — the same
+ * fail-closed stance `processTool` takes, available on the low-level API. Network
  * hostname filtering (#2893), read-confinement, and the `process { }` DSL remain
  * follow-ups.
  */
@@ -51,8 +54,17 @@ class ProcessSandbox private constructor(
     /** Which OS sandbox wraps the subprocess. [NONE] = no tool found → unconfined plain ProcessBuilder. */
     internal enum class Backend { SEATBELT, BWRAP, FIREJAIL, NONE }
 
-    fun run(command: List<String>, stdin: String? = null, timeout: Duration = 10.seconds): SandboxResult =
-        runWithBackend(detectBackend(), command, stdin, timeout)
+    fun run(
+        command: List<String>,
+        stdin: String? = null,
+        timeout: Duration = 10.seconds,
+        /**
+         * #4497 — fail closed when no OS sandbox backend exists: throw
+         * `IllegalStateException` instead of falling back to an UNCONFINED plain
+         * `ProcessBuilder`. Default `false` preserves the historical fallback.
+         */
+        requireSandbox: Boolean = false,
+    ): SandboxResult = runWithBackend(detectBackend(), command, stdin, timeout, requireSandbox)
 
     /**
      * Run under an explicitly chosen [backend]. Public [run] auto-detects via
@@ -64,8 +76,15 @@ class ProcessSandbox private constructor(
         command: List<String>,
         stdin: String? = null,
         timeout: Duration = 10.seconds,
+        requireSandbox: Boolean = false,
     ): SandboxResult {
         require(command.isNotEmpty()) { "command must not be empty" }
+        if (requireSandbox) {
+            check(backend != Backend.NONE) {
+                "no OS sandbox backend available (need macOS sandbox-exec or Linux bwrap/firejail) — " +
+                    "refusing to run '${command.first()}' unconfined (requireSandbox = true)"
+            }
+        }
 
         // Each backend confines the subprocess to the same write roots; only the
         // wrapping differs. NONE = no sandbox tool on this host: run the command

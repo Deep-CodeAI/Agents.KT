@@ -16,6 +16,7 @@ import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -197,19 +198,33 @@ class ProcessSandboxMacTest {
                 print('ALLOWED')
         """.trimIndent()
 
-        fun diag(r: SandboxResult) = "stdout='${r.stdout.trim()}' stderr='${r.stderr.trim()}'"
-
         val root = createTempDirectory("sbx-net").toRealPath()
+
+        // #4498 (flake #4370) — when this test fails on a runner we can't reproduce on, the
+        // assertion message must carry everything needed to diagnose it after the fact: exit
+        // code, full probe stdout/stderr (sandbox-exec writes its own complaints to stderr),
+        // the python3 used, and the EXACT generated Seatbelt profile handed to sandbox-exec.
+        fun diag(r: SandboxResult, allowNetwork: Boolean) = buildString {
+            append("exit=${r.exitCode} stdout='${r.stdout.trim()}' stderr='${r.stderr.trim()}'")
+            append(" python3='$python3'")
+            append(" profile=<<<")
+            append(ProcessSandbox.seatbeltProfile(listOf(root), allowNetwork))
+            append(">>>")
+        }
+
         try {
             val blocked = ProcessSandbox.forWritableRoots(listOf(root), allowNetwork = false)
                 .run(listOf(python3!!.toString(), "-c", probe))
-            assertTrue("BLOCKED" in blocked.stdout, "deny-default must block the socket; ${diag(blocked)}")
+            assertTrue(
+                "BLOCKED" in blocked.stdout,
+                "deny-default must block the socket; ${diag(blocked, allowNetwork = false)}",
+            )
 
             val allowed = ProcessSandbox.forWritableRoots(listOf(root), allowNetwork = true)
                 .run(listOf(python3.toString(), "-c", probe))
             assertTrue(
                 "ALLOWED" in allowed.stdout || "CONNECTED" in allowed.stdout,
-                "allowNetwork must permit the socket; ${diag(allowed)}",
+                "allowNetwork must permit the socket; ${diag(allowed, allowNetwork = true)}",
             )
         } finally {
             root.deleteRecursively()
@@ -549,5 +564,39 @@ class ProcessSandboxFallbackTest {
         }
         val warning = captured.toString("UTF-8")
         assertTrue("UNCONFINED" in warning, "must warn the process is unconfined: $warning")
+    }
+
+    @Test fun `requireSandbox refuses to run unconfined — no subprocess, IllegalStateException`() {
+        // #4497 — the fail-closed flag on the low-level API. Forced via Backend.NONE so it
+        // is deterministic on any host regardless of which sandbox tools are installed.
+        val root = createTempDirectory("nofb-strict").toRealPath()
+        val canary = root.resolve("canary")
+        try {
+            val ex = assertFailsWith<IllegalStateException> {
+                ProcessSandbox(root).runWithBackend(
+                    ProcessSandbox.Backend.NONE,
+                    listOf("/bin/sh", "-c", "echo never > '$canary'"),
+                    requireSandbox = true,
+                )
+            }
+            assertTrue("requireSandbox" in ex.message.orEmpty(), "actionable message: ${ex.message}")
+            assertFalse(canary.exists(), "the subprocess must never start")
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun `requireSandbox is a no-op when a real backend exists`() {
+        // Any CI/dev host this suite runs on (mac Seatbelt / Linux bwrap or firejail)
+        // satisfies the requirement; the command runs confined as usual.
+        Assumptions.assumeTrue(ProcessSandbox.isSupported())
+        val root = createTempDirectory("strict-ok").toRealPath()
+        try {
+            val res = ProcessSandbox(root).run(listOf("/bin/echo", "hi"), requireSandbox = true)
+            assertTrue(res.ok, "exit=${res.exitCode} stderr=${res.stderr}")
+            assertEquals("hi", res.stdout.trim())
+        } finally {
+            root.deleteRecursively()
+        }
     }
 }

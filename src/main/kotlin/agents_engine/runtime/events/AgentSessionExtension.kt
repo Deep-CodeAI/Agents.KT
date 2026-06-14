@@ -59,26 +59,27 @@ fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
     // the result coroutine. SupervisorJob keeps the session independent
     // of any unrelated coroutine the consumer happens to be running in.
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+    // #4496 — drops are counted, not logged per event: one summary line at
+    // close, live count on AgentSession.droppedEvents.
+    val drops = SessionDropCounter(
+        SESSION_LOGGER,
+        "agent='${agent.name}', sessionId='${runtimeContext.sessionId}'",
+    )
     scope.launch {
         withAgentRuntimeContext(runtimeContext) {
-            // #1739 / #2806: emitter forwards AgentEvents from inside the
-            // agentic loop (Token, ToolCallStarted, ToolCallArgumentsDelta,
+            // #1739 / #2806 / #4496: emitter forwards AgentEvents from inside
+            // the agentic loop (Token, ToolCallStarted, ToolCallArgumentsDelta,
             // ToolCallFinished). The emitter is a non-suspending lambda type
             // (AgentEventEmitter = (AgentEvent<*>) -> Unit), so the inner
-            // path uses trySend; #2806 added warn-level logging on failure
-            // so silent drops become visible instead of staying invisible.
+            // path uses trySend; failures are aggregated by the drop counter
+            // (one summary at close) instead of one warning per lost event.
             // Bracket events (Completed / Failed) below use suspending
             // `send` — they MUST be delivered to terminate the session.
             @Suppress("UNCHECKED_CAST")
             val emitter: AgentEventEmitter = { event ->
                 val typed = event as AgentEvent<OUT>
-                val result = channel.trySend(typed)
-                if (result.isFailure) {
-                    SESSION_LOGGER.warning(
-                        "channel.trySend dropped a ${typed::class.simpleName} " +
-                            "(agent='${agent.name}', sessionId='${runtimeContext.sessionId}') — " +
-                            "consumer is slower than the agent loop"
-                    )
+                if (channel.trySend(typed).isFailure) {
+                    drops.recordDrop(typed::class.simpleName ?: "?")
                 }
             }
             try {
@@ -112,6 +113,8 @@ fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
                 channel.send(failed)
                 channel.close()
                 result.completeExceptionally(t)
+            } finally {
+                drops.logSummaryAtClose()
             }
         }
     }
@@ -119,12 +122,13 @@ fun <IN, OUT> Agent<IN, OUT>.session(input: IN): AgentSession<OUT> {
     return AgentSession(
         events = channel.consumeAsFlow(),
         resultDeferred = result,
+        dropCounter = drops,
     )
 }
 
-// #2806 — JUL logger for visible drops on the inner non-suspending emitter
-// path. Sized for low volume — only fires when the buffer fills, which is
-// rare on Channel.BUFFERED (64 cap) but worth surfacing when it happens.
+// #2806 / #4496 — JUL logger for the one-line drop summary at session close.
+// Only fires when the buffer filled and events were lost, which is rare on
+// Channel.BUFFERED (64 cap) but worth surfacing when it happens.
 private val SESSION_LOGGER: Logger = Logger.getLogger("agents_engine.runtime.events.AgentSession")
 
 /**

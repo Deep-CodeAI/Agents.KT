@@ -99,18 +99,6 @@ internal suspend fun <T> guardLlmCall(block: suspend () -> T): T = try {
 }
 
 /**
- * #3508 — apply the agent's `onLLMError` policy to a failed agentic-loop model call. The default (no
- * handler) and [LlmErrorDecision.Rethrow] rethrow the [original] error — fail fast and loud, with the
- * model-call exception's identity preserved. [LlmErrorDecision.RespondWith] recovers: its value
- * becomes the loop's result (token usage is null — the turn that would have produced it failed).
- */
-private fun recoverAgenticLlmError(agent: Agent<*, *>, original: Throwable): AgenticResult =
-    when (val decision = agent.llmErrorHandler?.invoke(original)) {
-        is LlmErrorDecision.RespondWith -> AgenticResult(decision.output, null)
-        LlmErrorDecision.Rethrow, null -> throw original
-    }
-
-/**
  * Runs the agentic loop for [skill] on [agent] with [input].
  * Returns the parsed output paired with cumulative token usage;
  * the caller casts the output via the agent's castOut.
@@ -453,21 +441,37 @@ internal suspend fun <IN> executeAgentic(
                 temperature = config.temperature,
             )
         )
-        val response = try {
-            chatOrStream(
-                client = client,
-                messages = messages,
-                agentId = agent.name,
-                skillName = skill.name,
-                emitter = emitter,
-                jsonSchema = constrainedOutputSchema,
-            )
-        } catch (failure: LlmCallFailure) {
-            // #3508 — the model call failed (down server, provider 5xx, malformed response). Apply the
-            // onLLMError policy: RespondWith short-circuits the loop with a fallback; Rethrow / no
-            // handler rethrows the ORIGINAL error (fail fast and loud). The marker never escapes.
-            return recoverAgenticLlmError(agent, failure.original)
+        // #3508/#4495 — on model-call failure (down server, provider 5xx, malformed response) the
+        // onLLMError policy is consulted per attempt: Retry re-runs the call after exponential
+        // backoff (attempt budget is per turn); RespondWith short-circuits the loop with a fallback;
+        // Rethrow / no handler / exhausted retries rethrow the ORIGINAL error (fail fast and loud,
+        // identity preserved). The LlmCallFailure marker never escapes.
+        var llmAttempt = 0
+        var attemptResponse: LlmResponse? = null
+        while (attemptResponse == null) {
+            attemptResponse = try {
+                chatOrStream(
+                    client = client,
+                    messages = messages,
+                    agentId = agent.name,
+                    skillName = skill.name,
+                    emitter = emitter,
+                    jsonSchema = constrainedOutputSchema,
+                )
+            } catch (failure: LlmCallFailure) {
+                llmAttempt++
+                when (val decision = agent.llmErrorHandler?.invoke(failure.original)) {
+                    is LlmErrorDecision.RespondWith -> return AgenticResult(decision.output, null)
+                    is LlmErrorDecision.Retry -> {
+                        if (llmAttempt >= decision.maxAttempts) throw failure.original
+                        kotlinx.coroutines.delay(decision.backoffBeforeRetry(llmAttempt))
+                        null
+                    }
+                    LlmErrorDecision.Rethrow, null -> throw failure.original
+                }
+            }
         }
+        val response = attemptResponse
         turns++
         val responseUsage = response.tokenUsage
         emitter?.invoke(

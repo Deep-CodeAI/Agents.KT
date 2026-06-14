@@ -2,6 +2,7 @@ package agents_engine.core
 
 import agents_engine.model.LlmErrorDecision
 import agents_engine.model.LlmMessage
+import agents_engine.model.LlmResponse
 import agents_engine.model.ModelClient
 import org.junit.jupiter.api.assertThrows
 import java.net.ConnectException
@@ -76,6 +77,62 @@ class LlmErrorPolicyTest {
             onLLMError { LlmErrorDecision.RespondWith("routed-fallback") }
         }
         assertThrows<ConnectException> { a("hi") }
+    }
+
+    /** A flaky server: throws on the first [failures] calls, then answers normally. */
+    private fun flakyServer(failures: Int): ModelClient {
+        var calls = 0
+        return ModelClient { _: List<LlmMessage> ->
+            calls++
+            if (calls <= failures) throw ConnectException("Connection refused (call $calls)")
+            LlmResponse.Text("recovered after $failures failures")
+        }
+    }
+
+    @Test
+    fun `onLLMError Retry rides out transient failures and the turn succeeds`() {
+        // #4495 — fails twice, succeeds on the third attempt; Retry(3) covers exactly that.
+        val a = agent<String, String>("retry") {
+            model { ollama("m"); client = flakyServer(failures = 2) }
+            skills { skill<String, String>("s", "does a thing") { tools() } }
+            onLLMError { LlmErrorDecision.Retry(maxAttempts = 3, initialBackoffMillis = 0) }
+        }
+        assertEquals("recovered after 2 failures", a("hi"))
+    }
+
+    @Test
+    fun `onLLMError Retry exhaustion rethrows the original error, identity preserved`() {
+        var handlerCalls = 0
+        val a = agenticAgent {
+            onLLMError { handlerCalls++; LlmErrorDecision.Retry(maxAttempts = 3, initialBackoffMillis = 0) }
+        }
+        val ex = assertThrows<ConnectException> { a("hi") }
+        assertEquals("Connection refused", ex.message)
+        assertEquals(3, handlerCalls, "handler must be consulted once per failed attempt")
+    }
+
+    @Test
+    fun `the handler can switch decisions mid-schedule — Retry then RespondWith`() {
+        var attempt = 0
+        val a = agenticAgent {
+            onLLMError {
+                attempt++
+                if (attempt == 1) LlmErrorDecision.Retry(maxAttempts = 5, initialBackoffMillis = 0)
+                else LlmErrorDecision.RespondWith("gave up gracefully")
+            }
+        }
+        assertEquals("gave up gracefully", a("hi"))
+    }
+
+    @Test
+    fun `Retry validates its parameters and computes exponential backoff`() {
+        assertThrows<IllegalArgumentException> { LlmErrorDecision.Retry(maxAttempts = 0) }
+        assertThrows<IllegalArgumentException> { LlmErrorDecision.Retry(initialBackoffMillis = -1) }
+
+        val retry = LlmErrorDecision.Retry(maxAttempts = 4, initialBackoffMillis = 500)
+        assertEquals(500, retry.backoffBeforeRetry(1))
+        assertEquals(1000, retry.backoffBeforeRetry(2))
+        assertEquals(2000, retry.backoffBeforeRetry(3))
     }
 
     @Test

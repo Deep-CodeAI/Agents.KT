@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.Flow
 class AgentSession<OUT> internal constructor(
     val events: Flow<AgentEvent<OUT>>,
     private val resultDeferred: Deferred<OUT>,
+    private val dropCounter: SessionDropCounter? = null,
 ) {
     /**
      * Awaits the agent's typed output. Throws the original exception (NOT
@@ -40,4 +41,13 @@ class AgentSession<OUT> internal constructor(
      * still appears in [events] as the terminal element.
      */
     suspend fun await(): OUT = resultDeferred.await()
+
+    /**
+     * #4496 — count of inner events dropped so far because the consumer lagged behind the
+     * producer (the non-suspending emitter forwards via `trySend` into a 64-slot buffer).
+     * Live and monotonic; `0` when nothing was lost. Terminal `Completed` / `Failed` events
+     * use suspending `send` and never drop. A non-zero value after collection means the
+     * event stream has gaps — assert on this in tests instead of scraping warning logs.
+     */
+    val droppedEvents: Long get() = dropCounter?.droppedEvents ?: 0L
 }
