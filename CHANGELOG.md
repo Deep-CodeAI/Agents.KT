@@ -4,7 +4,7 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
-## [0.8.0] — 2026-06-15
+## [0.8.0] — 2026-06-14
 
 **Interoperable, multimodal agents — with capability grants.** The largest minor since 0.5.0:
 agent-to-agent interop (**A2A v1**), full **multimodal** (audio STT/TTS, vision, image generation),
