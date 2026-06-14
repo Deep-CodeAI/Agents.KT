@@ -4,6 +4,21 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Fixed — actionable provider errors: Kimi region + Ollama empty reasoning response (#4511, #4512)
+
+Two confusing live-failure modes now fail *loud and actionable* instead of as junk:
+
+- **Kimi region mismatch (#4511)** — Moonshot runs two separate platforms (`api.moonshot.cn` /
+  China, `api.moonshot.ai` / International); a valid key from one returns bare `Invalid
+  Authentication` against the other. `KimiClient` now enriches the auth error with which endpoint
+  it's using and how to switch (`CHINA_BASE_URL` / `INTERNATIONAL_BASE_URL` constants); the live test
+  honors `KIMI_BASE_URL`. (Verified: the same key gives `.cn`→401, `.ai`→200.)
+- **Ollama empty reasoning response (#4512)** — a reasoning model (e.g. `gpt-oss`) can generate
+  tokens but surface no `content`, no tool call, and no reasoning text, which Ollama returns as an
+  empty message. `OllamaClient` no longer returns a silent empty `Text` (which made the agentic loop
+  fail mysteriously) — it throws an actionable error naming the model and suggesting a tool-calling
+  model. Live tests' Ollama model is configurable via `OLLAMA_TEST_MODEL`. 5 new hermetic tests.
+
 ### Changed — no listening ports: dropped the speech server, added a subprocess TTS (#4510)
 
 Architecture call: agents.kt is an orchestration toolkit, not a media server — it must not bind a

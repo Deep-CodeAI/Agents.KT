@@ -1,5 +1,6 @@
 package agents_engine.model
 
+import kotlinx.coroutines.flow.catch
 import kotlin.time.Duration
 
 /**
@@ -50,17 +51,58 @@ open class KimiClient(
      */
     override fun supportsConstrainedDecoding(): Boolean = false
 
+    // #4511 — remember the endpoint so an auth failure can point at the region mismatch.
+    private val configuredBaseUrl: String = baseUrl
+
     override fun chat(messages: List<LlmMessage>, jsonSchema: JsonSchema?): LlmResponse =
-        super.chat(messages, jsonSchema = null)
+        try {
+            super.chat(messages, jsonSchema = null)
+        } catch (e: LlmProviderException) {
+            throw regionAwareError(e)
+        }
 
     override suspend fun chatStream(
         messages: List<LlmMessage>,
         jsonSchema: JsonSchema?,
     ): kotlinx.coroutines.flow.Flow<LlmChunk> =
-        super.chatStream(messages, jsonSchema = null)
+        super.chatStream(messages, jsonSchema = null).catch { e ->
+            throw if (e is LlmProviderException) regionAwareError(e) else e
+        }
+
+    /**
+     * #4511 — Moonshot runs two SEPARATE platforms (`api.moonshot.cn` / China and
+     * `api.moonshot.ai` / International); a key from one returns `Invalid Authentication`
+     * against the other. On an auth error, append actionable region guidance so a dev
+     * isn't left staring at a bare "Invalid Authentication". Non-auth errors pass through.
+     */
+    private fun regionAwareError(e: LlmProviderException): LlmProviderException {
+        val lower = e.message.orEmpty().lowercase()
+        if (AUTH_MARKERS.none { it in lower }) return e
+        val otherRegion = if (configuredBaseUrl.trimEnd('/').endsWith(".cn")) {
+            "If your key is from platform.moonshot.ai (International), use " +
+                "KimiClient(baseUrl = KimiClient.INTERNATIONAL_BASE_URL) ($INTERNATIONAL_BASE_URL)."
+        } else {
+            "If your key is from platform.moonshot.cn (China), use " +
+                "KimiClient(baseUrl = KimiClient.CHINA_BASE_URL) ($CHINA_BASE_URL)."
+        }
+        return LlmProviderException(
+            "${e.message} — Moonshot has two separate platforms, $CHINA_BASE_URL (China) and " +
+                "$INTERNATIONAL_BASE_URL (International); a key from one is rejected by the other. This client " +
+                "is using '$configuredBaseUrl'. $otherRegion",
+            e,
+        )
+    }
 
     companion object {
-        const val DEFAULT_BASE_URL: String = "https://api.moonshot.cn"
+        /** Moonshot **China** platform — keys from platform.moonshot.cn. The historical default. */
+        const val CHINA_BASE_URL: String = "https://api.moonshot.cn"
+
+        /** Moonshot **International** platform — keys from platform.moonshot.ai. */
+        const val INTERNATIONAL_BASE_URL: String = "https://api.moonshot.ai"
+
+        const val DEFAULT_BASE_URL: String = CHINA_BASE_URL
         const val DEFAULT_MAX_TOKENS: Int = OpenAiClient.DEFAULT_MAX_TOKENS
+
+        private val AUTH_MARKERS = listOf("invalid_authentication", "invalid authentication", "unauthorized", "401")
     }
 }

@@ -38,12 +38,14 @@ class KimiClientIntegrationTest {
 
     private val apiKey: String? = loadApiKey()
     private val model: String = System.getenv("KIMI_TEST_MODEL") ?: "moonshot-v1-8k"
+    // #4511 — point at the right Moonshot region (.cn China / .ai International) for the key.
+    private val baseUrl: String = System.getenv("KIMI_BASE_URL") ?: KimiClient.DEFAULT_BASE_URL
 
     @Tag("live-llm")
     @Test
     fun `returns text response for simple prompt`() {
         assumeTrue(apiKey != null, "skipping: no Kimi key at .secrets/kimi-key or KIMI_API_KEY")
-        val client = KimiClient(apiKey = apiKey!!, model = model, temperature = 0.0, maxTokens = 64)
+        val client = KimiClient(apiKey = apiKey!!, model = model, temperature = 0.0, maxTokens = 64, baseUrl = baseUrl)
 
         val response = client.chat(listOf(
             LlmMessage("user", "Reply with exactly the word: pong"),
@@ -62,7 +64,7 @@ class KimiClientIntegrationTest {
     @Test
     fun `streaming response emits text deltas and Kimi usage`() = runBlocking {
         assumeTrue(apiKey != null, "skipping: no Kimi key at .secrets/kimi-key or KIMI_API_KEY")
-        val client = KimiClient(apiKey = apiKey!!, model = model, temperature = 0.0, maxTokens = 64)
+        val client = KimiClient(apiKey = apiKey!!, model = model, temperature = 0.0, maxTokens = 64, baseUrl = baseUrl)
 
         val chunks = client.chatStream(listOf(
             LlmMessage("user", "Count from 1 to 5 separated by spaces. Output only the numbers."),
@@ -93,6 +95,7 @@ class KimiClientIntegrationTest {
             temperature = 0.0,
             maxTokens = 128,
             tools = listOf(tool),
+            baseUrl = baseUrl,
         )
 
         val response = client.chat(

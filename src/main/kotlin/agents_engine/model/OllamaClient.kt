@@ -441,6 +441,20 @@ open class OllamaClient(
         val toolCall = InlineToolCallParser.parse(content)
         if (toolCall != null) return LlmResponse.ToolCalls(listOf(toolCall), tokenUsage, reasoningText)
 
+        // #4512 — the model generated tokens but surfaced NOTHING usable (blank content, no native
+        // or inline tool call, no reasoning text). This is typical of a reasoning model (e.g.
+        // gpt-oss) whose output Ollama doesn't expose as `content` on the chat path. Returning an
+        // empty Text makes the agentic loop fail silently; fail loud with an actionable message.
+        if (content.isBlank() && reasoningText == null && (tokenUsage?.completionTokens ?: 0) > 0) {
+            throw LlmProviderException(
+                "Ollama model '$model' generated ${tokenUsage?.completionTokens} token(s) but returned no " +
+                    "content, no tool call, and no reasoning text — nothing usable was surfaced. This is typical " +
+                    "of a reasoning model (e.g. gpt-oss) whose output Ollama does not expose as `content` on the " +
+                    "chat path. Use a chat/tool-calling model such as llama3.1, qwen2.5, or mistral, or check your " +
+                    "Ollama version's support for '$model'.",
+            )
+        }
+
         return LlmResponse.Text(content, tokenUsage, reasoningText)
     }
 
