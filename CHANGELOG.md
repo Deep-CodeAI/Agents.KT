@@ -4,6 +4,19 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Fixed — inline-mode tool conversations converge (#4513)
+
+Models that reject native Ollama `tools` (e.g. `gemma3`) fall back to the inline `{"tool":…}`
+prompt — but the conversation history still carried native `tool_calls` / `"tool"`-role messages the
+inline model can't read, so it **looped (turn-budget exceeded) or went blank** on the turn after a
+tool result. `OllamaClient.withInlineToolPrompt` now **re-renders the inline-mode history into the
+text the model was taught** (an assistant tool call becomes its inline JSON; a tool result becomes a
+readable user message), and the prompt tells the model to **stop calling tools and answer in plain
+text** once it has a result. Verified live: the `gemma3:4b` inline-fallback integration tests went
+from budget-exceeded to **green**. Live test models are configurable via `OLLAMA_TEST_MODEL`
+(reasoning models like `gpt-oss` surface no content; a tool-caller such as `qwen3-vl:8b` works). 2
+hermetic tests.
+
 ### Fixed — actionable provider errors: Kimi region + Ollama empty reasoning response (#4511, #4512)
 
 Two confusing live-failure modes now fail *loud and actionable* instead of as junk:

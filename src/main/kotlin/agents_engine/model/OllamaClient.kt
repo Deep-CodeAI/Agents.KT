@@ -311,20 +311,43 @@ open class OllamaClient(
 
             {"tool":"<tool_name>","arguments":{<key>:<value>, ...}}
 
-            If no tool is needed, answer normally in plain text.
+            After a tool result is given back to you, STOP calling tools — use the result to answer the user directly in plain text. Do not output JSON again and do not repeat the same tool call. If no tool is needed, answer normally in plain text.
 
             Available tools:
             $descriptions
         """.trimIndent()
     }
 
+    /**
+     * #4513 — inline-mode models (those that reject native `tools`) were never taught the native
+     * `tool_calls` / `"tool"`-role wire format, so a multi-turn history full of those foreign fields
+     * makes them loop or go blank. Re-render the history in the SAME inline text they emit: an
+     * assistant tool-call turn becomes its inline JSON content, and a tool-result turn becomes a
+     * readable user message. Keeps the conversation self-consistent for the inline prompt.
+     */
     internal fun withInlineToolPrompt(messages: List<LlmMessage>): List<LlmMessage> {
         val inlinePrompt = buildInlineToolPrompt()
-        val first = messages.firstOrNull()
+        val reRendered = messages.map { msg ->
+            when {
+                msg.role == "assistant" && !msg.toolCalls.isNullOrEmpty() -> {
+                    val inline = msg.toolCalls.orEmpty().joinToString("\n") { tc ->
+                        val args = InlineToolCallParser.argsToJson(tc.arguments)
+                        """{"tool":${tc.name.toJsonString()},"arguments":$args}"""
+                    }
+                    LlmMessage("assistant", msg.content.ifBlank { inline })
+                }
+                msg.role == "tool" -> LlmMessage(
+                    "user",
+                    "Tool result: ${msg.content}\n\nUse this result to answer my request directly, in plain text.",
+                )
+                else -> msg
+            }
+        }
+        val first = reRendered.firstOrNull()
         return if (first?.role == "system") {
-            listOf(LlmMessage("system", first.content + "\n\n" + inlinePrompt)) + messages.drop(1)
+            listOf(LlmMessage("system", first.content + "\n\n" + inlinePrompt)) + reRendered.drop(1)
         } else {
-            listOf(LlmMessage("system", inlinePrompt)) + messages
+            listOf(LlmMessage("system", inlinePrompt)) + reRendered
         }
     }
 
