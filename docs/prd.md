@@ -2850,6 +2850,110 @@ Any node in the delegation tree can be exported as an A2A endpoint:
 project.toAgentCard(url = "https://api.deep-code.ai/agents/project")
 ```
 
+### 12.6 AGNTCY Interoperability *(planned)*
+
+[AGNTCY](https://github.com/agntcy) — the Linux Foundation "Internet of Agents" collective (Cisco/Outshift-led) — is the second cross-vendor interop stack alongside Google A2A (§12.5). Agents.KT targets **both**: A2A is the wire/invocation standard; AGNTCY adds a content-addressed **directory** and a **trust** layer. The native, typed `agent.json` (§12.2) stays the source of truth; AGNTCY support is a set of **exporters/clients over it**, exactly parallel to `toAgentCard()`.
+
+**Strategic scoping (researched June 2026).** AGNTCY has five pillars; "full support" is narrower than it appears because two are out:
+
+| Pillar | What | Status | Decision |
+|--------|------|--------|----------|
+| **OASF** | Agent *record* — discovery metadata (skills/domains as taxonomy IDs, locators, modules) | Live (`1.0.0`) | **Build** — export + import/validate |
+| **DIR** | gRPC + OCI content-addressed *directory* (publish/discover by CID) | Live (`v1`) | **Build** — client (push/pull/search) |
+| **Identity** | W3C VC "agent badges" (JOSE/JWKS) | Live, evolving | **Build verify/resolve** only (pure-JVM, cheap); defer issuance |
+| **ACP** | REST runtime-invocation protocol | **Archived Apr 2026, merged into A2A** | **Do not build** — A2A (§12.5) subsumes it |
+| **SLIM** | Rust MLS-encrypted transport beneath A2A/MCP | Live | **Defer** — only JVM binding is a JNI/JNA wrapper over a native lib; wrong shape for a pure-typed-JVM runtime |
+
+So AGNTCY interop = **OASF + DIR + Identity-verify**, riding on the A2A we already do.
+
+**OASF record export/import.** A third discovery exporter beside A2A:
+
+```kotlin
+val record = specMaster.toOasfRecord(
+    version = "2.0.0",
+    authors = listOf("K.Skobeltsyn <konstantin@skobeltsyn.com>"),
+    locators = listOf(Locator.sourceCode("https://github.com/Deep-CodeAI/Agents.KT")),
+)
+// → OASF 1.0.0 JSON: name, version, schema_version, authors, created_at,
+//   skills:[{name,id}], domains:[{name,id}], locators:[...], modules:[]
+```
+
+The one real engineering cost is the **skills/domains taxonomy**: OASF skills are not free text — each is `{name: "agent_orchestration/task_decomposition", id: 1001}`, where `id` is digit-concatenation of the hierarchy UIDs. No JVM SDK and no fuzzy matcher exist. Plan: **vendor** the `schema/skills` + `schema/domains` trees and compute IDs locally (offline, reproducible), with the hosted schema server (`schema.oasf.outshift.com/api/skills`) as a validation cross-check. Free-form agent skills map via an opt-in `.oasf("agent_orchestration/task_decomposition")` annotation; un-annotated skills export under a sensible default and a validation warning. Record **signing** (Sigstore/cosign over OCI) is external to the record JSON — a later optional integration, not part of the serializer.
+
+**DIR client.** `buf generate buf.build/agntcy/dir` → grpc-kotlin stubs for `StoreService.{Push,Pull,Lookup}` (CID-addressed) and `RoutingService`/`SearchService`. DIR carries our OASF record as an opaque `google.protobuf.Struct`, so the JSON is enough — no OASF protos required. Auth is layered and optional (insecure dev / SPIFFE / OIDC bearer). Targets both self-hosted (`localhost:8888`) and the hosted network (`prod.api.ads.outshift.io`, auth-gated via hub login).
+
+```kotlin
+val dir = AgntcyDirectory.connect("localhost:8888")        // or hosted, with auth
+val cid = dir.push(specMaster.toOasfRecord(...))           // → content id
+val hits = dir.search(skill = "agent_orchestration/task_decomposition")
+```
+
+**Identity — verify/resolve.** Badge verification is pure-JVM and high-value for trust-gated networks: fetch `/.well-known/vcs.json` + `/.well-known/jwks.json` and validate the JOSE/JWS verifiable credential with an off-the-shelf JVM JWT library. Issuance (vault, key management, signing) is the heavy half and is deferred to the self-hosted stack.
+
+**Deferred (documented, not built):** ACP REST adapter (only if forced to interop with already-deployed AGNTCY Workflow Servers), SLIM transport, OASF record signing + issuance, OASF modules (the standard module catalog is still empty in `1.0.0`).
+
+Tracking: epic `[interop] AGNTCY support` with subtasks for OASF export, OASF import/validate, DIR client, and Identity verify.
+
+### 12.7 AG-UI — Agent↔Frontend Serving *(planned, deferred)*
+
+[AG-UI](https://github.com/ag-ui-protocol/ag-ui) (Agent-User Interaction Protocol) is the **agent↔user/frontend** layer of the interop stack. The standard framing — **MCP = agent↔tools, A2A = agent↔agent, AG-UI = agent↔user** — is stated by AG-UI's own docs, which note the three are complementary and often used together by one agent. It's the only interop layer that reaches an **end-user UI** (a streaming React/[CopilotKit](https://copilotkit.ai) chat surface) without us building a frontend.
+
+**It is not another descriptor exporter.** `agent.json` (§12.2), the A2A AgentCard (§12.5), and the OASF record (§12.6) are *static descriptions* of an agent. AG-UI is a **runtime streaming surface**: a single `POST` of `RunAgentInput {threadId, runId, state, messages[], tools[], context[]}` that returns an **SSE stream of typed events**. It belongs in the serving layer — a direct bridge over the typed streaming `AgentSession` (§5.7), the runtime analog of how A2A pairs an AgentCard with a streaming server.
+
+**The event surface maps ~1:1 onto `AgentSession`:**
+
+| AG-UI event family | AgentSession |
+|---|---|
+| `RUN_STARTED` / `RUN_FINISHED` / `RUN_ERROR` | session open / close / error envelope |
+| `TEXT_MESSAGE_START/CONTENT/END` | text token deltas |
+| `TOOL_CALL_START/ARGS/END/RESULT` (streamed partial-JSON args) | tool-call events |
+| `STATE_SNAPSHOT` / `STATE_DELTA` (RFC-6902 JSON Patch) | shared agent↔UI state (new) |
+| `REASONING_*` / `THINKING_*` | reasoning deltas (already separated from text) |
+
+The whole job is: emit our stream wrapped in the `RUN_STARTED … RUN_FINISHED` envelope over a Micronaut SSE endpoint. Estimated **~1 day**, since we already own the hard part (typed streaming). Frontend/client tools come back as a `ToolMessage` appended to `messages` on the next `POST` (each turn re-posts the full updated history + state).
+
+**Build approach — hand-roll, no SDK dependency.** There is **no first-party JVM SDK**; the community Kotlin and Java SDKs in the repo are **client-side only** (they *consume* a remote agent's stream, they don't *serve* one), so neither helps us. Port the event enum as Kotlin sealed/data classes from the language-neutral protobuf source of truth (`sdks/typescript/packages/proto/src/proto/{events,types,patch}.proto`; the TS Zod `events.ts` is canonical and **docs lag the schema** — build against the schema, ~27–34 event types across lifecycle/text/tool/state/reasoning families). Do **not** adopt Atmosphere or AgentScope-Java — they import a rival agent model that fights our runtime.
+
+**Why deferred.** Nice-to-have, not must-have, and lower priority than AGNTCY (which reaches agents/directories — our likelier near-term consumer). Two caveats kept on record: (1) **governance** — unlike A2A (Linux Foundation) and MCP (Agentic AI Foundation), AG-UI is still single-vendor (CopilotKit/Tawkit), MIT-licensed (no patent grant), not donated to any foundation as of June 2026; mitigated by the spec being small enough that lock-in barely bites. (2) **A2A/AG-UI streaming overlap** is asserted-but-undefended by sources (both use SSE); our read is A2A streams coarse task updates to a *calling agent* while AG-UI streams fine-grained render events to a *browser* — different consumer and granularity, so they compose. Re-evaluate to must-have if AG-UI is donated to a foundation.
+
+Tracking: epic `[interop] AG-UI support (agent↔frontend serving)`, deferred until a concrete frontend need.
+
+### 12.8 x402 — Agent Payments / Settlement Layer *(planned, deferred — money-handling)*
+
+[x402](https://github.com/x402-foundation/x402) revives HTTP `402 Payment Required` to let agents pay for gated resources in **stablecoins (USDC), gaslessly**. Unlike §12.5–12.7 (which carry no money), x402 is a **settlement layer** — and it sits *beneath* the protocols we already target, not beside them. As of April 2026 it is **Linux-Foundation-governed** (x402 Foundation, 22 orgs incl. Coinbase, Cloudflare, AWS, Google, Circle, Visa, Mastercard, Amex, Stripe, Shopify); Apache-2.0.
+
+**The flow.** Client requests a resource → server returns `402` + `PAYMENT-REQUIRED` header (`PaymentRequirements`: `scheme`, `network`, `maxAmountRequired`, `payTo`, `asset`, `resource`, `maxTimeoutSeconds`, `outputSchema`, `extra`) → client signs an **EIP-3009 `transferWithAuthorization`** (EIP-712; gasless — the facilitator submits on-chain) and resends with `PAYMENT-SIGNATURE` → server calls facilitator `/verify` then `/settle` → returns `200` + `PAYMENT-RESPONSE` receipt. Schemes: `exact`, **`upto`** (authorize a cap, settle actual usage — the natural metered-API model), `batch-settlement`. Networks: EVM/Base, Solana, Stellar. The **facilitator** (Coinbase CDP runs ~80%) is the trust chokepoint; sellers never touch a chain directly.
+
+**Where it fits.** x402 is the settlement *rail* under our existing seams: an official **`a2a-x402` extension** (Google + Coinbase) and an **MCP `paidTool()`** wrapper already exist; Google's **AP2** is the *authorization* layer and x402 is its blessed *crypto rail*. AGNTCY and AG-UI have no payment dimension. So our insertion point is **an A2A x402 extension + an MCP paid-tool wrapper**, not a standalone payments module.
+
+**Seller-side first (safe); buyer-side deferred behind hard custody guardrails.** These are different risk animals:
+- **Seller-side** — our agents expose *paid* endpoints. We *receive* USDC via a hosted facilitator: **no custody, no money-transmitter exposure, no LLM-holds-key problem.** "Emit `402` → verify facilitator settlement → deliver" — a thin Micronaut middleware; may lean on the official Java SDK (`org.x402:x402`, SNAPSHOT — a servlet `PaymentFilter` + client; servlet/reactive impedance to weigh). This makes agents that can **monetize themselves** — a real differentiator. Ship **experimental**.
+- **Buyer-side** — our agents autonomously *pay*. **Deferred.** All real-money risk lives here. Only behind scoped ERC-4337 session keys (on-chain per-tx caps, payee allowlists, velocity limits), **signing isolated from the model layer**, and human-in-the-loop for settlement. Separate, later, opt-in module.
+
+**Non-negotiable design constraint:** **keep signing and spending limits below the model layer** — the LLM must never hold a key or carry a spend limit in its prompt. x402 moves **irreversible** money (no chargebacks; liability lands on the deployer), and prompt-injection drains are confirmed-real (Grok/Bankr ~$150–200k, Freysa $47k; peer-reviewed *Five Attacks on x402*). A self-hosted *custodial* facilitator likely triggers money-transmitter / stablecoin regulation (FinCEN MSB, GENIUS Act, MiCA) — prefer a hosted facilitator and never take custody on the seller path.
+
+**Why deferred.** Lower strategic priority than the interop trio (A2A/AGNTCY/AG-UI are table-stakes with no money/custody/regulatory surface). Adoption is also early — real settled volume is ~\$28k/day (much of it wash-traded) over 13 months — so this is a forward-looking, on-trend bet, sequenced **after** the interop work, seller-side first.
+
+Tracking: epic `[interop] x402 agent payments`, deferred — seller-side experimental, buyer-side gated.
+
+### 12.9 NLWeb — Agent↔Web-Content / External Knowledge *(client ≈ free via MCP; server deferred)*
+
+[NLWeb](https://github.com/nlweb-ai/NLWeb) (R.V. Guha — creator of RSS/RDF/schema.org — at Microsoft, announced Build 2025) is the **agent↔web-content** layer: it makes a website natural-language-queryable and returns **schema.org-typed JSON** results. Microsoft's framing — *"NLWeb is to MCP/A2A what HTML is to HTTP"* — is aspirational; mechanically it's **packaged RAG over schema.org/RSS data wrapped in an MCP interface**.
+
+**The load-bearing fact: every NLWeb endpoint is also an MCP server.** Its `ask` interface rides on MCP transport, so **agents.kt's existing MCP client already consumes NLWeb sites** — no NLWeb-specific protocol code needed. NLWeb is therefore not a new protocol to implement; it's a *recognized use of MCP we already speak*. It's the **inbound external-knowledge counterpart to MCP-tools**; the only real overlap with anything we track is plain MCP servers, which is exactly why it's nearly free.
+
+**Query shape** (the `/ask` and `/mcp` endpoints, same args): `query` (required), `site`, `prev` (conversation history — server is stateless), `mode` (`list` = ranked results, `summarize` = list + LLM summary, `generate` = full RAG answer), `streaming`. Response: `{query_id, results[]}` where each result is `{url, name, site, score, description, schema_object}` (`schema_object` = the schema.org JSON). Build tolerant of two divergent schemas — the implemented `schema_object` shape and the newer nlweb.ai v0.55 `query/context/prefer/meta` envelope.
+
+**Client-side (consume NLWeb as knowledge) — do opportunistically, ~free.** A thin helper over the MCP client: point it at an NLWeb `/mcp` URL, `tools/call` the `ask` tool, surface each `schema_object` into a `KnowledgeProvider`/retrieval source. Mode mapping: `list`→retrieval source, `generate`→delegate-the-answer. The honest, shippable claim is *"agents.kt MCP clients can consume NLWeb endpoints today."*
+
+**Server-side (expose agent data as an NLWeb endpoint) — deferred, niche.** That means standing up schema.org-shaped data + a vector store + an LLM-in-the-loop retrieval pipeline behind `/ask` + `/mcp` — effectively building/operating a RAG service. An independent benchmark (Univ. Mannheim, [arXiv 2511.23281](https://arxiv.org/abs/2511.23281)) finds NLWeb *ties* RAG/MCP on effectiveness but plain RAG is more cost-effective — so NLWeb's value is standardization, not performance. This is an **application** concern, not a runtime primitive; defer unless a concrete consumer needs to discover our content over the open web.
+
+**Caveats.** NLWeb is **Microsoft-led, MIT, not foundation-governed** (the `nlweb-ai` org is a July-2025 rename of `microsoft/NLWeb`, not a donation — unlike A2A→Linux Foundation). Reference server is proof-of-concept quality (no CI/CD, no releases); an official .NET 9 impl exists but **no JVM/Kotlin port**. Adoption is partner-pilot grade.
+
+**Priority — lowest net-new work of the external standards**, precisely because MCP subsumes the client capability. Order: MCP > A2A > AGNTCY ≈ AG-UI > x402 > NLWeb. It earns a thin client helper, not a dedicated workstream.
+
+Tracking: epic `[interop] NLWeb support`, client helper opportunistic + server-side deferred.
+
 ---
 
 ## 13. Distributed Agents Framework
