@@ -2878,6 +2878,30 @@ val hits = dir.search(skill = "agent_orchestration/task_decomposition")
 
 Tracking: epic `[interop] AGNTCY support` with subtasks for OASF export, OASF import/validate, DIR client, and Identity verify.
 
+### 12.7 AG-UI — Agent↔Frontend Serving *(planned, deferred)*
+
+[AG-UI](https://github.com/ag-ui-protocol/ag-ui) (Agent-User Interaction Protocol) is the **agent↔user/frontend** layer of the interop stack. The standard framing — **MCP = agent↔tools, A2A = agent↔agent, AG-UI = agent↔user** — is stated by AG-UI's own docs, which note the three are complementary and often used together by one agent. It's the only interop layer that reaches an **end-user UI** (a streaming React/[CopilotKit](https://copilotkit.ai) chat surface) without us building a frontend.
+
+**It is not another descriptor exporter.** `agent.json` (§12.2), the A2A AgentCard (§12.5), and the OASF record (§12.6) are *static descriptions* of an agent. AG-UI is a **runtime streaming surface**: a single `POST` of `RunAgentInput {threadId, runId, state, messages[], tools[], context[]}` that returns an **SSE stream of typed events**. It belongs in the serving layer — a direct bridge over the typed streaming `AgentSession` (§5.7), the runtime analog of how A2A pairs an AgentCard with a streaming server.
+
+**The event surface maps ~1:1 onto `AgentSession`:**
+
+| AG-UI event family | AgentSession |
+|---|---|
+| `RUN_STARTED` / `RUN_FINISHED` / `RUN_ERROR` | session open / close / error envelope |
+| `TEXT_MESSAGE_START/CONTENT/END` | text token deltas |
+| `TOOL_CALL_START/ARGS/END/RESULT` (streamed partial-JSON args) | tool-call events |
+| `STATE_SNAPSHOT` / `STATE_DELTA` (RFC-6902 JSON Patch) | shared agent↔UI state (new) |
+| `REASONING_*` / `THINKING_*` | reasoning deltas (already separated from text) |
+
+The whole job is: emit our stream wrapped in the `RUN_STARTED … RUN_FINISHED` envelope over a Micronaut SSE endpoint. Estimated **~1 day**, since we already own the hard part (typed streaming). Frontend/client tools come back as a `ToolMessage` appended to `messages` on the next `POST` (each turn re-posts the full updated history + state).
+
+**Build approach — hand-roll, no SDK dependency.** There is **no first-party JVM SDK**; the community Kotlin and Java SDKs in the repo are **client-side only** (they *consume* a remote agent's stream, they don't *serve* one), so neither helps us. Port the event enum as Kotlin sealed/data classes from the language-neutral protobuf source of truth (`sdks/typescript/packages/proto/src/proto/{events,types,patch}.proto`; the TS Zod `events.ts` is canonical and **docs lag the schema** — build against the schema, ~27–34 event types across lifecycle/text/tool/state/reasoning families). Do **not** adopt Atmosphere or AgentScope-Java — they import a rival agent model that fights our runtime.
+
+**Why deferred.** Nice-to-have, not must-have, and lower priority than AGNTCY (which reaches agents/directories — our likelier near-term consumer). Two caveats kept on record: (1) **governance** — unlike A2A (Linux Foundation) and MCP (Agentic AI Foundation), AG-UI is still single-vendor (CopilotKit/Tawkit), MIT-licensed (no patent grant), not donated to any foundation as of June 2026; mitigated by the spec being small enough that lock-in barely bites. (2) **A2A/AG-UI streaming overlap** is asserted-but-undefended by sources (both use SSE); our read is A2A streams coarse task updates to a *calling agent* while AG-UI streams fine-grained render events to a *browser* — different consumer and granularity, so they compose. Re-evaluate to must-have if AG-UI is donated to a foundation.
+
+Tracking: epic `[interop] AG-UI support (agent↔frontend serving)`, deferred until a concrete frontend need.
+
 ---
 
 ## 13. Distributed Agents Framework
