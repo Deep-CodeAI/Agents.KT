@@ -2834,6 +2834,50 @@ Any node in the delegation tree can be exported as an A2A endpoint:
 project.toAgentCard(url = "https://api.deep-code.ai/agents/project")
 ```
 
+### 12.6 AGNTCY Interoperability *(planned)*
+
+[AGNTCY](https://github.com/agntcy) — the Linux Foundation "Internet of Agents" collective (Cisco/Outshift-led) — is the second cross-vendor interop stack alongside Google A2A (§12.5). Agents.KT targets **both**: A2A is the wire/invocation standard; AGNTCY adds a content-addressed **directory** and a **trust** layer. The native, typed `agent.json` (§12.2) stays the source of truth; AGNTCY support is a set of **exporters/clients over it**, exactly parallel to `toAgentCard()`.
+
+**Strategic scoping (researched June 2026).** AGNTCY has five pillars; "full support" is narrower than it appears because two are out:
+
+| Pillar | What | Status | Decision |
+|--------|------|--------|----------|
+| **OASF** | Agent *record* — discovery metadata (skills/domains as taxonomy IDs, locators, modules) | Live (`1.0.0`) | **Build** — export + import/validate |
+| **DIR** | gRPC + OCI content-addressed *directory* (publish/discover by CID) | Live (`v1`) | **Build** — client (push/pull/search) |
+| **Identity** | W3C VC "agent badges" (JOSE/JWKS) | Live, evolving | **Build verify/resolve** only (pure-JVM, cheap); defer issuance |
+| **ACP** | REST runtime-invocation protocol | **Archived Apr 2026, merged into A2A** | **Do not build** — A2A (§12.5) subsumes it |
+| **SLIM** | Rust MLS-encrypted transport beneath A2A/MCP | Live | **Defer** — only JVM binding is a JNI/JNA wrapper over a native lib; wrong shape for a pure-typed-JVM runtime |
+
+So AGNTCY interop = **OASF + DIR + Identity-verify**, riding on the A2A we already do.
+
+**OASF record export/import.** A third discovery exporter beside A2A:
+
+```kotlin
+val record = specMaster.toOasfRecord(
+    version = "2.0.0",
+    authors = listOf("K.Skobeltsyn <konstantin@skobeltsyn.com>"),
+    locators = listOf(Locator.sourceCode("https://github.com/Deep-CodeAI/Agents.KT")),
+)
+// → OASF 1.0.0 JSON: name, version, schema_version, authors, created_at,
+//   skills:[{name,id}], domains:[{name,id}], locators:[...], modules:[]
+```
+
+The one real engineering cost is the **skills/domains taxonomy**: OASF skills are not free text — each is `{name: "agent_orchestration/task_decomposition", id: 1001}`, where `id` is digit-concatenation of the hierarchy UIDs. No JVM SDK and no fuzzy matcher exist. Plan: **vendor** the `schema/skills` + `schema/domains` trees and compute IDs locally (offline, reproducible), with the hosted schema server (`schema.oasf.outshift.com/api/skills`) as a validation cross-check. Free-form agent skills map via an opt-in `.oasf("agent_orchestration/task_decomposition")` annotation; un-annotated skills export under a sensible default and a validation warning. Record **signing** (Sigstore/cosign over OCI) is external to the record JSON — a later optional integration, not part of the serializer.
+
+**DIR client.** `buf generate buf.build/agntcy/dir` → grpc-kotlin stubs for `StoreService.{Push,Pull,Lookup}` (CID-addressed) and `RoutingService`/`SearchService`. DIR carries our OASF record as an opaque `google.protobuf.Struct`, so the JSON is enough — no OASF protos required. Auth is layered and optional (insecure dev / SPIFFE / OIDC bearer). Targets both self-hosted (`localhost:8888`) and the hosted network (`prod.api.ads.outshift.io`, auth-gated via hub login).
+
+```kotlin
+val dir = AgntcyDirectory.connect("localhost:8888")        // or hosted, with auth
+val cid = dir.push(specMaster.toOasfRecord(...))           // → content id
+val hits = dir.search(skill = "agent_orchestration/task_decomposition")
+```
+
+**Identity — verify/resolve.** Badge verification is pure-JVM and high-value for trust-gated networks: fetch `/.well-known/vcs.json` + `/.well-known/jwks.json` and validate the JOSE/JWS verifiable credential with an off-the-shelf JVM JWT library. Issuance (vault, key management, signing) is the heavy half and is deferred to the self-hosted stack.
+
+**Deferred (documented, not built):** ACP REST adapter (only if forced to interop with already-deployed AGNTCY Workflow Servers), SLIM transport, OASF record signing + issuance, OASF modules (the standard module catalog is still empty in `1.0.0`).
+
+Tracking: epic `[interop] AGNTCY support` with subtasks for OASF export, OASF import/validate, DIR client, and Identity verify.
+
 ---
 
 ## 13. Distributed Agents Framework
