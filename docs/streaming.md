@@ -54,7 +54,7 @@ All subtypes carry `agentId`, `requestId`, `sessionId`, and `manifestHash`. `age
 
 ## Provider streaming status
 
-All seven providers stream at the wire: three adapters implement `ModelClient.chatStream` natively, and the four OpenAI-compatible providers inherit `OpenAiClient`'s SSE implementation. Numbers below are from the live integration tests under `./gradlew integrationTest` against real APIs.
+All eight providers stream at the wire: four adapters implement `ModelClient.chatStream` natively (Ollama NDJSON; Anthropic, OpenAI, and Gemini SSE), and the four OpenAI-compatible providers (DeepSeek / Kimi / OpenRouter / Perplexity) inherit `OpenAiClient`'s SSE implementation. Numbers below are from the live integration tests under `./gradlew integrationTest` against real APIs.
 
 | Provider | Protocol | File | Live measurement (count 1–10 prompt) |
 |---|---|---|---|
@@ -138,7 +138,7 @@ Concurrent legs (`Parallel` via `/`, `Forum` via `*`) demultiplex purely by `age
 
 The one fallback: an operator instance constructed **outside** its factory functions (`then` / `/` / `*` / `.loop` / `.branch`) has no recorded session exec — it executes non-streaming and only its boundary events appear. **Stage boundaries are first-class (#4491):** Pipeline sessions emit `StageStarted`/`StageCompleted` pairs around each direct component (agent stages by name, operator legs labeled `parallel`/`forum`/`loop`/`branch`; nested pipelines mark their own stages exactly once) — consumers no longer infer stage transitions from `agentId` flips.
 
-## Known gaps (current as of 0.7.24)
+## Known gaps (current as of 0.8.0)
 
 - *(closed by #4491: stage-boundary markers shipped — see Composition above.)*
 - *(closed by #4499: cancelling collection / `await()` now cancels the underlying suspending invocation — see Cancellation above.)*

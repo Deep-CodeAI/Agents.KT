@@ -30,7 +30,7 @@ A side-by-side for teams choosing a framework. Written with the constraint of be
 
 ## Where Agents.KT loses
 
-**Ecosystem.** LangChain has 700+ integrations (vector stores, retrievers, embedders, agents, callbacks). Agents.KT has 7 LLM providers (Ollama, Anthropic, OpenAI, DeepSeek, Kimi, OpenRouter, Perplexity — see [providers.md](providers.md)) and you write the rest. If your job is "wire up 12 SaaS APIs into a prompt pipeline by Friday," LangChain is the right tool, not this one.
+**Ecosystem.** LangChain has 700+ integrations (vector stores, retrievers, embedders, agents, callbacks). Agents.KT has 8 LLM providers (Ollama, Anthropic, OpenAI, DeepSeek, Kimi, OpenRouter, Perplexity, Gemini — see [providers.md](providers.md)) and you write the rest. If your job is "wire up 12 SaaS APIs into a prompt pipeline by Friday," LangChain is the right tool, not this one.
 
 **Python AI/ML interop.** If your team already has Python notebooks for embedding generation, fine-tuning, eval harnesses — running an Agents.KT layer next to them is a context switch. SK's Python flavor or LangChain stay in the same language.
 
@@ -139,7 +139,7 @@ A few shortcuts that point at one framework over the others:
 
 ## Status notes (2026-06)
 
-- **Agents.KT 0.7.23 (latest release)** — runtime ToolPolicy enforcement (in-JVM gate + OS sandbox), the standalone `agents-kt` CLI, tamper-evident audit ledger, fail-loud skill routing, and the `onLLMError` policy — on top of 0.6.0's permission manifests, JSONL audit export, OTel / LangSmith / Langfuse bridges, and constrained decoding. Unreleased `main` adds Perplexity as the seventh provider plus the `perplexitySearch` grounded tool (see CHANGELOG *Unreleased*).
+- **Agents.KT 0.8.0 (latest release)** — interoperable, multimodal agents with capability grants: **A2A v1** (server + typed client), full **multimodal** (audio STT/TTS, vision, image generation), the **RAG** seam, richer **composition** (`handoff` / `firstOf` / `.speculative` / `loopUntil` / aggregators / forum captains), **HITL** gates + an **eval** harness, an eighth model provider (**Google Gemini**), **agent.json** serialization, and the **capability-grants** DSL (`grants { allow / confirm }`) — on top of 0.7.x's runtime ToolPolicy enforcement (in-JVM gate + OS sandbox), the standalone `agents-kt` CLI, tamper-evident audit ledger, fail-loud skill routing, the `onLLMError` policy, the Perplexity connector + `perplexitySearch` grounded tool, and 0.6.0's permission manifests / JSONL audit export / OTel-LangSmith-Langfuse bridges / constrained decoding. *Deferred to 0.9.0:* the remaining Layer-2 sandbox backends (Docker / egress proxy / read confinement).
 - **LangChain 0.3.x** — stable, ecosystem mature. LCEL is the recommended composition surface.
 - **Semantic Kernel 1.x** — stable, MCP integration in preview.
 - **AutoGen 0.4.x** — major architectural rewrite landed; the new core/agentchat split is recent.

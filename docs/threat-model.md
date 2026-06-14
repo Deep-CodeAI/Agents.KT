@@ -197,7 +197,7 @@ Swarm.discover().forEach { sibling ->
 | Logging tool args / outputs to a file that gets shipped to a vendor log aggregator | Tool args / outputs often contain user PII or secrets. Redact at the `onToolUse` listener level before logging. The framework gives you the hook; it doesn't redact for you. |
 | Agent that calls itself recursively as a tool (via Swarm or otherwise) without a loop budget | `maxToolCalls` and `maxTurns` bound it, but the cost can spiral before the cap fires. Use `Loop` with explicit `maxIterations` for any self-feedback shape. |
 
-## What's enforced where (security-relevant, as of 0.7.24)
+## What's enforced where (security-relevant, as of 0.8.0)
 
 This is the canonical status table — README, `SECURITY.md`, and `production-hardening.md` summarize it; when they disagree, this page wins (and that disagreement is a doc bug worth filing).
 

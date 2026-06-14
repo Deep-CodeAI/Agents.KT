@@ -7,7 +7,12 @@
 ---
 
 **Product Requirements Document — Version 1.4**
-**March 2026 · CONFIDENTIAL**
+**March 2026 · Public design document**
+
+> This PRD is the living design vision for Agents.KT. It mixes **shipped**, **in-progress**, and
+> **planned/exploratory** capabilities — treat forward-looking sections as direction, not a shipped-
+> feature list. For what is actually released, see [CHANGELOG.md](../CHANGELOG.md), the
+> [roadmap](roadmap.md), and the [README](../README.md).
 
 K.Skobeltsyn Studio  
 Konstantin Skobeltsyn, CEO
