@@ -15,6 +15,8 @@ val full = (specMaster then coder) then (reviewer then deployer)
 
 All agents receive the same input concurrently via coroutines. The next stage receives `List<OUT>`.
 
+> **Distinct names required (#4500).** Streamed events from concurrent legs are demultiplexed by `agentId` (the agent's name), so `Parallel` (`/`) and `Forum` (`*`) reject two participants sharing a name at construction — `a / b / a` throws with a message naming the duplicate. Use `speculative(n)` for deliberate self-racing (those racers share one id by design).
+
 ```kotlin
 val parallel = securityReview / styleReview / performanceReview
 // Parallel<CodeBundle, Review>

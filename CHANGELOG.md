@@ -4,6 +4,25 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Fixed — session cancellation no longer leaks the invocation (#4499, streaming hardening)
+
+- Cancelling collection of `AgentSession.events` (or cancelling `await()`) now **cancels the
+  underlying agent invocation** — the documented contract, previously unenforced. The producer
+  ran in a detached scope, so a cancelled or abandoned (`take(1)`) consumer left the agent making
+  model calls in the background. The teardown lives in the events flow's `finally` (fires on
+  external cancellation, where a downstream `onCompletion` stage is skipped) and on the `await()`
+  path. Suspending invocations stop promptly; the bare-cancellation contract (no synthetic
+  `Failed`) is preserved. 3 probe tests + complex-composition streaming coverage.
+
+### Fixed — concurrent composition rejects duplicate agent names (#4500, streaming hardening)
+
+- `Parallel` (`/`) and `Forum` (`*`) demultiplex streamed events by `agentId` (the agent's name),
+  so two participants sharing a name produced indistinguishable interleaved streams. The
+  single-placement rule caught the same *instance* placed twice but not two distinct same-named
+  instances; construction now **fails loud** with an actionable message naming the duplicate — the
+  same stance as duplicate tool/skill names. `speculative(n)` self-racing is the documented
+  exception. 4 tests.
+
 ### Changed — flake diagnostics on the mac network-sandbox test (#4498, antifragility pass)
 
 - The `ProcessSandboxMacTest` live network probe (flake #4370) now embeds full failure forensics
