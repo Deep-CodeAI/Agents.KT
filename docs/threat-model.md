@@ -213,7 +213,7 @@ This is the canonical status table — README, `SECURITY.md`, and `production-ha
 | Selective network egress (hostname allowlist proxy) | 0.8 planned (#2893) | — (Layer-2 network is deny/allow-all today) |
 | Read confinement in the sandbox | 0.8+ planned | — (reads remain broad) |
 | WASM / Docker sandbox backends | 0.8 planned (#2894 / #2895) | — |
-| `grants { }` structure DSL | 0.8 planned | — |
+| `grants { allow / confirm }` capability grants (agent-level) | ✅ shipped (#4545) | `allow(...)` = freely callable; `confirm(...)` = needs the granting agent's authorization (fail-closed). Build-validated that skills stay within grants. Full `structure { root { delegates {} } }` topology still later |
 | MCP server inbound auth | ✓ shipped | `McpServerAuth.TrustedLocal` default (loopback-only) / `RequireBearerToken(s)` |
 | MCP server Host / Origin validation | ✓ shipped | `allowedHosts` / `originAllowlist` |
 | Per-client MCP tool policy | ✓ shipped | `toolPolicy { principal, tool -> }` — filters `tools/list`, denies `tools/call` opaquely |

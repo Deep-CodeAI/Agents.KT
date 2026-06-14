@@ -284,6 +284,10 @@ class Agent<IN, OUT>(
         private set
     internal val autoToolNames: MutableSet<String> = mutableSetOf()
 
+    /** #4545 — capability grants; null = no `grants { }` block (current behavior, all skills' tools available). */
+    internal var grants: Grants? = null
+        private set
+
     val beforeSkillInterceptorCount: Int
         get() = interceptors.beforeSkillCount
 
@@ -572,14 +576,23 @@ class Agent<IN, OUT>(
         interceptors.decideBeforeSkill(skillName)
 
     internal fun decideBeforeToolCall(name: String, args: Map<String, Any?>): Decision<Map<String, Any?>> {
+        // #4545 — capability-grants gate: a `confirm(...)`-granted tool needs the granting agent's
+        // authorization. Fail-closed when no GrantConfirmer is wired. (Ungranted tools are already
+        // hidden by the per-skill allowlist + build validation, so only `confirm` needs a runtime gate.)
+        val grantsGate: Decision.Deny? = grants?.takeIf { !it.isConfirmAuthorized(name, args) }?.let {
+            Decision.Deny(
+                "Tool '$name' is confirm-gated and was not authorized by the granting agent " +
+                    "(agent '${this.name}'). Wire grants { confirmWith { ... } } to authorize.",
+            )
+        }
         // Layer 1 of #1916: built-in declared-policy gate runs *before* user
         // interceptors. A denial short-circuits the chain (matching "first
         // non-Proceed wins"); a non-deny gate lets the call flow through any
         // user `onBeforeToolCall`. The chain owns the fold + decision firing.
-        val gate = if (enforceToolPolicies) {
+        val policyGate = if (enforceToolPolicies) {
             ToolPolicyEnforcer.evaluate(toolMap[name]?.policy, args) as? Decision.Deny
         } else null
-        return interceptors.decideBeforeToolCall(name, args, gate)
+        return interceptors.decideBeforeToolCall(name, args, grantsGate ?: policyGate)
     }
 
     internal fun decideBeforeTurn(messages: List<ChatMessage>): Decision<List<ChatMessage>> =
@@ -604,6 +617,18 @@ class Agent<IN, OUT>(
         for (tool in buildMemoryTools(bank, name)) {
             registerBuiltInTool(tool)
         }
+    }
+
+    /**
+     * #4545 (PRD §9.2) — declare the agent's **capability grants**: `grants { allow(toolA);
+     * confirm(toolB) }`. `allow(...)` tools are freely callable; `confirm(...)` tools need the
+     * granting agent's authorization at runtime ([GrantConfirmer], fail-closed). Opt-in — omitting
+     * the block leaves behavior unchanged. Validated at [build] (every tool a skill uses must be
+     * granted; granted names must be real tools; allow/confirm disjoint).
+     */
+    fun grants(block: GrantsBuilder.() -> Unit) {
+        checkNotFrozen()
+        grants = GrantsBuilder().apply(block).build()
     }
 
     /**
@@ -996,6 +1021,19 @@ class Agent<IN, OUT>(
         require(unknownAuto.isEmpty()) {
             "Agent \"$name\" auto-tools reference unknown tools: $unknownAuto. " +
                 "Available: ${toolMap.keys}"
+        }
+        // #4545 — capability-grants validation (only when a `grants { }` block is present).
+        grants?.let { g ->
+            val unknownGrant = g.grantedNames.filterNot { it in toolMap }
+            require(unknownGrant.isEmpty()) {
+                "Agent \"$name\" grants reference unknown tools: $unknownGrant. Available: ${toolMap.keys}"
+            }
+            val usedTools = (skills.values.flatMap { it.toolNames.orEmpty() } + autoToolNames).toSet()
+            val ungranted = usedTools.filterNot { it in g.grantedNames }
+            require(ungranted.isEmpty()) {
+                "Agent \"$name\" uses tools not covered by grants { }: $ungranted. " +
+                    "Add them to allow(...) or confirm(...). Granted: ${g.grantedNames}"
+            }
         }
         // #2479 part 2 — fail-fast on ToolChoice.Specific naming a tool that
         // isn't registered on the agent. Same philosophy as the skill / auto
