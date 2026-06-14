@@ -8,8 +8,21 @@
 0.5.0   Agents with boundaries                       — shipped
 0.6.0   Boundaries you can audit                     — shipped (epic [#1911](../../issues/1911))
 0.7.0   Boundaries you can enforce externally        — shipped (epic [#2879](../../issues/2879))
-0.8.0   Sandbox backends + capability grants         — next (Wasm/Docker/proxy/grants)
+0.8.0   Interoperable, multimodal agents (+ grants)  — shipped (A2A v1, multimodal, RAG, composition, Gemini, capability grants)
+0.9.0   Layer-2 sandbox backends                     — next (Docker/proxy/read-confinement)
 ```
+
+**0.8.0 shipped:** agent-to-agent interop (**A2A v1** — server + typed client), full **multimodal**
+(audio STT/TTS, vision, image generation), the **RAG** seam, richer **composition** (`handoff` /
+`firstOf` / `.speculative` / `loopUntil` / built-in aggregators / forum captains), **human-in-the-loop**
+gates + the **eval** harness, history compression, an eighth model provider (**Google Gemini** #1917),
+**agent.json** serialization (#4516), and **capability grants** (`grants { allow / confirm }` #4545),
+plus the agentic-web standards groundwork (AGNTCY / AG-UI / x402 / NLWeb, PRD §12.6–§12.9). The
+"sandbox backends" originally pencilled for 0.8 slipped: `WasmSandbox` ([#2894](../../issues/2894)) was
+closed won't-do (embedded-WASM-for-tools isn't rational; agent → WASM export is the separate forward
+track [#4547](../../issues/4547)), and `DockerSandbox` ([#2895](../../issues/2895)), the egress
+hostname-allowlist proxy ([#2893](../../issues/2893)), and read confinement ([#4546](../../issues/4546))
+move to **0.9.0** (they want a Linux-capable environment to build + verify).
 
 **0.7.0 shipped (epic [#2879](../../issues/2879)):** runtime *enforcement* of declared tool policies — Layer 1 in-JVM filesystem gate ([#2890](../../issues/2890)) + Layer 2 OS sandbox ([#1916](../../issues/1916)): macOS Seatbelt, Linux bubblewrap, firejail setuid fallback, plain-`ProcessBuilder` fallback; write-root + env + cwd confinement; default-deny network — and the standalone **`agents-kt` CLI** ([#1923](../../issues/1923)) for manifest generate/inspect/verify outside Gradle. **Deferred to 0.8:** `WasmSandbox` ([#2894](../../issues/2894)), `DockerSandbox` ([#2895](../../issues/2895)), the network hostname-allowlist proxy ([#2893](../../issues/2893)), and the `grants { }` structure DSL.
 
