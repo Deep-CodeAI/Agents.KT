@@ -4,6 +4,23 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Security — speech modules, second hardening pass (#4509)
+
+Follow-up to #4508 (red→green again):
+
+- **Serial-executor DoS (`SpeechServer`)** — requests were handled on one thread (`executor = null`),
+  so one slow/blocking request stalled all others. Now a bounded daemon thread pool handles them
+  concurrently.
+- **Redirect handling (`WhisperModelResolver`)** — the default client now follows `NORMAL` redirects
+  (no HTTPS→HTTP downgrade), so real HuggingFace model URLs (302 → CDN) actually download. Pair with
+  a pinned checksum to catch a tampered redirect target.
+- **Unbounded download (`WhisperModelResolver`)** — streams to disk with a hard `maxBytes` cap
+  (default 8 GiB): an over-`Content-Length` or over-cap body is rejected, no file published.
+- **Unpinned integrity (`WhisperModelResolver`)** — a download with no `sha256` now logs a WARNING
+  (a compromised mirror could feed malicious bytes to native whisper.cpp).
+- **Error hygiene (`SpeechServer`)** — `500` responses return a generic `"backend error"`; the
+  exception detail is logged server-side, not leaked to the client. 5 new tests.
+
 ### Security — harden the new speech modules (#4508)
 
 Adversarial (red→green) tests drove three fixes in the #4505/#4506 modules:

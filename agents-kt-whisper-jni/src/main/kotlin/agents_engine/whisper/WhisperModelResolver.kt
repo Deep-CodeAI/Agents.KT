@@ -1,5 +1,7 @@
 package agents_engine.whisper
 
+import java.io.InputStream
+import java.io.OutputStream
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpResponse
@@ -7,6 +9,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.logging.Logger
 
 /**
  * #4505 — resolves a Whisper model **file** at runtime, never bundling weights.
@@ -21,7 +24,11 @@ import java.security.MessageDigest
  */
 class WhisperModelResolver(
     val cacheDir: Path = defaultCacheDir(),
-    private val httpClient: HttpClient = HttpClient.newHttpClient(),
+    private val httpClient: HttpClient = HttpClient.newBuilder()
+        .followRedirects(HttpClient.Redirect.NORMAL)
+        .build(),
+    /** #4509 — hard cap on a downloaded model file; a larger response is rejected (disk-fill guard). */
+    private val maxBytes: Long = DEFAULT_MAX_MODEL_BYTES,
 ) {
     /** Use an existing local model file; fail fast (actionably) if it isn't there. */
     fun fromPath(path: Path): Path {
@@ -45,14 +52,30 @@ class WhisperModelResolver(
         if (Files.isRegularFile(target) && (sha256 == null || sha256Hex(target) == sha256.lowercase())) {
             return target
         }
+        if (sha256 == null) {
+            LOGGER.warning(
+                "Whisper model '$name' from $url is being downloaded WITHOUT a pinned checksum — its " +
+                    "integrity is not verified (a compromised mirror/MITM could serve malicious bytes to " +
+                    "native whisper.cpp). Pass sha256 to verify.",
+            )
+        }
         Files.createDirectories(cacheDir)
         val tmp = Files.createTempFile(cacheDir, ".$name.", ".part")
         try {
-            val status = httpClient.send(
+            // #4509 — stream to disk with a hard byte cap (disk-fill guard); reject an over-cap
+            // declared Content-Length up front, and abort mid-stream if an unsized body crosses it.
+            val response = httpClient.send(
                 java.net.http.HttpRequest.newBuilder(URI.create(url)).GET().build(),
-                HttpResponse.BodyHandlers.ofFile(tmp),
-            ).statusCode()
-            check(status == HTTP_OK) { "Whisper model download from $url returned HTTP $status." }
+                HttpResponse.BodyHandlers.ofInputStream(),
+            )
+            check(response.statusCode() == HTTP_OK) {
+                "Whisper model download from $url returned HTTP ${response.statusCode()}."
+            }
+            val declared = response.headers().firstValueAsLong("Content-Length").orElse(-1L)
+            check(declared <= maxBytes) {
+                "Whisper model at $url declares $declared bytes, over the $maxBytes-byte cap."
+            }
+            response.body().use { input -> Files.newOutputStream(tmp).use { out -> copyCapped(input, out, maxBytes) } }
             if (sha256 != null) {
                 val actual = sha256Hex(tmp)
                 check(actual == sha256.lowercase()) {
@@ -63,6 +86,18 @@ class WhisperModelResolver(
             return target
         } finally {
             Files.deleteIfExists(tmp)
+        }
+    }
+
+    private fun copyCapped(input: InputStream, output: OutputStream, max: Long) {
+        val buffer = ByteArray(BUFFER_BYTES)
+        var total = 0L
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            total += read
+            check(total <= max) { "Whisper model download exceeded the $max-byte cap." }
+            output.write(buffer, 0, read)
         }
     }
 
@@ -97,8 +132,12 @@ class WhisperModelResolver(
     }
 
     companion object {
+        private val LOGGER: Logger = Logger.getLogger(WhisperModelResolver::class.java.name)
         private const val HTTP_OK = 200
         private const val BUFFER_BYTES = 1 shl 16
+
+        /** Generous default download cap (8 GiB) — fits the largest GGML models; anti-abuse, not a quota. */
+        const val DEFAULT_MAX_MODEL_BYTES = 8L * 1024 * 1024 * 1024
 
         /** `~/.cache/agents-kt/models` (honors `XDG_CACHE_HOME`). */
         fun defaultCacheDir(): Path {

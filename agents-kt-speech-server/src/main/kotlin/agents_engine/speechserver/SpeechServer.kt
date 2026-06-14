@@ -3,6 +3,9 @@ package agents_engine.speechserver
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.logging.Logger
 
 /**
  * #4506 — a pure-JDK, OpenAI-compatible speech server. No Docker, no Python, no
@@ -37,17 +40,27 @@ class SpeechServer(
         }
     }
 
+    // #4509 — a bounded pool of daemon threads so one slow/blocking request can't stall the
+    // others (the default null executor handles requests serially → trivial slow-loris DoS).
+    private val pool: ExecutorService = Executors.newFixedThreadPool(HANDLER_THREADS) { runnable ->
+        Thread(runnable, "speech-server").apply { isDaemon = true }
+    }
+
     private val server: HttpServer = HttpServer.create(InetSocketAddress(host, port), 0).apply {
         createContext("/v1/audio/transcriptions") { ex -> guard(ex) { handleTranscription(ex) } }
         createContext("/v1/audio/speech") { ex -> guard(ex) { handleSpeech(ex) } }
-        executor = null
+        executor = pool
     }
 
     /** The bound port (useful when constructed with port 0 for an ephemeral port). */
     val port: Int get() = server.address.port
 
     fun start(): SpeechServer = apply { server.start() }
-    fun stop(delaySeconds: Int = 0) = server.stop(delaySeconds)
+
+    fun stop(delaySeconds: Int = 0) {
+        server.stop(delaySeconds)
+        pool.shutdownNow()
+    }
 
     private fun handleTranscription(ex: HttpExchange) {
         if (ex.requestMethod != "POST") return respondJson(ex, HTTP_METHOD_NOT_ALLOWED, errorJson("POST required"))
@@ -108,7 +121,10 @@ class SpeechServer(
         } catch (e: IllegalArgumentException) {
             respondJson(ex, HTTP_BAD_REQUEST, errorJson(e.message ?: "bad request"))
         } catch (e: IllegalStateException) {
-            respondJson(ex, HTTP_SERVER_ERROR, errorJson(e.message ?: "backend error"))
+            // #4509 — log the detail server-side; return a generic message so a backend exception
+            // (paths, internals) never reaches the client.
+            LOGGER.warning("speech backend error: ${e.message}")
+            respondJson(ex, HTTP_SERVER_ERROR, errorJson("backend error"))
         }
     }
 
@@ -138,6 +154,8 @@ class SpeechServer(
         const val HTTP_SERVER_ERROR = 500
         const val DEFAULT_MAX_REQUEST_BYTES = 25L * 1024 * 1024
         const val READ_CHUNK_BYTES = 8192
+        const val HANDLER_THREADS = 8
+        private val LOGGER: Logger = Logger.getLogger(SpeechServer::class.java.name)
     }
 }
 
