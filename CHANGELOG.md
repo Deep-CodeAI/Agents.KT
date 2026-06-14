@@ -4,6 +4,20 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — capability grants: `grants { allow / confirm }` (#4545, PRD §9.2, 0.8.0)
+
+Agent-level capability grants — the "capability grants" half of the 0.8.0 theme. `grants { allow(writeFile);
+confirm(deploy) }` references actual `Tool` instances: `allow(...)` tools are freely callable; `confirm(...)`
+tools require the **granting agent's** authorization on every call — a `GrantConfirmer` supplied via
+`confirmWith { name, args -> Boolean }`, **not** a human user (distinct from `humanApproval` / `HumanDecision`).
+A missing confirmer is **fail-closed** (confirm-tools denied until the granting authority is wired). Opt-in:
+an agent with no `grants { }` block is unchanged. At construction the agent validates that every tool its
+skills (and auto-tools) use is granted, that granted names are real registered tools, and that `allow`/`confirm`
+are disjoint. The runtime gate (in `decideBeforeToolCall`, beside the `ToolPolicyEnforcer` gate) enforces only
+`confirm(...)` — the per-skill allowlist already keeps ungranted tools invisible to the model. The full
+`structure { root { delegates {} } }` topology DSL and permission-manifest surfacing of grants are follow-ups.
+6 tests.
+
 ### Added — pluggable memory retention strategies (#4515, PRD §8.5)
 
 `MemoryBank` now takes a `retention: MemoryRetention` strategy applied on every write. The historical
