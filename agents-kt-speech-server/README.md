@@ -50,6 +50,18 @@ val server = SpeechServer(
   pure-JVM port, so proxy a Qwen-TTS endpoint from inside the backend (HTTP call →
   return the bytes).
 
+## Security (#4508)
+
+The server is **unauthenticated** — it's designed for loopback / trusted-network use:
+
+- **Binds `127.0.0.1` by default**, and **refuses** a non-loopback host unless you pass
+  `allowNonLoopback = true` (exposing an unauthenticated STT/TTS endpoint is then your call — put
+  auth/a proxy in front).
+- **Caps the request body** at `maxRequestBytes` (default 25 MB) → over-cap requests get `413`,
+  never an unbounded read.
+- JSON responses are escaped; the backend seams own model trust (a model file is untrusted input
+  to whatever native runtime you plug — pin its checksum via `WhisperModelResolver`).
+
 ## Why this shape
 
 Weights and native runtimes live behind the seams, never in this jar — the same

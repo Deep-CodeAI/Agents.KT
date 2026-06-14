@@ -40,6 +40,7 @@ class WhisperModelResolver(
      * a matching file reuse it without hitting the network.
      */
     fun fromUrl(name: String, url: String, sha256: String? = null): Path {
+        requireSafeName(name)
         val target = cacheDir.resolve(name)
         if (Files.isRegularFile(target) && (sha256 == null || sha256Hex(target) == sha256.lowercase())) {
             return target
@@ -62,6 +63,23 @@ class WhisperModelResolver(
             return target
         } finally {
             Files.deleteIfExists(tmp)
+        }
+    }
+
+    /**
+     * #4508 — the cache filename must be a bare name. Without this, `cacheDir.resolve(name)`
+     * with an absolute or `..`-laden [name] would escape the cache dir and download to an
+     * arbitrary location (the previous code was only incidentally protected by `createTempFile`
+     * rejecting separators — defense in depth makes it intentional and refactor-proof).
+     */
+    private fun requireSafeName(name: String) {
+        require(
+            name.isNotBlank() &&
+                name != "." && name != ".." &&
+                !name.contains('/') && !name.contains('\\') &&
+                !Path.of(name).isAbsolute,
+        ) {
+            "Whisper model name '$name' must be a bare filename (no path separators or '..')."
         }
     }
 

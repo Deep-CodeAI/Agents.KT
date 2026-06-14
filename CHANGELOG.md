@@ -4,6 +4,20 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Security — harden the new speech modules (#4508)
+
+Adversarial (red→green) tests drove three fixes in the #4505/#4506 modules:
+
+- **Path traversal (`WhisperModelResolver.fromUrl`)** — the cache filename is now validated as a
+  bare name (no separators / `..` / absolute), so a hostile `name` can't escape the cache dir. The
+  previous code was only *incidentally* protected by `createTempFile`; this makes it intentional.
+- **Unbounded request body (`SpeechServer`)** — both endpoints now read with a hard
+  `maxRequestBytes` cap (default 25 MB): an over-`Content-Length` or over-cap stream gets `413`
+  instead of being read into memory (DoS).
+- **Non-loopback bind (`SpeechServer`)** — refuses to bind a non-loopback host (e.g. `0.0.0.0`)
+  unless `allowNonLoopback = true`, since the server is unauthenticated. Default bind stays
+  `127.0.0.1`. 8 new security tests (4 exploit, 4 regression).
+
 ### Added — `:agents-kt-speech-server` pure-JDK OpenAI-compatible speech server (#4506)
 
 - **Run a local STT/TTS server with `java -jar` — no Docker, no Python, zero external
