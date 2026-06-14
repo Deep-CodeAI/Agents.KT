@@ -9,7 +9,9 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-private const val MODEL = "gpt-oss:20b-cloud"
+// #4512 — point the live tests at a tool-calling model (gpt-oss reasoning models surface no
+// content / no tool call and now fail loud). Override with OLLAMA_TEST_MODEL=llama3.1:8b etc.
+private val MODEL: String = System.getenv("OLLAMA_TEST_MODEL") ?: "gpt-oss:20b-cloud"
 private const val HOST  = "localhost"
 private const val PORT  = 11434
 

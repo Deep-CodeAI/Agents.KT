@@ -14,7 +14,7 @@ For other deployments that ride on one of these wire shapes (vLLM, SGLang, …) 
 | Document (`Content.Document`) | ⏳ deferred (#2470 slice c) | ⏳ deferred (#2470 slice c) | ⏳ deferred (#2470 slice c) | ⏳ deferred (#2470 slice c) |
 | Audio / Video | ⏳ Stage 2 | ⏳ Stage 2 | ⏳ Stage 2 | ⏳ Stage 2 |
 
-Document and Audio/Video `Content` variants exist today and flow through the audit pipeline and the agentic loop's tool-result placeholder rendering — they just aren't routed to provider input on the wire yet. See [multimodal.md](multimodal.md) for the closed mime hierarchy and `BlobStore` design.
+Document and Audio/Video `Content` variants exist today and flow through the audit pipeline and the agentic loop's tool-result placeholder rendering — they just aren't routed to provider input on the wire yet (this table is about provider *input* blocks). **Audio is nonetheless end-to-end** via the speech *tools* (#4501 — `transcribe_audio` / `speak`, with self-hosted `WhisperSttClient` / `QwenTtsClient`): the model transcribes/synthesizes through STT/TTS endpoints rather than the chat-message wire. See [multimodal.md](multimodal.md) for the closed mime hierarchy, the speech tools, and `BlobStore` design.
 
 ## Reasoning
 

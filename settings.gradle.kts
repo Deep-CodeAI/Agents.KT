@@ -20,3 +20,8 @@ include(":agents-kt-detekt")
 // #1718: consumer-shaped smoke test whose classpath explicitly excludes
 // kotlin-reflect. Asserts the contract that v0.4.6 promises.
 include(":agents-kt-no-reflect-test")
+// #4505: in-process Whisper STT backend — the `WhisperBackend` native seam,
+// a weights-free `WhisperModelResolver` (download + checksum at runtime, never
+// bundled), and `WhisperJniSttClient`. The separate-module pattern for native
+// modality backends; the whisper.cpp JNI lib is the consumer's to add.
+include(":agents-kt-whisper-jni")

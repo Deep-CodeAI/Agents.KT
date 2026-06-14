@@ -108,9 +108,18 @@ class Forum<IN, OUT>(
                 } else {
                     runAgent(captain, input)
                 }
-                fireMentionListener(captain.name, verdict)
-                @Suppress("UNCHECKED_CAST")
-                verdict as OUT
+                // #4514 — the captain may emit the forum_return CALL as inline JSON text (no real
+                // tool call, so no ForumReturnException). Recognise it and return the extracted
+                // value instead of leaking the raw tool-call JSON.
+                val inlineReturn = parseInlineForumReturn(verdict)
+                if (inlineReturn != null) {
+                    fireMentionListener(captain.name, inlineReturn.value)
+                    castForumReturn(inlineReturn.value)
+                } else {
+                    fireMentionListener(captain.name, verdict)
+                    @Suppress("UNCHECKED_CAST")
+                    verdict as OUT
+                }
             }
         }
     } catch (e: ForumReturnException) {

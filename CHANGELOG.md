@@ -4,6 +4,111 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Fixed — forum captain's inline forum_return is parsed, not leaked (#4514)
+
+A captain that emits the `forum_return` **call as inline JSON text** (e.g.
+`{"name":"forum_return","arguments":{"value":108}}` — what `qwen3-vl` emitted live) rather than as a
+real tool call fired no `ForumReturnException`, so the raw JSON string leaked as the forum result.
+`Forum.deliberate` now recognises an inline `forum_return` in the captain's verdict — by either the
+inline `"tool"` key or the OpenAI `"name"` key — and extracts the value the same way the
+`forum_return` executor does, matching the agentic loop's existing inline-tool-call robustness. Plain
+answers and other tools' JSON pass through untouched. 17 tests (5 end-to-end + 12 parser unit).
+
+### Fixed — inline-mode tool conversations converge (#4513)
+
+Models that reject native Ollama `tools` (e.g. `gemma3`) fall back to the inline `{"tool":…}`
+prompt — but the conversation history still carried native `tool_calls` / `"tool"`-role messages the
+inline model can't read, so it **looped (turn-budget exceeded) or went blank** on the turn after a
+tool result. `OllamaClient.withInlineToolPrompt` now **re-renders the inline-mode history into the
+text the model was taught** (an assistant tool call becomes its inline JSON; a tool result becomes a
+readable user message), and the prompt tells the model to **stop calling tools and answer in plain
+text** once it has a result. Verified live: the `gemma3:4b` inline-fallback integration tests went
+from budget-exceeded to **green**. Live test models are configurable via `OLLAMA_TEST_MODEL`
+(reasoning models like `gpt-oss` surface no content; a tool-caller such as `qwen3-vl:8b` works). 2
+hermetic tests.
+
+### Fixed — actionable provider errors: Kimi region + Ollama empty reasoning response (#4511, #4512)
+
+Two confusing live-failure modes now fail *loud and actionable* instead of as junk:
+
+- **Kimi region mismatch (#4511)** — Moonshot runs two separate platforms (`api.moonshot.cn` /
+  China, `api.moonshot.ai` / International); a valid key from one returns bare `Invalid
+  Authentication` against the other. `KimiClient` now enriches the auth error with which endpoint
+  it's using and how to switch (`CHINA_BASE_URL` / `INTERNATIONAL_BASE_URL` constants); the live test
+  honors `KIMI_BASE_URL`. (Verified: the same key gives `.cn`→401, `.ai`→200.)
+- **Ollama empty reasoning response (#4512)** — a reasoning model (e.g. `gpt-oss`) can generate
+  tokens but surface no `content`, no tool call, and no reasoning text, which Ollama returns as an
+  empty message. `OllamaClient` no longer returns a silent empty `Text` (which made the agentic loop
+  fail mysteriously) — it throws an actionable error naming the model and suggesting a tool-calling
+  model. Live tests' Ollama model is configurable via `OLLAMA_TEST_MODEL`. 5 new hermetic tests.
+
+### Changed — no listening ports: dropped the speech server, added a subprocess TTS (#4510)
+
+Architecture call: agents.kt is an orchestration toolkit, not a media server — it must not bind a
+listening port. Engines run externally, reached **in-process** (JNI) or via **subprocess** (no port).
+
+- **Removed `:agents-kt-speech-server`** — it bound a port, which is the one thing that doesn't fit.
+  Direct bolt-on via the `SpeechToTextClient` / `TtsModelClient` seams replaces it. (`:agents-kt-whisper-jni`
+  stays — in-process, no port; the HTTP clients stay — outbound, they expose no port on our side.)
+- **Added `SubprocessTtsClient`** (core) — a `TtsModelClient` that pipes text to a **local TTS binary**
+  through `ProcessSandbox` (stdin in, audio file out) and returns `Content.Audio`. Local TTS with **no
+  port and no JVM TTS engine** — the engine is an external binary, write-confined to a temp dir. Plugs
+  straight into the `speak` tool.
+
+### Security — `WhisperModelResolver` download hardening (#4509)
+
+Red→green follow-up to #4508 (resolver-side):
+
+- **Redirect handling** — the default client now follows `NORMAL` redirects (no HTTPS→HTTP downgrade),
+  so real HuggingFace model URLs (302 → CDN) actually download. Pair with a pinned checksum to catch a
+  tampered redirect target.
+- **Unbounded download** — streams to disk with a hard `maxBytes` cap (default 8 GiB): an
+  over-`Content-Length` or over-cap body is rejected, no file published.
+- **Unpinned integrity** — a download with no `sha256` now logs a WARNING (a compromised mirror could
+  feed malicious bytes to native whisper.cpp).
+
+### Security — `WhisperModelResolver.fromUrl` path traversal (#4508)
+
+- **Path traversal** — the cache filename is validated as a bare name (no separators / `..` / absolute),
+  so a hostile `name` can't escape the cache dir. Was only *incidentally* protected by `createTempFile`;
+  now intentional. Adversarial red→green tests.
+
+### Added — `:agents-kt-whisper-jni` in-process STT module + weights-free resolver (#4505)
+
+- **New opt-in module** for an in-process Whisper STT backend (no server) — the
+  separate-module pattern for native modality backends, like `:agents-kt-otel`/RAG adapters.
+  Ships **no weights and no native artifact**: `WhisperModelResolver` provisions a GGML model
+  file at runtime (download → cache → SHA-256 verify → reuse, or a local path); the whisper.cpp
+  JNI lib is supplied by the consumer through the one-method `WhisperBackend` seam.
+  `WhisperJniSttClient` is a `SpeechToTextClient` (BlobStore → JVM WAV→PCM decode → backend),
+  drop-in for the `transcribe_audio` tool. 6 hermetic tests (resolver download/cache/checksum;
+  WAV decode through a fake backend — no native lib/model needed). See the module README for the
+  whisper-jni binding. Establishes that **the jar is code; weights are runtime config**.
+
+### Added — speech HTTP client DX: preflight + fail-fast errors (#4504)
+
+- **`WhisperSttClient.preflight()` / `QwenTtsClient.preflight()`** — cheap readiness probe that
+  returns normally when the endpoint answers and throws an **actionable** message otherwise (how to
+  start a server / fix `baseUrl`). `transcribe`/`speak` now wrap connection + timeout failures into
+  the same actionable `IllegalStateException` instead of leaking a raw `ConnectException`. 4 tests.
+
+### Added — end-to-end audio as tools + self-hosted Whisper/Qwen adapters (#4501)
+
+- **Multimodal as tools.** `transcribeAudioTool(stt, blobStore, audioRoot)` (`transcribe_audio`) and
+  `speakTool(tts)` (`speak`, returning `ToolResult(Content.Text, Content.Audio)`) make audio
+  end-to-end through the agentic loop — the model orchestrates transcription/synthesis itself,
+  reusing the full tool spine (ToolPolicy + Layer-1 filesystem gate, constraints, audit, manifest,
+  typed hooks). `transcribe_audio` confines reads to `audioRoot`; `speak`'s audio ref flows through
+  audit/snapshot via the existing `ToolResult` path — no attachment-path wiring needed. Bundle:
+  `speechTools(...)`.
+- **Self-hosted adapters (first guests).** `WhisperSttClient` (STT) and `QwenTtsClient` (TTS) target
+  the OpenAI-compatible `/v1/audio/transcriptions` and `/v1/audio/speech` endpoints the common
+  self-hosted servers expose (faster-whisper-server / Speaches / LocalAI / openedai-speech), with
+  **no API key by default** and a required `baseUrl` (optional `bearerToken` for a fronting gateway).
+  Both implement the existing `SpeechToTextClient` / `TtsModelClient` interfaces, so the OpenAI hosted
+  adapters stay drop-in swappable. 9 tests (stub-server wire pins + tool executors + agentic-loop
+  end-to-end).
+
 ### Fixed — session cancellation no longer leaks the invocation (#4499, streaming hardening)
 
 - Cancelling collection of `AgentSession.events` (or cancelling `await()`) now **cancels the
