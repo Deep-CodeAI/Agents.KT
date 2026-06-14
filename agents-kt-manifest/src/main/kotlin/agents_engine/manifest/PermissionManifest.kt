@@ -264,6 +264,7 @@ private fun ModelConfig.toManifestMap(options: PermissionManifestOptions): Map<S
             ModelProvider.KIMI -> kimiBaseUrl
             ModelProvider.OPENROUTER -> openRouterBaseUrl
             ModelProvider.PERPLEXITY -> perplexityBaseUrl
+            ModelProvider.GEMINI -> geminiBaseUrl
         },
         "host" to host,
         "port" to port,
@@ -281,6 +282,7 @@ private fun ModelProvider.manifestName(): String = when (this) {
     ModelProvider.KIMI -> "kimi"
     ModelProvider.OPENROUTER -> "openrouter"
     ModelProvider.PERPLEXITY -> "perplexity"
+    ModelProvider.GEMINI -> "gemini"
 }
 
 private fun BudgetConfig.toManifestMap(): Map<String, Any?> =
