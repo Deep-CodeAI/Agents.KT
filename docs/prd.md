@@ -2920,6 +2920,24 @@ Tracking: epic `[interop] AG-UI support (agent↔frontend serving)`, deferred un
 
 Tracking: epic `[interop] x402 agent payments`, deferred — seller-side experimental, buyer-side gated.
 
+### 12.9 NLWeb — Agent↔Web-Content / External Knowledge *(client ≈ free via MCP; server deferred)*
+
+[NLWeb](https://github.com/nlweb-ai/NLWeb) (R.V. Guha — creator of RSS/RDF/schema.org — at Microsoft, announced Build 2025) is the **agent↔web-content** layer: it makes a website natural-language-queryable and returns **schema.org-typed JSON** results. Microsoft's framing — *"NLWeb is to MCP/A2A what HTML is to HTTP"* — is aspirational; mechanically it's **packaged RAG over schema.org/RSS data wrapped in an MCP interface**.
+
+**The load-bearing fact: every NLWeb endpoint is also an MCP server.** Its `ask` interface rides on MCP transport, so **agents.kt's existing MCP client already consumes NLWeb sites** — no NLWeb-specific protocol code needed. NLWeb is therefore not a new protocol to implement; it's a *recognized use of MCP we already speak*. It's the **inbound external-knowledge counterpart to MCP-tools**; the only real overlap with anything we track is plain MCP servers, which is exactly why it's nearly free.
+
+**Query shape** (the `/ask` and `/mcp` endpoints, same args): `query` (required), `site`, `prev` (conversation history — server is stateless), `mode` (`list` = ranked results, `summarize` = list + LLM summary, `generate` = full RAG answer), `streaming`. Response: `{query_id, results[]}` where each result is `{url, name, site, score, description, schema_object}` (`schema_object` = the schema.org JSON). Build tolerant of two divergent schemas — the implemented `schema_object` shape and the newer nlweb.ai v0.55 `query/context/prefer/meta` envelope.
+
+**Client-side (consume NLWeb as knowledge) — do opportunistically, ~free.** A thin helper over the MCP client: point it at an NLWeb `/mcp` URL, `tools/call` the `ask` tool, surface each `schema_object` into a `KnowledgeProvider`/retrieval source. Mode mapping: `list`→retrieval source, `generate`→delegate-the-answer. The honest, shippable claim is *"agents.kt MCP clients can consume NLWeb endpoints today."*
+
+**Server-side (expose agent data as an NLWeb endpoint) — deferred, niche.** That means standing up schema.org-shaped data + a vector store + an LLM-in-the-loop retrieval pipeline behind `/ask` + `/mcp` — effectively building/operating a RAG service. An independent benchmark (Univ. Mannheim, [arXiv 2511.23281](https://arxiv.org/abs/2511.23281)) finds NLWeb *ties* RAG/MCP on effectiveness but plain RAG is more cost-effective — so NLWeb's value is standardization, not performance. This is an **application** concern, not a runtime primitive; defer unless a concrete consumer needs to discover our content over the open web.
+
+**Caveats.** NLWeb is **Microsoft-led, MIT, not foundation-governed** (the `nlweb-ai` org is a July-2025 rename of `microsoft/NLWeb`, not a donation — unlike A2A→Linux Foundation). Reference server is proof-of-concept quality (no CI/CD, no releases); an official .NET 9 impl exists but **no JVM/Kotlin port**. Adoption is partner-pilot grade.
+
+**Priority — lowest net-new work of the external standards**, precisely because MCP subsumes the client capability. Order: MCP > A2A > AGNTCY ≈ AG-UI > x402 > NLWeb. It earns a thin client helper, not a dedicated workstream.
+
+Tracking: epic `[interop] NLWeb support`, client helper opportunistic + server-side deferred.
+
 ---
 
 ## 13. Distributed Agents Framework
