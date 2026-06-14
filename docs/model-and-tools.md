@@ -42,7 +42,7 @@ calculator("Calculate ((15 + 35) / 2)^2")
 // → "The result is 625."
 ```
 
-**`model { }`** — configures the LLM backend. Seven providers ship today (see [providers.md](providers.md) for the support matrix):
+**`model { }`** — configures the LLM backend. Eight providers ship today (see [providers.md](providers.md) for the support matrix):
 
 - `model { ollama("gpt-oss:120b-cloud"); host = "..."; port = 11434; temperature = 0.0 }` — local or cloud Ollama; auto-fallback to inline JSON tool-call format for models without native tool support (#706).
 - `model { claude("claude-opus-4-7"); apiKey = System.getenv("ANTHROPIC_API_KEY"); temperature = 0.0; maxTokens = 4096 }` — Anthropic Messages API; maps `LlmMessage` / `LlmResponse` to Anthropic's structured `tool_use` / `tool_result` content blocks; tools advertise as `input_schema` (Anthropic's spelling) (#1644).
@@ -51,8 +51,9 @@ calculator("Calculate ((15 + 35) / 2)^2")
 - `model { kimi("kimi-k2-0905-preview"); apiKey = System.getenv("MOONSHOT_API_KEY") }` — Moonshot's Kimi via its OpenAI-compatible API; extends the OpenAI adapter (#2697).
 - `model { openrouter("anthropic/claude-3.5-sonnet"); apiKey = System.getenv("OPENROUTER_API_KEY") }` — OpenRouter's OpenAI-compatible gateway to many upstream models; extends the OpenAI adapter (#2701).
 - `model { perplexity("sonar-pro"); apiKey = System.getenv("PERPLEXITY_API_KEY") }` — Perplexity's OpenAI-compatible Sonar API with web-grounded answers; extends the OpenAI adapter, keeps constrained decoding on (#3675). Distinct from the `perplexitySearch` *tool* (#3676), which any agent can register regardless of its own model.
+- `model { gemini("gemini-2.5-flash"); apiKey = System.getenv("GEMINI_API_KEY") }` — Google Gemini's Generative Language API; a full from-scratch adapter (not OpenAI-compatible) with `contents`/`parts`, `functionDeclarations` tool calling, native SSE streaming, `responseJsonSchema` constrained decoding, thought-summary reasoning, and `inlineData` vision (#1917).
 
-All seven providers share the `ModelClient` interface — switching providers is a one-line DSL change. The injectable `client = ...` escape hatch is still there for test stubs or custom adapters (e.g., Google/Gemini ahead of native support).
+All eight providers share the `ModelClient` interface — switching providers is a one-line DSL change. The injectable `client = ...` escape hatch is still there for test stubs or custom adapters.
 
 #### Reasoning / thinking (opt-in, #2406)
 
@@ -117,7 +118,7 @@ val agent = agent<String, String>("kyc") {
 ```
 
 - **Opt-in, never automatic.** `httpClient` defaults to `null` → each client builds its own, byte-for-byte unchanged. Existing code is unaffected.
-- **Every provider.** `ModelConfig.httpClient` is threaded by `defaultClientFor()` into all seven adapters (Ollama / Claude / OpenAI / DeepSeek / Kimi / OpenRouter / Perplexity); DeepSeek, Kimi, OpenRouter, and Perplexity inherit it through their `OpenAiClient` superclass.
+- **Every provider.** `ModelConfig.httpClient` is threaded by `defaultClientFor()` into all eight adapters (Ollama / Claude / OpenAI / DeepSeek / Kimi / OpenRouter / Perplexity / Gemini); DeepSeek, Kimi, OpenRouter, and Perplexity inherit it through their `OpenAiClient` superclass, while Gemini takes it directly like Claude.
 - **You own the policy.** The framework provides the *seam*, not the policy — rate limiting, circuit breaking, and bulkheading live in *your* `HttpClient` (e.g. a `Semaphore`-bounded `executor`). The injected client is used verbatim, so its own `connectTimeout` wins over the DSL `connectTimeout` field (the per-request `requestTimeout` still applies, since it rides on each `HttpRequest`).
 
 **`tools { tool(name, description) { args -> } }`** — registers callable tools. Each tool receives a `Map<String, Any?>` of arguments and returns any value.

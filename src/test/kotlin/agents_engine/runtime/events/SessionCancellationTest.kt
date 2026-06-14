@@ -191,6 +191,7 @@ class SessionCancellationTest {
                     ModelProvider.KIMI -> kimi(modelName)
                     ModelProvider.OPENROUTER -> openrouter(modelName)
                     ModelProvider.PERPLEXITY -> perplexity(modelName)
+                    ModelProvider.GEMINI -> gemini(modelName)
                 }
                 apiKey?.let { this.apiKey = it }
                 client = hangingClient

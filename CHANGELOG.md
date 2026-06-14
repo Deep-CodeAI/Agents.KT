@@ -4,6 +4,22 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — Google Gemini provider adapter (#1917)
+
+Eighth built-in `ModelClient`: `model { gemini("gemini-2.5-flash"); apiKey = ... }` for Google's
+Generative Language API. A **full from-scratch adapter** (Gemini is not OpenAI-compatible), mapping
+`LlmMessage`/`LlmResponse` to Gemini's `contents`/`parts` shape: `user`/`model` roles, system →
+`systemInstruction`, tool calls via `functionDeclarations`/`functionCall`, tool results via
+`functionResponse` paired by **function name** (Gemini has no call id), `parametersJsonSchema` /
+`responseJsonSchema` for tools and constrained decoding, `toolConfig.functionCallingConfig` for
+`ToolChoice`, `inlineData` vision parts, and thought-summary reasoning
+(`thinkingConfig.includeThoughts`). Native SSE streaming via `:streamGenerateContent?alt=sse`. The
+provider `error` envelope surfaces as `LlmProviderException` (same boundary contract as the other
+adapters). Closes the long-standing provider gap — #1917 had been marked closed without the adapter
+actually landing. 9 hermetic unit tests + 4 live integration tests (`live-cloud-api`, keyed from
+`.secrets/gemini-key`): text, native streaming, function calling, and a full agentic loop — all
+verified green against `gemini-2.5-flash`.
+
 ### Added — capability grants: `grants { allow / confirm }` (#4545, PRD §9.2, 0.8.0)
 
 Agent-level capability grants — the "capability grants" half of the 0.8.0 theme. `grants { allow(writeFile);
