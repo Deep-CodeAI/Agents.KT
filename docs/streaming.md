@@ -54,7 +54,7 @@ All subtypes carry `agentId`, `requestId`, `sessionId`, and `manifestHash`. `age
 
 ## Provider streaming status
 
-All eight providers stream at the wire: four adapters implement `ModelClient.chatStream` natively (Ollama NDJSON; Anthropic, OpenAI, and Gemini SSE), and the four OpenAI-compatible providers (DeepSeek / Kimi / OpenRouter / Perplexity) inherit `OpenAiClient`'s SSE implementation. Numbers below are from the live integration tests under `./gradlew integrationTest` against real APIs.
+All eight providers stream at the wire: Ollama (NDJSON) plus Anthropic, OpenAI, and Gemini (native SSE) implement `ModelClient.chatStream` directly, while DeepSeek, Kimi, OpenRouter, and Perplexity inherit `OpenAiClient`'s SSE implementation. Numbers below are from the live integration tests under `./gradlew integrationTest` against real APIs.
 
 | Provider | Protocol | File | Live measurement (count 1–10 prompt) |
 |---|---|---|---|
