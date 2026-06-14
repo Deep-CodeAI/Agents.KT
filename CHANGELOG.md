@@ -4,6 +4,22 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-06-15
+
+**Interoperable, multimodal agents — with capability grants.** The largest minor since 0.5.0:
+agent-to-agent interop (**A2A v1**), full **multimodal** (audio STT/TTS, vision, image generation),
+a **RAG** seam, richer **composition** (`handoff` / `firstOf` / `.speculative` / `loopUntil` /
+built-in aggregators / forum captains), **human-in-the-loop** gates, an **eval** harness, history
+compression, an **eighth model provider (Google Gemini)**, **agent.json** definition serialization,
+and the **capability-grants** DSL (`grants { allow / confirm }`). Plus the planning groundwork for
+the agentic-web standards (AGNTCY / AG-UI / x402 / NLWeb — PRD §12.6–§12.9). Additive: existing
+public API surfaces are preserved.
+
+*Deferred to 0.9.0:* the remaining Layer-2 **sandbox backends** — `DockerSandbox` (#2895), the
+network hostname-allowlist **proxy** (#2893), and **read confinement** (#4546). `WasmSandbox` (#2894)
+was closed won't-do; the rational WASM direction (agent → WASM export, #4547) is a separate
+forward-looking track.
+
 ### Added — Google Gemini provider adapter (#1917)
 
 Eighth built-in `ModelClient`: `model { gemini("gemini-2.5-flash"); apiKey = ... }` for Google's

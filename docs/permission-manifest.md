@@ -30,7 +30,7 @@ Add the manifest module:
 ```kotlin
 dependencies {
     // published on Maven Central — use the latest released version (see the README quickstart)
-    implementation("ai.deep-code:agents-kt:0.7.24")
+    implementation("ai.deep-code:agents-kt:0.8.0")
     // in-repo module — build from this repository (not yet published to Central;
     // only agents-kt and agents-kt-ksp are)
     implementation(project(":agents-kt-manifest"))
