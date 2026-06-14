@@ -4,6 +4,16 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Fixed — forum captain's inline forum_return is parsed, not leaked (#4514)
+
+A captain that emits the `forum_return` **call as inline JSON text** (e.g.
+`{"name":"forum_return","arguments":{"value":108}}` — what `qwen3-vl` emitted live) rather than as a
+real tool call fired no `ForumReturnException`, so the raw JSON string leaked as the forum result.
+`Forum.deliberate` now recognises an inline `forum_return` in the captain's verdict — by either the
+inline `"tool"` key or the OpenAI `"name"` key — and extracts the value the same way the
+`forum_return` executor does, matching the agentic loop's existing inline-tool-call robustness. Plain
+answers and other tools' JSON pass through untouched. 17 tests (5 end-to-end + 12 parser unit).
+
 ### Fixed — inline-mode tool conversations converge (#4513)
 
 Models that reject native Ollama `tools` (e.g. `gemma3`) fall back to the inline `{"tool":…}`
