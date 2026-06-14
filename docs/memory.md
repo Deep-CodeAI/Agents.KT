@@ -11,7 +11,7 @@ Memory persists across invocations — an agent accumulates knowledge over time 
 | `memory_search` | `query` | Lines matching the query (case-insensitive) |
 
 ```kotlin
-val bank = MemoryBank(maxLines = 200)   // in-memory, optional line cap
+val bank = MemoryBank(maxLines = 200)   // in-memory, optional line cap (= Sliding(200))
 
 val reviewer = agent<CodeDiff, ReviewResult>("reviewer") {
     memory(bank)
@@ -47,6 +47,21 @@ shared.entries()          // all keys
 val bank = MemoryBank()
 bank.write("reviewer", "Known pattern: prefer val over var\nKnown pattern: avoid nullable returns")
 ```
+
+**Retention strategies** — what to keep when a slot would grow unbounded. Pass a `MemoryRetention` and it's applied on every `write`. The historical `maxLines` cap is just `Sliding(n)`; uncapped banks use `Unbounded`, so existing code is unaffected.
+
+```kotlin
+import agents_engine.core.MemoryRetention.*
+
+MemoryBank(retention = Sliding(200))                       // keep the last 200 lines (= maxLines = 200)
+MemoryBank(retention = TokenBudget(maxTokens = 4_000))     // drop oldest lines until within ~4k tokens
+MemoryBank(retention = Summarized(keepRecentLines = 20) {  // collapse older lines into a digest…
+    older -> summarizeWithLlm(older)                       // …keep the last 20 verbatim
+})
+MemoryBank(retention = Unbounded)                          // keep everything (the default)
+```
+
+`TokenBudget` always keeps at least the most recent line and uses a rough `~4 chars/token` estimate by default (`estimateTokens` is overridable for a real tokenizer). `Summarized`'s digest function is yours — an LLM call, an extractive summary, anything `(List<String>) -> String`.
 
 **Fibonacci — the canonical memory test.** A single agent, no custom tools — just `memory_read`, `memory_write`, and a system prompt that teaches it the algorithm. Each call reads state, computes the next number, writes back, and returns the result:
 

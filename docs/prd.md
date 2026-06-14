@@ -1517,6 +1517,13 @@ agent<TaskRequest, Specification>("spec-master") {
 
 The type parameter ensures `Memory<ConversationTurn>` and `Memory<ToolResult>` are separate namespaces. An agent can't accidentally fill its conversation window with tool outputs — each type has its own budget.
 
+**Shipped (#4515): the strategy core.** `MemoryBank(retention: MemoryRetention = …)` carries the
+four strategies above as a `sealed interface` — `Sliding(maxLines)`, `TokenBudget(maxTokens, estimateTokens)`,
+`Summarized(keepRecentLines, summarize)`, `Unbounded` — applied on every write. The historical `maxLines`
+cap is `Sliding`, and remains the default, so existing banks are unchanged. What's still *planned* is the
+**typed multi-namespace DSL** shown above (`memory { sliding<ConversationTurn>(20) }`) — per-type budgets
+in one bank — which builds on this core. See `docs/memory.md` for the shipped API.
+
 Memory is optional. Short-lived pipeline stages (parsers, formatters, validators) are stateless. Memory is for agents that improve with experience: reviewers, planners, domain experts.
 
 ### Fibonacci — Canonical Memory Test
@@ -2769,6 +2776,15 @@ Kotlin DSL (source of truth)
   }
 }
 ```
+
+**Shipped (#4516).** `Agent<*, *>.toAgentJson(version?, description?)` serializes the
+definition deterministically (fixed key order → byte-stable output). The concrete shape tracks the sketch
+above with two grounded adaptations: `apiVersion` is `agents-kt/v1`, and because `Agent<IN, OUT>` erases
+its input type at runtime (only `outType: KClass` is retained), `spec.types.produces` is the agent's
+output type while `spec.types.consumes` is the **list** of distinct skill input types. Each `spec.skills`
+entry carries `name` / `description` / `consumes` / `produces`; each `spec.tools` entry carries `name` /
+`description` / `risk`. This is the agent's portable *definition* — distinct from the permission
+**manifest** (security/audit) and the A2A **AgentCard** (network discovery, §12.5).
 
 ### 12.3 Agent JAR Bundle
 

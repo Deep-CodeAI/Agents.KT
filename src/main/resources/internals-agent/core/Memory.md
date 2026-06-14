@@ -9,14 +9,28 @@ A simple per-agent scratch-pad backed by a `ConcurrentHashMap<String, String>`. 
 ## MemoryBank
 
 ```kotlin
-val bank = MemoryBank()                  // unbounded
-val capped = MemoryBank(maxLines = 200)  // keep only the last 200 lines per write
+val bank = MemoryBank()                  // unbounded (retention = Unbounded)
+val capped = MemoryBank(maxLines = 200)  // keep only the last 200 lines per write (= Sliding(200))
+val budget = MemoryBank(retention = MemoryRetention.TokenBudget(maxTokens = 4_000))
 ```
 
 API:
 - `read(key: String): String` — returns the slot content, or empty string if absent.
-- `write(key: String, content: String)` — overwrites the slot. If `maxLines` is set, only the LAST `maxLines` lines are kept.
+- `write(key: String, content: String)` — overwrites the slot, applying the configured `retention` strategy first.
 - `entries(): Map<String, String>` — snapshot of all slots (read-only copy).
+
+## Retention (#4515, PRD §8.5)
+
+`MemoryBank(retention: MemoryRetention = …)` applies a strategy on every `write`. The default preserves the historical behavior: `Sliding(maxLines)` when `maxLines` is set, otherwise `Unbounded`. `maxLines` is a thin alias for `Sliding`; the two constructor params are reconciled in the default expression, not stored separately. `MemoryRetention` is a `sealed interface` in `MemoryRetention.kt` with a single `apply(content: String): String`:
+
+| Strategy | Keeps |
+|---|---|
+| `Sliding(maxLines)` | The last N lines (FIFO, oldest dropped). |
+| `TokenBudget(maxTokens, estimateTokens = ::estimateTokens)` | Drops oldest lines until `estimateTokens(content) <= maxTokens`, always keeping ≥1 (the most recent) line. |
+| `Summarized(keepRecentLines, summarize)` | The last `keepRecentLines` verbatim; older lines collapsed into one line via the caller's `summarize: (List<String>) -> String`. |
+| `Unbounded` | Everything (object — no params). |
+
+`estimateTokens(text)` is a top-level `~4 chars/token` ceil estimate (not a real tokenizer); override per `TokenBudget`. Constructors `require()` positive/non-negative params. The typed multi-namespace DSL (`memory { sliding<T>(20) }`) is a follow-up — this is the strategy core.
 
 Thread-safe — the backing map is concurrent.
 

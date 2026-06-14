@@ -32,14 +32,24 @@ import java.util.concurrent.ConcurrentHashMap
  * See `src/main/resources/internals-agent/core/Memory.md` for the adjunct
  * surfaced to IDE-side LLM tools via `agents-kt-internals` (#1837 / #1840).
  */
-class MemoryBank(val maxLines: Int = Int.MAX_VALUE) : Snapshotable<Map<String, String>> {
+class MemoryBank(
+    val maxLines: Int = Int.MAX_VALUE,
+    /**
+     * #4515 (PRD §8.5) — retention strategy applied on every write. Defaults to the historical
+     * `maxLines` behavior ([MemoryRetention.Sliding], or [MemoryRetention.Unbounded] when uncapped),
+     * so existing callers are unaffected. Pass `retention = TokenBudget(...) / Summarized(...)` for
+     * the richer strategies.
+     */
+    private val retention: MemoryRetention =
+        if (maxLines == Int.MAX_VALUE) MemoryRetention.Unbounded else MemoryRetention.Sliding(maxLines),
+) : Snapshotable<Map<String, String>> {
 
     private val store = ConcurrentHashMap<String, String>()
 
     fun read(key: String): String = store[key] ?: ""
 
     fun write(key: String, content: String) {
-        store[key] = truncate(content)
+        store[key] = retention.apply(content)
     }
 
     fun entries(): Map<String, String> = store.toMap()
@@ -81,12 +91,6 @@ class MemoryBank(val maxLines: Int = Int.MAX_VALUE) : Snapshotable<Map<String, S
         if (value == null) store.remove(agentName) else store[agentName] = value
     }
 
-    private fun truncate(content: String): String {
-        if (maxLines == Int.MAX_VALUE) return content
-        val lines = content.lines()
-        return if (lines.size > maxLines) lines.takeLast(maxLines).joinToString("\n")
-        else content
-    }
 }
 
 /**

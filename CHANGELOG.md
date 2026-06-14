@@ -4,6 +4,25 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — pluggable memory retention strategies (#4515, PRD §8.5)
+
+`MemoryBank` now takes a `retention: MemoryRetention` strategy applied on every write. The historical
+`maxLines` cap is just `MemoryRetention.Sliding(n)` and remains the default (uncapped banks use
+`Unbounded`), so existing callers are unaffected. New strategies from the PRD's memory table:
+`Sliding(maxLines)` (keep last N lines), `TokenBudget(maxTokens, estimateTokens)` (drop oldest lines
+until within an estimated token budget, always keeping the most recent line), `Summarized(keepRecentLines,
+summarize)` (collapse older lines into a caller-supplied digest + keep recent verbatim), and `Unbounded`.
+A rough `estimateTokens` (~4 chars/token) ships for budgeting. 10 tests.
+
+### Added — `agent.json` definition serialization (#4516, PRD §12.2)
+
+`Agent<*, *>.toAgentJson(version?, description?)` serializes an agent's **definition** to the documented
+`agent.json` document — a deterministic, byte-stable snapshot of `apiVersion` / `kind` / `metadata`
+(name, optional version/description) / `spec` (the types it consumes and produces, its skills, its tools
+with risk levels, and capabilities). Distinct from the permission *manifest* (the security/audit artifact)
+and the A2A *AgentCard* (network discovery) — this is the portable description of the agent itself. Keys
+emit in a fixed order, so the same agent always serializes identically. 3 tests.
+
 ### Fixed — forum captain's inline forum_return is parsed, not leaked (#4514)
 
 A captain that emits the `forum_return` **call as inline JSON text** (e.g.
