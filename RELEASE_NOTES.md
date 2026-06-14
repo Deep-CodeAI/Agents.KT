@@ -1,6 +1,6 @@
 # Agents.KT v0.8.0 — Interoperable, multimodal agents, with capability grants
 
-**Release date:** 2026-06-15
+**Release date:** 2026-06-14
 
 0.8.0 is the largest minor since 0.5.0. The boundary-first runtime grows outward: it now **talks to
 other agents**, **sees and hears**, **composes in richer shapes**, and lets you **grant capabilities
