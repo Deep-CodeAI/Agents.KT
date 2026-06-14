@@ -4,48 +4,36 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
-### Security — speech modules, second hardening pass (#4509)
+### Changed — no listening ports: dropped the speech server, added a subprocess TTS (#4510)
 
-Follow-up to #4508 (red→green again):
+Architecture call: agents.kt is an orchestration toolkit, not a media server — it must not bind a
+listening port. Engines run externally, reached **in-process** (JNI) or via **subprocess** (no port).
 
-- **Serial-executor DoS (`SpeechServer`)** — requests were handled on one thread (`executor = null`),
-  so one slow/blocking request stalled all others. Now a bounded daemon thread pool handles them
-  concurrently.
-- **Redirect handling (`WhisperModelResolver`)** — the default client now follows `NORMAL` redirects
-  (no HTTPS→HTTP downgrade), so real HuggingFace model URLs (302 → CDN) actually download. Pair with
-  a pinned checksum to catch a tampered redirect target.
-- **Unbounded download (`WhisperModelResolver`)** — streams to disk with a hard `maxBytes` cap
-  (default 8 GiB): an over-`Content-Length` or over-cap body is rejected, no file published.
-- **Unpinned integrity (`WhisperModelResolver`)** — a download with no `sha256` now logs a WARNING
-  (a compromised mirror could feed malicious bytes to native whisper.cpp).
-- **Error hygiene (`SpeechServer`)** — `500` responses return a generic `"backend error"`; the
-  exception detail is logged server-side, not leaked to the client. 5 new tests.
+- **Removed `:agents-kt-speech-server`** — it bound a port, which is the one thing that doesn't fit.
+  Direct bolt-on via the `SpeechToTextClient` / `TtsModelClient` seams replaces it. (`:agents-kt-whisper-jni`
+  stays — in-process, no port; the HTTP clients stay — outbound, they expose no port on our side.)
+- **Added `SubprocessTtsClient`** (core) — a `TtsModelClient` that pipes text to a **local TTS binary**
+  through `ProcessSandbox` (stdin in, audio file out) and returns `Content.Audio`. Local TTS with **no
+  port and no JVM TTS engine** — the engine is an external binary, write-confined to a temp dir. Plugs
+  straight into the `speak` tool.
 
-### Security — harden the new speech modules (#4508)
+### Security — `WhisperModelResolver` download hardening (#4509)
 
-Adversarial (red→green) tests drove three fixes in the #4505/#4506 modules:
+Red→green follow-up to #4508 (resolver-side):
 
-- **Path traversal (`WhisperModelResolver.fromUrl`)** — the cache filename is now validated as a
-  bare name (no separators / `..` / absolute), so a hostile `name` can't escape the cache dir. The
-  previous code was only *incidentally* protected by `createTempFile`; this makes it intentional.
-- **Unbounded request body (`SpeechServer`)** — both endpoints now read with a hard
-  `maxRequestBytes` cap (default 25 MB): an over-`Content-Length` or over-cap stream gets `413`
-  instead of being read into memory (DoS).
-- **Non-loopback bind (`SpeechServer`)** — refuses to bind a non-loopback host (e.g. `0.0.0.0`)
-  unless `allowNonLoopback = true`, since the server is unauthenticated. Default bind stays
-  `127.0.0.1`. 8 new security tests (4 exploit, 4 regression).
+- **Redirect handling** — the default client now follows `NORMAL` redirects (no HTTPS→HTTP downgrade),
+  so real HuggingFace model URLs (302 → CDN) actually download. Pair with a pinned checksum to catch a
+  tampered redirect target.
+- **Unbounded download** — streams to disk with a hard `maxBytes` cap (default 8 GiB): an
+  over-`Content-Length` or over-cap body is rejected, no file published.
+- **Unpinned integrity** — a download with no `sha256` now logs a WARNING (a compromised mirror could
+  feed malicious bytes to native whisper.cpp).
 
-### Added — `:agents-kt-speech-server` pure-JDK OpenAI-compatible speech server (#4506)
+### Security — `WhisperModelResolver.fromUrl` path traversal (#4508)
 
-- **Run a local STT/TTS server with `java -jar` — no Docker, no Python, zero external
-  deps** (`com.sun.net.httpserver`). Exposes `POST /v1/audio/transcriptions` (multipart →
-  `{"text":…}`) and `POST /v1/audio/speech` (JSON → audio bytes) over two pluggable
-  one-method seams (`ServerSttBackend` / `ServerTtsBackend`) — the server ships no model.
-  Demo backends (fixed-text STT, a real WAV-beep TTS) make both endpoints answer out of the
-  box; `./gradlew :agents-kt-speech-server:run`. Plug whisper-jni (pure-jar STT) and
-  sherpa-onnx *or* a forward-to-Qwen proxy (TTS) for real inference — there is no pure-JVM
-  Qwen-TTS, so a Qwen voice means proxying its endpoint. 5 tests, incl. an in-JVM round trip
-  where `WhisperSttClient` / `QwenTtsClient` hit the server over real HTTP with no Docker.
+- **Path traversal** — the cache filename is validated as a bare name (no separators / `..` / absolute),
+  so a hostile `name` can't escape the cache dir. Was only *incidentally* protected by `createTempFile`;
+  now intentional. Adversarial red→green tests.
 
 ### Added — `:agents-kt-whisper-jni` in-process STT module + weights-free resolver (#4505)
 

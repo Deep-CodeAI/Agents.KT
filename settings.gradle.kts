@@ -25,7 +25,3 @@ include(":agents-kt-no-reflect-test")
 // bundled), and `WhisperJniSttClient`. The separate-module pattern for native
 // modality backends; the whisper.cpp JNI lib is the consumer's to add.
 include(":agents-kt-whisper-jni")
-// #4506: pure-JDK OpenAI-compatible speech server (com.sun.net.httpserver, zero
-// external deps). Exposes /v1/audio/transcriptions + /v1/audio/speech over
-// pluggable STT/TTS backend seams — run it with `java -jar`, no Docker/Python.
-include(":agents-kt-speech-server")

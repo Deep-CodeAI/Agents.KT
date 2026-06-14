@@ -361,6 +361,22 @@ Both implement the existing `SpeechToTextClient` / `TtsModelClient` interfaces, 
 val stt = WhisperSttClient("http://localhost:8000").apply { preflight() }  // fails loud now if the server is down
 ```
 
+### Local engines without a listening port (#4510)
+
+agents.kt is an orchestration toolkit, **not** a media server — it never binds a listening port. The HTTP clients above are *outbound* (they connect to a service you run; nothing is exposed on our side). When you want the engine **on the same box with no server at all**, bolt it on through the same seams via one of two portless transports:
+
+- **In-process (JNI)** — `:agents-kt-whisper-jni`'s `WhisperJniSttClient` runs whisper.cpp inside the JVM. A `SpeechToTextClient`, drop-in for `transcribe_audio`. No port.
+- **Subprocess** — `SubprocessTtsClient` pipes text to a local TTS **binary** (e.g. `piper`) through `ProcessSandbox` (stdin in, audio file out), write-confined to a temp dir, and returns `Content.Audio`. A `TtsModelClient`, drop-in for `speak`. **No port, no JVM TTS engine** — the engine is the external binary.
+
+```kotlin
+val tts = SubprocessTtsClient(blobStore) { _, out ->
+    listOf("piper", "--model", "/voices/en.onnx", "--output_file", out.toString())
+}
+agent { tools { +speakTool(tts) } }   // local TTS, engine external, zero ports
+```
+
+So voice has three shapes, all behind the same `SpeechToTextClient` / `TtsModelClient` seams: **outbound HTTP** (a service you run), **in-process** (JNI), or **subprocess** (a local binary). Pick by where the engine lives; the agent code is identical.
+
 ### Weights live outside the jar
 
 Agents.KT ships **no model weights** — not Whisper's, not Qwen-TTS's. The jar is code: the HTTP adapters above talk to a server *you* run (weights live in that server's process), so there is nothing to bundle. This keeps the artifact small and keeps weight licensing (Qwen license, model-card terms) entirely separate from the Apache-licensed code. Weights are a deploy-time concern resolved by `baseUrl` (HTTP) — or, for the in-process path, a model file you provision (`:agents-kt-whisper-jni`, which downloads + checksums a model at runtime, still bundling nothing).
