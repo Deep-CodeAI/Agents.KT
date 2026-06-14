@@ -22,6 +22,7 @@ internal object ModelClientFactory {
             ModelProvider.KIMI -> "kimi"
             ModelProvider.OPENROUTER -> "openrouter"
             ModelProvider.PERPLEXITY -> "perplexity"
+            ModelProvider.GEMINI -> "gemini"
         }
 
     /**
@@ -153,6 +154,22 @@ internal object ModelClientFactory {
                 maxTokens = config.maxTokens,
                 tools = tools,
                 baseUrl = config.perplexityBaseUrl,
+                reasoning = config.reasoning,
+                toolChoice = toolChoice,
+                httpClient = config.httpClient,
+            )
+            // #1917 — Google Gemini (Generative Language API); full from-scratch adapter (not
+            // OpenAI-compatible). Lazily constructed so the agent's tool catalog is available.
+            ModelProvider.GEMINI -> GeminiClient(
+                apiKey = config.apiKey
+                    ?: error("Agent uses Gemini but apiKey is null — load .secrets/gemini-key"),
+                model = config.name,
+                temperature = config.temperature,
+                maxTokens = config.maxTokens,
+                tools = tools,
+                baseUrl = config.geminiBaseUrl,
+                requestTimeout = config.requestTimeout ?: GeminiClient.DEFAULT_REQUEST_TIMEOUT,
+                connectTimeout = config.connectTimeout ?: GeminiClient.DEFAULT_CONNECT_TIMEOUT,
                 reasoning = config.reasoning,
                 toolChoice = toolChoice,
                 httpClient = config.httpClient,

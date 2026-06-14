@@ -34,6 +34,8 @@ data class ModelConfig(
     val openRouterBaseUrl: String = OpenRouterClient.DEFAULT_BASE_URL,
     /** Override the Perplexity (Sonar) base URL — regional endpoints, proxies (#3675). */
     val perplexityBaseUrl: String = PerplexityClient.DEFAULT_BASE_URL,
+    /** Override the Gemini (Generative Language API) base URL — regional endpoints, proxies (#1917). */
+    val geminiBaseUrl: String = GeminiClient.DEFAULT_BASE_URL,
     /** Optional `HTTP-Referer` header sent to OpenRouter — origin URL for attribution UI. */
     val openRouterHttpReferer: String? = null,
     /** Optional `X-Title` header sent to OpenRouter — calling app name for attribution UI. */
@@ -87,6 +89,7 @@ data class ModelConfig(
             "kimiBaseUrl=$kimiBaseUrl, " +
             "openRouterBaseUrl=$openRouterBaseUrl, " +
             "perplexityBaseUrl=$perplexityBaseUrl, " +
+            "geminiBaseUrl=$geminiBaseUrl, " +
             "openRouterHttpReferer=$openRouterHttpReferer, " +
             "openRouterXTitle=$openRouterXTitle, " +
             "maxTokens=$maxTokens, reasoning=$reasoning, " +

@@ -2,7 +2,7 @@
 
 # Provider Capability Matrix
 
-Single source of truth for what each shipped `ModelProvider` supports. `ModelProvider.entries` has **seven** values: `OLLAMA`, `ANTHROPIC`, `OPENAI`, `DEEPSEEK`, `KIMI`, `OPENROUTER`, `PERPLEXITY`. The four columns below are the four distinct **wire shapes** — the adapters with their own wiring, caching tests, and live integration coverage. `KIMI`, `OPENROUTER`, and `PERPLEXITY` are first-party providers that **extend the OpenAI adapter** (`model { kimi(...) }` / `model { openrouter(...) }` / `model { perplexity(...) }`), so they share the OpenAI column's behavior. Perplexity additionally accepts OpenAI's `response_format` json_schema, so its constrained decoding gate is left **on** (Kimi/DeepSeek leave it off).
+Single source of truth for what each shipped `ModelProvider` supports. `ModelProvider.entries` has **eight** values: `OLLAMA`, `ANTHROPIC`, `OPENAI`, `DEEPSEEK`, `KIMI`, `OPENROUTER`, `PERPLEXITY`, `GEMINI`. There are **five distinct wire shapes** — the four columns below (Anthropic / OpenAI / Ollama / DeepSeek) plus **`GEMINI`**, a from-scratch adapter documented in [§Gemini](#gemini-fifth-wire-shape) (its `contents`/`parts` shape is unlike the others, so it gets its own section rather than a column). `KIMI`, `OPENROUTER`, and `PERPLEXITY` are first-party providers that **extend the OpenAI adapter** (`model { kimi(...) }` / `model { openrouter(...) }` / `model { perplexity(...) }`), so they share the OpenAI column's behavior. Perplexity additionally accepts OpenAI's `response_format` json_schema, so its constrained decoding gate is left **on** (Kimi/DeepSeek leave it off).
 
 For other deployments that ride on one of these wire shapes (vLLM, SGLang, …) see [caching.md → Under evaluation](caching.md#under-evaluation).
 
@@ -104,11 +104,31 @@ tools {
 
 Credentials load from `.secrets/perplexity-key` / `PERPLEXITY_API_KEY` (the per-provider `.secrets/<provider>-key` convention). Verified end-to-end against `api.perplexity.ai`; live tests are tagged `live-cloud-api` (run in the default suite when a key is present, skip otherwise).
 
+## Gemini (fifth wire shape)
+
+`model { gemini("gemini-2.5-flash"); apiKey = ... }` — Google's Generative Language API (#1917). A
+full from-scratch adapter, **not** OpenAI-compatible, so it stands apart from the four columns above:
+
+| Surface | Gemini wire shape |
+|---|---|
+| Roles / messages | `contents:[{role:"user"\|"model", parts:[...]}]`; system → top-level `systemInstruction`; tool result → `{functionResponse:{name, response:{output:...}}}` paired by **function name** (no call id) |
+| Tool calling | `tools:[{functionDeclarations:[{name, description, parametersJsonSchema}]}]`; `functionCall` parts in the response. `ToolChoice` → `toolConfig.functionCallingConfig.mode` (`AUTO`/`ANY`/`NONE`, `allowedFunctionNames` for `Specific`) |
+| Constrained decoding | `generationConfig.responseMimeType="application/json"` + `responseJsonSchema` (tools must be empty); returns JSON text. `supportsConstrainedDecoding() == true` |
+| Streaming | native SSE via `:streamGenerateContent?alt=sse`; `TextDelta` per text part, whole-`functionCall` → `ToolCall*`, `usageMetadata` → `End`. Non-2xx (e.g. 429) surfaces as `LlmProviderException`, not an empty stream |
+| Reasoning | `thinkingConfig.includeThoughts` (+ optional `thinkingBudget`); response parts with `"thought":true` → `ReasoningDelta` / `LlmResponse.reasoning`; `thoughtsTokenCount` → `TokenUsage.reasoningTokens`. **Note:** gemini-2.5-* think by default and thinking tokens count against `maxOutputTokens` — give a generous budget |
+| Vision | `inlineData:{mimeType, data:<base64>}` parts (`LlmMessage.images`) |
+| Errors | top-level `{"error":{code, message, status}}` → `LlmProviderException` (same boundary contract as the others) |
+
+Credentials load from `.secrets/gemini-key` / `GEMINI_API_KEY`. Live tests are tagged `live-cloud-api`
+(run in the default suite when a key is present, skip otherwise; they also skip on free-tier
+`RESOURCE_EXHAUSTED` rate limits). Verified end-to-end against `gemini-2.5-flash`.
+
 ## Updating this matrix
 
-The four columns here track `ModelProvider.entries`. Adding a fifth provider means:
+The four columns here track the OpenAI-family `ModelProvider.entries`; `GEMINI` is the fifth wire
+shape in [§Gemini](#gemini-fifth-wire-shape). Adding a provider means:
 1. Add the entry to `ModelProvider` enum + adapter implementation.
-2. Add a column to **every** table in this file.
+2. Add a column to **every** table in this file (or, for a genuinely new wire shape, its own section like Gemini's) and update the count word + entry list at the top.
 3. Add caching + live integration tests under the relevant `live-*` tag.
 4. Update [caching.md](caching.md) `Per-provider behavior` table at the same time.
 

@@ -17,6 +17,7 @@ class ModelBuilder {
     var kimiBaseUrl: String = KimiClient.DEFAULT_BASE_URL
     var openRouterBaseUrl: String = OpenRouterClient.DEFAULT_BASE_URL
     var perplexityBaseUrl: String = PerplexityClient.DEFAULT_BASE_URL
+    var geminiBaseUrl: String = GeminiClient.DEFAULT_BASE_URL
     var openRouterHttpReferer: String? = null
     var openRouterXTitle: String? = null
     var maxTokens: Int = ClaudeClient.DEFAULT_MAX_TOKENS
@@ -110,6 +111,17 @@ class ModelBuilder {
         provider = ModelProvider.PERPLEXITY
     }
 
+    /**
+     * Select Google Gemini (Generative Language API) (#1917). [GeminiClient] is constructed lazily
+     * at AgenticLoop time so the agent's full tool catalog is available. Model ids follow Google's
+     * naming, e.g. `"gemini-2.5-flash"`, `"gemini-2.5-pro"`, `"gemini-2.0-flash"`. Requires an API
+     * key from Google AI Studio (load from `.secrets/gemini-key`).
+     */
+    fun gemini(modelName: String) {
+        name = modelName
+        provider = ModelProvider.GEMINI
+    }
+
     /** Backing field for the [reasoning] DSL (#2406). Off by default. */
     private var reasoningConfig: ReasoningConfig? = null
 
@@ -135,6 +147,7 @@ class ModelBuilder {
                 ModelProvider.KIMI -> error("model { kimi(\"$name\") } requires apiKey to be set")
                 ModelProvider.OPENROUTER -> error("model { openrouter(\"$name\") } requires apiKey to be set")
                 ModelProvider.PERPLEXITY -> error("model { perplexity(\"$name\") } requires apiKey to be set")
+                ModelProvider.GEMINI -> error("model { gemini(\"$name\") } requires apiKey to be set")
                 ModelProvider.OLLAMA -> Unit
             }
         }
@@ -152,6 +165,7 @@ class ModelBuilder {
             kimiBaseUrl = kimiBaseUrl,
             openRouterBaseUrl = openRouterBaseUrl,
             perplexityBaseUrl = perplexityBaseUrl,
+            geminiBaseUrl = geminiBaseUrl,
             openRouterHttpReferer = openRouterHttpReferer,
             openRouterXTitle = openRouterXTitle,
             maxTokens = maxTokens,

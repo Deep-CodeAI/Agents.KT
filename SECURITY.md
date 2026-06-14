@@ -31,7 +31,7 @@ Please do not file public GitHub issues for security-sensitive reports.
 
 ## Handling LLM provider credentials
 
-Agents.KT ships seven first-party providers (`ModelProvider.entries`: Ollama, Anthropic, OpenAI, DeepSeek, Kimi, OpenRouter, Perplexity) over four wire-shape adapters — see [`docs/providers.md`](docs/providers.md) for the matrix. All cloud providers (everything except local Ollama) require a real API key. The framework's contract:
+Agents.KT ships eight first-party providers (`ModelProvider.entries`: Ollama, Anthropic, OpenAI, DeepSeek, Kimi, OpenRouter, Perplexity, Gemini) over five wire-shape adapters — see [`docs/providers.md`](docs/providers.md) for the matrix. All cloud providers (everything except local Ollama) require a real API key. The framework's contract:
 
 - **Keys live outside the working tree.** The integration tests load from `<repo-root>/.secrets/<provider>-key` (gitignored at the project root) or the provider's standard env var (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `PERPLEXITY_API_KEY` / …). The `.secrets/` directory must never be committed; verify via `git check-ignore .secrets/your-key` before use.
 - **File permissions.** Set `chmod 0600 .secrets/*-key` and `chmod 0700 .secrets/` so other local users on shared machines cannot read them.
