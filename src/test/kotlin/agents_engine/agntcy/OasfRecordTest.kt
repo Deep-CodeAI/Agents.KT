@@ -36,9 +36,12 @@ class OasfRecordTest {
             OasfTaxonomy.skillUid("natural_language_processing/information_retrieval_synthesis/sentence_similarity"),
         )
         assertEquals(50202, OasfTaxonomy.skillUid("analytical_skills/coding_skills/code_to_docstrings"))
-        assertEquals(1503, OasfTaxonomy.skillUid("advanced_reasoning_planning/chain_of_thought_structuring"))
+        assertEquals(1001, OasfTaxonomy.skillUid("agent_orchestration/task_decomposition"))
         assertEquals(10702, OasfTaxonomy.skillUid("natural_language_processing/analytical_reasoning/problem_solving"))
         assertNull(OasfTaxonomy.skillUid("not/a/real/skill"))
+        // slice 2 — domains tree is now vendored too
+        assertEquals(1003, OasfTaxonomy.domainUid("legal/regulatory_compliance"))
+        assertNull(OasfTaxonomy.domainUid("not/a/real/domain"))
     }
 
     @Test
@@ -47,6 +50,7 @@ class OasfRecordTest {
             version = "1.2.0",
             authors = listOf("Ada Lovelace <ada@example.com>"),
             locators = listOf(OasfLocator(type = "source_code", urls = listOf("https://example.com/catalog"))),
+            domains = listOf("legal/regulatory_compliance"),
             description = "A catalog agent",
             createdAt = "2026-06-15T00:00:00Z",
         )
@@ -70,6 +74,11 @@ class OasfRecordTest {
         @Suppress("UNCHECKED_CAST")
         val locators = root["locators"] as List<Map<String, Any?>>
         assertEquals("source_code", locators.single()["type"])
+
+        @Suppress("UNCHECKED_CAST")
+        val domains = root["domains"] as List<Map<String, Any?>>
+        assertEquals("legal/regulatory_compliance", domains.single()["name"])
+        assertEquals(1003, (domains.single()["id"] as Number).toInt())
     }
 
     @Test
