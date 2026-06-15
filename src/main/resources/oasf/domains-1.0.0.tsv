@@ -1,0 +1,5 @@
+# OASF 1.0.0 domains taxonomy — vendored path -> uid (slash-delimited machine names).
+# Source: schema.oasf.outshift.com/api/domains (cross-check against github.com/agntcy/oasf).
+# Slice 1 (#4518) leaves this unseeded — toOasfRecord emits an empty domains[] until slice 2
+# vendors the complete domains tree. `.oasf(...)`-style domain annotations resolve here when present.
+# Format: <slash/path>\t<uid>   ('#' comments and blank lines ignored)

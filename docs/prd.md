@@ -2855,7 +2855,7 @@ Any node in the delegation tree can be exported as an A2A endpoint:
 project.toAgentCard(url = "https://api.deep-code.ai/agents/project")
 ```
 
-### 12.6 AGNTCY Interoperability *(planned)*
+### 12.6 AGNTCY Interoperability *(in progress — OASF record export shipped, slice 1; DIR + Identity-verify planned)*
 
 [AGNTCY](https://github.com/agntcy) — the Linux Foundation "Internet of Agents" collective (Cisco/Outshift-led) — is the second cross-vendor interop stack alongside Google A2A (§12.5). Agents.KT targets **both**: A2A is the wire/invocation standard; AGNTCY adds a content-addressed **directory** and a **trust** layer. The native, typed `agent.json` (§12.2) stays the source of truth; AGNTCY support is a set of **exporters/clients over it**, exactly parallel to `toAgentCard()`.
 
@@ -2871,19 +2871,20 @@ project.toAgentCard(url = "https://api.deep-code.ai/agents/project")
 
 So AGNTCY interop = **OASF + DIR + Identity-verify**, riding on the A2A we already do.
 
-**OASF record export/import.** A third discovery exporter beside A2A:
+**OASF record export/import.** A third discovery exporter beside A2A — **shipped (slice 1, #4518)**:
 
 ```kotlin
 val record = specMaster.toOasfRecord(
     version = "2.0.0",
     authors = listOf("K.Skobeltsyn <konstantin@skobeltsyn.com>"),
-    locators = listOf(Locator.sourceCode("https://github.com/Deep-CodeAI/Agents.KT")),
+    locators = listOf(OasfLocator("source_code", listOf("https://github.com/Deep-CodeAI/Agents.KT"))),
+    createdAt = "2026-06-15T00:00:00Z", // caller-supplied — keeps the record byte-stable
 )
-// → OASF 1.0.0 JSON: name, version, schema_version, authors, created_at,
-//   skills:[{name,id}], domains:[{name,id}], locators:[...], modules:[]
+// → OASF 1.0.0 JSON: name, version, schema_version, description?, authors, created_at?,
+//   skills:[{name,id}], domains:[{name,id}], locators:[{type,urls}], modules:[], annotations
 ```
 
-The one real engineering cost is the **skills/domains taxonomy**: OASF skills are not free text — each is `{name: "agent_orchestration/task_decomposition", id: 1001}`, where `id` is digit-concatenation of the hierarchy UIDs. No JVM SDK and no fuzzy matcher exist. Plan: **vendor** the `schema/skills` + `schema/domains` trees and compute IDs locally (offline, reproducible), with the hosted schema server (`schema.oasf.outshift.com/api/skills`) as a validation cross-check. Free-form agent skills map via an opt-in `.oasf("agent_orchestration/task_decomposition")` annotation; un-annotated skills export under a sensible default and a validation warning. Record **signing** (Sigstore/cosign over OCI) is external to the record JSON — a later optional integration, not part of the serializer.
+The one real engineering cost is the **skills/domains taxonomy**: OASF skills are not free text — each is `{name: "agent_orchestration/multi_agent_planning", id: 1003}`. Note the `id` is **not** a single digit-concatenation formula as first assumed — the uids are *explicitly assigned per node* (top-level categories are multiples of 100, but level-2 is `category + n` while level-3 is `level2*100 + nn`), so the correct mechanism is a **vendored `path → uid` lookup**, not a computation. Plan: **vendor** the `schema/skills` + `schema/domains` trees (resource TSVs) and resolve IDs by lookup, with the hosted schema server (`schema.oasf.outshift.com/api/skills`) as a build-time validation cross-check. Free-form agent skills map via an opt-in `.oasf("agent_orchestration/multi_agent_planning")` annotation on the skill; un-annotated (and unknown-path) skills are omitted from the OASF `skills[]` with a logged warning (they remain in the free-form `agent.json`). Slice 1 ships the exporter + the confirmed core of the taxonomy; **slice 2** vendors the complete trees + the cross-check. Record **signing** (Sigstore/cosign over OCI) is external to the record JSON — a later optional integration, not part of the serializer.
 
 **DIR client.** `buf generate buf.build/agntcy/dir` → grpc-kotlin stubs for `StoreService.{Push,Pull,Lookup}` (CID-addressed) and `RoutingService`/`SearchService`. DIR carries our OASF record as an opaque `google.protobuf.Struct`, so the JSON is enough — no OASF protos required. Auth is layered and optional (insecure dev / SPIFFE / OIDC bearer). Targets both self-hosted (`localhost:8888`) and the hosted network (`prod.api.ads.outshift.io`, auth-gated via hub login).
 
