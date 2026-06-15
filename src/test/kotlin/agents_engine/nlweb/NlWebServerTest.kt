@@ -1,5 +1,7 @@
 package agents_engine.nlweb
 
+import agents_engine.core.agent
+import agents_engine.core.skill
 import agents_engine.model.NlWebResult
 import agents_engine.model.NlWebSearchResult
 import agents_engine.model.parseNlWebResponse
@@ -11,23 +13,34 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-// #4542 (PRD §12.9) — server-side NLWeb. The serve side mirrors the consume side (nlwebSearch,
-// #4541): what NlWebServer renders, parseNlWebResponse reads back. Hermetic — loopback HttpServer,
-// stub handler, in-process HTTP round trip (the A2ARoundTripTest pattern).
+// #4542 (PRD §12.9) — server-side NLWeb. from(agent) mirrors McpServer/A2AServer. The serve side
+// mirrors the consume side (nlwebSearch, #4541): what NlWebServer renders, parseNlWebResponse reads
+// back. Hermetic — loopback HttpServer, real agents, in-process HTTP round trip (A2ARoundTripTest shape).
 
 class NlWebServerTest {
 
     private val http = HttpClient.newHttpClient()
 
-    private fun sample() = NlWebSearchResult(
-        results = listOf(
-            NlWebResult(url = "https://x/ep/42", name = "AI Safety", site = "podcasts", score = 85.0,
-                description = "alignment talk", schemaType = "PodcastEpisode"),
-            NlWebResult(url = "https://x/ep/7", name = "RAG 101"),
-        ),
-        answer = "Two AI podcasts.",
-        queryId = "q-1",
-    )
+    // An agent whose skill returns NLWeb results directly → served verbatim as results[].
+    private fun catalogAgent() = agent<String, NlWebSearchResult>("catalog") {
+        skills {
+            skill<String, NlWebSearchResult>("search", "Returns schema.org matches") {
+                implementedBy { q ->
+                    NlWebSearchResult(
+                        results = listOf(
+                            NlWebResult(url = "https://x/1", name = "match: $q", score = 9.0, schemaType = "Recipe"),
+                        ),
+                        queryId = "q-1",
+                    )
+                }
+            }
+        }
+    }
+
+    // An agent that just answers → its output becomes the `summary`.
+    private fun answerAgent() = agent<String, String>("answerer") {
+        skills { skill<String, String>("ask", "Answers") { implementedBy { q -> "answer: $q" } } }
+    }
 
     private fun post(url: String, body: String, bearer: String? = null): HttpResponse<String> {
         val b = HttpRequest.newBuilder().uri(URI.create(url)).POST(HttpRequest.BodyPublishers.ofString(body))
@@ -36,37 +49,50 @@ class NlWebServerTest {
     }
 
     @Test
-    fun `rendered response round-trips through the client parser`() {
-        // What the server emits, the nlwebSearch client must be able to read back.
-        val parsed = parseNlWebResponse(renderAskResponse(sample()))
-        assertEquals("q-1", parsed.queryId)
-        assertEquals("Two AI podcasts.", parsed.answer)
-        assertEquals(listOf("https://x/ep/42", "https://x/ep/7"), parsed.results.map { it.url })
-        val first = parsed.results.first()
-        assertEquals("AI Safety", first.name)
-        assertEquals(85.0, first.score)
-        assertEquals("PodcastEpisode", first.schemaType)
-    }
-
-    @Test
-    fun `POST ask returns the handler result and the query reaches the handler`() {
-        var seenQuery: String? = null
-        val server = NlWebServer.from({ req -> seenQuery = req.query; sample() }).start()
+    fun `agent returning NlWebSearchResult is served as results`() {
+        val server = NlWebServer.from(catalogAgent()).start()
         try {
-            val resp = post(server.url, """{"query":"AI podcasts","mode":"list"}""")
+            val resp = post(server.url, """{"query":"pasta","mode":"list"}""")
             assertEquals(200, resp.statusCode())
-            assertEquals("AI podcasts", seenQuery)
             val parsed = parseNlWebResponse(resp.body())
-            assertEquals(2, parsed.results.size)
-            assertEquals("Two AI podcasts.", parsed.answer)
+            assertEquals("q-1", parsed.queryId)
+            val item = parsed.results.single()
+            assertEquals("match: pasta", item.name) // query reached the agent
+            assertEquals("Recipe", item.schemaType)
         } finally {
             server.stop()
         }
     }
 
     @Test
+    fun `agent returning a plain answer becomes the summary`() {
+        val server = NlWebServer.from(answerAgent()).start()
+        try {
+            val parsed = parseNlWebResponse(post(server.url, """{"query":"hello"}""").body())
+            assertEquals("answer: hello", parsed.answer)
+            assertTrue(parsed.results.isEmpty(), "plain-answer agent yields no schema.org results")
+        } finally {
+            server.stop()
+        }
+    }
+
+    @Test
+    fun `rendered response round-trips through the client parser`() {
+        val result = NlWebSearchResult(
+            results = listOf(NlWebResult(url = "https://a", name = "Alpha", score = 85.0, schemaType = "Article")),
+            answer = "one match",
+            queryId = "q-2",
+        )
+        val parsed = parseNlWebResponse(renderAskResponse(result))
+        assertEquals("q-2", parsed.queryId)
+        assertEquals("one match", parsed.answer)
+        assertEquals("Alpha", parsed.results.single().name)
+        assertEquals(85.0, parsed.results.single().score)
+    }
+
+    @Test
     fun `missing query is a 400`() {
-        val server = NlWebServer.from({ sample() }).start()
+        val server = NlWebServer.from(answerAgent()).start()
         try {
             val resp = post(server.url, """{"mode":"list"}""")
             assertEquals(400, resp.statusCode())
@@ -78,7 +104,7 @@ class NlWebServerTest {
 
     @Test
     fun `bearer auth rejects without token and accepts with it`() {
-        val server = NlWebServer.from({ sample() }, bearerToken = "s3cret").start()
+        val server = NlWebServer.from(answerAgent(), bearerToken = "s3cret").start()
         try {
             assertEquals(401, post(server.url, """{"query":"x"}""").statusCode())
             assertEquals(200, post(server.url, """{"query":"x"}""", bearer = "s3cret").statusCode())

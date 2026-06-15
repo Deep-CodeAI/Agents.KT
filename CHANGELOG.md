@@ -6,17 +6,18 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ### Added — `NlWebServer`: serve agents.kt as an NLWeb endpoint (#4542, PRD §12.9)
 
-The serve side of NLWeb (the `nlwebSearch` tool, #4541, is the consume side). `NlWebServer.from(handler).start()`
+The serve side of NLWeb (the `nlwebSearch` tool, #4541, is the consume side). `NlWebServer.from(agent).start()`
 exposes the NLWeb `POST /ask` contract (`{query, site?, mode}` → `{query_id, results:[{url, name, site,
-score, description, schema_object}], summary?}`) over a loopback JDK `HttpServer` — the **same serve
-surface and threat model as `McpServer` / `A2AServer`**: bound to `127.0.0.1`, optional bearer auth,
-front with a gateway for any network reach. It is **pure transport** — the `NlWebAskHandler` you supply
-does the retrieval/ranking, which you back with the RAG `EmbeddingStore` seam (`:agents-kt-rag`), an
-`Agent`, or anything (`query → ranked schema.org results`). New package `agents_engine.nlweb`
-(`NlWebServer`, `NlWebAskRequest`, `NlWebAskHandler`); the `NlWebResult` / `NlWebSearchResult` wire types
-are shared with the client tool, and `renderAskResponse` round-trips through the client's
-`parseNlWebResponse`. The `/mcp` face is `McpServer`'s domain (expose an `ask` skill there); this is the
-`/ask`-over-HTTP path. 4 tests (in-process loopback round trip + the serialize↔parse symmetry).
+score, description, schema_object}], summary?}`) over a loopback JDK `HttpServer` — the **same `from(agent)`
+shape, serve surface, and threat model as `McpServer` / `A2AServer`**: bound to `127.0.0.1`, optional bearer
+auth, front with a gateway for any network reach. The query is the agent's input; an `NlWebSearchResult`
+output is served verbatim (ranked schema.org results), any other output becomes the `summary` answer — the
+agent does the retrieval, which you back with the RAG `EmbeddingStore` seam (`:agents-kt-rag`) or anything.
+New package `agents_engine.nlweb` (`NlWebServer`); the `NlWebResult` / `NlWebSearchResult` wire types are
+shared with the client tool, and `renderAskResponse` round-trips through the client's `parseNlWebResponse`.
+The `/mcp` face is `McpServer`'s domain (expose an `ask` skill there); this is the `/ask`-over-HTTP path.
+5 tests (in-process loopback round trips for both result-returning and answer-returning agents + the
+serialize↔parse symmetry).
 
 ### Added — `nlwebSearch` tool: query an NLWeb endpoint (#4541, PRD §12.9)
 
