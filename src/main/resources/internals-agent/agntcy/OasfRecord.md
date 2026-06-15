@@ -31,10 +31,12 @@ an agent with no `.oasf(...)` annotations exports an empty `skills[]`.
 OASF uids are **explicitly assigned per node**: top-level categories are multiples of 100, but level-2
 is `category + n` while level-3 is `level2*100 + nn` — there is *no* single formula. So `OasfTaxonomy`
 is a `path -> uid` lookup loaded from `resources/oasf/skills-1.0.0.tsv` (+ `domains-1.0.0.tsv`).
-- **Slice 1 (#4518, this change):** seeds the confirmed core of the skills tree; domains TSV is unseeded
-  (records emit an empty `domains[]`).
-- **Slice 2 (follow-up in #4518):** vendor the complete `agntcy/oasf` skills+domains trees and add a
-  build-time cross-check against `schema.oasf.outshift.com/api/skills`.
+- **Slice 1 (#4518):** the exporter + the confirmed core of the skills tree.
+- **Slice 2 (#4518, done):** the **complete** trees (122 skills, 181 domains) regenerated directly from
+  the hosted schema, plus `OasfTaxonomyCrossCheckTest` — a `live-cloud-api`-tagged test that asserts the
+  vendored TSVs equal `schema.oasf.outshift.com/api/{skills,domains}` and self-skips offline. So the
+  vendored snapshot cannot silently drift from upstream. `OasfTaxonomy.skillEntries()`/`domainEntries()`
+  are internal accessors backing that test.
 
 ## Determinism
 

@@ -24,6 +24,12 @@ object OasfTaxonomy {
     /** Resolve an OASF domain path to its uid, or null. */
     fun domainUid(path: String): Int? = domains[path.trim().trim('/')]
 
+    /** The full vendored skills map (path -> uid). Internal — backs the live cross-check test. */
+    internal fun skillEntries(): Map<String, Int> = skills
+
+    /** The full vendored domains map (path -> uid). Internal — backs the live cross-check test. */
+    internal fun domainEntries(): Map<String, Int> = domains
+
     private fun loadTsv(resource: String): Map<String, Int> {
         val text = OasfTaxonomy::class.java.getResourceAsStream(resource)?.bufferedReader()?.use { it.readText() }
             ?: error("OASF taxonomy resource missing: $resource")
