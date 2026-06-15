@@ -4,6 +4,21 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `nlwebSearch` tool: query an NLWeb endpoint (#4541, PRD §12.9)
+
+`tools { +nlwebSearchTool(baseUrl = "https://example.com") }` lets an agent on its own model query an
+[NLWeb](https://github.com/nlweb-ai/NLWeb) endpoint — a website's natural-language interface over its
+**schema.org**-structured content — and fold the ranked, typed results into context. Mirrors
+`perplexitySearch`: marked `untrustedOutput = true` (fetched web content is wrapped in the
+`{trusted:false}` envelope and the model is warned to treat it as data, #642), with pure
+`buildNlWebAskBody` / `parseNlWebResponse` wire helpers and an injectable `NlWebSearchBackend` seam.
+Posts to `<baseUrl>/ask` (no API key — NLWeb endpoints are public); `NlWebSearchOptions(site, mode =
+LIST/SUMMARIZE/GENERATE)` selects the namespace and query mode; results render as a numbered list of
+schema.org matches (name, `@type`, description, url) plus any summarize/generate answer. The first slice
+of the agent↔web-content layer (epic #4539). 8 tests. (Every NLWeb endpoint is also an MCP server, so an
+NLWeb `/mcp` URL is equally consumable through the existing MCP client; this tool is the zero-wiring
+`/ask`-over-HTTP path.)
+
 ## [0.8.0] — 2026-06-14
 
 **Interoperable, multimodal agents — with capability grants.** The largest minor since 0.5.0:
