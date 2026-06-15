@@ -36,7 +36,7 @@ val agent = agent<String, String>("ResearchBot") {
 | **DeepSeek** | Automatic disk-based caching | Inherits the OpenAI-compatible request shape; no extra wiring needed. Cached-input tokens surface on `TokenUsage`. |
 | **Ollama** | Engine-level KV-cache reuse (no wire-level control) | Hints degrade to no-op. Prefix stability (see below) is what makes the engine cache hit. |
 
-The four rows above are the four **wire shapes**; `ModelProvider.entries` has seven values — Kimi, OpenRouter, and Perplexity extend the OpenAI adapter and inherit its row (automatic prefix caching where the upstream supports it). Fourth-party deployments that ride on top of one of these wire shapes are documented under [Under evaluation](#under-evaluation) below.
+The four rows above are the four **wire shapes**; `ModelProvider.entries` has **eight** values — Kimi, OpenRouter, and Perplexity extend the OpenAI adapter and inherit its row (automatic prefix caching where the upstream supports it), and Gemini is its own wire shape (its prompt caching is not wired in this table — engine-side, no `cache_control`). Fourth-party deployments that ride on top of one of these wire shapes are documented under [Under evaluation](#under-evaluation) below.
 
 ### `CacheHint` model
 
@@ -106,7 +106,7 @@ These are the silent killers — `System.currentTimeMillis()` interpolated into 
 
 ### Under evaluation
 
-These backends are **not** first-party `ModelProvider` adapters (`ModelProvider.entries` has seven first-party values; these are not among them). Consumers who point the OpenAI adapter at one of these endpoints (via `openAiBaseUrl`) get OpenAI-compatible behavior, but the caching characteristics differ:
+These backends are **not** first-party `ModelProvider` adapters (`ModelProvider.entries` has eight first-party values; these are not among them). Consumers who point the OpenAI adapter at one of these endpoints (via `openAiBaseUrl`) get OpenAI-compatible behavior, but the caching characteristics differ:
 
 | Backend | Wire-shape compatibility | Caching note |
 |---|---|---|
