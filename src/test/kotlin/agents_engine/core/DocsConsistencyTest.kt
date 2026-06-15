@@ -39,6 +39,7 @@ class DocsConsistencyTest {
         val word = countWords[ModelProvider.entries.size]
         val claims = listOf(
             "docs/providers.md" to "`ModelProvider.entries` has **$word** values",
+            "docs/caching.md" to "`ModelProvider.entries` has **$word** values",
             "docs/model-and-tools.md" to "$word providers ship today",
             "docs/model-and-tools.md" to "All $word providers share the `ModelClient` interface",
             "SECURITY.md" to "$word first-party providers",
