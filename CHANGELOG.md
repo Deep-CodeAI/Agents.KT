@@ -4,6 +4,23 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — OASF 1.0.0 record export: `toOasfRecord()` (#4518, PRD §12.6) — AGNTCY interop, slice 1
+
+`agent.toOasfRecord(version, authors, locators, …)` emits an [OASF](https://github.com/agntcy/oasf) 1.0.0
+record — AGNTCY's content-addressed discovery metadata — the **third discovery exporter** beside the A2A
+AgentCard (`toAgentCard()`, §12.5) and native `agent.json` (`toAgentJson()`, §12.2), and the first piece of
+the AGNTCY epic (#4517: OASF + DIR + Identity-verify). The native typed agent stays the source of truth; this
+is a projection over it. OASF skills are taxonomy entries, not free text: a skill becomes an OASF `skills[]`
+entry only when annotated with `.oasf("agent_orchestration/multi_agent_planning")`, resolved to its uid via
+the vendored `OasfTaxonomy` (a `path → uid` lookup — OASF uids are explicitly assigned per node, not a single
+formula; un-annotated/unknown skills are omitted with a logged warning). Deterministic and byte-stable:
+`createdAt`/`authors`/`locators` are caller-supplied (no hidden `now()`). `toAgentJson()` gained the same
+optional provenance fields additively (`metadata.authors`, `metadata.createdAt`, `spec.locators`) — existing
+callers serialize byte-identically. New package `agents_engine.agntcy` (`toOasfRecord`, `OasfTaxonomy`,
+`OasfLocator`). **Slice 1** seeds the confirmed core of the skills taxonomy; **slice 2** (follow-up in #4518)
+vendors the complete `agntcy/oasf` trees + a build-time cross-check. 5 tests. Record signing, OASF
+import/validate, the DIR client, and Identity-verify are the remaining #4517 subtasks.
+
 ### Added — `NlWebServer`: serve agents.kt as an NLWeb endpoint (#4542, PRD §12.9)
 
 The serve side of NLWeb (the `nlwebSearch` tool, #4541, is the consume side). `NlWebServer.from(agent).start()`

@@ -191,6 +191,21 @@ class Skill<IN, OUT>(
         useMemory = true
     }
 
+    /**
+     * #4518 (PRD §12.6) — opt-in OASF taxonomy classification. [path] is the slash-delimited
+     * OASF skill path (e.g. `"agent_orchestration/multi_agent_planning"`); `toOasfRecord()`
+     * resolves it to the taxonomy uid via [agents_engine.agntcy.OasfTaxonomy]. Skills without
+     * an `.oasf(...)` are free-form and are omitted from the OASF record's `skills[]` (OASF
+     * skills are taxonomy entries, not free text) — with a validation warning.
+     */
+    var oasfPath: String? = null
+        private set
+
+    fun oasf(path: String) {
+        checkNotFrozen()
+        oasfPath = path
+    }
+
     fun execute(input: IN): OUT {
         val impl = checkNotNull(implementation) {
             "Skill \"$name\" has no implementation. Add implementedBy { } block."

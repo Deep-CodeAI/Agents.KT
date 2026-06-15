@@ -1,5 +1,6 @@
 package agents_engine.core
 
+import agents_engine.agntcy.OasfLocator
 import agents_engine.mcp.McpJson
 
 /**
@@ -10,12 +11,24 @@ import agents_engine.mcp.McpJson
  * description of the agent itself.
  *
  * Keys are emitted in a fixed order, so the same agent always serializes byte-identically.
+ *
+ * #4518 (PRD §12.6) — optional provenance fields ([authors], [createdAt], [locators]) are shared with
+ * the OASF record (`toOasfRecord`); they are additive and omitted when not supplied, so existing
+ * callers serialize byte-identically.
  */
-fun Agent<*, *>.toAgentJson(version: String? = null, description: String? = null): String {
+fun Agent<*, *>.toAgentJson(
+    version: String? = null,
+    description: String? = null,
+    authors: List<String> = emptyList(),
+    createdAt: String? = null,
+    locators: List<OasfLocator> = emptyList(),
+): String {
     val metadata = LinkedHashMap<String, Any?>()
     metadata["name"] = name
     if (version != null) metadata["version"] = version
     if (description != null) metadata["description"] = description
+    if (authors.isNotEmpty()) metadata["authors"] = authors
+    if (createdAt != null) metadata["createdAt"] = createdAt
 
     val skillDocs = skills.values
         .sortedBy { it.name }
@@ -49,6 +62,9 @@ fun Agent<*, *>.toAgentJson(version: String? = null, description: String? = null
         "tools" to toolDocs,
         "capabilities" to linkedMapOf<String, Any?>("streaming" to true),
     )
+    if (locators.isNotEmpty()) {
+        spec["locators"] = locators.map { linkedMapOf<String, Any?>("type" to it.type, "urls" to it.urls) }
+    }
 
     val doc = linkedMapOf<String, Any?>(
         "apiVersion" to AGENT_JSON_API_VERSION,
