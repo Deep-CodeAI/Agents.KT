@@ -215,6 +215,7 @@ This is the canonical status table — README, `SECURITY.md`, and `production-ha
 | WASM / Docker sandbox backends | 0.8 planned (#2894 / #2895) | — |
 | `grants { allow / confirm }` capability grants (agent-level) | ✅ shipped (#4545) | `allow(...)` = freely callable; `confirm(...)` = needs the granting agent's authorization (fail-closed). Build-validated that skills stay within grants. Full `structure { root { delegates {} } }` topology still later |
 | MCP server inbound auth | ✓ shipped | `McpServerAuth.TrustedLocal` default (loopback-only) / `RequireBearerToken(s)` |
+| A2A / NLWeb server inbound posture | ✓ shipped | `A2AServer` (#3864) and `NlWebServer` (#4542) bind `127.0.0.1` only, optional `Bearer` token, front with a gateway — same stance as `McpServer` |
 | MCP server Host / Origin validation | ✓ shipped | `allowedHosts` / `originAllowlist` |
 | Per-client MCP tool policy | ✓ shipped | `toolPolicy { principal, tool -> }` — filters `tools/list`, denies `tools/call` opaquely |
 | `untrustedOutput` flag on `ToolDef` | ✓ signal + envelope | `{"trusted":false}` wrapping marks data-not-instructions; content filtering is yours |
