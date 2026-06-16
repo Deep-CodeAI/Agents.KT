@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: Apache-2.0
+// #4520 — VENDORED from agntcy/dir routing/v1/peer.proto (faithful; java_* options added).
+syntax = "proto3";
+
+package agntcy.dir.routing.v1;
+
+option java_package = "agntcy.dir.routing.v1";
+option java_multiple_files = true;
+
+message Peer {
+  string id = 1;
+  repeated string addrs = 2;
+  map<string, string> annotations = 3;
+  PeerConnectionType connection = 4;
+}
+
+enum PeerConnectionType {
+  PEER_CONNECTION_TYPE_NOT_CONNECTED = 0;
+  PEER_CONNECTION_TYPE_CONNECTED = 1;
+  PEER_CONNECTION_TYPE_CAN_CONNECT = 2;
+  PEER_CONNECTION_TYPE_CANNOT_CONNECT = 3;
+}

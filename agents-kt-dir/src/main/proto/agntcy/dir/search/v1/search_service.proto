@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: Apache-2.0
+// #4520 — VENDORED from agntcy/dir search/v1/search_service.proto (faithful; java_* options added). Local content search.
+syntax = "proto3";
+
+package agntcy.dir.search.v1;
+
+import "agntcy/dir/core/v1/record.proto";
+import "agntcy/dir/search/v1/record_query.proto";
+
+option java_package = "agntcy.dir.search.v1";
+option java_multiple_files = true;
+
+service SearchService {
+  rpc SearchCIDs(SearchCIDsRequest) returns (stream SearchCIDsResponse);
+  rpc SearchRecords(SearchRecordsRequest) returns (stream SearchRecordsResponse);
+}
+
+message SearchCIDsRequest {
+  repeated RecordQuery queries = 1;
+  optional uint32 limit = 2;
+  optional uint32 offset = 3;
+}
+
+message SearchRecordsRequest {
+  repeated RecordQuery queries = 1;
+  optional uint32 limit = 2;
+  optional uint32 offset = 3;
+}
+
+message SearchCIDsResponse {
+  string record_cid = 1;
+}
+
+message SearchRecordsResponse {
+  agntcy.dir.core.v1.Record record = 1;
+}
