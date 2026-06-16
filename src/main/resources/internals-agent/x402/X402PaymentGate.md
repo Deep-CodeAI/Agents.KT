@@ -14,8 +14,10 @@ val gate = X402PaymentGate(
     PaymentRequirements(network = "base", maxAmountRequired = "10000", payTo = "0xSeller", asset = "0xUSDC", resource = "/premium"),
     facilitator = HttpFacilitatorClient("https://facilitator.example"),
 )
-// front any JDK HttpHandler (our serve surfaces are HttpServer-based):
+// front any JDK HttpHandler:
 httpServer.createContext("/premium", gate.gate(downstreamHandler))
+// ...or pass it straight to a serve surface (#4557):
+NlWebServer.from(agent, payment = gate).start()   // also AgUiServer.from / A2AServer.from
 ```
 
 ## Why this is the *safe* half (the non-negotiables)
@@ -45,7 +47,9 @@ httpServer.createContext("/premium", gate.gate(downstreamHandler))
 
 ## Scope / follow-ups (epic #4526)
 
-Seller-side gate only. NOT here: buyer-side autonomous payment (#4528 — scoped ERC-4337 session keys, signing
-below the model layer, HITL), and first-class wiring into the serve surfaces / an MCP `paidTool()` wrapper +
-the official `a2a-x402` extension (this gate is the reusable foundation they'd build on). Facilitator field
-names follow the x402 facilitator REST spec; verify against a live facilitator before production.
+Seller-side gate, wired into `NlWebServer`/`AgUiServer`/`A2AServer` via `from(agent, payment = gate)` (#4557 —
+they wrap the invocation handler `payment?.gate(h) ?: h`; A2A's agent-card discovery stays free). NOT here:
+buyer-side autonomous payment (#4528 — scoped ERC-4337 session keys, signing below the model layer, HITL); a
+granular MCP `paidTool()` wrapper (McpServer keeps per-tool pricing rather than a blanket gate); the official
+`a2a-x402` extension. Facilitator field names follow the x402 facilitator REST spec; verify against a live
+facilitator before production.

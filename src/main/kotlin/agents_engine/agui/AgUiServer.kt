@@ -4,7 +4,9 @@ import agents_engine.core.Agent
 import agents_engine.generation.LenientJsonParser
 import agents_engine.internal.toJsonString
 import agents_engine.runtime.events.session
+import agents_engine.x402.X402PaymentGate
 import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpHandler
 import com.sun.net.httpserver.HttpServer
 import java.io.OutputStream
 import java.net.InetSocketAddress
@@ -36,6 +38,7 @@ class AgUiServer private constructor(
     private val portRequest: Int,
     private val bearerToken: String?,
     private val maxRequestBytes: Int,
+    private val payment: X402PaymentGate? = null,
 ) {
     private var http: HttpServer? = null
 
@@ -44,7 +47,8 @@ class AgUiServer private constructor(
 
     fun start(): AgUiServer {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", portRequest), 0)
-        server.createContext("/agent") { exchange -> handle(exchange) }
+        val handler = HttpHandler { exchange -> handle(exchange) }
+        server.createContext("/agent", payment?.gate(handler) ?: handler)
         server.executor = null
         server.start()
         http = server
@@ -141,7 +145,8 @@ class AgUiServer private constructor(
             port: Int = 0,
             bearerToken: String? = null,
             maxRequestBytes: Int = DEFAULT_MAX_REQUEST_BYTES,
-        ): AgUiServer = AgUiServer(agent, port, bearerToken, maxRequestBytes)
+            payment: X402PaymentGate? = null,
+        ): AgUiServer = AgUiServer(agent, port, bearerToken, maxRequestBytes, payment)
 
         const val DEFAULT_MAX_REQUEST_BYTES: Int = 1 shl 20 // 1 MiB
 
