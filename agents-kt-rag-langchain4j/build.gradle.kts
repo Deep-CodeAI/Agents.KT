@@ -28,12 +28,12 @@ dependencies {
     api(project(":agents-kt-rag"))
     // #3863 — locked to a stable minor; LangChain4j evolves its store API
     // independently, bump deliberately.
-    api("dev.langchain4j:langchain4j-core:1.16.2")
+    api("dev.langchain4j:langchain4j-core:1.16.3")
 
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     // InMemoryEmbeddingStore for hermetic adapter tests.
-    testImplementation("dev.langchain4j:langchain4j:1.16.2")
+    testImplementation("dev.langchain4j:langchain4j:1.16.3")
 }
 
 kotlin {
