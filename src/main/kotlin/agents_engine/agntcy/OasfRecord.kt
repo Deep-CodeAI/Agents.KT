@@ -75,3 +75,20 @@ fun Agent<*, *>.toOasfRecord(
 
     return McpJson.encode(record)
 }
+
+/**
+ * #4519 (PRD §12.6) — the typed, validated OASF record model produced by [fromOasfRecord]: the parsed
+ * counterpart of what [toOasfRecord] serializes. Round-trips at the JSON level (export → import).
+ */
+data class OasfRecord(
+    val name: String,
+    val version: String?,
+    val schemaVersion: String,
+    val description: String?,
+    val authors: List<String>,
+    val createdAt: String?,
+    val skills: List<OasfClassification>,
+    val domains: List<OasfClassification>,
+    val locators: List<OasfLocator>,
+    val annotations: Map<String, String>,
+)

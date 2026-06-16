@@ -52,10 +52,20 @@ omitted when not supplied → existing callers stay byte-identical): `metadata.a
 `metadata.createdAt`, `spec.locators`. `OasfLocator` (its own file for the one-type-per-file guard,
 #3199) is the shared `{type, urls}` value.
 
+## Import — the read side (`fromOasfRecord`, #4519)
+
+`fromOasfRecord(json): OasfRecord` (in `OasfImport.kt`) parses + validates a record, round-tripping the
+export at the JSON level. **Fail-closed** (throws `OasfValidationException`): missing `name`/`schema_version`,
+unknown schema **major**, a skill/domain with neither id nor name (`at_least_one`), or an id that contradicts
+its name vs the vendored taxonomy (exact path). When only one of id/name is given the other is resolved from
+the taxonomy (unknown paths kept, not invented). Recommended-but-missing fields (`version`, `authors`,
+`created_at`, `description`) only **warn**, so an exported record imports clean. Types: `OasfRecord` (model,
+in `OasfRecord.kt`), `OasfClassification` (`{name?, id?}`), `OasfValidationException`.
+
 ## Out of scope (deferred, PRD §12.6)
 
-Record **signing** (Sigstore/cosign over OCI) is external to the record JSON. OASF **import/validate**,
-the **DIR** gRPC client, and **Identity-verify** are the other subtasks of epic #4517.
+Record **signing** (Sigstore/cosign over OCI) is external to the record JSON. The **DIR** gRPC client (#4520)
+is the remaining subtask of epic #4517 (OASF export/import #4518/#4519 and Identity-verify #4521 are shipped).
 
 ## Related files
 

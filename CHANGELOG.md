@@ -4,6 +4,17 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — OASF record import + validate: `fromOasfRecord()` (#4519, PRD §12.6) — AGNTCY interop
+
+`fromOasfRecord(json)` parses + validates an OASF 1.0.0 record into the typed `OasfRecord` — the read side of
+`toOasfRecord()` (#4518), round-tripping at the JSON level. **Fail-closed**: rejects a missing `name` /
+`schema_version`, an unknown schema **major**, a skill/domain entry with neither id nor name (OASF's
+`at_least_one: [id, name]`), or a taxonomy id that **contradicts** its name (exact-path check against the
+vendored `OasfTaxonomy` — no fuzzy matching); when only one of id/name is given the other is resolved from the
+taxonomy (custom or newer-than-vendored paths are kept, not invented). Merely-recommended-but-missing fields
+(`version`, `authors`, `created_at`, `description`) only warn, so a record this library exported imports
+cleanly. New types `OasfRecord`, `OasfClassification`, `OasfValidationException`. 6 tests.
+
 ### Added — `agents-kt-identity`: AGNTCY Identity badge verify (#4521, PRD §12.6) — AGNTCY interop
 
 `IdentityVerifier.verify(compactJws, jwks)` validates an [AGNTCY Identity](https://docs.agntcy.org/identity/)
