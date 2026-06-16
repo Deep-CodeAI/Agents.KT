@@ -5,7 +5,9 @@ import agents_engine.generation.LenientJsonParser
 import agents_engine.internal.toJsonString
 import agents_engine.model.NlWebResult
 import agents_engine.model.NlWebSearchResult
+import agents_engine.x402.X402PaymentGate
 import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpHandler
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.util.UUID
@@ -33,6 +35,7 @@ class NlWebServer private constructor(
     private val portRequest: Int,
     private val bearerToken: String?,
     private val maxRequestBytes: Int,
+    private val payment: X402PaymentGate? = null,
 ) {
     private var http: HttpServer? = null
 
@@ -41,7 +44,8 @@ class NlWebServer private constructor(
 
     fun start(): NlWebServer {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", portRequest), 0)
-        server.createContext("/ask") { exchange -> handleSafely(exchange) { handleAsk(exchange) } }
+        val ask = HttpHandler { exchange -> handleSafely(exchange) { handleAsk(exchange) } }
+        server.createContext("/ask", payment?.gate(ask) ?: ask)
         server.executor = null
         server.start()
         http = server
@@ -111,7 +115,8 @@ class NlWebServer private constructor(
             port: Int = 0,
             bearerToken: String? = null,
             maxRequestBytes: Int = DEFAULT_MAX_REQUEST_BYTES,
-        ): NlWebServer = NlWebServer(agent, port, bearerToken, maxRequestBytes)
+            payment: X402PaymentGate? = null,
+        ): NlWebServer = NlWebServer(agent, port, bearerToken, maxRequestBytes, payment)
 
         const val DEFAULT_MAX_REQUEST_BYTES: Int = 1 shl 20 // 1 MiB
 

@@ -4,7 +4,9 @@ import agents_engine.core.Agent
 import agents_engine.generation.LenientJsonParser
 import agents_engine.generation.codec
 import agents_engine.generation.hasGenerableAnnotation
+import agents_engine.x402.X402PaymentGate
 import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpHandler
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.util.UUID
@@ -34,6 +36,7 @@ class A2AServer private constructor(
     private val portRequest: Int,
     private val basePath: String,
     private val bearerToken: String?,
+    private val payment: X402PaymentGate? = null,
 ) {
     private var http: HttpServer? = null
 
@@ -48,7 +51,9 @@ class A2AServer private constructor(
                 respond(exchange, HTTP_OK, A2AJson.encode(agentCard(agent, url)))
             }
         }
-        server.createContext(basePath) { exchange -> handleSafely(exchange) { handleRpc(exchange) } }
+        // The agent-card (discovery) stays free; only the RPC invocation path is payment-gated when set.
+        val rpc = HttpHandler { exchange -> handleSafely(exchange) { handleRpc(exchange) } }
+        server.createContext(basePath, payment?.gate(rpc) ?: rpc)
         server.executor = null
         server.start()
         http = server
@@ -176,7 +181,8 @@ class A2AServer private constructor(
             port: Int = 0,
             basePath: String = "/a2a",
             bearerToken: String? = null,
-        ): A2AServer = A2AServer(agent, port, basePath, bearerToken)
+            payment: X402PaymentGate? = null,
+        ): A2AServer = A2AServer(agent, port, basePath, bearerToken, payment)
 
         private const val HTTP_OK = 200
         private const val HTTP_BAD_REQUEST = 400

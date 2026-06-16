@@ -16,10 +16,13 @@ production) verifies + settles on-chain; we only configure a public `payTo`. The
 (gating is at the HTTP layer, outside the agent loop). **Fails closed** — missing/invalid payment, settle
 failure, or an unreachable facilitator all return `402`, never serving the resource unpaid. Per request: no
 `X-PAYMENT` → `402` with `{x402Version, error, accepts:[requirements]}`; `X-PAYMENT` present → verify → settle
-→ set `X-PAYMENT-RESPONSE` → serve. New package `agents_engine.x402` (core, no deps). 5 hermetic tests (fake
-facilitator + in-process `HttpServer`). **Buyer-side autonomous payment is deliberately not included** (it
-concentrates the irreversible-money risk — gated on scoped session keys with signing kept below the model
-layer); first-class serve-surface wiring + an MCP `paidTool()` / `a2a-x402` extension are follow-ups (#4526).
+→ set `X-PAYMENT-RESPONSE` → serve. New package `agents_engine.x402` (core, no deps). **Wired into the serve
+surfaces** (#4557): pass `payment = gate` to `NlWebServer.from` / `AgUiServer.from` / `A2AServer.from` to gate
+the served endpoint (A2A's agent-card discovery stays free; `McpServer` keeps a granular `paidTool()` follow-up
+rather than a blanket gate). 7 hermetic tests (fake facilitator + in-process `HttpServer`). **Buyer-side
+autonomous payment is deliberately not included** (it concentrates the irreversible-money risk — gated on
+scoped session keys with signing kept below the model layer); buyer-side + an MCP `paidTool()` / `a2a-x402`
+extension are follow-ups (#4526).
 
 ### Added — `AgUiServer`: serve an agent to a frontend over AG-UI (#4523, PRD §12.7)
 
