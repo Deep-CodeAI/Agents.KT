@@ -44,11 +44,22 @@ whole numbers without `.0`, so `{"id":1003}` survives as `1003` (tested).
 `ManagedChannel` with the SPIFFE transport creds and passing it to `fromChannel()` — the module doesn't bundle
 a SPIFFE provider. `fromChannel` is also the seam in-process test channels use.
 
+## Three services, one channel
+
+`DirClient` wraps coroutine stubs for all three DIR services over a single `ManagedChannel` (bearer interceptor
+applied to each):
+- **StoreService** — `push`/`pushAll`/`pull`/`lookup`/`delete` (content-addressed CRUD).
+- **SearchService** — `searchRecords`/`searchCids` by `DirQuery(DirQueryType, value)`; `DirQueryType` mirrors
+  `search.v1.RecordQueryType` and maps by name (`RECORD_QUERY_TYPE_<name>`).
+- **RoutingService** — `publish`/`unpublish` (by CID), `routeSearch` → `DirRouteMatch`. Routing facets are
+  coarse (skill/locator/domain/module); `DirQuery.toRouteQuery()` maps the rich `DirQueryType` down and
+  **rejects** non-routable facets (NAME/VERSION/…) with `IllegalArgumentException`.
+
 ## Scope / follow-ups (epic #4517)
 
-Slice = the four content-addressable record RPCs (`Push`/`Pull`/`Lookup`/`Delete`). RoutingService /
-SearchService (network publish + DHT discovery) and OCI referrers are the documented next steps. With this,
-the AGNTCY epic's core (OASF export/import + Identity-verify + DIR store) is complete.
+Store + Search + Routing(publish/unpublish/search) are shipped — the AGNTCY epic is complete. The only DIR
+remainders are `RoutingService.List` (list published records) and OCI **referrers** (signatures etc. attached
+to records); both are thin additions on this foundation.
 
 ## Files
 

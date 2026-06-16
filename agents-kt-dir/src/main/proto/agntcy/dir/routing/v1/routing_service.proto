@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: Apache-2.0
+// #4520 — VENDORED from agntcy/dir routing/v1/routing_service.proto (faithful; java_* options added). Network publish + discovery.
+syntax = "proto3";
+
+package agntcy.dir.routing.v1;
+
+import "agntcy/dir/core/v1/record.proto";
+import "agntcy/dir/routing/v1/peer.proto";
+import "agntcy/dir/routing/v1/record_query.proto";
+import "agntcy/dir/search/v1/record_query.proto";
+import "google/protobuf/empty.proto";
+
+option java_package = "agntcy.dir.routing.v1";
+option java_multiple_files = true;
+
+service RoutingService {
+  rpc Publish(PublishRequest) returns (google.protobuf.Empty);
+  rpc Unpublish(UnpublishRequest) returns (google.protobuf.Empty);
+  rpc Search(SearchRequest) returns (stream SearchResponse);
+  rpc List(ListRequest) returns (stream ListResponse);
+}
+
+message PublishRequest {
+  oneof request {
+    RecordRefs record_refs = 1;
+    RecordQueries queries = 2;
+  }
+}
+
+message UnpublishRequest {
+  oneof request {
+    RecordRefs record_refs = 1;
+    RecordQueries queries = 2;
+  }
+}
+
+message RecordRefs {
+  repeated core.v1.RecordRef refs = 1;
+}
+
+message RecordQueries {
+  repeated search.v1.RecordQuery queries = 1;
+}
+
+message SearchRequest {
+  repeated RecordQuery queries = 1;
+  optional uint32 min_match_score = 2;
+  optional uint32 limit = 3;
+}
+
+message SearchResponse {
+  core.v1.RecordRef record_ref = 1;
+  Peer peer = 2;
+  repeated RecordQuery match_queries = 3;
+  uint32 match_score = 4;
+}
+
+message ListRequest {
+  repeated RecordQuery queries = 1;
+  optional uint32 limit = 2;
+}
+
+message ListResponse {
+  core.v1.RecordRef record_ref = 1;
+  repeated string labels = 2;
+}

@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: Apache-2.0
+// #4520 — VENDORED from agntcy/dir routing/v1/record_query.proto (faithful; java_* options added). Coarse network-routing query.
+syntax = "proto3";
+
+package agntcy.dir.routing.v1;
+
+option java_package = "agntcy.dir.routing.v1";
+option java_multiple_files = true;
+
+message RecordQuery {
+  RecordQueryType type = 1;
+  string value = 2;
+}
+
+enum RecordQueryType {
+  RECORD_QUERY_TYPE_UNSPECIFIED = 0;
+  RECORD_QUERY_TYPE_SKILL = 1;
+  RECORD_QUERY_TYPE_LOCATOR = 2;
+  RECORD_QUERY_TYPE_DOMAIN = 3;
+  RECORD_QUERY_TYPE_MODULE = 4;
+}
