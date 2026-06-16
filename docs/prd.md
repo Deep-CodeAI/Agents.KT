@@ -2855,7 +2855,7 @@ Any node in the delegation tree can be exported as an A2A endpoint:
 project.toAgentCard(url = "https://api.deep-code.ai/agents/project")
 ```
 
-### 12.6 AGNTCY Interoperability *(in progress — OASF record export + Identity-verify shipped; DIR + OASF import planned)*
+### 12.6 AGNTCY Interoperability *(in progress — OASF export/import + Identity-verify shipped; DIR client planned)*
 
 [AGNTCY](https://github.com/agntcy) — the Linux Foundation "Internet of Agents" collective (Cisco/Outshift-led) — is the second cross-vendor interop stack alongside Google A2A (§12.5). Agents.KT targets **both**: A2A is the wire/invocation standard; AGNTCY adds a content-addressed **directory** and a **trust** layer. The native, typed `agent.json` (§12.2) stays the source of truth; AGNTCY support is a set of **exporters/clients over it**, exactly parallel to `toAgentCard()`.
 
@@ -2871,7 +2871,7 @@ project.toAgentCard(url = "https://api.deep-code.ai/agents/project")
 
 So AGNTCY interop = **OASF + DIR + Identity-verify**, riding on the A2A we already do.
 
-**OASF record export/import.** A third discovery exporter beside A2A — **shipped (slice 1, #4518)**:
+**OASF record export/import.** A third discovery exporter beside A2A — **export shipped (#4518), import shipped (#4519)**. The read side is `fromOasfRecord(json): OasfRecord` — fail-closed validation (required `name`/`schema_version`, unknown-major rejection, `at_least_one:[id,name]`, and exact id↔name taxonomy consistency), round-tripping the export at the JSON level. Export:
 
 ```kotlin
 val record = specMaster.toOasfRecord(
