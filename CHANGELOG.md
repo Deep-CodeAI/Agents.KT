@@ -4,6 +4,23 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — seller-side x402 payments: `X402PaymentGate` (#4527, PRD §12.8) — experimental
+
+`X402PaymentGate(requirements, facilitator).gate(handler)` wraps any JDK `HttpHandler` so a resource is served
+only after a valid, settled stablecoin (USDC) payment over the [x402](https://github.com/x402-foundation/x402)
+protocol (HTTP `402 Payment Required`). Our agentic-web serve surfaces (`McpServer` / `A2AServer` /
+`NlWebServer` / `AgUiServer`) are loopback `HttpServer`s, so this fronts any of them — letting an agent
+**monetize itself**. The **safe half** of x402: **the seller holds no key and takes no custody** — the buyer
+signs an EIP-3009 authorization and a *hosted* `FacilitatorClient` (injected seam; `HttpFacilitatorClient` for
+production) verifies + settles on-chain; we only configure a public `payTo`. The LLM never touches money
+(gating is at the HTTP layer, outside the agent loop). **Fails closed** — missing/invalid payment, settle
+failure, or an unreachable facilitator all return `402`, never serving the resource unpaid. Per request: no
+`X-PAYMENT` → `402` with `{x402Version, error, accepts:[requirements]}`; `X-PAYMENT` present → verify → settle
+→ set `X-PAYMENT-RESPONSE` → serve. New package `agents_engine.x402` (core, no deps). 5 hermetic tests (fake
+facilitator + in-process `HttpServer`). **Buyer-side autonomous payment is deliberately not included** (it
+concentrates the irreversible-money risk — gated on scoped session keys with signing kept below the model
+layer); first-class serve-surface wiring + an MCP `paidTool()` / `a2a-x402` extension are follow-ups (#4526).
+
 ### Added — `AgUiServer`: serve an agent to a frontend over AG-UI (#4523, PRD §12.7)
 
 `AgUiServer.from(agent).start()` exposes an agent over the [AG-UI](https://github.com/ag-ui-protocol/ag-ui)

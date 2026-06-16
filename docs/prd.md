@@ -2924,7 +2924,7 @@ The whole job is: emit our stream wrapped in the `RUN_STARTED … RUN_FINISHED` 
 
 Tracking: epic #4523 `[interop] AG-UI support (agent↔frontend serving)`. **Serve side shipped** — `AgUiServer.from(agent)` (package `agents_engine.agui`): `RunAgentInput` POST → SSE over the JDK `HttpServer`, `AgUiEventBridge` mapping `AgentSession` events into the `RUN_STARTED … RUN_FINISHED` envelope (lifecycle/text/tool/step families). Hand-rolled, no SDK (as planned). Follow-ups: STATE_SNAPSHOT/STATE_DELTA (needs a shared agent↔UI state model), REASONING/THINKING, and client-tool round-trips.
 
-### 12.8 x402 — Agent Payments / Settlement Layer *(planned, deferred — money-handling)*
+### 12.8 x402 — Agent Payments / Settlement Layer *(seller-side shipped experimental, #4527 — `X402PaymentGate`; buyer-side deferred — money-handling)*
 
 [x402](https://github.com/x402-foundation/x402) revives HTTP `402 Payment Required` to let agents pay for gated resources in **stablecoins (USDC), gaslessly**. Unlike §12.5–12.7 (which carry no money), x402 is a **settlement layer** — and it sits *beneath* the protocols we already target, not beside them. As of April 2026 it is **Linux-Foundation-governed** (x402 Foundation, 22 orgs incl. Coinbase, Cloudflare, AWS, Google, Circle, Visa, Mastercard, Amex, Stripe, Shopify); Apache-2.0.
 
@@ -2933,14 +2933,14 @@ Tracking: epic #4523 `[interop] AG-UI support (agent↔frontend serving)`. **Ser
 **Where it fits.** x402 is the settlement *rail* under our existing seams: an official **`a2a-x402` extension** (Google + Coinbase) and an **MCP `paidTool()`** wrapper already exist; Google's **AP2** is the *authorization* layer and x402 is its blessed *crypto rail*. AGNTCY and AG-UI have no payment dimension. So our insertion point is **an A2A x402 extension + an MCP paid-tool wrapper**, not a standalone payments module.
 
 **Seller-side first (safe); buyer-side deferred behind hard custody guardrails.** These are different risk animals:
-- **Seller-side** — our agents expose *paid* endpoints. We *receive* USDC via a hosted facilitator: **no custody, no money-transmitter exposure, no LLM-holds-key problem.** "Emit `402` → verify facilitator settlement → deliver" — a thin Micronaut middleware; may lean on the official Java SDK (`org.x402:x402`, SNAPSHOT — a servlet `PaymentFilter` + client; servlet/reactive impedance to weigh). This makes agents that can **monetize themselves** — a real differentiator. Ship **experimental**.
+- **Seller-side *(shipped, #4527)*** — our agents expose *paid* endpoints. We *receive* USDC via a hosted facilitator: **no custody, no money-transmitter exposure, no LLM-holds-key problem.** `X402PaymentGate(requirements, facilitator).gate(handler)` (package `agents_engine.x402`) wraps any JDK `HttpHandler` ("emit `402` with terms → facilitator `verify` → `settle` → `X-PAYMENT-RESPONSE` → deliver"), so it fronts any of our `HttpServer`-based serve surfaces — agents that **monetize themselves**. Hand-rolled (JDK `HttpHandler` + a `FacilitatorClient` seam), **not** the servlet-based `org.x402:x402` SDK (servlet/JDK impedance). Fails closed. Shipped **experimental**.
 - **Buyer-side** — our agents autonomously *pay*. **Deferred.** All real-money risk lives here. Only behind scoped ERC-4337 session keys (on-chain per-tx caps, payee allowlists, velocity limits), **signing isolated from the model layer**, and human-in-the-loop for settlement. Separate, later, opt-in module.
 
 **Non-negotiable design constraint:** **keep signing and spending limits below the model layer** — the LLM must never hold a key or carry a spend limit in its prompt. x402 moves **irreversible** money (no chargebacks; liability lands on the deployer), and prompt-injection drains are confirmed-real (Grok/Bankr ~$150–200k, Freysa $47k; peer-reviewed *Five Attacks on x402*). A self-hosted *custodial* facilitator likely triggers money-transmitter / stablecoin regulation (FinCEN MSB, GENIUS Act, MiCA) — prefer a hosted facilitator and never take custody on the seller path.
 
 **Why deferred.** Lower strategic priority than the interop trio (A2A/AGNTCY/AG-UI are table-stakes with no money/custody/regulatory surface). Adoption is also early — real settled volume is ~\$28k/day (much of it wash-traded) over 13 months — so this is a forward-looking, on-trend bet, sequenced **after** the interop work, seller-side first.
 
-Tracking: epic `[interop] x402 agent payments`, deferred — seller-side experimental, buyer-side gated.
+Tracking: epic #4526 `[interop] x402 agent payments`. **Seller-side shipped** (#4527, `X402PaymentGate`, experimental). Buyer-side (#4528) deferred behind hard custody guardrails (scoped session keys, signing below the model layer, HITL); first-class serve-surface wiring + MCP `paidTool()` / `a2a-x402` extension are follow-ups.
 
 ### 12.9 NLWeb — Agent↔Web-Content / External Knowledge *(client ≈ free via MCP; server deferred)*
 
