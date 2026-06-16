@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: Apache-2.0
+// #4520 — VENDORED, TRIMMED subset of agntcy/dir core/v1/record.proto
+// (https://github.com/agntcy/dir, buf.build/agntcy/dir). Wire-compatible with the upstream service:
+// identical package, message names, field numbers, and types. Dropped vs upstream: `buf/validate`
+// field-validation OPTIONS (compile-time only — they do not affect the wire) and the referrer/rules
+// types not used by the record store operations in this slice. Re-sync from upstream if the wire shape changes.
+syntax = "proto3";
+
+package agntcy.dir.core.v1;
+
+import "google/protobuf/struct.proto";
+
+option java_package = "agntcy.dir.core.v1";
+option java_multiple_files = true;
+
+// A globally-unique content identifier (CID, https://github.com/multiformats/cid) of a record.
+message RecordRef {
+  string cid = 1;
+}
+
+// A stored record. Its payload is an opaque JSON object (the OASF record, carried as a Struct).
+message Record {
+  google.protobuf.Struct data = 1;
+}
+
+// Basic metadata resolved for a record without pulling its full payload.
+message RecordMeta {
+  string cid = 1;
+  map<string, string> annotations = 2;
+  string schema_version = 3;
+  // RFC3339 creation timestamp.
+  string created_at = 4;
+}

@@ -4,6 +4,22 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `agents-kt-dir`: AGNTCY DIR directory client (#4520, PRD §12.6) — AGNTCY interop
+
+`DirClient` is a typed Kotlin client for the AGNTCY [DIR](https://github.com/agntcy/dir) content-addressed
+directory `StoreService`, over generated grpc-kotlin coroutine stubs: `connect(host, port).use { dir -> val cid
+= dir.push(agent.toOasfRecord(...)); val json = dir.pull(cid) }`. `push`/`pushAll` publish OASF records and
+return their CIDs; `pull` fetches the record JSON by CID; `lookup` resolves metadata; `delete` removes. The
+**directory** pillar of the AGNTCY epic (#4517), beside OASF export/import (#4518/#4519) and Identity-verify
+(#4521). The record body is carried as a `google.protobuf.Struct` (JSON is the contract — no OASF protos), via
+protobuf's canonical `JsonFormat` (whole numbers stay integral, e.g. `{"id":1003}`). Protos are vendored as a
+**trimmed, wire-compatible** subset (same package/service/RPC/field-numbers; the `buf.validate` options and
+unused referrer RPCs dropped) so the buf/validate closure isn't needed. **Auth:** plaintext (dev), TLS, and
+OIDC **bearer**; SPIFFE/mTLS via a caller-supplied `ManagedChannel` (`fromChannel`). New feature module
+`agents-kt-dir` (package `agents_engine.agntcy.dir`) so the grpc/protobuf/netty graph stays out of core. 4
+tests (in-process gRPC round trip). RoutingService/SearchService (network discovery) and OCI referrers are
+follow-ups; with this, the AGNTCY epic's core is complete.
+
 ### Added — OASF record import + validate: `fromOasfRecord()` (#4519, PRD §12.6) — AGNTCY interop
 
 `fromOasfRecord(json)` parses + validates an OASF 1.0.0 record into the typed `OasfRecord` — the read side of
