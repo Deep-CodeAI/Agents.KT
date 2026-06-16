@@ -39,7 +39,7 @@ class GeminiClientIntegrationTest {
         // 256 leaves headroom after gemini-2.5 default "thinking" (which spends maxOutputTokens).
         val client = GeminiClient(apiKey = apiKey!!, model = model, temperature = 0.0, maxTokens = 256)
 
-        val response = skipIfRateLimited {
+        val response = skipIfEnvironmental {
             client.chat(listOf(LlmMessage("user", "Reply with exactly the word: pong")))
         }
 
@@ -58,7 +58,7 @@ class GeminiClientIntegrationTest {
         // text. 512 gives the trivial prompt ample headroom after thinking.
         val client = GeminiClient(apiKey = apiKey!!, model = model, temperature = 0.0, maxTokens = 512)
 
-        val chunks = skipIfRateLimited {
+        val chunks = skipIfEnvironmental {
             runBlocking {
                 client.chatStream(listOf(
                     LlmMessage("user", "Count from 1 to 5 separated by spaces. Output only the numbers."),
@@ -94,7 +94,7 @@ class GeminiClientIntegrationTest {
             toolChoice = ToolChoice.Required,
         )
 
-        val response = skipIfRateLimited {
+        val response = skipIfEnvironmental {
             client.chat(listOf(
                 LlmMessage("user", """Call report_number with JSON arguments {"value":7}."""),
             ))
@@ -140,7 +140,7 @@ class GeminiClientIntegrationTest {
             }
         }
 
-        val out = skipIfRateLimited { runBlocking { a.invokeSuspend("Use add_numbers to add 17 and 25.") } }
+        val out = skipIfEnvironmental { runBlocking { a.invokeSuspend("Use add_numbers to add 17 and 25.") } }
 
         assertTrue(captured.isNotEmpty(), "Gemini must invoke the typed tool; final answer was '$out'")
         assertEquals(17, captured.first().a)
@@ -148,17 +148,19 @@ class GeminiClientIntegrationTest {
         assertTrue("42" in out, "expected final answer to include 42, got '$out'")
     }
 
-    // Free-tier Gemini keys are rate-limited (RESOURCE_EXHAUSTED / 429). That's an infrastructure
-    // condition, not a code defect — the adapter correctly surfaces it as LlmProviderException — so
-    // we SKIP (not fail) the smoke test rather than redden the build on a transient quota hit.
-    private fun <T> skipIfRateLimited(block: () -> T): T = try {
+    // Environmental conditions that the adapter correctly surfaces as LlmProviderException but which are
+    // NOT code defects — so we SKIP (not fail) the smoke test rather than redden the build on them:
+    //  - rate limits / quota (RESOURCE_EXHAUSTED / 429) — free-tier keys throttle.
+    //  - geo-block (FAILED_PRECONDITION: "User location is not supported") — Gemini restricts by runner IP
+    //    region (#4553); the test runner's geography is not something the framework can fix.
+    private fun <T> skipIfEnvironmental(block: () -> T): T = try {
         block()
     } catch (e: LlmProviderException) {
         val m = e.message ?: ""
-        if ("RESOURCE_EXHAUSTED" in m || "quota" in m || "429" in m) {
-            abort("skipping: Gemini quota / rate limit — $m")
-        } else {
-            throw e
+        when {
+            "RESOURCE_EXHAUSTED" in m || "quota" in m || "429" in m -> abort("skipping: Gemini quota / rate limit — $m")
+            "FAILED_PRECONDITION" in m && "location is not supported" in m -> abort("skipping: Gemini geo-block — $m")
+            else -> throw e
         }
     }
 
