@@ -28,7 +28,7 @@ dependencies {
     api(project(":agents-kt-rag"))
     // #3863 — last stable 1.x (2.0 is RC); Spring AI evolves its store API
     // independently, bump deliberately.
-    api("org.springframework.ai:spring-ai-vector-store:1.1.7")
+    api("org.springframework.ai:spring-ai-vector-store:2.0.0")
 
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
