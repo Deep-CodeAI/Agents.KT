@@ -9,6 +9,9 @@ include(":agents-kt-manifest")
 include(":agents-kt-rag")
 include(":agents-kt-rag-langchain4j")
 include(":agents-kt-rag-spring-ai")
+// #4521 (epic #4517): AGNTCY Identity badge verify/resolve (JOSE/JWS against issuer JWKS).
+// A feature module so the nimbus-jose-jwt dependency stays out of core; verify-only (issuance deferred).
+include(":agents-kt-identity")
 // #1923: standalone CLI (manifest generate / inspect / verify) — the "externally"
 // half of 0.7.0, so non-Gradle consumers (CI gates, ops, regulators) can produce and
 // verify the deterministic permission manifest from a binary.

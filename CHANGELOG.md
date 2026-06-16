@@ -4,6 +4,21 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `agents-kt-identity`: AGNTCY Identity badge verify (#4521, PRD §12.6) — AGNTCY interop
+
+`IdentityVerifier.verify(compactJws, jwks)` validates an [AGNTCY Identity](https://docs.agntcy.org/identity/)
+agent **badge** — a W3C Verifiable Credential secured with JOSE/JWS — against an issuer's JWKS
+(`/.well-known/jwks.json`), returning a `VerifiedBadge` (issuer / subject / `credentialSubject`) or throwing
+`BadgeVerificationException`. The **trust** pillar of the AGNTCY epic (#4517), beside the OASF discovery
+record (§12.6) and A2A invocation (§12.5): in a trust-gated network you accept work only from agents whose
+badge a known issuer signed. **Verify-only** — issuance (keys/signing/vaults) is deferred to the self-hosted
+stack. **Fail-closed and not hand-rolled**: verification delegates to the vetted `nimbus-jose-jwt` processor
+(rejects `alg: none`, `HS*` algorithm-confusion, expired/not-yet-valid, tampered, wrong/unknown key — each a
+negative test). `IdentityResolver` fetches the JWKS (bounded timeouts + size cap). Ships as a new feature
+module `agents-kt-identity` (package `agents_engine.agntcy.identity`) so the JOSE dependency stays out of
+core — same pattern as `agents-kt-rag`. 8 tests. Remaining #4517 subtasks: DIR client (#4520), OASF
+import/validate (#4519).
+
 ### Added — OASF 1.0.0 record export: `toOasfRecord()` (#4518, PRD §12.6) — AGNTCY interop
 
 `agent.toOasfRecord(version, authors, locators, …)` emits an [OASF](https://github.com/agntcy/oasf) 1.0.0

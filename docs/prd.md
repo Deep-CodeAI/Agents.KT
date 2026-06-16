@@ -2855,7 +2855,7 @@ Any node in the delegation tree can be exported as an A2A endpoint:
 project.toAgentCard(url = "https://api.deep-code.ai/agents/project")
 ```
 
-### 12.6 AGNTCY Interoperability *(in progress — OASF record export shipped; DIR + Identity-verify planned)*
+### 12.6 AGNTCY Interoperability *(in progress — OASF record export + Identity-verify shipped; DIR + OASF import planned)*
 
 [AGNTCY](https://github.com/agntcy) — the Linux Foundation "Internet of Agents" collective (Cisco/Outshift-led) — is the second cross-vendor interop stack alongside Google A2A (§12.5). Agents.KT targets **both**: A2A is the wire/invocation standard; AGNTCY adds a content-addressed **directory** and a **trust** layer. The native, typed `agent.json` (§12.2) stays the source of truth; AGNTCY support is a set of **exporters/clients over it**, exactly parallel to `toAgentCard()`.
 
@@ -2894,7 +2894,7 @@ val cid = dir.push(specMaster.toOasfRecord(...))           // → content id
 val hits = dir.search(skill = "agent_orchestration/task_decomposition")
 ```
 
-**Identity — verify/resolve.** Badge verification is pure-JVM and high-value for trust-gated networks: fetch `/.well-known/vcs.json` + `/.well-known/jwks.json` and validate the JOSE/JWS verifiable credential with an off-the-shelf JVM JWT library. Issuance (vault, key management, signing) is the heavy half and is deferred to the self-hosted stack.
+**Identity — verify/resolve *(shipped, #4521)*.** Badge verification is pure-JVM and high-value for trust-gated networks: `IdentityVerifier.verify(compactJws, jwks)` validates a JOSE/JWS verifiable credential against the issuer's `/.well-known/jwks.json` (resolved by `IdentityResolver`), returning a `VerifiedBadge` or throwing. It ships in a `agents-kt-identity` feature module so the `nimbus-jose-jwt` dependency stays out of core (the rag-module pattern); verification delegates to the vetted nimbus processor rather than hand-rolling JWS — fail-closed against `alg: none`, `HS*` algorithm-confusion, expiry, tamper, and wrong/unknown keys. Note: AGNTCY's badge envelope (`vcs.json`) is still settling upstream (W3C VCDM 2.0 securing mechanisms), so the resolver returns `vcs.json` raw and the caller extracts the compact JWS — the cryptographic verify is the stable, standards-grounded core. Issuance (vault, key management, signing) is the heavy half and is deferred to the self-hosted stack.
 
 **Deferred (documented, not built):** ACP REST adapter (only if forced to interop with already-deployed AGNTCY Workflow Servers), SLIM transport, OASF record signing + issuance, OASF modules (the standard module catalog is still empty in `1.0.0`).
 
