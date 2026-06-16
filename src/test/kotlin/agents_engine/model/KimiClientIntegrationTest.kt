@@ -6,6 +6,7 @@ import agents_engine.generation.Generable
 import agents_engine.generation.Guide
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.Assumptions.abort
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Tag
 import java.nio.file.Files
@@ -39,7 +40,23 @@ class KimiClientIntegrationTest {
     private val apiKey: String? = loadApiKey()
     private val model: String = System.getenv("KIMI_TEST_MODEL") ?: "moonshot-v1-8k"
     // #4511 — point at the right Moonshot region (.cn China / .ai International) for the key.
+    // Local `.secrets/kimi-key` is an International key, so set KIMI_BASE_URL=https://api.moonshot.ai.
     private val baseUrl: String = System.getenv("KIMI_BASE_URL") ?: KimiClient.DEFAULT_BASE_URL
+
+    // Moonshot's two-platform split (.cn/.ai) and free-tier quota make auth/rate-limit an ENVIRONMENTAL
+    // condition, not a framework defect — skip (don't fail), mirroring the Gemini geo-block guard. With a key
+    // for the platform `baseUrl` points at, these run; otherwise they skip cleanly instead of reddening CI.
+    private inline fun <T> skipIfEnvironmental(block: () -> T): T = try {
+        block()
+    } catch (e: LlmProviderException) {
+        val m = e.message ?: ""
+        val markers = listOf("uthentication", "RESOURCE_EXHAUSTED", "quota", "429")
+        if (markers.any { it in m }) {
+            abort("skipping: Kimi auth/quota (environmental) — $m")
+        } else {
+            throw e
+        }
+    }
 
     @Tag("live-llm")
     @Test
@@ -47,9 +64,9 @@ class KimiClientIntegrationTest {
         assumeTrue(apiKey != null, "skipping: no Kimi key at .secrets/kimi-key or KIMI_API_KEY")
         val client = KimiClient(apiKey = apiKey!!, model = model, temperature = 0.0, maxTokens = 64, baseUrl = baseUrl)
 
-        val response = client.chat(listOf(
-            LlmMessage("user", "Reply with exactly the word: pong"),
-        ))
+        val response = skipIfEnvironmental {
+            client.chat(listOf(LlmMessage("user", "Reply with exactly the word: pong")))
+        }
 
         val text = assertIs<LlmResponse.Text>(response)
         assertTrue(text.content.isNotBlank(), "expected non-blank text, got '${text.content}'")
@@ -66,9 +83,11 @@ class KimiClientIntegrationTest {
         assumeTrue(apiKey != null, "skipping: no Kimi key at .secrets/kimi-key or KIMI_API_KEY")
         val client = KimiClient(apiKey = apiKey!!, model = model, temperature = 0.0, maxTokens = 64, baseUrl = baseUrl)
 
-        val chunks = client.chatStream(listOf(
-            LlmMessage("user", "Count from 1 to 5 separated by spaces. Output only the numbers."),
-        )).toList()
+        val chunks = skipIfEnvironmental {
+            client.chatStream(listOf(
+                LlmMessage("user", "Count from 1 to 5 separated by spaces. Output only the numbers."),
+            )).toList()
+        }
 
         assertTrue(chunks.isNotEmpty(), "expected streaming chunks")
         val end = assertIs<LlmChunk.End>(chunks.last())
@@ -98,15 +117,17 @@ class KimiClientIntegrationTest {
             baseUrl = baseUrl,
         )
 
-        val response = client.chat(
-            listOf(
-                LlmMessage(
-                    "system",
-                    "You are a tool-calling assistant. Always call the available tool; do not answer in text.",
+        val response = skipIfEnvironmental {
+            client.chat(
+                listOf(
+                    LlmMessage(
+                        "system",
+                        "You are a tool-calling assistant. Always call the available tool; do not answer in text.",
+                    ),
+                    LlmMessage("user", """Call report_number with JSON arguments {"value":7}."""),
                 ),
-                LlmMessage("user", """Call report_number with JSON arguments {"value":7}."""),
-            ),
-        )
+            )
+        }
 
         val calls = assertIs<LlmResponse.ToolCalls>(response)
         val call = calls.calls.single()
@@ -131,6 +152,7 @@ class KimiClientIntegrationTest {
             model {
                 kimi(model)
                 apiKey = key
+                kimiBaseUrl = baseUrl // honor KIMI_BASE_URL like the direct-client tests (else always hits .cn)
                 temperature = 0.0
                 maxTokens = 256
             }
@@ -148,7 +170,7 @@ class KimiClientIntegrationTest {
             }
         }
 
-        val out = runBlocking { a.invokeSuspend("Use add_numbers to add 17 and 25.") }
+        val out = skipIfEnvironmental { runBlocking { a.invokeSuspend("Use add_numbers to add 17 and 25.") } }
 
         assertTrue(captured.isNotEmpty(), "Kimi must invoke the typed tool; final answer was '$out'")
         assertEquals(17, captured.first().a)
