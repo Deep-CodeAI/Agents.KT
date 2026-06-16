@@ -4,6 +4,23 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — `AgUiServer`: serve an agent to a frontend over AG-UI (#4523, PRD §12.7)
+
+`AgUiServer.from(agent).start()` exposes an agent over the [AG-UI](https://github.com/ag-ui-protocol/ag-ui)
+protocol — the **agent↔user/frontend** layer (MCP = agent↔tools, A2A = agent↔agent, AG-UI = agent↔user), the
+only interop surface that reaches an end-user UI (e.g. a CopilotKit React chat) without us building a frontend.
+**Not a descriptor exporter — a runtime streaming surface:** a single `POST` of an AG-UI `RunAgentInput`
+(`{threadId, runId, messages, …}`) returns an **SSE stream of typed AG-UI events**. It's a direct bridge over
+the typed streaming `AgentSession`: the last `user` message is the agent input, and `AgUiEventBridge` maps each
+`AgentEvent` to AG-UI events inside the `RUN_STARTED … RUN_FINISHED` envelope — `Token` →
+`TEXT_MESSAGE_START/CONTENT/END`, `ToolCall*` → `TOOL_CALL_START/ARGS/END`, `Skill*` → `STEP_STARTED/FINISHED`,
+`Failed` → `RUN_ERROR` (the bridge holds the small state machine that guarantees AG-UI's ordering). **Same
+`from(agent)` shape, loopback-only posture, and threat model as `McpServer` / `A2AServer` / `NlWebServer`**
+(`127.0.0.1`, optional bearer, gateway for network reach); hand-rolled SSE over the JDK `HttpServer` — no AG-UI
+SDK (the community JVM SDKs are client-side only). New package `agents_engine.agui`. agents.kt now serves the
+agentic web **four** ways: MCP, A2A, NLWeb, and AG-UI. 6 tests. STATE/REASONING event families and client-tool
+round-trips are follow-ups.
+
 ### Added — `agents-kt-dir`: AGNTCY DIR directory client (#4520, PRD §12.6) — AGNTCY interop
 
 `DirClient` is a typed Kotlin client for the AGNTCY [DIR](https://github.com/agntcy/dir) content-addressed
