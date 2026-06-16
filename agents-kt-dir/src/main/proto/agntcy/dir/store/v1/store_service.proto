@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: Apache-2.0
+// #4520 — VENDORED, TRIMMED subset of agntcy/dir store/v1/store_service.proto
+// (https://github.com/agntcy/dir, buf.build/agntcy/dir). Wire-compatible with the upstream service:
+// identical service name, RPC names, and request/response message types. Dropped vs upstream: the
+// `buf/validate` options and the PushReferrer/PullReferrer/DeleteReferrer RPCs (OCI referrer artifacts),
+// which this client slice does not exercise. The four content-addressable record RPCs are faithful.
+syntax = "proto3";
+
+package agntcy.dir.store.v1;
+
+import "agntcy/dir/core/v1/record.proto";
+import "google/protobuf/empty.proto";
+
+option java_package = "agntcy.dir.store.v1";
+option java_multiple_files = true;
+
+// Content-addressable storage for records. All four RPCs are client/server streaming: the N-th response
+// corresponds to the N-th request; on error the stream is cancelled.
+service StoreService {
+  // Push writes records, returning a content-addressed RecordRef (CID) for each.
+  rpc Push(stream core.v1.Record) returns (stream core.v1.RecordRef);
+
+  // Pull reads the full records for the given refs.
+  rpc Pull(stream core.v1.RecordRef) returns (stream core.v1.Record);
+
+  // Lookup resolves lightweight metadata for the given refs without pulling payloads.
+  rpc Lookup(stream core.v1.RecordRef) returns (stream core.v1.RecordMeta);
+
+  // Delete removes the given records.
+  rpc Delete(stream core.v1.RecordRef) returns (google.protobuf.Empty);
+}
