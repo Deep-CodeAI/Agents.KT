@@ -4,6 +4,23 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — default transient-network retry across all HTTP model providers (#4560)
+
+The shared non-streaming transport (`HttpModelClientSupport.sendBounded`, used by Claude, OpenAI +
+DeepSeek/Kimi/OpenRouter/Perplexity, Gemini, and Ollama) now retries **transient** failures by default —
+connection-level exceptions (`IOException`: connection reset, refused, no-route, unexpected EOF) and transient
+HTTP statuses (408/429/500/502/503/504) — up to 3 attempts with exponential backoff (250ms→500ms). Previously
+only Ollama retried; every other provider failed fast on a network blip unless you opted into
+`onLLMError { Retry() }`. This matches the default behavior of official SDKs (e.g. OpenAI). Two deliberate
+exclusions: **`HttpTimeoutException` is not retried** (the per-request `timeout` is your *total* budget —
+retrying would silently multiply it; it surfaces immediately), and the **original exception type is preserved**
+on exhaustion (rethrown as-is, not wrapped) so the agent-level `onLLMError`/`LlmErrorDecision` can still
+pattern-match `e is ConnectException`. It sits **below** `onLLMError` (transport rides out blips first; the
+handler sees only what survives, identity intact); on the final attempt a transient *status* is returned
+unchanged so the per-provider parser still surfaces the provider's own error message. Streaming
+(`sendChatStream`) is not retried (re-issuing mid-stream would duplicate delivered tokens — a connect-phase
+follow-up). 6 tests (scripted fake `HttpClient`).
+
 ### Added — seller-side x402 payments: `X402PaymentGate` (#4527, PRD §12.8) — experimental
 
 `X402PaymentGate(requirements, facilitator).gate(handler)` wraps any JDK `HttpHandler` so a resource is served

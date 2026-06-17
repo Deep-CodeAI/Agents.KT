@@ -230,4 +230,23 @@ agent<String, Report>("analyst") {
 
 The handler does **not** fire for budget caps (`onBudgetExceeded` owns those) or cancellation, and v1 scopes recovery to the agentic loop — a model failure during multi-skill LLM routing still propagates loud. See [production-hardening.md](production-hardening.md) for the deployment checklist entry.
 
+### Transport-layer retry (automatic, below `onLLMError`) — #4560
+
+Before a failure ever reaches `onLLMError`, the shared HTTP transport (`HttpModelClientSupport.sendBounded`, used by **every** provider's non-streaming call — Claude, OpenAI + DeepSeek/Kimi/OpenRouter/Perplexity, Gemini, Ollama) already retries **transient** failures **by default**, no opt-in:
+
+- **connection-level exceptions** — an `IOException` from the send (connection reset, refused, no-route, unexpected EOF), and
+- **transient HTTP statuses** — 408 / 429 / 500 / 502 / 503 / 504.
+
+Up to 3 attempts, exponential backoff (250ms → 500ms). This matches what official SDKs (e.g. OpenAI) do by default — a dropped connection or a 503 is the textbook retryable case, so you don't have to write a handler for it.
+
+Two deliberate exclusions: **`HttpTimeoutException` is not retried** — the per-request `timeout` is your *total* budget, and retrying would silently multiply it, so a timeout surfaces immediately. And the **original exception type is preserved** on exhaustion (rethrown as-is, not wrapped) — that's what lets the `onLLMError` handler above match `e is ConnectException`.
+
+The two layers compose, transport first:
+
+```
+http.send → [transport retry: conn-level IOException / 5xx, ×3] → raw exception → [onLLMError: your policy] → loop
+```
+
+So `onLLMError` sees only what survives the transport retries — use it for *semantic* recovery (a `RespondWith` fallback, a longer `Retry` schedule, escalation, or retrying a `HttpTimeoutException`), not for plain connection blips. Streaming (`sendChatStream`) is **not** transport-retried (re-issuing mid-stream would duplicate delivered tokens); wrap a streaming call in `onLLMError { Retry() }` or a `firstOf(...)` fallback if you need connect-phase resilience there. For higher-level recovery — fall over to another provider/model, or take the first of N samples — use `firstOf(a, b)` / `agent.speculative(n)`; to re-run until the output is valid, `loopUntil { … }` (see [composition.md](composition.md)).
+
 ---
