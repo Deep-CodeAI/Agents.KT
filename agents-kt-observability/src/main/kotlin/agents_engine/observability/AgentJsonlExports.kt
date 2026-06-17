@@ -16,14 +16,26 @@ class AgentJsonlExports internal constructor(private val agent: Agent<*, *>) {
     }
 
     /**
-     * #2886 — wire a tamper-evident [ToolAuditLedger] to this agent. Every tool action is
-     * auto-recorded to an append-only, Merkle-chained file: a [PipelineEvent.ToolCalled] as
-     * `APPROVED`, a [PipelineEvent.ToolDenied] as `DENIED` (with the reason), a
-     * [PipelineEvent.ToolHallucinated] as `HALLUCINATED`. PII-safe (the result is hashed,
-     * never stored). Returns the ledger so the caller can [ToolAuditLedger.verify] it later.
+     * #2886 / #2905 — wire a tamper-evident [ToolAuditLedger] to this agent. Tool actions
+     * AND cross-cutting agent-misbehaviour are auto-recorded to one append-only,
+     * Merkle-chained file, so the same chain answers "what did agents try to do that they
+     * shouldn't, and what went wrong":
+     * - [PipelineEvent.ToolCalled] → `APPROVED`
+     * - [PipelineEvent.ToolDenied] → `DENIED` (policy/interceptor block, with the reason)
+     * - [PipelineEvent.ToolHallucinated] → `HALLUCINATED` (tool outside the skill allowlist)
+     * - [PipelineEvent.BudgetThreshold] → `BUDGET_EXCEEDED` (a budget ceiling crossed) — #2905
+     * - [PipelineEvent.ErrorOccurred] → `INFRA_ERROR` (a failure surfaced via `onError`) — #2905
      *
-     * callId-keying of the denied/hallucinated rows lands once `PipelineEvent` carries the
-     * callId (the approved rows already join via the AgentEvent layer) — #2886 follow-up.
+     * PII-safe throughout: the tool result is hashed, never stored, and an error is recorded
+     * by its exception *class* only — the message (which may carry secrets) stays out of the
+     * row. Read the misbehaviour rows back with [ToolAuditLedger.readMisbehaviour]. Returns the
+     * ledger so the caller can [ToolAuditLedger.verify] it later.
+     *
+     * The ledger writer stays unreachable through `ToolEnvironment` (#2883) — it only ever
+     * observes framework events, so a compromised tool cannot forge or rewrite its own row.
+     *
+     * callId-keying of the non-tool rows lands once `PipelineEvent` carries the callId (the
+     * approved rows already join via the AgentEvent layer) — #2886 follow-up.
      */
     fun ledger(file: File): ToolAuditLedger {
         val ledger = ToolAuditLedger(file.toPath())
@@ -35,6 +47,18 @@ class AgentJsonlExports internal constructor(private val agent: Agent<*, *>) {
                     ledger.record(event.toolName, LedgerDecision.DENIED, denialReason = event.reason)
                 is PipelineEvent.ToolHallucinated ->
                     ledger.record(event.requestedName, LedgerDecision.HALLUCINATED)
+                is PipelineEvent.BudgetThreshold ->
+                    ledger.record(
+                        event.reason.name,
+                        LedgerDecision.BUDGET_EXCEEDED,
+                        denialReason = "${event.reason.name} budget at ${event.usedPercent} of limit",
+                    )
+                is PipelineEvent.ErrorOccurred ->
+                    ledger.record(
+                        event.error::class.simpleName ?: "Throwable",
+                        LedgerDecision.INFRA_ERROR,
+                        denialReason = event.error::class.qualifiedName, // class only — message may carry PII
+                    )
                 else -> Unit
             }
         }

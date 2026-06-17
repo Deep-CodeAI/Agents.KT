@@ -17,3 +17,23 @@ data class ToolLedgerEntry(
     val prevHash: String,
     val entryHash: String,
 )
+
+/**
+ * The persisted [decision] string parsed back to a [LedgerDecision], or `null` for a
+ * verdict written by a newer version than this reader knows (forward-compatible — an
+ * unknown verdict never throws when reading an audit file).
+ */
+val ToolLedgerEntry.decisionType: LedgerDecision?
+    get() = LedgerDecision.entries.firstOrNull { it.name == decision }
+
+/**
+ * #2905 — true when this row records agent misbehaviour (a denial, hallucinated call,
+ * budget breach, or infra error) rather than an authorized [LedgerDecision.APPROVED]
+ * action. An unrecognised verdict is treated as misbehaviour (fail-safe: surface it).
+ */
+val ToolLedgerEntry.isMisbehaviour: Boolean
+    get() = decisionType?.isMisbehaviour ?: true
+
+/** Triage level of this row, derived from its [decisionType] (unknown verdicts → [LedgerSeverity.WARN]). */
+val ToolLedgerEntry.severity: LedgerSeverity
+    get() = decisionType?.severity ?: LedgerSeverity.WARN

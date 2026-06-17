@@ -155,7 +155,7 @@ val server = McpServer.from(agent) {
 
 **Gaps you close yourself (today):**
 - **TLS termination and rate limiting.** Keep those at the gateway.
-- **Audit log retention.** The framework emits the rows — `agent.events.exportJsonl(...)` (#1914) writes append-only JSONL with `requestId` / `sessionId` / `manifestHash`, and `agent.events.ledger(file)` adds a tamper-evident Merkle chain. Retention, rotation, and chain-of-custody of those files are yours; a gateway log with client identity remains the complement at the edge.
+- **Audit log retention.** The framework emits the rows — `agent.events.exportJsonl(...)` (#1914) writes append-only JSONL with `requestId` / `sessionId` / `manifestHash`, and `agent.events.ledger(file)` adds a tamper-evident Merkle chain. That chain records authorized tool calls **and** cross-cutting misbehaviour in one place (#2905): policy/interceptor denials, hallucinated tool calls, budget breaches, and infra errors (by exception class, never the message) — read them back with `ToolAuditLedger.readMisbehaviour(...)`, each row carrying a derived `severity`. Retention, rotation, and chain-of-custody of those files are yours; a gateway log with client identity remains the complement at the edge.
 
 **Verdict:** Agents.KT-as-shipped is the WRONG shape if your gateway can't take on these responsibilities. With a gateway that can, it works; without one, see anti-patterns below.
 
@@ -222,7 +222,7 @@ This is the canonical status table — README, `SECURITY.md`, and `production-ha
 | Prompt-injection filtering | ✗ | Yours (mitigations: `maxToolArgsBytes`, `untrustedOutput`, output wrapping) |
 | PII redaction in tool I/O | ✗ | Yours (`onToolUse` hook) |
 | Permission manifest / capability graph + CI verify | ✓ shipped | `agents-kt` CLI `generate` / `inspect` / `verify`; `manifestHash` on runtime events |
-| JSONL audit export + tamper-evident ledger | ✓ shipped | `exportJsonl` (#1914) + `ToolAuditLedger` (Merkle-chained, `verify()`) |
+| JSONL audit export + tamper-evident ledger | ✓ shipped | `exportJsonl` (#1914) + `ToolAuditLedger` (Merkle-chained, `verify()`); records tool actions + misbehaviour — denials/hallucinations/budget breaches/infra errors (#2905), `readMisbehaviour()` |
 | `onBefore*` interceptors (proceed / replace / deny / substitute) | ✓ shipped | Runtime (#1907) |
 | Human-in-the-loop approval + resume | ✓ shipped | `humanApproval { }` → `ApprovalRequest` → `resumeWith(HumanDecision)` (#2489), fail-closed timeout default |
 | Fail-loud ambiguous skill routing | ✓ shipped (0.7.21, #3087) | `SkillRoutingException` — no silent first-match |

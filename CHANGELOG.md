@@ -4,6 +4,21 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — audit-ledger now records cross-cutting agent misbehaviour (#2905, epic #2882)
+
+`agent.events.ledger(file)` previously chained only tool-action verdicts (`APPROVED` / `DENIED` /
+`HALLUCINATED`). It now folds in the misbehaviour signals that never flow through a tool body, so the **one
+tamper-evident Merkle chain** answers "what did agents try to do that they shouldn't, and what went wrong":
+a `PipelineEvent.BudgetThreshold` records a `BUDGET_EXCEEDED` row (the budget dimension + how much of the
+ceiling was used), and a `PipelineEvent.ErrorOccurred` records an `INFRA_ERROR` row (the exception **class**
+only — the message, which may carry secrets, is never stored). Two new `LedgerDecision` verdicts back these.
+Each row now exposes a derived `severity` (`INFO` / `WARN` / `CRITICAL`) and an `isMisbehaviour` flag —
+both a pure function of the verdict, so the hash schema is **unchanged and old ledgers still verify**. Read
+the misbehaviour rows back with `ToolAuditLedger.readMisbehaviour(path)`. An unrecognised verdict written by a
+newer version reads as misbehaviour at `WARN` rather than crashing the reader (forward-compatible, fail-safe).
+The writer stays unreachable through `ToolEnvironment` (#2883) — it only observes framework events, so a
+compromised tool cannot forge or rewrite its own row. 5 new tests.
+
 ### Changed — default transient-network retry across all HTTP model providers (#4560)
 
 The shared non-streaming transport (`HttpModelClientSupport.sendBounded`, used by Claude, OpenAI +
