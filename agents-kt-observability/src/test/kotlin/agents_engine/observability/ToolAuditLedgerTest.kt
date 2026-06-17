@@ -97,6 +97,70 @@ class ToolAuditLedgerTest {
         assertEquals("syncTicket", parsed.toolName)
     }
 
+    @Test fun `misbehaviour verdicts chain alongside approved rows and the chain still verifies`() {
+        val ledger = ToolAuditLedger(path)
+        ledger.record("writeFile", LedgerDecision.APPROVED, result = "ok")
+        ledger.record("readSecret", LedgerDecision.DENIED, denialReason = "outside policy glob")
+        ledger.record("MAX_TOOL_CALLS", LedgerDecision.BUDGET_EXCEEDED, denialReason = "MAX_TOOL_CALLS at 1.0 of limit")
+        ledger.record("ConnectException", LedgerDecision.INFRA_ERROR, denialReason = "java.net.ConnectException")
+        assertTrue(ToolAuditLedger.verify(path).ok, "a chain mixing approved + misbehaviour rows must verify")
+    }
+
+    @Test fun `readMisbehaviour returns every non-approved row and skips approved traffic`() {
+        val ledger = ToolAuditLedger(path)
+        ledger.record("a", LedgerDecision.APPROVED)
+        ledger.record("b", LedgerDecision.DENIED, denialReason = "no")
+        ledger.record("c", LedgerDecision.APPROVED)
+        ledger.record("TOKENS", LedgerDecision.BUDGET_EXCEEDED)
+        ledger.record("IOException", LedgerDecision.INFRA_ERROR)
+        val mis = ToolAuditLedger.readMisbehaviour(path)
+        assertEquals(listOf("b", "TOKENS", "IOException"), mis.map { it.toolName })
+        assertTrue(mis.all { it.isMisbehaviour }, "every returned row is misbehaviour")
+    }
+
+    @Test fun `decision drives the derived severity and misbehaviour view`() {
+        val ledger = ToolAuditLedger(path)
+        val approved = ledger.record("ok", LedgerDecision.APPROVED)
+        val denied = ledger.record("blocked", LedgerDecision.DENIED, denialReason = "policy")
+        val budget = ledger.record("DURATION", LedgerDecision.BUDGET_EXCEEDED)
+        assertFalse(approved.isMisbehaviour)
+        assertEquals(LedgerSeverity.INFO, approved.severity)
+        assertEquals(LedgerSeverity.CRITICAL, denied.severity, "a guardrail block is the strongest audit signal")
+        assertEquals(LedgerSeverity.WARN, budget.severity)
+        assertEquals(LedgerDecision.BUDGET_EXCEEDED, budget.decisionType)
+    }
+
+    @Test fun `an unknown future verdict reads as misbehaviour and is never silently dropped`() {
+        // Forward-compat: a verdict written by a newer version must not crash the reader and,
+        // fail-safe, must surface rather than hide — so it counts as misbehaviour at WARN.
+        ToolAuditLedger(path).record("x", LedgerDecision.APPROVED)
+        val tampered = Files.readAllLines(path).map { it.replace("\"APPROVED\"", "\"QUARANTINED_V2\"") }
+        Files.write(path, tampered)
+        val entry = ToolAuditLedger.read(path).single()
+        assertEquals(null, entry.decisionType, "an unrecognised verdict parses to null, not an exception")
+        assertTrue(entry.isMisbehaviour, "unknown verdicts surface as misbehaviour")
+        assertEquals(LedgerSeverity.WARN, entry.severity)
+    }
+
+    @Test fun `events ledger auto-records an infra error by exception class without leaking the message`() {
+        val a = agent<String, String>("erroring") {
+            model {
+                ollama("llama3")
+                client = ModelClient { _ -> throw IllegalStateException("SECRET_IN_MESSAGE") }
+            }
+            skills { skill<String, String>("s", "stub") { } }
+        }
+        a.events.ledger(path.toFile())
+        runCatching { a("input") } // the error propagates; the ledger observes it on the way out
+
+        val text = Files.readString(path)
+        assertFalse("SECRET_IN_MESSAGE" in text, "the exception message (possible PII) must never be stored")
+        val infra = ToolAuditLedger.read(path).single { it.decision == "INFRA_ERROR" }
+        assertEquals("IllegalStateException", infra.toolName)
+        assertTrue(infra.isMisbehaviour)
+        assertTrue(ToolAuditLedger.verify(path).ok, "the auto-written misbehaviour row must verify")
+    }
+
     @Test fun `events ledger auto-records an approved tool call and verifies`() {
         val responses = ArrayDeque(
             listOf<LlmResponse>(
