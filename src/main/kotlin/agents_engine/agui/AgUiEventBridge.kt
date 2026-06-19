@@ -19,12 +19,19 @@ import java.util.UUID
  *
  * Stateful and single-run: construct one per run. Not thread-safe; [AgUiServer] drives it from one collector.
  *
- * v1 surfaces the lifecycle/text/tool/step families. STATE events (shared agent↔UI state — no runtime model
- * yet), REASONING / THINKING events ([AgentEvent.Reasoning]), and MESSAGES_SNAPSHOT are documented
- * follow-ups; the corresponding [AgentEvent]s are simply not surfaced yet.
+ * Surfaces the lifecycle/text/tool/step families plus REASONING (live model thinking, from
+ * [AgentEvent.Reasoning]). STATE events (shared agent↔UI state — no runtime model yet) and
+ * MESSAGES_SNAPSHOT remain documented follow-ups; those [AgentEvent]s are simply not surfaced yet.
+ *
+ * **REASONING ordering** (the AG-UI contract): a thinking block is `REASONING_START` →
+ * `REASONING_MESSAGE_START` → `REASONING_MESSAGE_CONTENT`* → `REASONING_MESSAGE_END` → `REASONING_END`
+ * (the older `THINKING_*` names are deprecated). Reasoning precedes the answer, so the block is opened on
+ * the first [AgentEvent.Reasoning] chunk and closed before any answer text, tool call, step finish, or run
+ * finish — the same discipline the text state machine uses.
  */
 internal class AgUiEventBridge(private val threadId: String, private val runId: String) {
     private var textMessageId: String? = null
+    private var reasoningId: String? = null
     private var anyText = false
 
     /** The opening `RUN_STARTED`. Emit once before collecting the session. */
@@ -32,7 +39,9 @@ internal class AgUiEventBridge(private val threadId: String, private val runId: 
 
     /** Map one [AgentEvent] to zero or more AG-UI event payloads (in order). */
     fun onEvent(e: AgentEvent<*>): List<String> = when (e) {
+        // Reasoning precedes the answer; close any open thinking block before the first answer token.
         is AgentEvent.Token -> buildList {
+            addAll(closeReasoning())
             if (textMessageId == null) {
                 val id = newId().also { textMessageId = it; anyText = true }
                 add(event("TEXT_MESSAGE_START", "messageId" to id, "role" to "assistant"))
@@ -40,20 +49,29 @@ internal class AgUiEventBridge(private val threadId: String, private val runId: 
             add(event("TEXT_MESSAGE_CONTENT", "messageId" to textMessageId!!, "delta" to e.text))
         }
 
+        is AgentEvent.Reasoning -> buildList {
+            if (reasoningId == null) {
+                val id = newId().also { reasoningId = it }
+                add(event("REASONING_START", "messageId" to id))
+                add(event("REASONING_MESSAGE_START", "messageId" to id, "role" to "assistant"))
+            }
+            add(event("REASONING_MESSAGE_CONTENT", "messageId" to reasoningId!!, "delta" to e.text))
+        }
+
         is AgentEvent.SkillStarted -> listOf(event("STEP_STARTED", "stepName" to e.skillName))
-        is AgentEvent.SkillCompleted -> closeText() + event("STEP_FINISHED", "stepName" to e.skillName)
+        is AgentEvent.SkillCompleted -> closeStreams() + event("STEP_FINISHED", "stepName" to e.skillName)
 
         is AgentEvent.ToolCallStarted ->
-            closeText() + event("TOOL_CALL_START", "toolCallId" to e.callId, "toolCallName" to e.toolName)
+            closeStreams() + event("TOOL_CALL_START", "toolCallId" to e.callId, "toolCallName" to e.toolName)
         is AgentEvent.ToolCallArgumentsDelta ->
             listOf(event("TOOL_CALL_ARGS", "toolCallId" to e.callId, "delta" to e.deltaJson))
         is AgentEvent.ToolCallFinished ->
             listOf(event("TOOL_CALL_END", "toolCallId" to e.callId))
 
         is AgentEvent.Completed<*> -> finish(e.output)
-        is AgentEvent.Failed -> closeText() + runError(e.cause.message ?: e.cause.toString())
+        is AgentEvent.Failed -> closeStreams() + runError(e.cause.message ?: e.cause.toString())
 
-        // ModelTurnStarted/Completed, Reasoning, StageStarted/Completed — not surfaced in v1.
+        // ModelTurnStarted/Completed, StageStarted/Completed — not surfaced in v1.
         else -> emptyList()
     }
 
@@ -61,7 +79,7 @@ internal class AgUiEventBridge(private val threadId: String, private val runId: 
     fun runError(message: String): String = event("RUN_ERROR", "message" to message)
 
     private fun finish(output: Any?): List<String> = buildList {
-        addAll(closeText())
+        addAll(closeStreams())
         // No tokens streamed (e.g. a deterministic skill) — surface the final output as one message so a UI
         // always has something to render.
         if (!anyText && output != null) {
@@ -78,6 +96,19 @@ internal class AgUiEventBridge(private val threadId: String, private val runId: 
         textMessageId = null
         return listOf(event("TEXT_MESSAGE_END", "messageId" to id))
     }
+
+    private fun closeReasoning(): List<String> {
+        val id = reasoningId ?: return emptyList()
+        reasoningId = null
+        return listOf(
+            event("REASONING_MESSAGE_END", "messageId" to id),
+            event("REASONING_END", "messageId" to id),
+        )
+    }
+
+    /** Close whichever streaming block is open before a boundary (tool call, step finish, run finish). At
+     * most one of reasoning/text is open at a time, but closing both is order-safe and idempotent. */
+    private fun closeStreams(): List<String> = closeReasoning() + closeText()
 
     private operator fun List<String>.plus(one: String): List<String> = this + listOf(one)
 

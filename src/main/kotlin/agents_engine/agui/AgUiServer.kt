@@ -30,8 +30,8 @@ import kotlinx.coroutines.runBlocking
  * `NlWebServer`: binds `127.0.0.1`, optional bearer auth, front with a TLS gateway for any network reach.
  * Hand-rolled over the JDK [HttpServer] — no AG-UI SDK (the community JVM SDKs are client-side only).
  *
- * v1 surfaces the lifecycle/text/tool/step event families (see [AgUiEventBridge]); STATE and REASONING events
- * and client-tool round-trips (the next `POST` re-sends history) are follow-ups.
+ * Surfaces the lifecycle/text/tool/step event families plus REASONING (live model thinking — see
+ * [AgUiEventBridge]); STATE events and client-tool round-trips (the next `POST` re-sends history) are follow-ups.
  */
 class AgUiServer private constructor(
     private val agent: Agent<*, *>,

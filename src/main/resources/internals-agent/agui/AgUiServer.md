@@ -43,10 +43,13 @@ Lives in core (no external deps), so it uses internal `McpJson` / `LenientJsonPa
 
 ## Scope / follow-ups (epic #4523)
 
-v1 = lifecycle/text/tool/step families. Follow-ups: STATE_SNAPSHOT/STATE_DELTA (needs a shared agent↔UI state
-model we don't have yet), REASONING/THINKING (map `AgentEvent.Reasoning`), client-tool round-trips (the next
-`POST` re-sends the full history + a `ToolMessage`), and per-event field details against the canonical AG-UI
-Zod/proto schema (built from the documented core families; verify field names if a client rejects an event).
+Shipped: lifecycle/text/tool/step families + REASONING (#4629 — `AgentEvent.Reasoning` → `REASONING_START` →
+`REASONING_MESSAGE_START` → `REASONING_MESSAGE_CONTENT`* → `REASONING_MESSAGE_END` → `REASONING_END`, one
+`messageId`; the `THINKING_*` names are deprecated). The bridge opens the block on the first reasoning chunk and
+closes it before any answer token / tool call / step finish / run finish (`closeStreams()`). Follow-ups:
+STATE_SNAPSHOT/STATE_DELTA (needs a shared agent↔UI state model we don't have yet), client-tool round-trips (the
+next `POST` re-sends the full history + a `ToolMessage`), and per-event field details against the canonical AG-UI
+Zod/proto schema (verify field names if a client rejects an event).
 
 ## Related
 

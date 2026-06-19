@@ -74,6 +74,45 @@ class AgUiServerTest {
     }
 
     @Test
+    fun `bridge maps reasoning to a REASONING block that closes before the answer text`() {
+        val b = AgUiEventBridge(threadId = "t", runId = "r")
+        val out = mutableListOf<String>()
+        out += b.onEvent(AgentEvent.Reasoning(agentId = "a", skillName = "s", text = "Let me "))
+        out += b.onEvent(AgentEvent.Reasoning(agentId = "a", skillName = "s", text = "think."))
+        out += b.onEvent(AgentEvent.Token(agentId = "a", skillName = "s", text = "Answer"))
+        out += b.onEvent(AgentEvent.Completed(agentId = "a", output = "Answer", tokensUsed = null))
+
+        assertEquals(
+            listOf(
+                "REASONING_START", "REASONING_MESSAGE_START", "REASONING_MESSAGE_CONTENT", // first chunk opens
+                "REASONING_MESSAGE_CONTENT",                                               // second chunk, same block
+                "REASONING_MESSAGE_END", "REASONING_END",  // reasoning closes before the first answer token
+                "TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT",
+                "TEXT_MESSAGE_END", "RUN_FINISHED",
+            ),
+            out.map { parse(it)["type"] },
+        )
+        // one message id threads the reasoning events, distinct from the text message id
+        val reasoning = out.map { parse(it) }.filter { (it["type"] as String).startsWith("REASONING") }
+        assertEquals(1, reasoning.mapNotNull { it["messageId"] }.toSet().size)
+        assertEquals("think.", parse(out[3])["delta"])
+    }
+
+    @Test
+    fun `bridge closes an open reasoning block before a tool call`() {
+        val b = AgUiEventBridge("t", "r")
+        val out = mutableListOf<String>()
+        out += b.onEvent(AgentEvent.Reasoning(agentId = "a", skillName = "s", text = "deciding"))
+        out += b.onEvent(AgentEvent.ToolCallStarted(agentId = "a", skillName = "s", callId = "c1", toolName = "lookup"))
+        // reasoning must be closed (END+END) before TOOL_CALL_START — no half-open thinking block
+        assertEquals(
+            listOf("REASONING_START", "REASONING_MESSAGE_START", "REASONING_MESSAGE_CONTENT",
+                "REASONING_MESSAGE_END", "REASONING_END", "TOOL_CALL_START"),
+            out.map { parse(it)["type"] },
+        )
+    }
+
+    @Test
     fun `bridge maps failure to RUN_ERROR`() {
         val b = AgUiEventBridge("t", "r")
         val out = b.onEvent(AgentEvent.Failed(agentId = "a", cause = IllegalStateException("boom")))
