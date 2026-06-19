@@ -4,6 +4,18 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — AG-UI now streams REASONING events (live model thinking) (#4629, epic #4523)
+
+`AgUiServer` previously surfaced the lifecycle/text/tool/step event families; it now also bridges
+`AgentEvent.Reasoning` (the model's thinking stream, #2406 — Claude/DeepSeek/Ollama) into AG-UI's
+**REASONING** family: `REASONING_START` → `REASONING_MESSAGE_START` → `REASONING_MESSAGE_CONTENT`* →
+`REASONING_MESSAGE_END` → `REASONING_END`, all keyed by one `messageId` (the deprecated `THINKING_*`
+names are not used). A frontend (e.g. a CopilotKit chat) can now render live reasoning instead of a
+spinner. Reasoning precedes the answer, so `AgUiEventBridge` opens the block on the first reasoning
+chunk and closes it before any answer token, tool call, step finish, or run finish — the same ordering
+discipline the text state machine already enforces. STATE events and client-tool round-trips remain the
+documented AG-UI follow-ups. 2 new tests.
+
 ### Added — audit-ledger now records cross-cutting agent misbehaviour (#2905, epic #2882)
 
 `agent.events.ledger(file)` previously chained only tool-action verdicts (`APPROVED` / `DENIED` /

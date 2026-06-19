@@ -2900,7 +2900,7 @@ val hits = dir.search(skill = "agent_orchestration/task_decomposition")
 
 Tracking: epic `[interop] AGNTCY support` with subtasks for OASF export, OASF import/validate, DIR client, and Identity verify.
 
-### 12.7 AG-UI — Agent↔Frontend Serving *(serve shipped, #4523 — `AgUiServer.from(agent)`; STATE/REASONING families + client-tool round-trips are follow-ups)*
+### 12.7 AG-UI — Agent↔Frontend Serving *(serve shipped, #4523 — `AgUiServer.from(agent)`, incl. REASONING #4629; STATE families + client-tool round-trips are follow-ups)*
 
 [AG-UI](https://github.com/ag-ui-protocol/ag-ui) (Agent-User Interaction Protocol) is the **agent↔user/frontend** layer of the interop stack. The standard framing — **MCP = agent↔tools, A2A = agent↔agent, AG-UI = agent↔user** — is stated by AG-UI's own docs, which note the three are complementary and often used together by one agent. It's the only interop layer that reaches an **end-user UI** (a streaming React/[CopilotKit](https://copilotkit.ai) chat surface) without us building a frontend.
 
@@ -2914,7 +2914,7 @@ Tracking: epic `[interop] AGNTCY support` with subtasks for OASF export, OASF im
 | `TEXT_MESSAGE_START/CONTENT/END` | text token deltas |
 | `TOOL_CALL_START/ARGS/END/RESULT` (streamed partial-JSON args) | tool-call events |
 | `STATE_SNAPSHOT` / `STATE_DELTA` (RFC-6902 JSON Patch) | shared agent↔UI state (new) |
-| `REASONING_*` / `THINKING_*` | reasoning deltas (already separated from text) |
+| `REASONING_*` (shipped #4629) | reasoning deltas (`AgentEvent.Reasoning`, already separated from text) |
 
 The whole job is: emit our stream wrapped in the `RUN_STARTED … RUN_FINISHED` envelope over a Micronaut SSE endpoint. Estimated **~1 day**, since we already own the hard part (typed streaming). Frontend/client tools come back as a `ToolMessage` appended to `messages` on the next `POST` (each turn re-posts the full updated history + state).
 
@@ -2922,7 +2922,7 @@ The whole job is: emit our stream wrapped in the `RUN_STARTED … RUN_FINISHED` 
 
 **Why deferred.** Nice-to-have, not must-have, and lower priority than AGNTCY (which reaches agents/directories — our likelier near-term consumer). Two caveats kept on record: (1) **governance** — unlike A2A (Linux Foundation) and MCP (Agentic AI Foundation), AG-UI is still single-vendor (CopilotKit/Tawkit), MIT-licensed (no patent grant), not donated to any foundation as of June 2026; mitigated by the spec being small enough that lock-in barely bites. (2) **A2A/AG-UI streaming overlap** is asserted-but-undefended by sources (both use SSE); our read is A2A streams coarse task updates to a *calling agent* while AG-UI streams fine-grained render events to a *browser* — different consumer and granularity, so they compose. Re-evaluate to must-have if AG-UI is donated to a foundation.
 
-Tracking: epic #4523 `[interop] AG-UI support (agent↔frontend serving)`. **Serve side shipped** — `AgUiServer.from(agent)` (package `agents_engine.agui`): `RunAgentInput` POST → SSE over the JDK `HttpServer`, `AgUiEventBridge` mapping `AgentSession` events into the `RUN_STARTED … RUN_FINISHED` envelope (lifecycle/text/tool/step families). Hand-rolled, no SDK (as planned). Follow-ups: STATE_SNAPSHOT/STATE_DELTA (needs a shared agent↔UI state model), REASONING/THINKING, and client-tool round-trips.
+Tracking: epic #4523 `[interop] AG-UI support (agent↔frontend serving)`. **Serve side shipped** — `AgUiServer.from(agent)` (package `agents_engine.agui`): `RunAgentInput` POST → SSE over the JDK `HttpServer`, `AgUiEventBridge` mapping `AgentSession` events into the `RUN_STARTED … RUN_FINISHED` envelope (lifecycle/text/tool/step families + REASONING #4629 — `AgentEvent.Reasoning` → `REASONING_START`/`_MESSAGE_START`/`_MESSAGE_CONTENT`/`_MESSAGE_END`/`_END`). Hand-rolled, no SDK (as planned). Follow-ups: STATE_SNAPSHOT/STATE_DELTA (needs a shared agent↔UI state model) and client-tool round-trips.
 
 ### 12.8 x402 — Agent Payments / Settlement Layer *(seller-side shipped experimental, #4527 — `X402PaymentGate`; buyer-side deferred — money-handling)*
 
