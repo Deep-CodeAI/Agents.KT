@@ -2924,7 +2924,7 @@ The whole job is: emit our stream wrapped in the `RUN_STARTED … RUN_FINISHED` 
 
 Tracking: epic #4523 `[interop] AG-UI support (agent↔frontend serving)`. **Serve side shipped** — `AgUiServer.from(agent)` (package `agents_engine.agui`): `RunAgentInput` POST → SSE over the JDK `HttpServer`, `AgUiEventBridge` mapping `AgentSession` events into the `RUN_STARTED … RUN_FINISHED` envelope (lifecycle/text/tool/step families + REASONING #4629 — `AgentEvent.Reasoning` → `REASONING_START`/`_MESSAGE_START`/`_MESSAGE_CONTENT`/`_MESSAGE_END`/`_END`). Hand-rolled, no SDK (as planned). Follow-ups: STATE_SNAPSHOT/STATE_DELTA (needs a shared agent↔UI state model) and client-tool round-trips.
 
-### 12.8 x402 — Agent Payments / Settlement Layer *(seller-side shipped experimental, #4527 — `X402PaymentGate`; buyer-side deferred — money-handling)*
+### 12.8 x402 — Agent Payments / Settlement Layer *(both sides shipped experimental — seller #4527 `X402PaymentGate`; buyer #4528 `X402Client` behind spend guardrails)*
 
 [x402](https://github.com/x402-foundation/x402) revives HTTP `402 Payment Required` to let agents pay for gated resources in **stablecoins (USDC), gaslessly**. Unlike §12.5–12.7 (which carry no money), x402 is a **settlement layer** — and it sits *beneath* the protocols we already target, not beside them. As of April 2026 it is **Linux-Foundation-governed** (x402 Foundation, 22 orgs incl. Coinbase, Cloudflare, AWS, Google, Circle, Visa, Mastercard, Amex, Stripe, Shopify); Apache-2.0.
 
