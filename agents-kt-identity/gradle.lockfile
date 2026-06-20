@@ -3,6 +3,7 @@
 # This file is expected to be part of source control.
 com.nimbusds:nimbus-jose-jwt:10.3=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 org.apiguardian:apiguardian-api:1.1.2=testCompileClasspath
+org.bouncycastle:bcprov-jdk18on:1.84=testRuntimeClasspath
 org.jetbrains.kotlin:kotlin-build-tools-api:2.4.0=kotlinAbiValidationCompatClasspath,kotlinBuildToolsApiClasspath,kotlinCompilerClasspath,kotlinKlibCommonizerClasspath
 org.jetbrains.kotlin:kotlin-build-tools-compat:2.4.0=kotlinAbiValidationCompatClasspath,kotlinBuildToolsApiClasspath,kotlinCompilerClasspath
 org.jetbrains.kotlin:kotlin-build-tools-cri-impl:2.4.0=kotlinAbiValidationCompatClasspath,kotlinBuildToolsApiClasspath,kotlinCompilerClasspath

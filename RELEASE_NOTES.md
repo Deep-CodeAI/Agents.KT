@@ -1,58 +1,60 @@
-# Agents.KT v0.8.0 — Interoperable, multimodal agents, with capability grants
+# Agents.KT v0.8.1 — The agentic web: discover, serve, and get paid
 
-**Release date:** 2026-06-14
+**Release date:** 2026-06-20
 
-0.8.0 is the largest minor since 0.5.0. The boundary-first runtime grows outward: it now **talks to
-other agents**, **sees and hears**, **composes in richer shapes**, and lets you **grant capabilities
-explicitly** — while keeping the typed `Agent<IN, OUT>` contract and the audit/manifest spine intact.
-Additive throughout: existing public API surfaces are preserved (drop-in on the 0.7.x line).
+0.8.0 made agents **talk to each other** (A2A) and **see and hear** (multimodal). 0.8.1 completes the
+agentic-web quartet: an agents.kt agent can now be **discovered** (AGNTCY), **served to a frontend**
+(AG-UI), **queried as web content** (NLWeb), and **paid** — both as a seller and, experimentally, as an
+autonomous buyer (x402). Additive throughout: existing public API is preserved (drop-in on 0.8.0).
 
 ## Headlines
 
-- **A2A v1 — agent-to-agent interop (#3864).** Agents.KT agents are A2A servers (typed skills exposed
-  via AgentCard) and typed A2A clients — cross-system discovery and invocation over the wire.
-- **Multimodal, end to end.** Vision input across Claude / OpenAI / Ollama (#2466–#2470); audio as
-  tools — `transcribe_audio` / `speak` with self-hosted Whisper / Qwen adapters (#4501), an in-process
-  `:agents-kt-whisper-jni` STT module (#4505), and image generation + TTS (#3867). Weights never ship
-  in the jar.
-- **Eighth model provider: Google Gemini (#1917).** A full from-scratch adapter (Gemini is not
-  OpenAI-compatible): `contents`/`parts`, `functionDeclarations` tool calling, native SSE streaming,
-  `responseJsonSchema` constrained decoding, thought-summary reasoning, `inlineData` vision. Joins
-  Ollama / Anthropic / OpenAI / DeepSeek / Kimi / OpenRouter / Perplexity.
-- **Capability grants (#4545).** `grants { allow(writeFile); confirm(deploy) }` — `allow` tools are
-  freely callable; `confirm` tools require the **granting agent's** authorization (fail-closed), not a
-  human gate. Build-validated; opt-in.
-- **Richer composition.** `handoff` (#3871), `firstOf` / `.speculative(n)` (#3869), `loopUntil` +
-  `evalGate` (#3870), built-in aggregators on `/` (#3872), and built-in forum captains (#3877).
-- **RAG seam (#3863)** — `EmbeddingStore` SPI + query-aware knowledge, with LangChain4j / Spring-AI
-  adapter modules.
-- **Human-in-the-loop + eval.** `HumanGateRegistry` (#3868); a typed eval harness with
-  LLM-as-judge and cross-model regression (#3876).
-- **agent.json (#4516)** — deterministic, byte-stable serialization of an agent's definition
-  (distinct from the permission manifest and the A2A AgentCard).
-- **Agentic-web standards groundwork** — PRD §12.6–§12.9 plan AGNTCY (OASF/DIR/Identity), AG-UI,
-  x402 payments, and NLWeb, positioned against the runtime.
+- **AGNTCY interop (#4518–#4521, epic #4517).** Export an agent as an **OASF 1.0.0** discovery record
+  (`agent.toOasfRecord(...)`) and import + fail-closed-validate it back (`fromOasfRecord()`); publish and
+  discover records in the content-addressed **DIR** directory (`:agents-kt-dir`, gRPC Store/Search/Routing);
+  and verify an AGNTCY **Identity** badge (a JOSE/JWS Verifiable Credential) against an issuer's JWKS
+  (`:agents-kt-identity`, fail-closed — rejects `alg:none`, `HS*` confusion, expiry, tamper).
+- **AG-UI — serve an agent to a frontend (#4523, PRD §12.7).** `AgUiServer.from(agent)`: a `RunAgentInput`
+  `POST` returns an **SSE stream of typed AG-UI events**, bridged live from the agent's `AgentSession` — for
+  a CopilotKit-style chat. Now streams live **REASONING** (#4629; `THINKING_*` deprecated) and emits
+  **`TOOL_CALL_RESULT`** (the executor return — #4680), so a UI renders tool outputs, not just invocations.
+- **NLWeb — agent ↔ web content (#4541/#4542, PRD §12.9).** `NlWebServer.from(agent)` serves the NLWeb
+  `POST /ask` contract; the `nlwebSearch` tool queries any NLWeb endpoint and folds ranked schema.org results
+  into context as untrusted data.
+- **x402 — agent payments (epic #4526, PRD §12.8), experimental.** *Seller* (#4527): `X402PaymentGate`
+  gates any served endpoint behind a settled USDC payment — you hold no key, take no custody, fail closed.
+  *Buyer* (#4528): `X402Client` drives `request → 402 → pay → retry`, signing a real EIP-712/EIP-3009
+  authorization (secp256k1 + Keccak-256, pinned byte-for-byte to ethers.js vectors). The buyer is
+  **guardrails-first** — the key lives in `X402Account` below the model layer, and every payment clears an
+  `X402SpendPolicy` (per-payment cap, payee/network allowlists, optional human-in-the-loop) before any
+  signature.
+- **Audit-ledger records cross-cutting misbehaviour (#2905).** The one tamper-evident Merkle chain now folds
+  in budget-exceeded, hallucinated-tool, and policy signals that never flow through a tool body.
+- **Default transient-network retry across all HTTP providers (#4560).** Idempotent model calls retry
+  transient failures with backoff by default.
 
-Plus history compression (#3865), pipeline stage events (#4491), compaction strategies (#4492),
-typed tool hooks (#4493), memory retention strategies (#4515), W3C trace propagation across MCP/A2A
-(#3873), and an antifragility hardening pass (#4495–#4500).
+Plus a feasibility spike: **Agent → WebAssembly (#4548).** A typed agent compiles to `wasmJs` and runs in a
+browser/node over `fetch` — verified against a local LLM. Verdict: **conditional GO** for a `wasmJs` profile;
+docs only, no API change. See [`docs/wasm-feasibility.md`](docs/wasm-feasibility.md).
 
-See [`CHANGELOG.md`](CHANGELOG.md) for the full, itemized list.
+See [`CHANGELOG.md`](CHANGELOG.md) for the full, itemized list, and the new guides
+[`docs/agui.md`](docs/agui.md), [`docs/x402.md`](docs/x402.md), and [`docs/wasm.md`](docs/wasm.md).
+
+## On the experimental surfaces
+
+The **x402 buyer** moves irreversible money. It is gated behind hard guardrails (key below the model layer,
+mandatory spend policy, fail-closed denial) and is marked experimental — test it on **Base Sepolia** (free
+testnet facilitator) before pointing it at mainnet. Still deferred: scoped ERC-4337 session keys, the `upto`
+metered scheme, Solana, and cross-payment velocity limits.
 
 ## Deferred to 0.9.0
 
-The Layer-2 **sandbox backends** originally pencilled for 0.8 slipped — they want a Linux-capable
-environment to build and verify:
-
-- `DockerSandbox` (#2895), the network hostname-allowlist **egress proxy** (#2893), and
-  **read confinement** (#4546) move to **0.9.0**.
-- `WasmSandbox` (#2894) was closed **won't-do** — embedding a WASM runtime to sandbox tools isn't
-  rational (`ProcessSandbox` already covers it). The rational WASM direction — compiling **agents** to
-  WASM for portable execution — is a separate forward-looking track (#4547, starting with a
-  feasibility spike).
+The Layer-2 **sandbox backends** still want a Linux-capable build/verify environment: `DockerSandbox` (#2895),
+the egress hostname-allowlist **proxy** (#2893), and **read confinement** (#4546). `WasmSandbox` (#2894)
+remains closed won't-do; the agent → WASM export track (#4547) continues from this release's spike.
 
 ## Compatibility
 
-Additive, no breaking changes to existing public API. The capability-grants block, A2A surfaces,
-multimodal tools, and the Gemini provider are all opt-in. CodeQL's `java-kotlin` check is red on the
-Kotlin 2.4 toolchain (upstream codeql#21938) — the Gradle build is the gate.
+Additive, no breaking changes to existing public API. AGNTCY / AG-UI / NLWeb / x402 surfaces are all opt-in;
+the x402 buyer pulls BouncyCastle (`bcprov`) as a runtime dependency for signing. CodeQL's `java-kotlin` check
+is red on the Kotlin 2.4 toolchain (upstream codeql#21938) — the Gradle build is the gate.

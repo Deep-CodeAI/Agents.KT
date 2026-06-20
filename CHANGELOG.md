@@ -4,6 +4,8 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-06-20
+
 ### Added — x402 buyer side: agents can autonomously pay (experimental) (#4528, epic #4526)
 
 The x402 seller half (`X402PaymentGate`, #4527) let an agent get paid; this adds the **buyer half** — an agent
