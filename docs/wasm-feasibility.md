@@ -11,10 +11,11 @@ against the current tree and records a proof-of-concept, so the migration decisi
 
 ## TL;DR
 
-- **The typed core compiles to `wasmJs` *and runs* today.** A no-reflection, no-HTTP slice of the agents.kt
-  programming model (`Agent<IN,OUT>`, `Skill`, the `then` composition operator) compiled to a real `.wasm`
-  binary and executed correctly under node in an isolated multiplatform probe. The *abstractions* are portable;
-  nothing about the type-driven core is JVM-bound.
+- **The typed core compiles to `wasmJs`, runs, AND reaches a live LLM today.** A no-reflection slice of the
+  agents.kt programming model (`Agent<IN,OUT>`, `Skill`, the `then` operator) compiled to a real `.wasm` and a
+  two-stage typed pipeline (`framing then ollama`) executed end-to-end — **in node and in a real headless
+  browser** — calling a local Ollama over `fetch` and rendering the model's reply. The *abstractions* are
+  portable, and the HTTP wall is crossable on `wasmJs` via `fetch` (demonstrated, not just asserted).
 - **The blockers are concentrated, not pervasive.** Of 345 main source files, the WASM-hostile surface clusters
   in two areas: the **model adapters** (HTTP + reflection) and **platform glue** (filesystem/concurrency/process).
   The core type system, composition, and event model are largely clean.
@@ -44,9 +45,11 @@ Reading the table:
   `::class` in shapes Kotlin/Wasm largely supports (`simpleName`, identity, sealed `when`). The 19 are the
   `@Generable` schema/description/construct path — exactly what `agents-kt-ksp` was built to replace at compile
   time. Closing this wall is *finishing* the KSP migration (#1016–#1018 line), not inventing anything.
-- **Wall 2 (HTTP) is broad but mechanical.** 20 of 24 are model adapters all funnelling through one shape
-  (`HttpClient.send`). A single `expect/actual` HTTP seam backed by Ktor's `wasmJs` engine (browser `fetch`)
-  collapses this to one porting task, not 20. `x402`/`mcp`/`a2a` each have one HTTP entry point.
+- **Wall 2 (HTTP) is broad but mechanical — and demonstrated crossable.** 20 of 24 are model adapters all
+  funnelling through one shape (`HttpClient.send`). A single `expect/actual` HTTP seam collapses this to one
+  porting task, not 20. The PoC backs this with the host `fetch` directly (the lightest option — a real
+  `POST /api/chat` to Ollama from wasm, in node and the browser); Ktor's `wasmJs` engine is the heavier
+  production option if multipart/streaming/interceptors are wanted. `x402`/`mcp`/`a2a` each have one HTTP entry.
 - **Wall 3 (platform) splits cleanly.** Filesystem/concurrency are portable via `expect/actual` over
   okio + `kotlinx.coroutines` (+ atomicfu). **Process/Thread does not port and should not** — there are no
   subprocess tools on WASM; a `wasmJs` agent is a no-sandbox-tools, no-network-by-default profile by nature.
@@ -70,17 +73,22 @@ entirely in the adapters (HTTP/reflection) and platform glue, which is what the 
 probe is intentionally *not* committed to the repo (it would pull the multiplatform plugin into the JVM build);
 it is reproducible from the snippet above.
 
-**Artifact & execution:** `compileProductionExecutableKotlinWasmJs` produced a valid ~**98 KB** `.wasm` binary
-(`\0asm` magic, Binaryen-optimized) — Kotlin 2.4.0, Gradle 9.5, `wasmJs` target. It then **ran** under
-`wasmJsNodeProductionRun` and emitted the correct pipeline result:
+Two probes, both reproducible (Kotlin 2.4.0, Gradle 9.5, `wasmJs` target):
 
-```
-agents.kt typed core on wasmJs -> fun getUsers() {} | fun createUser() {} | fun deleteUser() {}
-```
+**(a) Typed core only.** `compileProductionExecutableKotlinWasmJs` produced a valid ~**98 KB** `.wasm`
+(`\0asm` magic, Binaryen-optimized), and `Agent` + the generic `then` composition ran under node:
+`agents.kt typed core on wasmJs -> fun getUsers() {} | fun createUser() {} | ...`.
 
-So the typed `Agent` + generic `then` composition didn't just compile — it executed end-to-end inside wasm. The
-kotlinx-coroutines `wasmJs` artifact resolved without issue, confirming the streaming-session dependency is
-available on the target.
+**(b) Typed agent + live LLM over `fetch`.** A second probe wires the HTTP wall: a `framing then ollama`
+pipeline whose `ollama` skill calls a local Ollama (`POST /api/chat`) through the host `fetch` — the proposed
+multiplatform HTTP seam — with the JSON build/parse done via `js(...)` interop (no `java.net.http`). Verified:
+- **node:** `runAgent` imported from the compiled module → `[wasm->ollama in 0.5s] Hello there, friend.`
+- **headless Chrome:** page served over http, wasm instantiated, real **cross-origin** `fetch`
+  (`localhost:8080` → `localhost:11434`, CORS allowed by Ollama by default), model reply rendered into the DOM.
+
+So the streaming-capable `kotlinx.coroutines` and the `fetch` HTTP seam both work on `wasmJs` against a real
+model — the HTTP wall is a porting task, not an unknown. Reproduce via the `wasm_tmp/` demo (gitignored; see its
+`README.md`); not committed because it pulls the multiplatform plugin into the build.
 
 ## Recommendation
 
