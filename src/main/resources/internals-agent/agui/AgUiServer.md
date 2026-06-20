@@ -27,12 +27,15 @@ stream of typed events**. The new user turn is the **last `user` message's conte
 | `RUN_STARTED` / `RUN_FINISHED` / `RUN_ERROR` | session open / `Completed` / `Failed` |
 | `TEXT_MESSAGE_START/CONTENT/END` | `Token` (START lazily on first token; END before any tool call / step finish / run end) |
 | `TOOL_CALL_START/ARGS/END` | `ToolCallStarted` / `ToolCallArgumentsDelta` / `ToolCallFinished` |
+| `TOOL_CALL_RESULT` | `ToolCallFinished` (the executor return — `content` = stringified `result`, `role: tool`, `isError`, a fresh tool-message `messageId`) |
+| `REASONING_START / _MESSAGE_START / _MESSAGE_CONTENT / _MESSAGE_END / _END` | `Reasoning` (#4629 — live model thinking; `THINKING_*` deprecated) |
 | `STEP_STARTED/FINISHED` | `SkillStarted` / `SkillCompleted` |
 
 The bridge holds the small **text-message state machine** that guarantees AG-UI's ordering
 (`START → CONTENT* → END`, and text always closes before a tool call / step finish / run end). A
 deterministic skill streams no `Token`s, so `finish()` surfaces the final output as one text message — a UI
-always has something to render. Events not in v1 (`ModelTurn*`, `Reasoning`, `Stage*`) map to nothing.
+always has something to render. `ToolCallFinished` emits `TOOL_CALL_END` then `TOOL_CALL_RESULT` (the executor
+return). Events still not surfaced (`ModelTurn*`, `Stage*`) map to nothing.
 
 ## Posture — same as the other serve surfaces
 
@@ -46,10 +49,12 @@ Lives in core (no external deps), so it uses internal `McpJson` / `LenientJsonPa
 Shipped: lifecycle/text/tool/step families + REASONING (#4629 — `AgentEvent.Reasoning` → `REASONING_START` →
 `REASONING_MESSAGE_START` → `REASONING_MESSAGE_CONTENT`* → `REASONING_MESSAGE_END` → `REASONING_END`, one
 `messageId`; the `THINKING_*` names are deprecated). The bridge opens the block on the first reasoning chunk and
-closes it before any answer token / tool call / step finish / run finish (`closeStreams()`). Follow-ups:
-STATE_SNAPSHOT/STATE_DELTA (needs a shared agent↔UI state model we don't have yet), client-tool round-trips (the
-next `POST` re-sends the full history + a `ToolMessage`), and per-event field details against the canonical AG-UI
-Zod/proto schema (verify field names if a client rejects an event).
+closes it before any answer token / tool call / step finish / run finish (`closeStreams()`). `TOOL_CALL_RESULT`
+carries the executor return after each `TOOL_CALL_END`. Follow-ups: STATE_SNAPSHOT/STATE_DELTA (needs a shared
+agent↔UI state model we don't have yet) and client-tool round-trips — both blocked on the same runtime seam: the
+next `POST` re-sends the full `messages[]` history, but `session(input)` only takes the **last user message** and
+exposes no `resumeFrom`/`seedMessages` hook to replay prior turns (and a client tool needs the run to emit-and-stop
+awaiting a `ToolMessage`). Wiring AG-UI onto the snapshot/resume seam (`RunRequest.resumeFrom`) is the prerequisite.
 
 ## Related
 

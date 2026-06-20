@@ -4,6 +4,17 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — AG-UI now emits TOOL_CALL_RESULT (the executor return) (epic #4523)
+
+`AgUiServer` already surfaced `TOOL_CALL_START/ARGS/END`, but a frontend never saw what a tool
+*returned*. `AgUiEventBridge` now emits a `TOOL_CALL_RESULT` event after each `TOOL_CALL_END`,
+carrying the executor return from `AgentEvent.ToolCallFinished`: `content` (the stringified
+`result`), `role: "tool"`, `isError`, and a fresh tool-message `messageId` tied back to the call's
+`toolCallId`. This is the `TOOL_CALL_END/RESULT` pair PRD §12.7 always specified — a CopilotKit
+chat can now render tool outputs, not just tool invocations. STATE events and client-tool
+round-trips remain the documented AG-UI follow-ups (both blocked on threading the snapshot/resume
+seam through `session(input)`). 2 new tests.
+
 ### Added — AG-UI now streams REASONING events (live model thinking) (#4629, epic #4523)
 
 `AgUiServer` previously surfaced the lifecycle/text/tool/step event families; it now also bridges
