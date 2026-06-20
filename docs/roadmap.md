@@ -20,7 +20,9 @@ gates + the **eval** harness, history compression, an eighth model provider (**G
 plus the agentic-web standards groundwork (AGNTCY / AG-UI / x402 / NLWeb, PRD §12.6–§12.9). The
 "sandbox backends" originally pencilled for 0.8 slipped: `WasmSandbox` ([#2894](../../issues/2894)) was
 closed won't-do (embedded-WASM-for-tools isn't rational; agent → WASM export is the separate forward
-track [#4547](../../issues/4547)), and `DockerSandbox` ([#2895](../../issues/2895)), the egress
+track [#4547](../../issues/4547) — feasibility spike [#4548](../../issues/4548) is **conditional GO**, see
+[wasm-feasibility.md](wasm-feasibility.md): the typed core already compiles + runs on `wasmJs`), and
+`DockerSandbox` ([#2895](../../issues/2895)), the egress
 hostname-allowlist proxy ([#2893](../../issues/2893)), and read confinement ([#4546](../../issues/4546))
 move to **0.9.0** (they want a Linux-capable environment to build + verify).
 
