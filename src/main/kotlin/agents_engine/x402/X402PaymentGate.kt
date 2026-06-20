@@ -24,8 +24,9 @@ import java.util.Base64
  * so settlement happens first. This charges before delivering; acceptable for the seller path (the buyer
  * already authorized the amount).
  *
- * EXPERIMENTAL (seller-side only). Buyer-side autonomous payment is deliberately NOT here — it concentrates
- * the irreversible-money risk and is gated on scoped session keys + signing kept below the model layer.
+ * EXPERIMENTAL. This is the seller half (receive). The buyer half (autonomous pay) is [X402Client] +
+ * [X402Account] (#4528) — it concentrates the irreversible-money risk, so its signing key lives in
+ * [X402Account] below the model layer and every payment passes an [X402SpendPolicy] guardrail.
  */
 class X402PaymentGate(
     private val requirements: PaymentRequirements,
