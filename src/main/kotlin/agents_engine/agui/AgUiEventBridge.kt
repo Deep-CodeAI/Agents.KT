@@ -13,7 +13,8 @@ import java.util.UUID
  *
  * **Envelope + ordering** (the AG-UI contract): every run is `RUN_STARTED` … `RUN_FINISHED` (or `RUN_ERROR`).
  * Text is `TEXT_MESSAGE_START` → `TEXT_MESSAGE_CONTENT`* → `TEXT_MESSAGE_END`; tool calls are
- * `TOOL_CALL_START` → `TOOL_CALL_ARGS`* → `TOOL_CALL_END`. This bridge holds the small state machine that
+ * `TOOL_CALL_START` → `TOOL_CALL_ARGS`* → `TOOL_CALL_END` → `TOOL_CALL_RESULT` (the executor return).
+ * This bridge holds the small state machine that
  * opens a text message on the first [AgentEvent.Token] and closes it before any tool call, step boundary,
  * or run finish — so the emitted stream always satisfies that ordering.
  *
@@ -65,8 +66,20 @@ internal class AgUiEventBridge(private val threadId: String, private val runId: 
             closeStreams() + event("TOOL_CALL_START", "toolCallId" to e.callId, "toolCallName" to e.toolName)
         is AgentEvent.ToolCallArgumentsDelta ->
             listOf(event("TOOL_CALL_ARGS", "toolCallId" to e.callId, "delta" to e.deltaJson))
-        is AgentEvent.ToolCallFinished ->
-            listOf(event("TOOL_CALL_END", "toolCallId" to e.callId))
+        // TOOL_CALL_END closes the call; TOOL_CALL_RESULT then carries the executor's return so a UI can
+        // render it (AG-UI ties the result to a fresh tool-role message id). `result` is stringified — the
+        // executor return is already a string for most tools; structured returns degrade to toString().
+        is AgentEvent.ToolCallFinished -> listOf(
+            event("TOOL_CALL_END", "toolCallId" to e.callId),
+            event(
+                "TOOL_CALL_RESULT",
+                "messageId" to newId(),
+                "toolCallId" to e.callId,
+                "content" to (e.result?.toString() ?: ""),
+                "role" to "tool",
+                "isError" to e.isError,
+            ),
+        )
 
         is AgentEvent.Completed<*> -> finish(e.output)
         is AgentEvent.Failed -> closeStreams() + runError(e.cause.message ?: e.cause.toString())
