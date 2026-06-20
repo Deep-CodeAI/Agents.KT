@@ -40,6 +40,17 @@ chat can now render tool outputs, not just tool invocations. STATE events and cl
 round-trips remain the documented AG-UI follow-ups (both blocked on threading the snapshot/resume
 seam through `session(input)`). 2 new tests.
 
+### Docs — Agent → WASM export feasibility spike (#4548, epic #4547)
+
+Delivered the go/no-go for compiling a typed agents.kt agent to WebAssembly (the forward-looking direction
+after `WasmSandbox` was closed won't-do). `docs/wasm-feasibility.md` turns the four "walls" into measured facts
+against the current tree (345 files: 48 reflection / 24 HTTP / 13 concurrency / 17 process-or-thread) and
+records a proof of concept: a no-reflection, no-HTTP slice of the programming model (`Agent<IN,OUT>`, `Skill`,
+the `then` operator) **compiled to a ~98 KB `.wasm` and executed correctly** in an isolated `wasmJs` probe. The
+abstractions are portable; the blockers concentrate in the model adapters (HTTP/reflection) and platform glue.
+**Recommendation: conditional GO** for a `wasmJs` capability profile (no subprocess tools; `fetch`-bound
+network) gated on finishing the KSP reflection-removal — not a whole-codebase port. Doc-only; no API change.
+
 ### Added — AG-UI now streams REASONING events (live model thinking) (#4629, epic #4523)
 
 `AgUiServer` previously surfaced the lifecycle/text/tool/step event families; it now also bridges

@@ -56,3 +56,7 @@ wiki/
 # progress local artifacts that aren't on the 0.6.0 ship list. Re-evaluate
 # in 0.7.0 once the DSL stabilizes.
 docs/schema/
+# wasm_tmp — local Agent→WASM spike demo (#4548): a Kotlin/Multiplatform
+# wasmJs module that pulls the MPP plugin; kept out of the JVM build and the
+# repo. Reproducible from docs/wasm-feasibility.md; results recorded there.
+wasm_tmp/
