@@ -305,6 +305,10 @@ Topical guides:
 - [**Provider Capability Matrix**](docs/providers.md) — what every `ModelProvider` supports: modality input, reasoning, caching, tool-choice, constrained decoding, streaming.
 - [**MCP Integration**](docs/mcp.md) — `mcp { server() }` client, `McpServer.from(agent)`, `McpRunner` standalone.
 - [**MCP Server Hardening**](docs/mcp-server.md) — inbound auth, Host/Origin allowlists, per-client tool policy, and gateway deployment recipes.
+- [**A2A — agent↔agent**](docs/a2a.md) — `A2AServer.from(agent)` + the typed `a2aAgent<IN, OUT>` remote handle that composes like a local agent.
+- [**AG-UI — agent↔frontend**](docs/agui.md) — `AgUiServer.from(agent)`: a `RunAgentInput` `POST` → SSE stream of typed AG-UI events (text / reasoning / `TOOL_CALL_*` incl. `TOOL_CALL_RESULT` / step), for a CopilotKit-style chat.
+- [**x402 — agent payments**](docs/x402.md) — seller (`X402PaymentGate`, get paid) + buyer (`X402Client` / `X402Account` / `X402SpendPolicy`, pay autonomously, guardrails-first), with testnet sandbox recipes.
+- [**Agent → WebAssembly (spike)**](docs/wasm.md) — running a typed agent in the browser/node over `fetch` to a local LLM; the #4548 feasibility go/no-go.
 - [**Tool Error Recovery**](docs/error-recovery.md) — `onError { invalidArgs / deserializationError / executionError }`, `RepairResult.Fixed/Retry/Escalated/Unrecoverable`, default vs per-tool handlers.
 - [**Agent Memory**](docs/memory.md) — `memory(MemoryBank())`, the three auto-injected tools, sharing memory across agents.
 - [**Guided Generation**](docs/generation.md) — `@Generable`, `@Guide`, `@LlmDescription`, JSON-Schema generation, lenient deserializer, `PartiallyGenerated<T>`.
