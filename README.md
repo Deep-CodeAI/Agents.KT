@@ -37,7 +37,7 @@ The 0.6–0.7 line turns those boundaries into reviewable evidence: deterministi
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("ai.deep-code:agents-kt:0.8.0")
+    implementation("ai.deep-code:agents-kt:0.8.1")
 }
 ```
 
