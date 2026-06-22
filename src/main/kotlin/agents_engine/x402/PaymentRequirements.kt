@@ -39,4 +39,34 @@ data class PaymentRequirements(
         "asset" to asset,
         "extra" to extra,
     )
+
+    companion object {
+        /**
+         * #4528 — parse one `accepts[]` entry from a seller's `402` body into [PaymentRequirements] (the buyer
+         * path). Returns null if the object is missing a required field, so a buyer can skip a malformed offer
+         * and try the next one rather than throwing. `maxTimeoutSeconds` may arrive as a JSON number.
+         */
+        internal fun fromJsonObject(obj: Map<*, *>): PaymentRequirements? {
+            val network = obj["network"] as? String ?: return null
+            val maxAmountRequired = obj["maxAmountRequired"] as? String ?: return null
+            val payTo = obj["payTo"] as? String ?: return null
+            val asset = obj["asset"] as? String ?: return null
+            val resource = obj["resource"] as? String ?: return null
+            @Suppress("UNCHECKED_CAST")
+            return PaymentRequirements(
+                network = network,
+                maxAmountRequired = maxAmountRequired,
+                payTo = payTo,
+                asset = asset,
+                resource = resource,
+                scheme = obj["scheme"] as? String ?: "exact",
+                description = obj["description"] as? String ?: "",
+                mimeType = obj["mimeType"] as? String ?: "",
+                maxTimeoutSeconds = (obj["maxTimeoutSeconds"] as? Number)?.toInt() ?: DEFAULT_TIMEOUT_SECONDS,
+                extra = obj["extra"] as? Map<String, Any?> ?: emptyMap(),
+            )
+        }
+
+        private const val DEFAULT_TIMEOUT_SECONDS = 60
+    }
 }

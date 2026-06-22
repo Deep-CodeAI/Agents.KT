@@ -4,6 +4,55 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-06-20
+
+### Added — x402 buyer side: agents can autonomously pay (experimental) (#4528, epic #4526)
+
+The x402 seller half (`X402PaymentGate`, #4527) let an agent get paid; this adds the **buyer half** — an agent
+can now pay for a resource it wants. `X402Client` drives the `request → 402 → pay → retry` handshake: on a
+`402 Payment Required` it parses the seller's `accepts[]`, signs an
+[EIP-3009](https://eips.ethereum.org/EIPS/eip-3009) `transferWithAuthorization` (EIP-712), and replays the
+request with an `X-PAYMENT` header.
+
+**This is the half where irreversible money moves, so it is guardrails-first.** The signing key lives in
+`X402Account`, constructed in operator code **below the model layer** — never serialized, logged, or placed in
+a prompt; the LLM drives the request but cannot read the key or widen the policy. Every payment must pass an
+`X402SpendPolicy` before any signature is produced: `maxValuePerPayment` (the blast-radius cap),
+`allowedNetworks`, `allowedPayTo` (neutralizes a redirected-`payTo` injection), and an optional `confirm`
+human-in-the-loop gate. A rejected payment raises `X402PaymentDeniedException` instead of overpaying — no
+signature means no money moved.
+
+The signing is real secp256k1 + legacy Keccak-256 + EIP-712 (BouncyCastle, promoted `compileOnly →
+implementation`; no `web3j`/`kethereum`), **pinned byte-for-byte against ethers.js v6 vectors** (keccak256
+anchor, the `0x7c7c6cdb…` EIP-3009 type hash, a known address, and the exact 65-byte signature). The end-to-end
+test stands up the real `X402PaymentGate` fronted by a facilitator that independently `ecrecover`s the signer —
+so a genuine signature flows buyer → 402 → sign → seller → verify → 200, hermetically. EXPERIMENTAL: real USDC
+moves against a live facilitator-backed seller. Still deferred: scoped ERC-4337 session keys (on-chain caps),
+the `upto` metered scheme, Solana, and cross-payment velocity limits. New buyer types in `agents_engine.x402`
+(+ `x402.crypto`); 23 new tests.
+
+### Added — AG-UI now emits TOOL_CALL_RESULT (the executor return) (epic #4523)
+
+`AgUiServer` already surfaced `TOOL_CALL_START/ARGS/END`, but a frontend never saw what a tool
+*returned*. `AgUiEventBridge` now emits a `TOOL_CALL_RESULT` event after each `TOOL_CALL_END`,
+carrying the executor return from `AgentEvent.ToolCallFinished`: `content` (the stringified
+`result`), `role: "tool"`, `isError`, and a fresh tool-message `messageId` tied back to the call's
+`toolCallId`. This is the `TOOL_CALL_END/RESULT` pair PRD §12.7 always specified — a CopilotKit
+chat can now render tool outputs, not just tool invocations. STATE events and client-tool
+round-trips remain the documented AG-UI follow-ups (both blocked on threading the snapshot/resume
+seam through `session(input)`). 2 new tests.
+
+### Docs — Agent → WASM export feasibility spike (#4548, epic #4547)
+
+Delivered the go/no-go for compiling a typed agents.kt agent to WebAssembly (the forward-looking direction
+after `WasmSandbox` was closed won't-do). `docs/wasm-feasibility.md` turns the four "walls" into measured facts
+against the current tree (345 files: 48 reflection / 24 HTTP / 13 concurrency / 17 process-or-thread) and
+records a proof of concept: a no-reflection, no-HTTP slice of the programming model (`Agent<IN,OUT>`, `Skill`,
+the `then` operator) **compiled to a ~98 KB `.wasm` and executed correctly** in an isolated `wasmJs` probe. The
+abstractions are portable; the blockers concentrate in the model adapters (HTTP/reflection) and platform glue.
+**Recommendation: conditional GO** for a `wasmJs` capability profile (no subprocess tools; `fetch`-bound
+network) gated on finishing the KSP reflection-removal — not a whole-codebase port. Doc-only; no API change.
+
 ### Added — AG-UI now streams REASONING events (live model thinking) (#4629, epic #4523)
 
 `AgUiServer` previously surfaced the lifecycle/text/tool/step event families; it now also bridges

@@ -49,7 +49,7 @@ class AgUiServerTest {
                 "TEXT_MESSAGE_CONTENT",                       // second token, same message (no new START)
                 "TEXT_MESSAGE_END", "TOOL_CALL_START",        // text closes before the tool call
                 "TOOL_CALL_ARGS",
-                "TOOL_CALL_END",
+                "TOOL_CALL_END", "TOOL_CALL_RESULT",          // END closes the call, RESULT carries the return
                 "RUN_FINISHED",
             ),
             types,
@@ -110,6 +110,38 @@ class AgUiServerTest {
                 "REASONING_MESSAGE_END", "REASONING_END", "TOOL_CALL_START"),
             out.map { parse(it)["type"] },
         )
+    }
+
+    @Test
+    fun `bridge emits TOOL_CALL_RESULT carrying the executor return after TOOL_CALL_END`() {
+        val b = AgUiEventBridge("t", "r")
+        val out = b.onEvent(
+            AgentEvent.ToolCallFinished(
+                agentId = "a", callId = "c1", toolName = "lookup",
+                arguments = mapOf("q" to 1), result = "42", isError = false,
+            ),
+        )
+        assertEquals(listOf("TOOL_CALL_END", "TOOL_CALL_RESULT"), out.map { parse(it)["type"] })
+        val result = parse(out[1])
+        assertEquals("c1", result["toolCallId"])     // ties back to the same call
+        assertEquals("42", result["content"])         // the stringified executor return
+        assertEquals("tool", result["role"])
+        assertEquals(false, result["isError"])
+        assertTrue(result["messageId"] is String, "result carries a fresh tool-message id")
+    }
+
+    @Test
+    fun `bridge flags an errored tool result`() {
+        val b = AgUiEventBridge("t", "r")
+        val out = b.onEvent(
+            AgentEvent.ToolCallFinished(
+                agentId = "a", callId = "c9", toolName = "lookup",
+                arguments = emptyMap(), result = "boom", isError = true,
+            ),
+        )
+        val result = parse(out.last { parse(it)["type"] == "TOOL_CALL_RESULT" })
+        assertEquals(true, result["isError"])
+        assertEquals("boom", result["content"])
     }
 
     @Test
