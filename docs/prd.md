@@ -2934,13 +2934,13 @@ Tracking: epic #4523 `[interop] AG-UI support (agent↔frontend serving)`. **Ser
 
 **Seller-side first (safe); buyer-side deferred behind hard custody guardrails.** These are different risk animals:
 - **Seller-side *(shipped, #4527)*** — our agents expose *paid* endpoints. We *receive* USDC via a hosted facilitator: **no custody, no money-transmitter exposure, no LLM-holds-key problem.** `X402PaymentGate(requirements, facilitator).gate(handler)` (package `agents_engine.x402`) wraps any JDK `HttpHandler` ("emit `402` with terms → facilitator `verify` → `settle` → `X-PAYMENT-RESPONSE` → deliver"), so it fronts any of our `HttpServer`-based serve surfaces — agents that **monetize themselves**. Hand-rolled (JDK `HttpHandler` + a `FacilitatorClient` seam), **not** the servlet-based `org.x402:x402` SDK (servlet/JDK impedance). Fails closed. Shipped **experimental**.
-- **Buyer-side** — our agents autonomously *pay*. **Deferred.** All real-money risk lives here. Only behind scoped ERC-4337 session keys (on-chain per-tx caps, payee allowlists, velocity limits), **signing isolated from the model layer**, and human-in-the-loop for settlement. Separate, later, opt-in module.
+- **Buyer-side *(shipped experimental, #4528, 0.8.1)*** — our agents autonomously *pay*. All real-money risk lives here, so it shipped **guardrails-first**: `X402Client(account)` drives `request → 402 → pay → retry`; the signing key lives in `X402Account` **below the model layer** (never serialized/logged/in a prompt — the LLM cannot read it or widen the policy), and every payment clears an `X402SpendPolicy` (per-payment cap, `payTo`/network allowlists, optional human-in-the-loop `confirm`) **before any signature** — a rejected payment raises `X402PaymentDeniedException` rather than overpay. Real secp256k1 + Keccak-256 + EIP-712/EIP-3009 signing on BouncyCastle, pinned byte-for-byte to ethers.js vectors. Still deferred: scoped ERC-4337 session keys (on-chain caps — the strongest guardrail), the `upto` metered scheme, Solana, and cross-payment velocity limits.
 
 **Non-negotiable design constraint:** **keep signing and spending limits below the model layer** — the LLM must never hold a key or carry a spend limit in its prompt. x402 moves **irreversible** money (no chargebacks; liability lands on the deployer), and prompt-injection drains are confirmed-real (Grok/Bankr ~$150–200k, Freysa $47k; peer-reviewed *Five Attacks on x402*). A self-hosted *custodial* facilitator likely triggers money-transmitter / stablecoin regulation (FinCEN MSB, GENIUS Act, MiCA) — prefer a hosted facilitator and never take custody on the seller path.
 
-**Why deferred.** Lower strategic priority than the interop trio (A2A/AGNTCY/AG-UI are table-stakes with no money/custody/regulatory surface). Adoption is also early — real settled volume is ~\$28k/day (much of it wash-traded) over 13 months — so this is a forward-looking, on-trend bet, sequenced **after** the interop work, seller-side first.
+**Sequencing.** Lower strategic priority than the interop trio (A2A/AGNTCY/AG-UI are table-stakes with no money/custody/regulatory surface), and adoption is early — real settled volume was ~\$28k/day (much of it wash-traded) over the protocol's first 13 months — so payments shipped **after** the interop work, seller-side first, both sides marked experimental. The mandate/authorization layer on top is **AP2** (§12.10).
 
-Tracking: epic #4526 `[interop] x402 agent payments`. **Seller-side shipped** (#4527, `X402PaymentGate`, experimental). Buyer-side (#4528) deferred behind hard custody guardrails (scoped session keys, signing below the model layer, HITL); first-class serve-surface wiring + MCP `paidTool()` / `a2a-x402` extension are follow-ups.
+Tracking: epic #4526 `[interop] x402 agent payments`. **Both sides shipped experimental** — seller #4527 (`X402PaymentGate`) and buyer #4528 (`X402Client` / `X402Account` / `X402SpendPolicy`, 0.8.1). Follow-ups: scoped ERC-4337 session keys, the `upto` metered scheme, Solana, first-class serve-surface wiring + MCP `paidTool()` / `a2a-x402` extension, and the AP2 mandate layer (§12.10).
 
 ### 12.9 NLWeb — Agent↔Web-Content / External Knowledge *(client ≈ free via MCP; server deferred)*
 
@@ -2959,6 +2959,33 @@ Tracking: epic #4526 `[interop] x402 agent payments`. **Seller-side shipped** (#
 **Priority — lowest net-new work of the external standards**, precisely because MCP subsumes the client capability. Order: MCP > A2A > AGNTCY ≈ AG-UI > x402 > NLWeb. It earns a thin client helper, not a dedicated workstream.
 
 Tracking: epic `[interop] NLWeb support`, client helper opportunistic + server-side deferred.
+
+### 12.10 AP2 — Agent Payments Protocol / Mandate Authorization Layer *(proposed — composes A2A + identity VCs + x402; verify-first)*
+
+[AP2](https://github.com/google-agentic-commerce/AP2) (Google, announced Sept 2025; 60+ launch partners incl. Mastercard, American Express, PayPal, Adyen, Coinbase, the Ethereum Foundation) is the **authorization** layer for agent-initiated commerce — the "who actually approved this purchase, and within what limits" proof a merchant or card network needs before it accepts a payment an *agent* initiated rather than a human typed in. It is **not a new transport**: AP2 is an **A2A extension** (a participant advertises it via the AP2 extension URI in its A2A AgentCard `capabilities.extensions`; the payment artifacts ride inside the live A2A conversation), and it is **rail-agnostic** — cards, PayPal, bank transfer, or **x402 stablecoins** all settle underneath it. As of April 2026 it ships GA inside Copilot Studio, Azure AI Foundry, and Bedrock AgentCore on the back of A2A v1.0.
+
+**The mandate model (the actual idea).** AP2 introduces two signed **Verifiable Credentials**:
+- an **Intent Mandate** — the user authorizes an agent to *shop* within constraints ("running shoes, ≤ \$150, by Friday"), bounding the agent's spend authority up front; and
+- a **Cart Mandate** — a *specific* finalized cart, cryptographically signed off immediately before payment.
+
+Together they give a non-repudiable chain — *user → intent → cart → settlement* — so an agent-initiated purchase has an accountable owner. This is exactly the layer §12.8 lacks: x402 proves *a payment was authorized*; AP2 proves *the human authorized the agent to make it*.
+
+**Where it fits — a 1 + 1 = 3, not a from-scratch build.** AP2 = **A2A transport + signed-VC mandates + a settlement rail**, and we already shipped all three:
+- **A2A** (§12.5, `A2AServer.from(agent)` + AgentCard) — the transport AP2 extends; we add the AP2 extension URI to the card we already emit.
+- **`:agents-kt-identity`** (§12.6, JOSE/JWS Verifiable-Credential verification, built for AGNTCY Identity badges) — the *same* crypto a mandate is: a signed VC. Mandate verification is a near-direct reuse (fail-closed: `alg:none`/`HS*`-confusion/expiry/tamper already covered).
+- **x402** (§12.8, buyer + seller) — the blessed crypto settlement rail; a verified Cart Mandate hands off to an `X402Client` payment.
+
+So most frameworks must build A2A + VC-verification + a rail before they can touch AP2; we assemble it from shipped parts.
+
+**The flow.** User issues an **Intent Mandate** (signed VC, spend-bounded) → the shopping agent negotiates over A2A, advertising AP2 on its AgentCard → at checkout the merchant agent returns a cart; the user/agent signs a **Cart Mandate** → the merchant **verifies both mandates** (via the identity JOSE seam) → settles over the chosen rail (**x402** for us) → returns a receipt. Human-present and human-not-present variants exist; the not-present case is exactly where the Intent Mandate's pre-authorized bounds earn their keep.
+
+**Non-negotiable design constraint — same irreversible-money posture as the x402 buyer.** A Cart Mandate carries real spend authority, so the §12.8 rules carry over verbatim: **mandate signing and spend caps stay below the model layer** (the LLM negotiates but never holds the signing key or the limit), the Intent Mandate's bounds are enforced by `X402SpendPolicy`-style guardrails, and the Cart Mandate is the natural **human-in-the-loop** gate. The Intent Mandate is, in effect, a *scoped, signed, verifiable* `X402SpendPolicy` — a strict upgrade over an in-process policy object, because the bound travels with cryptographic proof.
+
+**Scope — verify-first, x402-rail-only (mirrors how we cut AGNTCY Identity).** First cut: **verify** a presented Intent/Cart Mandate (reuse `:agents-kt-identity`), **advertise** AP2 on the AgentCard, and **settle** a verified Cart Mandate over x402. Mandate *issuance* — minting the user's signed VC (the wallet / credential-provider role) — is deferred behind the same custody caution as buyer-side x402; the card/PayPal rails are out of scope (we own the x402 rail, not a card processor). This keeps us interoperable with the AP2 ecosystem without taking on credential-issuer or money-transmitter surface.
+
+**Priority.** The coherent capstone of the agentic-commerce stack we just shipped (A2A + identity + x402): it turns three separate seams into one *agent-authorized commerce* story, on a foundation-credible standard (Google + the card networks, GA in the major clouds). Sequenced **after** the x402 buyer side, gated — like buyer-side x402 — on the spend-authority guardrails being real. Order within payments: x402 settlement *(shipped)* → AP2 mandate-verify + x402-settle → mandate issuance *(deferred)*.
+
+Tracking: proposed epic `[interop] AP2 mandate layer over A2A + x402` — verify-first (mandate verification via `:agents-kt-identity` + AgentCard extension advertisement + x402 settlement bridge); issuance and non-x402 rails deferred.
 
 ---
 
