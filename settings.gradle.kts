@@ -15,6 +15,10 @@ include(":agents-kt-identity")
 // #4520 (epic #4517): AGNTCY DIR client — gRPC StoreService/RoutingService over generated stubs.
 // A feature module so the grpc/protobuf toolchain + dependency graph stays out of core.
 include(":agents-kt-dir")
+// AP2 (PRD §12.10) feasibility spike: compose A2A transport + :agents-kt-identity VC verify + x402
+// settlement into the Agent Payments Protocol mandate layer. Verify-first (Intent/Cart mandate
+// verification + AgentCard extension + x402 settlement bridge); mandate issuance deferred.
+include(":agents-kt-ap2")
 // #1923: standalone CLI (manifest generate / inspect / verify) — the "externally"
 // half of 0.7.0, so non-Gradle consumers (CI gates, ops, regulators) can produce and
 // verify the deterministic permission manifest from a binary.

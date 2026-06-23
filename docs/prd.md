@@ -2960,7 +2960,7 @@ Tracking: epic #4526 `[interop] x402 agent payments`. **Both sides shipped exper
 
 Tracking: epic `[interop] NLWeb support`, client helper opportunistic + server-side deferred.
 
-### 12.10 AP2 — Agent Payments Protocol / Mandate Authorization Layer *(proposed — composes A2A + identity VCs + x402; verify-first)*
+### 12.10 AP2 — Agent Payments Protocol / Mandate Authorization Layer *(spiked — `:agents-kt-ap2` proves the assembly end-to-end; verify-first, issuance deferred)*
 
 [AP2](https://github.com/google-agentic-commerce/AP2) (Google, announced Sept 2025; 60+ launch partners incl. Mastercard, American Express, PayPal, Adyen, Coinbase, the Ethereum Foundation) is the **authorization** layer for agent-initiated commerce — the "who actually approved this purchase, and within what limits" proof a merchant or card network needs before it accepts a payment an *agent* initiated rather than a human typed in. It is **not a new transport**: AP2 is an **A2A extension** (a participant advertises it via the AP2 extension URI in its A2A AgentCard `capabilities.extensions`; the payment artifacts ride inside the live A2A conversation), and it is **rail-agnostic** — cards, PayPal, bank transfer, or **x402 stablecoins** all settle underneath it. As of April 2026 it ships GA inside Copilot Studio, Azure AI Foundry, and Bedrock AgentCore on the back of A2A v1.0.
 
@@ -2985,7 +2985,9 @@ So most frameworks must build A2A + VC-verification + a rail before they can tou
 
 **Priority.** The coherent capstone of the agentic-commerce stack we just shipped (A2A + identity + x402): it turns three separate seams into one *agent-authorized commerce* story, on a foundation-credible standard (Google + the card networks, GA in the major clouds). Sequenced **after** the x402 buyer side, gated — like buyer-side x402 — on the spend-authority guardrails being real. Order within payments: x402 settlement *(shipped)* → AP2 mandate-verify + x402-settle → mandate issuance *(deferred)*.
 
-Tracking: proposed epic `[interop] AP2 mandate layer over A2A + x402` — verify-first (mandate verification via `:agents-kt-identity` + AgentCard extension advertisement + x402 settlement bridge); issuance and non-x402 rails deferred.
+**Spike result — GO.** A feasibility spike (`:agents-kt-ap2`, 14 tests) proves the assembly hermetically: a typed Intent + Cart mandate (signed VCs) is **verified by the shipped `IdentityVerifier`** (the forgery surface — expiry/tamper/`alg:none`/`HS*`-confusion/wrong-key — inherited for free), the **authorization chain** is enforced (cart within intent: id/cap/merchant/asset/network), the Intent Mandate becomes an `X402SpendPolicy` (defense-in-depth at both layers), and a verified cart **settles over a real `X402PaymentGate`** (`200` + receipt; an over-cap cart raises `Ap2PaymentDeniedException` before any payment). AP2 advertises via `Ap2Extension.advertiseOn(card)` on a live A2A AgentCard's `capabilities.extensions`. See `docs/ap2-feasibility.md`.
+
+Tracking: proposed epic `[interop] AP2 mandate layer over A2A + x402` — verify-first (mandate verification via `:agents-kt-identity` + AgentCard extension advertisement + x402 settlement bridge), spiked in `:agents-kt-ap2`; mandate **issuance**, non-x402 rails, and the production `A2AServer` `extensions` wiring deferred.
 
 ---
 

@@ -309,6 +309,7 @@ Topical guides:
 - [**A2A — agent↔agent**](docs/a2a.md) — `A2AServer.from(agent)` + the typed `a2aAgent<IN, OUT>` remote handle that composes like a local agent.
 - [**AG-UI — agent↔frontend**](docs/agui.md) — `AgUiServer.from(agent)`: a `RunAgentInput` `POST` → SSE stream of typed AG-UI events (text / reasoning / `TOOL_CALL_*` incl. `TOOL_CALL_RESULT` / step), for a CopilotKit-style chat.
 - [**x402 — agent payments**](docs/x402.md) — seller (`X402PaymentGate`, get paid) + buyer (`X402Client` / `X402Account` / `X402SpendPolicy`, pay autonomously, guardrails-first), with testnet sandbox recipes.
+- [**AP2 — agent payments protocol (spike)**](docs/ap2-feasibility.md) — the mandate *authorization* layer over x402: Intent/Cart mandates verified as VCs (`:agents-kt-identity`), settled over x402; `:agents-kt-ap2` proves the assembly end-to-end.
 - [**Agent → WebAssembly (spike)**](docs/wasm.md) — running a typed agent in the browser/node over `fetch` to a local LLM; the #4548 feasibility go/no-go.
 - [**Tool Error Recovery**](docs/error-recovery.md) — `onError { invalidArgs / deserializationError / executionError }`, `RepairResult.Fixed/Retry/Escalated/Unrecoverable`, default vs per-tool handlers.
 - [**Agent Memory**](docs/memory.md) — `memory(MemoryBank())`, the three auto-injected tools, sharing memory across agents.

@@ -4,6 +4,20 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — AP2 (Agent Payments Protocol) feasibility spike: `:agents-kt-ap2` (PRD §12.10)
+
+A spike module proving that Google's AP2 — the **authorization** layer for agent commerce (signed Intent/Cart
+**mandates** that prove *the human authorized the agent to buy*) — is a **composition of pieces we already
+ship**, not a new protocol. `MandateVerifier` verifies a mandate by reusing the shipped `IdentityVerifier` (a
+mandate *is* a JWS Verifiable Credential, so expiry/tamper/`alg:none`/`HS*`-confusion/wrong-key rejection comes
+for free), enforces the authorization chain (a Cart Mandate is payable only if its Intent Mandate authorized
+*this* spend — id/cap/merchant/asset/network), and `Ap2Buyer` derives an `X402SpendPolicy` from the verified
+intent and settles the cart over `X402Client` — so the *same* signed intent bounds the payment at both the AP2
+and x402 layers, with the key below the model layer. `Ap2Extension.advertiseOn(card)` advertises AP2 on an A2A
+AgentCard's `capabilities.extensions`. Verify-first and **experimental**: mandate issuance, non-x402 rails, and
+production `A2AServer` extension wiring are deferred. New `:agents-kt-ap2` module (depends on the root project +
+`:agents-kt-identity`; no new third-party deps); 14 tests. See `docs/ap2-feasibility.md`.
+
 ## [0.8.1] - 2026-06-20
 
 ### Added — x402 buyer side: agents can autonomously pay (experimental) (#4528, epic #4526)
