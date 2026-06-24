@@ -14,6 +14,18 @@ val server = A2AServer.from(triageAgent, bearerToken = token).start()
 - The reply is a completed A2A Task whose artifact carries the output — JSON property map for typed OUT, raw text otherwise.
 - Binds `127.0.0.1` only; front with a gateway for network reach (same guidance as MCP). `bearerToken` requires `Authorization: Bearer …` on every request.
 
+### Advertising A2A extensions
+
+Advertise [A2A protocol extensions](https://a2a-protocol.org/latest/topics/extensions/) on the AgentCard's `capabilities.extensions` so counterparties discover them — the mechanism behind, e.g., Google's **AP2** agent-payments mandate layer (PRD §12.10):
+
+```kotlin
+val ap2 = A2AExtension(uri = "https://github.com/google-agentic-commerce/ap2/v1", description = "AP2", required = false)
+val server = A2AServer.from(agent, extensions = listOf(ap2)).start()
+// the card's capabilities.extensions now lists { uri, description, required }
+```
+
+Advertising a capability is declarative — it does not change the JSON-RPC surface; the extension's own messages ride inside the normal A2A conversation. The `extensions` list defaults to empty, and the `extensions` key is omitted from the card when none are advertised (no behavior change for existing servers).
+
 ## Typed client
 
 ```kotlin

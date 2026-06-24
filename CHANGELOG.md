@@ -4,6 +4,18 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added — A2A AgentCard advertises protocol extensions (#3864)
+
+`A2AServer.from(agent, extensions = listOf(A2AExtension(uri, description, required)))` advertises
+[A2A protocol extensions](https://a2a-protocol.org/latest/topics/extensions/) on the AgentCard's
+`capabilities.extensions`, so a counterparty can discover that an agent speaks an extension — the
+discovery mechanism behind Google's **AP2** agent-payments mandate layer (PRD §12.10). Advertising is
+declarative (it doesn't change the JSON-RPC surface — an extension's messages ride inside the normal A2A
+conversation), the `extensions` list defaults to empty, and the `extensions` key is omitted from the card
+when none are advertised — no behavior change for existing servers. This is the production seam the AP2
+spike (`:agents-kt-ap2`) needs, replacing its test-only `Ap2Extension.advertiseOn(card)` helper. New typed
+`A2AExtension`; 2 new tests.
+
 ## [0.8.1] - 2026-06-20
 
 ### Added — x402 buyer side: agents can autonomously pay (experimental) (#4528, epic #4526)

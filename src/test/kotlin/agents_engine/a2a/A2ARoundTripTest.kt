@@ -82,6 +82,43 @@ class A2ARoundTripTest {
         }
     }
 
+    private fun fetchCard(server: A2AServer): Map<*, *> {
+        val cardUrl = server.url.replace("/a2a", "/.well-known/agent-card.json")
+        val body = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI.create(cardUrl)).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        ).body()
+        return LenientJsonParser.parse(body) as? Map<*, *> ?: fail("card is not JSON: $body")
+    }
+
+    @Test
+    fun `agent card advertises A2A extensions on capabilities when provided`() {
+        val ap2 = A2AExtension(uri = "https://github.com/google-agentic-commerce/ap2/v1", description = "AP2")
+        val server = A2AServer.from(echoAgent(), extensions = listOf(ap2)).start()
+        try {
+            val capabilities = fetchCard(server)["capabilities"] as Map<*, *>
+            val extensions = capabilities["extensions"] as List<*>
+            val entry = extensions.single() as Map<*, *>
+            assertEquals(ap2.uri, entry["uri"])
+            assertEquals("AP2", entry["description"])
+            assertEquals(false, entry["required"])
+        } finally {
+            server.stop()
+        }
+    }
+
+    @Test
+    fun `agent card omits the extensions key when none are advertised`() {
+        val server = A2AServer.from(echoAgent()).start()
+        try {
+            val capabilities = fetchCard(server)["capabilities"] as Map<*, *>
+            assertEquals(false, capabilities["streaming"]) // existing capabilities unchanged
+            assertTrue("extensions" !in capabilities.keys, "no extensions key when none advertised")
+        } finally {
+            server.stop()
+        }
+    }
+
     @Test
     fun `bearer auth rejects missing token and accepts the right one`() {
         val server = A2AServer.from(echoAgent(), bearerToken = "s3cret").start()

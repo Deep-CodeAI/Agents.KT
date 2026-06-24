@@ -37,6 +37,7 @@ class A2AServer private constructor(
     private val basePath: String,
     private val bearerToken: String?,
     private val payment: X402PaymentGate? = null,
+    private val extensions: List<A2AExtension> = emptyList(),
 ) {
     private var http: HttpServer? = null
 
@@ -48,7 +49,7 @@ class A2AServer private constructor(
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", portRequest), 0)
         server.createContext("/.well-known/agent-card.json") { exchange ->
             handleSafely(exchange) {
-                respond(exchange, HTTP_OK, A2AJson.encode(agentCard(agent, url)))
+                respond(exchange, HTTP_OK, A2AJson.encode(agentCard(agent, url, extensions)))
             }
         }
         // The agent-card (discovery) stays free; only the RPC invocation path is payment-gated when set.
@@ -174,7 +175,9 @@ class A2AServer private constructor(
         /**
          * Expose [agent] over A2A. Binds loopback-only (front with a gateway
          * for network reach, mirroring the MCP guidance); pass [bearerToken]
-         * to require `Authorization: Bearer …` on every request.
+         * to require `Authorization: Bearer …` on every request. Advertise A2A
+         * protocol [extensions] (e.g. AP2, PRD §12.10) on the AgentCard's
+         * `capabilities.extensions` for discovery.
          */
         fun from(
             agent: Agent<*, *>,
@@ -182,7 +185,8 @@ class A2AServer private constructor(
             basePath: String = "/a2a",
             bearerToken: String? = null,
             payment: X402PaymentGate? = null,
-        ): A2AServer = A2AServer(agent, port, basePath, bearerToken, payment)
+            extensions: List<A2AExtension> = emptyList(),
+        ): A2AServer = A2AServer(agent, port, basePath, bearerToken, payment, extensions)
 
         private const val HTTP_OK = 200
         private const val HTTP_BAD_REQUEST = 400

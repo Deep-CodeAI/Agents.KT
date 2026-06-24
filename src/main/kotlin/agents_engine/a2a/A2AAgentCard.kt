@@ -12,17 +12,20 @@ import agents_engine.generation.jsonSchema
  * skills come from the agent's declared skills, each with the
  * `@Generable` JSON Schema of its IN type when available
  * (`{"input": string}` otherwise — same convention as the MCP server).
+ *
+ * [extensions] (when non-empty) are advertised under `capabilities.extensions`
+ * — the A2A discovery mechanism for protocol extensions like AP2 (PRD §12.10).
  */
-internal fun agentCard(agent: Agent<*, *>, url: String): Map<String, Any?> = linkedMapOf(
+internal fun agentCard(
+    agent: Agent<*, *>,
+    url: String,
+    extensions: List<A2AExtension> = emptyList(),
+): Map<String, Any?> = linkedMapOf(
     "protocolVersion" to A2A_PROTOCOL_VERSION,
     "name" to agent.name,
     "description" to (agent.skills.values.firstOrNull()?.description ?: ""),
     "url" to url,
-    "capabilities" to mapOf(
-        // Streaming over A2A is a follow-up — message/send only in v1.
-        "streaming" to false,
-        "pushNotifications" to false,
-    ),
+    "capabilities" to capabilities(extensions),
     "defaultInputModes" to listOf("text"),
     "defaultOutputModes" to listOf("text"),
     "skills" to agent.skills.values.map { skill ->
@@ -34,6 +37,14 @@ internal fun agentCard(agent: Agent<*, *>, url: String): Map<String, Any?> = lin
         )
     },
 )
+
+private fun capabilities(extensions: List<A2AExtension>): Map<String, Any?> = linkedMapOf<String, Any?>(
+    // Streaming over A2A is a follow-up — message/send only in v1.
+    "streaming" to false,
+    "pushNotifications" to false,
+).apply {
+    if (extensions.isNotEmpty()) put("extensions", extensions.map { it.toJsonObject() })
+}
 
 private fun inputSchemaFor(skill: Skill<*, *>): Any =
     if (skill.inType.hasGenerableAnnotation()) {
