@@ -9,7 +9,9 @@
 0.6.0   Boundaries you can audit                     — shipped (epic [#1911](../../issues/1911))
 0.7.0   Boundaries you can enforce externally        — shipped (epic [#2879](../../issues/2879))
 0.8.0   Interoperable, multimodal agents (+ grants)  — shipped (A2A v1, multimodal, RAG, composition, Gemini, capability grants)
-0.9.0   Layer-2 sandbox backends                     — next (Docker/proxy/read-confinement)
+0.8.1   The agentic web: discover, serve, get paid   — shipped (AGNTCY, AG-UI, NLWeb, x402 seller + experimental buyer)
+0.8.2   Standards & trust hardening                  — next (x402 v2 + mandatory guardrails, conformance matrix, release-truth)
+0.9.0   Layer-2 sandbox backends                     — planned (Docker/proxy/read-confinement)
 ```
 
 **0.8.0 shipped:** agent-to-agent interop (**A2A v1** — server + typed client), full **multimodal**
