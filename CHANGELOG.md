@@ -4,6 +4,27 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Changed — x402 buyer trust hardening: guardrails are now mandatory and bind more (#4528)
+
+An external audit flagged that the "guardrails-first" buyer had **optional** guardrails (an empty
+`X402SpendPolicy` defaulted in), checked only amount/network/payTo, and paid the seller's *first* offer.
+Hardened (breaking, pre-1.0):
+
+- **Policy is mandatory** — `X402Account.fromPrivateKey` no longer defaults the policy; an intentionally
+  unbounded wallet must pass the explicitly-named `X402SpendPolicy.unsafeAllowAllForTesting()`.
+- **Stronger binding** — `X402SpendPolicy` gains `allowedAssets` (pin the token), `allowedResourceOrigins`
+  (pin the endpoint `scheme://host[:port]`), and `maxAuthorizationLifetimeSeconds` (the signed `validBefore`
+  is clamped to it, so a seller's `maxTimeoutSeconds` can't mint a long-lived authorization). A policy-approved
+  recipient no longer implies any token, any URL, or any duration.
+- **Deterministic offer selection** — new `X402OfferSelector` (`X402Client(account, selector = …)`); the
+  default `LowestAmount` pays the cheapest permitted offer instead of the seller's first, so a seller can't
+  order `accepts[]` to steer the buyer to the costliest. `X402OfferSelector.FirstAllowed` restores the prior
+  behavior explicitly.
+
+Migration: pass a real `X402SpendPolicy` (or `unsafeAllowAllForTesting()`) to `fromPrivateKey`. 6 new tests.
+Still planned for 0.8.2: cross-payment session/velocity limits, an `X402Signer` (KMS/HSM/session-key) seam,
+extracting x402 to its own module, and x402 v2 wire support.
+
 ## [0.8.1] - 2026-06-20
 
 ### Added — x402 buyer side: agents can autonomously pay (experimental) (#4528, epic #4526)

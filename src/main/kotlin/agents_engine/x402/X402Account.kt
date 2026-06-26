@@ -59,12 +59,17 @@ class X402Account private constructor(
         reasonCannotPay(requirements)?.let { throw X402PaymentDeniedException("refusing to pay: $it") }
 
         val now = clockSeconds()
+        // Clamp the authorization lifetime to the policy cap — a seller's maxTimeoutSeconds cannot mint a
+        // longer-lived authorization against the buyer's key than the policy allows (shorter is settle-safe).
+        val lifetime = policy.maxAuthorizationLifetimeSeconds
+            ?.let { minOf(requirements.maxTimeoutSeconds.toLong(), it) }
+            ?: requirements.maxTimeoutSeconds.toLong()
         val authorization = PaymentAuthorization(
             from = address,
             to = requirements.payTo,
             value = parseValue(requirements.maxAmountRequired)!!,
             validAfter = BigInteger.ZERO,
-            validBefore = BigInteger.valueOf(now + requirements.maxTimeoutSeconds),
+            validBefore = BigInteger.valueOf(now + lifetime),
             nonce = PaymentAuthorization.randomNonce(),
         )
         val domain = Eip712Domain(
@@ -124,12 +129,13 @@ class X402Account private constructor(
 
         /**
          * An account from a raw secp256k1 private key (`0x…`, 32 bytes). The buyer address is derived from it.
-         * [policy] defaults to no guardrails — **set at least `maxValuePerPayment` for any real wallet.**
+         * [policy] is **required** — guardrails-first is the whole point of the buyer side. For an intentionally
+         * unbounded wallet (tests, or a deliberate choice) pass `X402SpendPolicy.unsafeAllowAllForTesting()`.
          * [extraChainIds] augments/overrides the built-in network → chainId map.
          */
         fun fromPrivateKey(
             privateKeyHex: String,
-            policy: X402SpendPolicy = X402SpendPolicy(),
+            policy: X402SpendPolicy,
             extraChainIds: Map<String, Long> = emptyMap(),
             clockSeconds: () -> Long = { Instant.now().epochSecond },
         ): X402Account {
