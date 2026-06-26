@@ -145,6 +145,28 @@ class X402AccountTest {
     }
 
     @Test
+    fun `fromSigner delegates signing to the injected X402Signer`() {
+        val captured = mutableListOf<ByteArray>()
+        val signer = object : X402Signer {
+            override val address = "0x1111111111111111111111111111111111111111" // valid 20-byte hex
+            override fun sign(digest: ByteArray): String { captured += digest; return "0x" + "ab".repeat(65) }
+        }
+        val acct = X402Account.fromSigner(
+            signer, X402SpendPolicy.unsafeAllowAllForTesting(), clockSeconds = { 1_750_000_000L },
+        )
+        assertEquals("0x1111111111111111111111111111111111111111", acct.address)
+        val signed = acct.authorize(requirements(), x402Version = 1)
+        assertEquals("0x" + "ab".repeat(65), signed.signature) // the signer's signature is used
+        assertEquals(1, captured.size)
+        assertEquals(32, captured.single().size) // it was handed a 32-byte EIP-712 digest
+    }
+
+    @Test
+    fun `LocalKeySigner derives the same address as fromPrivateKey`() {
+        assertEquals(payerAddress, LocalKeySigner(pk).address)
+    }
+
+    @Test
     fun `authorize produces a verifiable X-PAYMENT header`() {
         val signed = account().authorize(requirements(value = "1000"), x402Version = 1)
 

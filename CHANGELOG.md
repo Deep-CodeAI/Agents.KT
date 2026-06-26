@@ -22,8 +22,19 @@ Hardened (breaking, pre-1.0):
   behavior explicitly.
 
 Migration: pass a real `X402SpendPolicy` (or `unsafeAllowAllForTesting()`) to `fromPrivateKey`. 6 new tests.
-Still planned for 0.8.2: cross-payment session/velocity limits, an `X402Signer` (KMS/HSM/session-key) seam,
-extracting x402 to its own module, and x402 v2 wire support.
+
+### Added — x402 buyer: cross-payment limits + a signer seam (#4528)
+
+- **Session/velocity limits** — `X402Client(account, sessionLimits = X402SessionLimits(maxPayments,
+  maxTotalValue, maxPaymentsPerPayee, cooldownMillis), spendStore = …)` bounds the *aggregate* a buyer may
+  spend across many calls (the per-payment policy only bounds one). Settled payments are recorded in an
+  `X402SpendStore` (default per-process `InMemorySpendStore`; back it with a durable store in production so a
+  restart can't reset a cumulative cap). A limit-exceeding payment raises `X402PaymentDeniedException` before
+  any signature.
+- **`X402Signer` seam** — `X402Account.fromSigner(signer, policy)` signs through an `X402Signer` instead of
+  owning a raw private key, so a deployment can sign with a **KMS / HSM / wallet-service / scoped session key**
+  and keep permanent keys out of the application heap. `fromPrivateKey` now wraps a `LocalKeySigner` (the
+  default in-process key). 9 new tests.
 
 ## [0.8.1] - 2026-06-20
 

@@ -3,21 +3,20 @@ package agents_engine.x402
 import agents_engine.mcp.McpJson
 import agents_engine.x402.crypto.Eip712
 import agents_engine.x402.crypto.Eip712Domain
-import agents_engine.x402.crypto.Hex
-import agents_engine.x402.crypto.Secp256k1
 import java.math.BigInteger
 import java.time.Instant
 import java.util.Base64
 
 /**
- * `agents_engine/x402/X402Account.kt` — #4528 (PRD §12.8). The **buyer's signing key holder**. Given a
+ * `agents_engine/x402/X402Account.kt` — #4528 (PRD §12.8). The **buyer's payment authorizer**. Given a
  * seller's [PaymentRequirements], it builds an [EIP-3009](https://eips.ethereum.org/EIPS/eip-3009)
- * `TransferWithAuthorization`, signs it (EIP-712, [Secp256k1]/[Eip712]), and packs the x402 `X-PAYMENT`
- * header — but only after [policy] permits the payment.
+ * `TransferWithAuthorization`, builds the EIP-712 digest ([Eip712]), delegates the signature to an
+ * [X402Signer], and packs the x402 `X-PAYMENT` header — but only after [policy] permits the payment.
  *
- * **Below the model layer (the whole point of #4528).** The private key is held here in operator code and is
- * never serialized, logged, or placed in a prompt; the LLM drives the *request* but can neither read the key
- * nor widen [policy]. Construct one per wallet and inject it into an [X402Client].
+ * **Below the model layer (the whole point of #4528).** The signing key lives in the [X402Signer] (a local
+ * key, or a KMS/HSM/session-key), never serialized, logged, or placed in a prompt; the LLM drives the
+ * *request* but can neither reach the key nor widen [policy]. Construct one per wallet and inject it into an
+ * [X402Client].
  *
  * The token's EIP-712 domain (`name`/`version`) is read from `requirements.extra` (sellers advertise it, e.g.
  * USDC = `"USD Coin"`/`"2"`); the [chainId] for the network comes from the built-in map plus any
@@ -25,12 +24,14 @@ import java.util.Base64
  * to sign (see [reasonCannotPay]).
  */
 class X402Account private constructor(
-    private val privateKey: BigInteger,
-    val address: String,
+    private val signer: X402Signer,
     val policy: X402SpendPolicy,
     private val chainIds: Map<String, Long>,
     private val clockSeconds: () -> Long,
 ) {
+    /** The payer's address (from the [X402Signer]). */
+    val address: String get() = signer.address
+
     /**
      * Why this account will not pay [requirements], or null if it will. Checks scheme support, the token EIP-712
      * domain, the network → chainId mapping, then the [policy] guardrails. An [X402Client] uses this to pick a
@@ -78,7 +79,7 @@ class X402Account private constructor(
             chainId = chainIdFor(requirements.network)!!,
             verifyingContract = requirements.asset,
         )
-        val signature = Secp256k1.sign(Eip712.digest(domain, authorization), privateKey).toHex()
+        val signature = signer.sign(Eip712.digest(domain, authorization))
         val header = encodeHeader(requirements, authorization, signature, x402Version)
         return SignedPayment(authorization, signature, header)
     }
@@ -138,11 +139,21 @@ class X402Account private constructor(
             policy: X402SpendPolicy,
             extraChainIds: Map<String, Long> = emptyMap(),
             clockSeconds: () -> Long = { Instant.now().epochSecond },
+        ): X402Account = fromSigner(LocalKeySigner(privateKeyHex), policy, extraChainIds, clockSeconds)
+
+        /**
+         * An account that signs through an arbitrary [X402Signer] (KMS / HSM / wallet-service / scoped session
+         * key) — so a permanent private key need never live in the application heap. [policy] is required (see
+         * [fromPrivateKey]).
+         */
+        fun fromSigner(
+            signer: X402Signer,
+            policy: X402SpendPolicy,
+            extraChainIds: Map<String, Long> = emptyMap(),
+            clockSeconds: () -> Long = { Instant.now().epochSecond },
         ): X402Account {
-            val key = BigInteger(1, Hex.decode(privateKeyHex))
-            require(key.signum() > 0) { "private key must be non-zero" }
             val chains = DEFAULT_CHAIN_IDS + extraChainIds.mapKeys { it.key.lowercase() }
-            return X402Account(key, Secp256k1.deriveAddress(key), policy, chains, clockSeconds)
+            return X402Account(signer, policy, chains, clockSeconds)
         }
     }
 }

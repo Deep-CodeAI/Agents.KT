@@ -24,6 +24,10 @@ import java.time.Duration
  * @property http the underlying client (inject one with a proxy/timeout to taste).
  * @property x402Version protocol version echoed into the `X-PAYMENT` payload.
  * @property selector chooses which policy-permitted offer to pay (default: lowest amount, not the seller's first).
+ * @property sessionLimits optional cross-payment caps (count / total value / per-payee / cooldown) enforced
+ *   against [spendStore]; null = no aggregate limits.
+ * @property spendStore records settled payments for [sessionLimits] (default: per-process [InMemorySpendStore];
+ *   use a durable store in production so a restart can't reset a cumulative cap).
  */
 class X402Client(
     private val account: X402Account,
@@ -31,6 +35,9 @@ class X402Client(
         .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS)).build(),
     private val x402Version: Int = 1,
     private val selector: X402OfferSelector = X402OfferSelector.LowestAmount,
+    private val sessionLimits: X402SessionLimits? = null,
+    private val spendStore: X402SpendStore = InMemorySpendStore(),
+    private val clockMillis: () -> Long = { System.currentTimeMillis() },
 ) {
     /** The buyer address that will pay (derived from the account's key). */
     val payerAddress: String get() = account.address
@@ -38,8 +45,9 @@ class X402Client(
     /**
      * Send [request]; if the seller answers `402`, pay and retry once, returning the paid response (read its
      * `X-PAYMENT-RESPONSE` header for the settlement receipt). A non-`402` first response is returned
-     * unchanged. Throws [X402PaymentDeniedException] when no offer is payable and [X402Exception] if the `402`
-     * body can't be parsed.
+     * unchanged. A settled payment (HTTP 200) is recorded against the [spendStore] for [sessionLimits]. Throws
+     * [X402PaymentDeniedException] when no offer is payable or a session limit is hit, and [X402Exception] if
+     * the `402` body can't be parsed.
      */
     fun send(request: HttpRequest): HttpResponse<String> {
         val first = http.send(request, HttpResponse.BodyHandlers.ofString())
@@ -49,7 +57,12 @@ class X402Client(
         val paidRequest = HttpRequest.newBuilder(request) { _, _ -> true }
             .header("X-PAYMENT", payment.header)
             .build()
-        return http.send(paidRequest, HttpResponse.BodyHandlers.ofString())
+        val paid = http.send(paidRequest, HttpResponse.BodyHandlers.ofString())
+        if (paid.statusCode() == HTTP_OK) {
+            // settled — record for cross-payment limits
+            spendStore.record(payment.authorization.to, payment.authorization.value, clockMillis())
+        }
+        return paid
     }
 
     /** Convenience: GET [uri], paying if challenged. */
@@ -71,7 +84,14 @@ class X402Client(
         }
         val chosen = selector.select(permitted)
             ?: throw X402PaymentDeniedException("offer selector declined all ${permitted.size} permitted offers")
+        enforceSessionLimits(chosen)
         return account.authorize(chosen, x402Version)
+    }
+
+    /** Cross-payment caps (count / total / per-payee / cooldown) — checked before any signature. */
+    private fun enforceSessionLimits(offer: PaymentRequirements) {
+        sessionLimits?.reject(offer.payTo, offer.maxAmountRequired.toBigInteger(), spendStore, clockMillis())
+            ?.let { throw X402PaymentDeniedException("session limit: $it") }
     }
 
     private fun parseAccepts(body: String): List<PaymentRequirements> {
@@ -83,5 +103,6 @@ class X402Client(
 
     private companion object {
         const val CONNECT_TIMEOUT_SECONDS = 10L
+        const val HTTP_OK = 200
     }
 }
