@@ -104,7 +104,12 @@ class X402Account private constructor(
 
     private fun domainName(r: PaymentRequirements): String? = r.extra["name"] as? String
     private fun domainVersion(r: PaymentRequirements): String? = r.extra["version"] as? String
-    private fun chainIdFor(network: String): Long? = chainIds[network.lowercase()]
+    private fun chainIdFor(network: String): Long? {
+        val n = network.lowercase()
+        chainIds[n]?.let { return it }
+        // x402 v2 uses CAIP-2 network ids; resolve any EVM `eip155:<chainId>` directly (e.g. eip155:84532).
+        return if (n.startsWith(CAIP2_EVM_PREFIX)) n.removePrefix(CAIP2_EVM_PREFIX).toLongOrNull() else null
+    }
     private fun parseValue(raw: String): BigInteger? = raw.toBigIntegerOrNull()?.takeIf { it.signum() >= 0 }
 
     private fun planFor(r: PaymentRequirements, value: BigInteger): PaymentPlan =
@@ -112,6 +117,7 @@ class X402Account private constructor(
 
     companion object {
         private const val SCHEME_EXACT = "exact"
+        private const val CAIP2_EVM_PREFIX = "eip155:"
 
         /** x402's common EVM networks → chainId. Buyers on other chains pass `extraChainIds`. */
         private val DEFAULT_CHAIN_IDS: Map<String, Long> = mapOf(

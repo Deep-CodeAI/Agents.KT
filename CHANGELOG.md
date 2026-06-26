@@ -36,6 +36,15 @@ Migration: pass a real `X402SpendPolicy` (or `unsafeAllowAllForTesting()`) to `f
   and keep permanent keys out of the application heap. `fromPrivateKey` now wraps a `LocalKeySigner` (the
   default in-process key). 9 new tests.
 
+### Added — x402 accepts CAIP-2 network ids (v2 interop step) (#4528)
+
+x402 **v2** identifies networks with CAIP-2 ids (`eip155:84532`) instead of casual strings (`base-sepolia`).
+The buyer now resolves any EVM `eip155:<chainId>` network on an offer, so it can pay a v2 seller's offers. The
+current wire is otherwise **x402 v1** (`X-PAYMENT` / `X-PAYMENT-RESPONSE` headers, `x402Version: 1`); full v2
+transport (the `PAYMENT-REQUIRED` / `PAYMENT-SIGNATURE` / `PAYMENT-RESPONSE` headers + v2 payload envelope) is
+deferred until the v2 payload schema is verified against a live v2 facilitator — we don't ship a wire we can't
+test against the spec. So: **experimental, x402 v1-compatible (CAIP-2 network ids accepted).**
+
 ## [0.8.1] - 2026-06-20
 
 ### Added — x402 buyer side: agents can autonomously pay (experimental) (#4528, epic #4526)

@@ -104,6 +104,15 @@ class X402AccountTest {
     }
 
     @Test
+    fun `a CAIP-2 EVM network id (eip155 chainId) resolves — x402 v2 interop`() {
+        // a v2 seller advertises the network as eip155:84532 rather than "base-sepolia"
+        assertNull(account().reasonCannotPay(requirements(network = "eip155:84532")))
+        assertNull(account().reasonCannotPay(requirements(network = "eip155:8453")))
+        // a non-EVM / unparseable CAIP-2 network is still refused (no EVM chainId)
+        assertTrue("no chainId is known" in account().reasonCannotPay(requirements(network = "solana:abc"))!!)
+    }
+
+    @Test
     fun `an unknown network is refused`() {
         assertTrue("no chainId is known" in account().reasonCannotPay(requirements(network = "dogechain"))!!)
     }
