@@ -123,6 +123,27 @@ Credentials load from `.secrets/gemini-key` / `GEMINI_API_KEY`. Live tests are t
 (run in the default suite when a key is present, skip otherwise; they also skip on free-tier
 `RESOURCE_EXHAUSTED` rate limits). Verified end-to-end against `gemini-2.5-flash`.
 
+## Kimi regions (China / International)
+
+Moonshot/Kimi runs **two independent platforms** with **non-interchangeable** keys — a key from one is
+rejected by the other with `Invalid Authentication`:
+
+| Region | Base URL | Keys from |
+|---|---|---|
+| `KimiRegion.CHINA` (default) | `https://api.moonshot.cn` | platform.moonshot.cn |
+| `KimiRegion.INTERNATIONAL` | `https://api.moonshot.ai` | platform.moonshot.ai |
+
+Pick it explicitly in the DSL (#4883):
+
+```kotlin
+model { kimi("moonshot-v1-8k", region = KimiRegion.INTERNATIONAL) }   // international key
+model { kimi("moonshot-v1-8k") }                                       // China default (unchanged)
+```
+
+`KimiRegion.INTERNATIONAL.baseUrl` is also usable directly as `KimiClient(baseUrl = …)`. On a region
+mismatch the auth error names the *other* endpoint and how to switch (#4511). Credentials load from
+`.secrets/kimi-key` / `KIMI_API_KEY`.
+
 ## Updating this matrix
 
 The four columns here track the OpenAI-family `ModelProvider.entries`; `GEMINI` is the fifth wire

@@ -63,6 +63,8 @@ When `chat(messages, jsonSchema)` receives a non-null `JsonSchema`, the request 
 
 OpenAI's `{"error": {"message": "...", "type": "...", ...}}` surfaces as `LlmProviderException` (#702 — same contract as the other adapters).
 
+Streaming honors the same contract (#4882): `sendChatStream` checks `response.statusCode()` and, on a non-2xx, throws `LlmProviderException` (HTTP status + provider label + a bounded slice of the error body) instead of handing the error body to `parseSseStream` — which would skip the non-`data:` lines and emit a lone `End`, i.e. a silent empty stream. Applies to every OpenAI-compatible subclass (DeepSeek/Kimi/OpenRouter/Perplexity).
+
 ## Test seam
 
 `sendChat(body, headers)` is `open`. Used by `OpenAiClientTest` / `OpenAiClientStreamingTest`.
