@@ -622,6 +622,61 @@ val coder = agent<Specification, CodeBundle>("coder") {
 
 All callbacks are synchronous — they execute inline before the agentic loop continues. For async telemetry, emit to a channel inside the callback.
 
+### Context Composition Breakdown *(planned — [#5138](https://github.com/Deep-CodeAI/Agents.KT/issues/5138))*
+
+Budgets cap the window; the **context breakdown** shows *what fills it*. Before each model call the
+runtime can report the token composition of the outgoing request, attributed to the framework construct
+that produced each slice. It is the runtime companion to the permission manifest: the manifest says what
+*can* enter context (the capability graph); the breakdown says what *did*, per turn, and how close it is
+to the model's window.
+
+```kotlin
+val breakdown: ContextBreakdown = coder.contextBreakdown(spec)   // dry-run — composes the request, no model call
+println(breakdown.render())                                       // the table below
+// …or observe it live, once per turn, right before each request goes out:
+coder.observe { e -> if (e is PipelineEvent.ContextComposed) report(e.breakdown) }
+```
+
+```
+Context Usage                                       41.6K / 200K  (21%)
+  System prompt         agent.prompt + selected skill base   0.5K
+  Tool definitions      KSP/@Generable + MCP tool schemas     8.3K
+  Skills                descriptions + knowledge index        0.4K
+  Knowledge             eager toLlmContext() content          3.5K
+  Memory                MemoryBank entries in-window          2.5K
+  MCP                   remote tool/prompt/resource defs      0.8K
+  Sub-agent defs        delegate / handoff tool schemas       0.8K
+  Conversation          agentic-loop message history         24.8K
+```
+
+**Category taxonomy** — each slice maps to the construct that emitted it, so a fat number points at a
+fixable cause (a chatty tool schema, an over-eager knowledge pack, an un-compacted history):
+
+| Category | Source in Agents.KT |
+|---|---|
+| System prompt | `agent.prompt` + the selected skill's eager `toLlmContext()` base |
+| Tool definitions | KSP / `@Generable` JSON schemas for the skill's tool allowlist |
+| Skills | skill `description` / `llmDescription` + knowledge-index headers |
+| Knowledge | `Skill.knowledge(...)` content injected eagerly (not the lazy knowledge-tool path) |
+| Memory | `MemoryBank` entries currently in-window, per typed namespace (§8.5) |
+| MCP | tool / prompt / resource definitions from connected MCP servers (§5.8) |
+| Sub-agent defs | delegate / `handoff` / Forum-member tool schemas (composition, §7) |
+| Conversation | the multi-turn message history the agentic loop accumulates |
+
+**Typed surface.** `ContextBreakdown` is a value — `slices: Map<ContextCategory, TokenSlice>`, `total`,
+`contextWindow` (the model's limit), `fraction` — where `ContextCategory` is a sealed enum of the rows
+above. Counts are **estimated** pre-flight (reusing the memory layer's `estimateTokens`, §8.5) and
+**reconciled** against provider `TokenUsage` after the call when the provider reports prompt-token
+detail. Cache-eligible slices (the stable prefix) are flagged, so the breakdown doubles as the input to
+prompt-caching decisions (#2655).
+
+**Why it earns its place.** (1) **Cost/latency** — the biggest per-run lever is a bloated stable prefix,
+and tool schemas + eager knowledge are the usual silent hogs; you can't shrink what you can't see.
+(2) **Caching (#2655)** — it names exactly which slices form the cacheable prefix. (3) **Compaction
+(§5.7)** — it tells the compactor *what* to compact, not just *that* the window is over threshold.
+(4) **Audit** — composition-per-turn is reviewable evidence, joinable to the manifest hash: "what did
+this agent send, and what was it made of," squarely on the boundaries-you-can-measure line.
+
 ---
 
 ## 5.7 Session Model
