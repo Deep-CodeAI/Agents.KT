@@ -4,6 +4,24 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Fixed — streaming now surfaces provider HTTP errors instead of swallowing them (#4882)
+
+`OpenAiClient.chatStream` — and every OpenAI-compatible subclass (OpenAI, DeepSeek, Kimi, OpenRouter,
+Perplexity) — previously returned the raw response body on a **non-2xx** streaming response without
+checking the status. An error body has no `data:` lines, so the SSE parser emitted a lone terminal
+`End`: a **silent, empty, success-looking stream**. A stream started with an expired key, a `429`, or a
+provider `5xx` returned nothing instead of raising. `sendChatStream` now checks `statusCode()` and throws
+`LlmProviderException` (HTTP status + provider label + a bounded slice of the error body), matching the
+non-streaming `chat()` contract. Kimi's region-hint wrapping (#4511) still applies on auth errors.
+
+### Added — Kimi region modes: `KimiRegion.China` / `KimiRegion.International` (#4883)
+
+Moonshot/Kimi runs two independent platforms with **non-interchangeable** keys. A new `KimiRegion` enum
+plus a `model { kimi("moonshot-v1-8k", region = KimiRegion.INTERNATIONAL) }` DSL overload make the region
+an explicit, typed choice instead of a raw `baseUrl` string. Additive: `kimi("...")` with no region is
+byte-identical to before (China default preserved); `KimiRegion.INTERNATIONAL.baseUrl` is also usable as
+the `KimiClient(baseUrl = …)` argument directly.
+
 ### Changed — x402 buyer trust hardening: guardrails are now mandatory and bind more (#4528)
 
 An external audit flagged that the "guardrails-first" buyer had **optional** guardrails (an empty
