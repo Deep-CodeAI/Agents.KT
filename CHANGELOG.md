@@ -4,6 +4,21 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-07-01
+
+_Standards & trust hardening._ Hardens the experimental x402 buyer (mandatory guardrails, cross-payment
+session limits, a signer seam, CAIP-2 network ids), adds machine-readable release-truth metadata, makes
+the streaming path surface provider HTTP errors instead of swallowing them, and adds explicit Kimi
+China/International region modes.
+
+### Added — release-truth: a single source of truth for version/provider/protocol claims (#4735)
+
+An external audit found the advertised version + provider + protocol claims drifting across the README,
+roadmap, comparison page, and POM (0.8.1 shipped while several surfaces still said 0.8.0/0.7.2). New
+`release-metadata.yaml` is now the one place those claims live, and `ReleaseMetadataConsistencyTest` pins
+the in-repo surfaces to it — a release that edits only the metadata fails the build until the prose moves.
+Kills the drift class the de-slop epic (#3083) flagged.
+
 ### Fixed — streaming now surfaces provider HTTP errors instead of swallowing them (#4882)
 
 `OpenAiClient.chatStream` — and every OpenAI-compatible subclass (OpenAI, DeepSeek, Kimi, OpenRouter,
