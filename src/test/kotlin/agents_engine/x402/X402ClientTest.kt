@@ -159,6 +159,21 @@ class X402ClientTest {
     }
 
     @Test
+    fun `session limits stop a second payment after the cap`() {
+        val (url, stop) = serve(RecoveringFacilitator(payerAddress))
+        try {
+            val policy = X402SpendPolicy(maxValuePerPayment = BigInteger.valueOf(10_000))
+            val account = X402Account.fromPrivateKey(pk, policy)
+            val client = X402Client(account, sessionLimits = X402SessionLimits(maxPayments = 1))
+            assertEquals(200, client.get(url).statusCode()) // first payment settles + records
+            val ex = assertFailsWith<X402PaymentDeniedException> { client.get(url) } // second is over the cap
+            assertTrue("session limit" in ex.message!!, ex.message!!)
+        } finally {
+            stop()
+        }
+    }
+
+    @Test
     fun `payerAddress exposes the buyer wallet`() {
         assertEquals(payerAddress, client().payerAddress)
     }

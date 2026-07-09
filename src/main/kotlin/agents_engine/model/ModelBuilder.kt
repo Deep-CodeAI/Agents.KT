@@ -80,9 +80,12 @@ class ModelBuilder {
      * is available. Model names follow Moonshot's naming, e.g.
      * `"moonshot-v1-8k"`, `"moonshot-v1-32k"`, `"moonshot-v1-128k"`.
      */
-    fun kimi(modelName: String) {
+    fun kimi(modelName: String, region: KimiRegion? = null) {
         name = modelName
         provider = ModelProvider.KIMI
+        // #4883 — only override the base URL when a region is explicitly chosen, so existing
+        // `kimi("...")` calls (and any manual `kimiBaseUrl = ...`) keep the China default untouched.
+        if (region != null) kimiBaseUrl = region.baseUrl
     }
 
     /**
