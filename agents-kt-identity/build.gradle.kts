@@ -29,7 +29,7 @@ dependencies {
 
     // #4521 — vetted JOSE/JWS + JWKS library; badge verification is trust-critical, so we do not
     // hand-roll JWS signature verification (alg-confusion, ES256 P1363/DER, alg=none are real footguns).
-    api("com.nimbusds:nimbus-jose-jwt:10.3")
+    api("com.nimbusds:nimbus-jose-jwt:10.9.1")
 
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
