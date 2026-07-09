@@ -8,7 +8,7 @@
 # Schema is intentionally flat + simple-scalar so a dependency-free test can parse it.
 
 currentRelease: "0.8.2"            # latest version resolvable on Maven Central
-developmentVersion: "0.8.2-SNAPSHOT"
+developmentVersion: "0.8.3-SNAPSHOT"
 providers: 8                       # Ollama, Claude, OpenAI, DeepSeek, Kimi, OpenRouter, Perplexity, Gemini
 
 nextRelease:
