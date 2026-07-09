@@ -167,6 +167,19 @@ open class OpenAiClient(
             .POST(HttpRequest.BodyPublishers.ofString(body))
         headers.forEach { (k, v) -> builder.header(k, v) }
         val response = http.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream())
+        // #4882 — mirror the non-streaming contract (sendChat -> HttpModelClientSupport.sendBounded
+        // throws on 4xx/5xx). A streaming error MUST surface as an exception, not be swallowed by
+        // parseSseStream (which skips every non-`data:` line and emits a lone End) into a silent,
+        // empty, success-looking stream. Read a bounded slice of the error body for the message.
+        if (response.statusCode() !in 200..299) {
+            val errorBody = response.body().use { stream ->
+                val cap = minOf(maxResponseBytes, STREAM_ERROR_BODY_CAP).toInt()
+                String(stream.readNBytes(cap), Charsets.UTF_8).trim()
+            }
+            throw LlmProviderException(
+                "$providerLabel streaming request failed with HTTP ${response.statusCode()}: $errorBody",
+            )
+        }
         return response.body()
     }
 
@@ -459,6 +472,11 @@ open class OpenAiClient(
         val DEFAULT_CONNECT_TIMEOUT: Duration = 10.seconds
         const val DEFAULT_MAX_RESPONSE_BYTES: Long = 16L * 1024 * 1024
         const val DEFAULT_MAX_TOKENS: Int = 4096
+
+        // #4882 — cap the error-body slice read when a streaming request returns non-2xx.
+        // Provider error envelopes are small; 64 KiB is ample and bounds the read against a
+        // hostile/misbehaving endpoint.
+        private const val STREAM_ERROR_BODY_CAP: Long = 64L * 1024
     }
 }
 

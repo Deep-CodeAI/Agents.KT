@@ -4,6 +4,65 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Fixed — streaming now surfaces provider HTTP errors instead of swallowing them (#4882)
+
+`OpenAiClient.chatStream` — and every OpenAI-compatible subclass (OpenAI, DeepSeek, Kimi, OpenRouter,
+Perplexity) — previously returned the raw response body on a **non-2xx** streaming response without
+checking the status. An error body has no `data:` lines, so the SSE parser emitted a lone terminal
+`End`: a **silent, empty, success-looking stream**. A stream started with an expired key, a `429`, or a
+provider `5xx` returned nothing instead of raising. `sendChatStream` now checks `statusCode()` and throws
+`LlmProviderException` (HTTP status + provider label + a bounded slice of the error body), matching the
+non-streaming `chat()` contract. Kimi's region-hint wrapping (#4511) still applies on auth errors.
+
+### Added — Kimi region modes: `KimiRegion.China` / `KimiRegion.International` (#4883)
+
+Moonshot/Kimi runs two independent platforms with **non-interchangeable** keys. A new `KimiRegion` enum
+plus a `model { kimi("moonshot-v1-8k", region = KimiRegion.INTERNATIONAL) }` DSL overload make the region
+an explicit, typed choice instead of a raw `baseUrl` string. Additive: `kimi("...")` with no region is
+byte-identical to before (China default preserved); `KimiRegion.INTERNATIONAL.baseUrl` is also usable as
+the `KimiClient(baseUrl = …)` argument directly.
+
+### Changed — x402 buyer trust hardening: guardrails are now mandatory and bind more (#4528)
+
+An external audit flagged that the "guardrails-first" buyer had **optional** guardrails (an empty
+`X402SpendPolicy` defaulted in), checked only amount/network/payTo, and paid the seller's *first* offer.
+Hardened (breaking, pre-1.0):
+
+- **Policy is mandatory** — `X402Account.fromPrivateKey` no longer defaults the policy; an intentionally
+  unbounded wallet must pass the explicitly-named `X402SpendPolicy.unsafeAllowAllForTesting()`.
+- **Stronger binding** — `X402SpendPolicy` gains `allowedAssets` (pin the token), `allowedResourceOrigins`
+  (pin the endpoint `scheme://host[:port]`), and `maxAuthorizationLifetimeSeconds` (the signed `validBefore`
+  is clamped to it, so a seller's `maxTimeoutSeconds` can't mint a long-lived authorization). A policy-approved
+  recipient no longer implies any token, any URL, or any duration.
+- **Deterministic offer selection** — new `X402OfferSelector` (`X402Client(account, selector = …)`); the
+  default `LowestAmount` pays the cheapest permitted offer instead of the seller's first, so a seller can't
+  order `accepts[]` to steer the buyer to the costliest. `X402OfferSelector.FirstAllowed` restores the prior
+  behavior explicitly.
+
+Migration: pass a real `X402SpendPolicy` (or `unsafeAllowAllForTesting()`) to `fromPrivateKey`. 6 new tests.
+
+### Added — x402 buyer: cross-payment limits + a signer seam (#4528)
+
+- **Session/velocity limits** — `X402Client(account, sessionLimits = X402SessionLimits(maxPayments,
+  maxTotalValue, maxPaymentsPerPayee, cooldownMillis), spendStore = …)` bounds the *aggregate* a buyer may
+  spend across many calls (the per-payment policy only bounds one). Settled payments are recorded in an
+  `X402SpendStore` (default per-process `InMemorySpendStore`; back it with a durable store in production so a
+  restart can't reset a cumulative cap). A limit-exceeding payment raises `X402PaymentDeniedException` before
+  any signature.
+- **`X402Signer` seam** — `X402Account.fromSigner(signer, policy)` signs through an `X402Signer` instead of
+  owning a raw private key, so a deployment can sign with a **KMS / HSM / wallet-service / scoped session key**
+  and keep permanent keys out of the application heap. `fromPrivateKey` now wraps a `LocalKeySigner` (the
+  default in-process key). 9 new tests.
+
+### Added — x402 accepts CAIP-2 network ids (v2 interop step) (#4528)
+
+x402 **v2** identifies networks with CAIP-2 ids (`eip155:84532`) instead of casual strings (`base-sepolia`).
+The buyer now resolves any EVM `eip155:<chainId>` network on an offer, so it can pay a v2 seller's offers. The
+current wire is otherwise **x402 v1** (`X-PAYMENT` / `X-PAYMENT-RESPONSE` headers, `x402Version: 1`); full v2
+transport (the `PAYMENT-REQUIRED` / `PAYMENT-SIGNATURE` / `PAYMENT-RESPONSE` headers + v2 payload envelope) is
+deferred until the v2 payload schema is verified against a live v2 facilitator — we don't ship a wire we can't
+test against the spec. So: **experimental, x402 v1-compatible (CAIP-2 network ids accepted).**
+
 ## [0.8.1] - 2026-06-20
 
 ### Added — x402 buyer side: agents can autonomously pay (experimental) (#4528, epic #4526)
