@@ -1,0 +1,27 @@
+# Single source of truth for release / version / provider / protocol claims.
+#
+# Why this file exists: version + provider + protocol claims were duplicated across the README, roadmap,
+# comparison page, POM, and website, and drifted (0.8.1 shipped but several surfaces still said 0.8.0/0.7.2).
+# `ReleaseMetadataConsistencyTest` validates the in-repo surfaces against this file so a single edit here
+# keeps them honest. Update this file as part of every release (RELEASE_RUNBOOK step 6).
+#
+# Schema is intentionally flat + simple-scalar so a dependency-free test can parse it.
+
+currentRelease: "0.8.2"            # latest version resolvable on Maven Central
+developmentVersion: "0.8.3-SNAPSHOT"
+providers: 8                       # Ollama, Claude, OpenAI, DeepSeek, Kimi, OpenRouter, Perplexity, Gemini
+
+nextRelease:
+  version: "0.9.0"
+  theme: "choreography you can't deadlock (typed multi-agent coordination)"
+
+# Protocol support is a SLICE, not necessarily a full implementation — state it honestly.
+# status: shipped | partial | experimental ;  support = the supported subset.
+protocols:
+  mcp:    { status: shipped,      support: "client + server (McpServer.from(agent), McpRunner)" }
+  a2a:    { status: shipped,      version: "0.2",  support: "server + typed client; message/send; capabilities.extensions" }
+  agui:   { status: partial,      support: "streaming subset (lifecycle/text/reasoning/tool incl. TOOL_CALL_RESULT/step); STATE + client-tool round-trips deferred" }
+  nlweb:  { status: partial,      targetVersion: "0.55", support: "/ask compatibility slice (single non-streaming response)" }
+  x402:   { status: experimental, version: "1", support: "seller gate + buyer (mandatory guardrails, cross-payment session limits, X402Signer seam); accepts CAIP-2 network ids (v1 wire; v2 transport deferred)" }
+  agntcy: { status: shipped,      support: "OASF export/import + Identity badge verify + DIR Store/Search/Routing client" }
+  ap2:    { status: spiked,       support: "feasibility spike (:agents-kt-ap2): mandate verify + x402 settle + AgentCard advertise" }
