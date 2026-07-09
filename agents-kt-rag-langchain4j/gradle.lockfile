@@ -2,9 +2,9 @@
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
 com.fasterxml.jackson.core:jackson-annotations:2.21=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-com.fasterxml.jackson.core:jackson-core:2.21.3=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-com.fasterxml.jackson.core:jackson-databind:2.21.3=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-com.fasterxml.jackson:jackson-bom:2.21.3=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.fasterxml.jackson.core:jackson-core:2.21.5=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.fasterxml.jackson.core:jackson-databind:2.21.5=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.fasterxml.jackson:jackson-bom:2.21.5=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 dev.langchain4j:langchain4j-core:1.16.3=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 dev.langchain4j:langchain4j:1.16.3=testCompileClasspath,testRuntimeClasspath
 org.apache.opennlp:opennlp-tools:2.5.9=testCompileClasspath,testRuntimeClasspath

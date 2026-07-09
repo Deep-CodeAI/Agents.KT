@@ -4,6 +4,29 @@ All notable changes to Agents.KT are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Security — jackson-databind bumped 2.21.3 → 2.21.5 (7 advisories)
+
+`jackson-databind` arrives transitively via `langchain4j-core` in `agents-kt-rag-langchain4j` (it is not a
+direct dependency of any module). Dependabot flagged **7 open advisories** against the 2.21.x line it pulled;
+all are cleared by forcing the artifact — and the tightly-coupled `jackson-core` — to **2.21.5** in that
+module's existing `resolutionStrategy.force(...)` block:
+
+- **High** — array-subtype allowlist bypass in `BasicPolymorphicTypeValidator` (`allowIfSubTypeIsArray`),
+  GHSA-rmj7-2vxq-3g9f.
+- **High** — PolymorphicTypeValidator bypass via generic type parameters (arbitrary class instantiation),
+  GHSA-j3rv-43j4-c7qm.
+- **Moderate** — `@JsonView` bypass for unwrapped creator parameters (GHSA-rcqc-6cw3-h962) and for setterless
+  creator properties (GHSA-5hh8-q8hv-fr38).
+- **Moderate** — case-insensitive deserialization bypasses per-property `@JsonIgnoreProperties`
+  (GHSA-9fxm-vc8v-hj55).
+- **Moderate** — renamed `@JsonIgnore`'d setters can still deserialize via private fields (GHSA-hgj6-7826-r7m5).
+- **Moderate** — `InetSocketAddress` deserialization triggers eager DNS resolution (SSRF), GHSA-5jmj-h7xm-6q6v.
+  This one is fixed **only in 2.21.5** (2.21.4 leaves it open), which is why the bump targets 2.21.5 rather than
+  2.21.4.
+
+No source or API change; a patch bump within the same minor line. Lockfile + `verification-metadata.xml`
+regenerated for `jackson-core`/`jackson-databind`/`jackson-bom` 2.21.5.
+
 ### Fixed — streaming now surfaces provider HTTP errors instead of swallowing them (#4882)
 
 `OpenAiClient.chatStream` — and every OpenAI-compatible subclass (OpenAI, DeepSeek, Kimi, OpenRouter,
