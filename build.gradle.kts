@@ -16,7 +16,7 @@ plugins {
 }
 
 group = "ai.deep-code"
-version = "0.8.2-SNAPSHOT"
+version = "0.8.3-SNAPSHOT"
 
 repositories {
     mavenCentral()
@@ -809,7 +809,12 @@ publishing {
 
             pom {
                 name.set("Agents.KT")
-                description.set("Typed Kotlin DSL framework for AI agent systems")
+                description.set(
+                    "The typed agent runtime for the JVM — bounded agent systems where authority is " +
+                        "explicit before execution, enforced during execution, and evidenced afterward. " +
+                        "Typed Agent<IN,OUT> contracts, least-privilege tools, permission manifests, and " +
+                        "audit evidence by construction. MCP / A2A / AG-UI / NLWeb / x402 native.",
+                )
                 url.set("https://github.com/Deep-CodeAI/Agents.KT")
 
                 licenses {
