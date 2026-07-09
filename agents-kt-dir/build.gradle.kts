@@ -29,7 +29,7 @@ configurations.all {
 
 private val grpcVersion = "1.82.1"
 private val protobufVersion = "4.35.1"
-private val grpcKotlinVersion = "1.4.1"
+private val grpcKotlinVersion = "1.5.0"
 
 dependencies {
     api(project(":"))
