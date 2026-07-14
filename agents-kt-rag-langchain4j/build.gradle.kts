@@ -16,10 +16,10 @@ dependencyLocking {
 configurations.all {
     resolutionStrategy {
         force(
-            "org.bouncycastle:bcprov-jdk18on:1.84",
-            "org.bouncycastle:bcpg-jdk18on:1.84",
-            "org.bouncycastle:bcpkix-jdk18on:1.84",
-            "org.bouncycastle:bcutil-jdk18on:1.84",
+            "org.bouncycastle:bcprov-jdk18on:1.85",
+            "org.bouncycastle:bcpg-jdk18on:1.85",
+            "org.bouncycastle:bcpkix-jdk18on:1.85",
+            "org.bouncycastle:bcutil-jdk18on:1.85",
             // Security bump — jackson-databind arrives transitively via langchain4j-core at
             // 2.21.3; force it (and the tightly-coupled jackson-core) to 2.21.5, which clears
             // the 7 open advisories on the 2.21.x line: array-subtype allowlist bypass

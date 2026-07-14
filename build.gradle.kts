@@ -34,10 +34,10 @@ dependencyLocking {
 configurations.all {
     resolutionStrategy {
         force(
-            "org.bouncycastle:bcprov-jdk18on:1.84",
-            "org.bouncycastle:bcpg-jdk18on:1.84",
-            "org.bouncycastle:bcpkix-jdk18on:1.84",
-            "org.bouncycastle:bcutil-jdk18on:1.84",
+            "org.bouncycastle:bcprov-jdk18on:1.85",
+            "org.bouncycastle:bcpg-jdk18on:1.85",
+            "org.bouncycastle:bcpkix-jdk18on:1.85",
+            "org.bouncycastle:bcutil-jdk18on:1.85",
         )
     }
 }
@@ -80,7 +80,7 @@ dependencies {
     // The crypto is isolated behind `agents_engine.x402.crypto.*`; the rest of the
     // runtime still touches no BouncyCastle. (bcprov was already resolved + pinned to
     // 1.84 by the force(...) block above for the #883/#1695 CVE mitigation.)
-    implementation("org.bouncycastle:bcprov-jdk18on:1.84")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.85")
 
     // #1695 — Dependabot's submitted dependency graph reads requested
     // versions, not resolved. The `force(...)` block above pins to 1.84 (a
@@ -90,9 +90,9 @@ dependencies {
     // the project level keeps an explicit 1.84 node in the graph so dependabot
     // stops flagging the resolved-away 1.80 vulnerabilities. (bcprov is now an
     // implementation dep above; these three stay compileOnly — graph-only.)
-    compileOnly("org.bouncycastle:bcpg-jdk18on:1.84")
-    compileOnly("org.bouncycastle:bcpkix-jdk18on:1.84")
-    compileOnly("org.bouncycastle:bcutil-jdk18on:1.84")
+    compileOnly("org.bouncycastle:bcpg-jdk18on:1.85")
+    compileOnly("org.bouncycastle:bcpkix-jdk18on:1.85")
+    compileOnly("org.bouncycastle:bcutil-jdk18on:1.85")
 }
 
 kotlin {

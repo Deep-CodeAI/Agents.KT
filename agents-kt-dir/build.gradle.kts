@@ -19,10 +19,10 @@ dependencyLocking {
 configurations.all {
     resolutionStrategy {
         force(
-            "org.bouncycastle:bcprov-jdk18on:1.84",
-            "org.bouncycastle:bcpg-jdk18on:1.84",
-            "org.bouncycastle:bcpkix-jdk18on:1.84",
-            "org.bouncycastle:bcutil-jdk18on:1.84",
+            "org.bouncycastle:bcprov-jdk18on:1.85",
+            "org.bouncycastle:bcpg-jdk18on:1.85",
+            "org.bouncycastle:bcpkix-jdk18on:1.85",
+            "org.bouncycastle:bcutil-jdk18on:1.85",
         )
     }
 }

@@ -24,10 +24,10 @@ dependencyLocking {
 configurations.all {
     resolutionStrategy {
         force(
-            "org.bouncycastle:bcprov-jdk18on:1.84",
-            "org.bouncycastle:bcpg-jdk18on:1.84",
-            "org.bouncycastle:bcpkix-jdk18on:1.84",
-            "org.bouncycastle:bcutil-jdk18on:1.84",
+            "org.bouncycastle:bcprov-jdk18on:1.85",
+            "org.bouncycastle:bcpg-jdk18on:1.85",
+            "org.bouncycastle:bcpkix-jdk18on:1.85",
+            "org.bouncycastle:bcutil-jdk18on:1.85",
         )
     }
 }
@@ -45,10 +45,10 @@ dependencies {
 
     // Explicit BC 1.84 nodes so Dependabot sees the pin (#1695). compileOnly
     // does NOT propagate to consumers — runtimeClasspath stays BC-free.
-    compileOnly("org.bouncycastle:bcprov-jdk18on:1.84")
-    compileOnly("org.bouncycastle:bcpg-jdk18on:1.84")
-    compileOnly("org.bouncycastle:bcpkix-jdk18on:1.84")
-    compileOnly("org.bouncycastle:bcutil-jdk18on:1.84")
+    compileOnly("org.bouncycastle:bcprov-jdk18on:1.85")
+    compileOnly("org.bouncycastle:bcpg-jdk18on:1.85")
+    compileOnly("org.bouncycastle:bcpkix-jdk18on:1.85")
+    compileOnly("org.bouncycastle:bcutil-jdk18on:1.85")
 
     testImplementation(kotlin("test"))
 }
