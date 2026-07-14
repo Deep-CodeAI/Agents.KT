@@ -36,7 +36,7 @@ dependencies {
     // KSP processor API. KSP2 (2.x) is decoupled from the bundled Kotlin
     // compiler version, so the same KSP release works across a range of
     // Kotlin versions. See https://github.com/google/ksp.
-    implementation("com.google.devtools.ksp:symbol-processing-api:2.3.9")
+    implementation("com.google.devtools.ksp:symbol-processing-api:2.3.10")
 
     // Read annotations defined in the runtime library (e.g. @Generable).
     // compileOnly — never end up on the consumer's runtime classpath; the
