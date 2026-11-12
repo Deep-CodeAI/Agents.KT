@@ -48,7 +48,7 @@ This repository is that factory's runtime. Kotlin on JDK 21+. Maven coordinate `
 
 A software line is a library inside a JVM service, an MCP server, an A2A peer, or a same-JVM swarm. Local models start with Ollama. Cloud providers are opt-in. The provider count and the protocol status (`mcp`, `a2a`, `agui`, `nlweb`, `x402`, `agntcy`) are the fields in `release-metadata.yaml`.
 
-Core code is `src/main/kotlin/agents_engine/`. Feature modules are the `agents-kt-*` projects in `settings.gradle.kts`. `sdlc/` and `tasks/` are an adopted Tatenergo.AI snapshot. Factory work goes in `src/` and the `agents-kt-*` modules.
+Core code is `src/main/kotlin/agents_engine/`. Feature modules are the `agents-kt-*` projects in `settings.gradle.kts`. Factory work goes in `src/` and those modules.
 
 ## Embodied factory, as a target
 

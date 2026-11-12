@@ -18,7 +18,6 @@ The published version, the provider count, and the protocol status live in [rele
 | `release-metadata.yaml` | `currentRelease`, `developmentVersion`, `providers`, and `protocols`. |
 | `src/main/kotlin/agents_engine/` | Core runtime. |
 | `agents-kt-*` | Feature modules named in `settings.gradle.kts`. |
-| `sdlc/` and `tasks/` | Adopted Tatenergo.AI snapshot. Framework work stays in `src/` and the `agents-kt-*` modules. |
 
 JDK 21 or newer. Kotlin version and the dependency line are the ones the README Current Release section states. The Gradle wrapper is the build. `./gradlew build` is the environment check in [Building From Source](https://github.com/Deep-CodeAI/Agents.KT/wiki/Building-From-Source).
 
